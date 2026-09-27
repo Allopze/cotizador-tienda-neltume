@@ -1,0 +1,154 @@
+.chat-panel {
+  padding: 26px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+  background: #f6f7f1;
+  min-width: 0;
+}
+.panel-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 24px;
+}
+.panel-heading .eyebrow {
+  margin-bottom: 8px;
+}
+h2 {
+  font:
+    25px/1.2 Georgia,
+    serif;
+  letter-spacing: -0.4px;
+}
+.messages {
+  flex: 1;
+  max-height: 405px;
+  min-height: 310px;
+  overflow-y: auto;
+  padding-right: 5px;
+  scrollbar-width: thin;
+}
+.speaker {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1.6px;
+  color: var(--muted);
+}
+.welcome {
+  padding: 15px 0 22px;
+}
+.welcome > p {
+  font:
+    22px Georgia,
+    serif;
+  margin: 13px 0 10px;
+}
+.welcome > div {
+  font-size: 12px;
+  line-height: 1.8;
+  color: #737b6d;
+  max-width: 310px;
+}
+.example {
+  margin-top: 25px;
+  border: 1px solid #d8ddce;
+  border-left: 2px solid #8b9e7c;
+  padding: 17px 32px 17px 17px;
+  background: transparent;
+  color: #626f5e;
+  line-height: 1.8;
+  font-size: 12px;
+  text-align: left;
+  position: relative;
+  width: 100%;
+}
+.example > span {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 1.6px;
+  margin-bottom: 8px;
+}
+.example b {
+  position: absolute;
+  right: 13px;
+  bottom: 16px;
+  font-size: 17px;
+  font-weight: 400;
+}
+.example:hover {
+  background: #eef1e6;
+}
+.message {
+  padding: 17px 0;
+  border-top: 1px solid #e2e5da;
+}
+.message p {
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.9;
+  margin-top: 8px;
+  overflow-wrap: anywhere;
+}
+.message.usuario {
+  padding: 15px 17px;
+  background: #e9eddf;
+  margin: 12px 0;
+  border: 0;
+}
+.message.usuario .speaker {
+  color: #496343;
+}
+.thinking {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 15px 0;
+}
+.composer {
+  border: 1px solid #cfd5c4;
+  background: #fff;
+  margin-top: 20px;
+}
+.composer textarea {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 15px;
+  resize: vertical;
+  min-height: 85px;
+  font: 12px/1.7 Arial;
+  color: var(--ink);
+  outline-offset: 0;
+}
+.composer textarea::placeholder {
+  color: #989c93;
+}
+.composer-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  border-top: 1px solid #f1f2ec;
+  gap: 8px;
+}
+.composer-bottom > span {
+  font-size: 8px;
+  color: #94998d;
+}
+.composer-bottom button {
+  border: 0;
+  background: var(--green);
+  color: white;
+  font-size: 10px;
+  padding: 10px 13px;
+  white-space: nowrap;
+}
+.composer-bottom button span {
+  padding-left: 9px;
+}
+.chat-footnote {
+  font-size: 9px;
+  color: #92998a;
+  text-align: center;
+  margin-top: 13px;
+}

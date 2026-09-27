@@ -1,0 +1,17 @@
+node_modules/
+.next/
+.env*
+!.env.example
+datos-privados/
+*.xlsx
+*.pdf
+data/catalogo.json
+data/estado*.json
+data/pdf/
+.estado.lock/
+*.tmp
+data/test-*/
+playwright-report/
+test-results/
+.DS_Store
+*.tsbuildinfo

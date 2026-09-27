@@ -1,0 +1,144 @@
+@media (min-width: 1450px) {
+  .workspace {
+    min-height: 700px;
+  }
+  .messages {
+    max-height: 465px;
+  }
+}
+@media (max-width: 1100px) {
+  .app-shell {
+    padding: 0 25px;
+  }
+  .workspace {
+    grid-template-columns: minmax(285px, 0.9fr) minmax(440px, 1.3fr);
+  }
+  .chat-panel {
+    padding: 20px;
+  }
+  .quote-panel {
+    padding: 20px;
+  }
+  .quote-actions {
+    flex-direction: column;
+  }
+  .conditions {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .composer-bottom > span {
+    font-size: 7px;
+  }
+}
+@media (max-width: 800px) {
+  .masthead {
+    height: 85px;
+    gap: 20px;
+  }
+  .logo {
+    width: 112px;
+    height: 60px;
+  }
+  .header-label {
+    display: none;
+  }
+  .page-heading {
+    padding: 27px 0;
+    gap: 15px;
+  }
+  .page-heading h1 {
+    font-size: 30px;
+  }
+  .page-heading .button {
+    font-size: 10px;
+    padding: 10px;
+  }
+  .intro {
+    font-size: 11px;
+  }
+  .workspace {
+    grid-template-columns: 1fr;
+  }
+  .chat-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .messages {
+    min-height: 220px;
+    max-height: 340px;
+  }
+  .quote-panel {
+    padding: 23px;
+  }
+  .quote-actions {
+    flex-direction: row;
+  }
+  .conditions {
+    flex-direction: row;
+  }
+  .history-list button {
+    grid-template-columns: 82px minmax(0, 1fr) auto;
+    gap: 6px 10px;
+  }
+  .history-list .history-meta {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .history-list button > strong {
+    grid-column: 3;
+    grid-row: 2;
+  }
+  .history-list button > span:last-child {
+    display: none;
+  }
+  .history-search {
+    max-width: none;
+  }
+  .site-footer {
+    font-size: 7px;
+    gap: 18px;
+  }
+  .page-heading .eyebrow {
+    font-size: 7px;
+    letter-spacing: 1.3px;
+  }
+}
+@media (max-width: 450px) {
+  .app-shell {
+    padding: 0 16px;
+  }
+  .page-heading {
+    align-items: flex-start;
+  }
+  .page-heading h1 {
+    font-size: 26px;
+  }
+  .page-heading .button {
+    max-width: 105px;
+    gap: 5px;
+  }
+  .intro {
+    max-width: 215px;
+    line-height: 1.6;
+  }
+  .quote-actions {
+    flex-direction: column;
+  }
+  .conditions {
+    flex-direction: column;
+  }
+  .grand-total strong {
+    font-size: 23px;
+  }
+  .totals {
+    width: 100%;
+  }
+  .quote-panel,
+  .chat-panel {
+    padding: 19px;
+  }
+  .download-banner {
+    flex-direction: column;
+    gap: 5px;
+  }
+}
