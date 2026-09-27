@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
-import type { Catalogo } from '../src/catalogo/tipos';
+import { Almacen } from '../src/servidor/almacen';
+import { abrirBaseDatos } from '../src/servidor/base-datos';
+import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, pesos } from '../src/negocio/precios';
 async function textoPdf(ruta: string) {
   const task = getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: true });
@@ -15,9 +17,11 @@ async function textoPdf(ruta: string) {
   return texto;
 }
 test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', async ({ page }) => {
-  const catalogo = JSON.parse(await readFile('data/test-e2e/catalogo.json', 'utf8')) as Catalogo;
-  const puerta = catalogo.productos.find((p) => p.codigo === 'HUIL-O-3-B')!,
-    marco = catalogo.productos.find((p) => p.codigo === 'MAR-O-2X4-B')!;
+  const catalogo = new RepositorioCatalogoSqlite(
+    abrirBaseDatos('data/test-e2e/cotizador.sqlite', { permitirJsonLegado: true }),
+  );
+  const puerta = catalogo.buscarPorCodigo('HUIL-O-3-B')!,
+    marco = catalogo.buscarPorCodigo('MAR-O-2X4-B')!;
   const primero = cotizar([{ producto: puerta, cantidad: 3 }]);
   const completo = cotizar([
     { producto: puerta, cantidad: 3 },
@@ -72,7 +76,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   expect(nota).toContain('Ref. cotización N° 323');
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
-  const estado = JSON.parse(await readFile('data/test-e2e/estado.json', 'utf8'));
+  const estado = await new Almacen('data/test-e2e').leer();
   expect(estado.cotizaciones[0].estado).toBe('aprobada');
   expect(estado.siguienteCotizacion).toBe(324);
   expect(estado.siguienteNota).toBe(2);
@@ -83,4 +87,47 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.getByRole('button', { name: 'Nueva cotización' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('modifica una cotización anterior por nombre y pide elegir entre coincidencias', async ({ page }) => {
+  await page.goto('/');
+  const enviar = async (texto: string) => {
+    await page.getByLabel('Escribe tu pedido').fill(texto);
+    await page.getByRole('button', { name: 'Enviar mensaje' }).click();
+    await expect(page.getByRole('button', { name: 'Enviar mensaje' })).toBeDisabled();
+  };
+  const cotizarMaria = 'Cotiza 3 Huilo Huilo oregón de 80×210 para María José, Temuco';
+  await page.getByRole('button', { name: 'Nueva cotización' }).click();
+  await enviar(cotizarMaria);
+  const primeraDescarga = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+  expect((await primeraDescarga).suggestedFilename()).toBe('cotizacion-324.pdf');
+  await page.getByRole('button', { name: 'Nueva cotización' }).click();
+  await enviar('La cotización de Maria Jose ahora debe ser de 8 puertas y no de 3');
+  await expect(page.getByLabel('Cotización en curso').getByText('8', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Cotización en curso')).toContainText('Revisión de la cotización N° 324');
+  const revisionDescarga = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+  expect((await revisionDescarga).suggestedFilename()).toBe('cotizacion-325.pdf');
+
+  await page.getByRole('button', { name: 'Nueva cotización' }).click();
+  await enviar(cotizarMaria);
+  const segundaDescarga = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+  expect((await segundaDescarga).suggestedFilename()).toBe('cotizacion-326.pdf');
+  await page.getByRole('button', { name: 'Nueva cotización' }).click();
+  await enviar('La cotización de María José ahora debe ser de 8 puertas y no de 3');
+  const seleccion = page.getByRole('group', { name: 'Seleccionar cotización anterior' });
+  await expect(seleccion.getByRole('button')).toHaveCount(2);
+  await seleccion.getByRole('button', { name: 'Elegir cotización N° 326 de María José' }).click();
+  await expect(page.getByLabel('Cotización en curso').getByText('8', { exact: true })).toBeVisible();
+
+  const estado = await new Almacen('data/test-e2e').leer();
+  expect(estado.cotizaciones.find((q) => q.numero === 324)?.solicitudes[0]?.cantidad).toBe(3);
+  expect(estado.cotizaciones.find((q) => q.numero === 326)?.solicitudes[0]?.cantidad).toBe(3);
+  expect(
+    estado.cotizaciones.some(
+      (q) => q.origen === 326 && q.solicitudes[0]?.cantidad === 8,
+    ),
+  ).toBe(true);
 });

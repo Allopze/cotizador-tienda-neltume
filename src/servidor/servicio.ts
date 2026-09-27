@@ -1,23 +1,39 @@
 import { ErrorIA, errorProveedor } from '../asistente/errores';
 import { randomUUID } from 'node:crypto';
-import type { Catalogo } from '../catalogo/tipos';
+import type { CatalogoConsultable } from '../catalogo/resolver';
 import { clienteVacio } from '../catalogo/tipos';
-import { resolverItem } from '../catalogo/resolver';
+import {
+  aliasMaderasCatalogo,
+  aliasModelosCatalogo,
+  maderasCatalogo,
+  modelosCatalogo,
+  resolverItem,
+} from '../catalogo/resolver';
 import { pregunta } from '../asistente/preguntas';
+import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { contextoSeguro, type LLM } from '../asistente/llm';
 import { salidaSchema } from '../asistente/esquemas';
 import { cotizar, montosVacios, REGLAS } from '../negocio/precios';
 import type { Cotizacion, Estado } from '../negocio/estado';
 import { Almacen } from './almacen';
 import { generarPdf, plantilla } from './pdf';
+import { resolverReferencia, type OpcionCotizacion } from './referencias';
 export type Accion =
   | { tipo: 'nueva' }
-  | { tipo: 'chat'; id: string; mensaje: string }
+  | {
+      tipo: 'chat';
+      id?: string;
+      mensaje: string;
+      objetivoId?: string;
+      objetivoActualizada?: string;
+    }
   | { tipo: 'quitar'; id: string; indice: number }
   | { tipo: 'emitir' | 'aprobar'; id: string };
 export interface Resultado {
   cotizacion: Cotizacion;
   archivo?: string;
+  /** Opciones de cotización cuando la referencia del mensaje coincide con varios registros. */
+  seleccion?: OpcionCotizacion[];
   /** Aprobación pedida por chat: la interfaz debe confirmarla con la acción explícita `aprobar`. */
   confirmar?: { id: string; numero: number };
 }
@@ -26,9 +42,11 @@ const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
 const TEXTO_MONETARIO =
   /\$\s*\d|\d[\d.,]*\s*(?:CLP|USD|pesos|%)|\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i;
+const SOLICITUD_APROBACION =
+  /\b(?:aprueba|apruebe|aprobar|se aprob[oó]|haz(?:me)? (?:la )?nota|genera(?:r)? (?:la )?nota|prepara(?:r)? (?:la )?nota)\b/i;
 export class Servicio {
   constructor(
-    private catalogo: Catalogo,
+    private catalogo: CatalogoConsultable,
     private llm: LLM,
     private almacen = new Almacen(),
   ) {}
@@ -146,11 +164,77 @@ export class Servicio {
       return { cotizacion: q };
     });
   }
+  private aplicarModificacion(base: Cotizacion, cambios: ModificacionCotizacion) {
+    const items = structuredClone(base.solicitudes);
+    const actualizar = cambios.items ?? [];
+    const quitar = cambios.quitar ?? [];
+    const actualizarIndices = new Set<number>();
+    const quitarIndices = new Set<number>();
+    if (
+      !actualizar.length &&
+      !quitar.length &&
+      !cambios.agregar?.length &&
+      !Object.keys(cambios.cliente ?? {}).length
+    )
+      return null;
+    for (const cambio of actualizar) {
+      if (
+        cambio.indice >= items.length ||
+        actualizarIndices.has(cambio.indice) ||
+        !Object.keys(cambio.cambios).length
+      )
+        return null;
+      actualizarIndices.add(cambio.indice);
+      items[cambio.indice] = { ...items[cambio.indice], ...cambio.cambios };
+    }
+    for (const indice of quitar) {
+      if (indice >= items.length || quitarIndices.has(indice) || actualizarIndices.has(indice)) return null;
+      quitarIndices.add(indice);
+    }
+    for (const indice of [...quitarIndices].sort((a, b) => b - a)) items.splice(indice, 1);
+    items.push(...(cambios.agregar ?? []));
+    if (items.length > 100) return null;
+    return {
+      items,
+      cliente: { ...base.cliente, ...(cambios.cliente ?? {}) },
+    };
+  }
   private async chat(accion: Extract<Accion, { tipo: 'chat' }>): Promise<Resultado> {
     // La IA puede tardar hasta el plazo configurado: se consulta sin retener el bloqueo del estado,
     // para no dejar esperando (ni fallar) las acciones de otra persona.
-    const previo = (await this.almacen.leer()).cotizaciones.find((c) => c.id === accion.id);
-    if (!previo) throw new ErrorUsuario('No se encontró la cotización.');
+    const inicial = await this.almacen.leer();
+    const conversacion = accion.id ? inicial.cotizaciones.find((c) => c.id === accion.id) : undefined;
+    if (accion.id && !conversacion) throw new ErrorUsuario('No se encontró la cotización.');
+    let previo: Cotizacion | undefined;
+    let modo: 'cotizacion_nueva' | 'modificacion_anterior' = 'cotizacion_nueva';
+    if (accion.objetivoId) {
+      previo = inicial.cotizaciones.find((c) => c.id === accion.objetivoId);
+      if (!previo) throw new ErrorUsuario('No se encontró la cotización seleccionada.');
+      if (!accion.objetivoActualizada || accion.objetivoActualizada !== previo.actualizada)
+        throw new ErrorUsuario('La cotización cambió. Elige nuevamente la cotización que quieres modificar.');
+      modo = 'modificacion_anterior';
+    } else {
+      const referencia = SOLICITUD_APROBACION.test(accion.mensaje)
+        ? { tipo: 'ninguna' as const }
+        : resolverReferencia(accion.mensaje, inicial.cotizaciones);
+      if (referencia.tipo === 'multiples') {
+        const cotizacionContexto =
+          conversacion ?? inicial.cotizaciones.find((q) => q.id === referencia.opciones[0].id);
+        if (!cotizacionContexto) throw new ErrorUsuario('No se encontró la cotización seleccionada.');
+        return { cotizacion: cotizacionContexto, seleccion: referencia.opciones };
+      }
+      if (referencia.tipo === 'unica') {
+        previo = referencia.cotizacion;
+        modo = 'modificacion_anterior';
+      } else previo = conversacion;
+    }
+    if (!previo) {
+      const nueva = this.nueva();
+      previo = await this.almacen.transaccion(async (estado) => {
+        estado.cotizaciones.push(nueva);
+        return structuredClone(nueva);
+      });
+    }
     if (previo.estado === 'aprobada')
       throw new ErrorUsuario('La cotización está aprobada y no se puede editar. Crea una nueva cotización.');
     let salida: unknown;
@@ -160,9 +244,12 @@ export class Servicio {
           accion.mensaje,
           previo.solicitudes,
           previo.cliente,
-          [...new Set(this.catalogo.productos.map((p) => p.modelo))],
-          [...new Set(this.catalogo.productos.map((p) => p.madera))],
+          modelosCatalogo(this.catalogo),
+          maderasCatalogo(this.catalogo),
           previo.historial,
+          modo,
+          modo === 'modificacion_anterior' ? { numero: previo.numero, estado: previo.estado } : null,
+          { modelos: aliasModelosCatalogo(this.catalogo), maderas: aliasMaderasCatalogo(this.catalogo) },
         ),
       );
     } catch (error) {
@@ -170,7 +257,7 @@ export class Servicio {
       throw errorProveedor();
     }
     return this.almacen.transaccion(async (estado) => {
-      let q = estado.cotizaciones.find((c) => c.id === accion.id);
+      let q = estado.cotizaciones.find((c) => c.id === previo.id);
       if (!q) throw new ErrorUsuario('No se encontró la cotización.');
       // Control optimista: la respuesta se calculó sobre la versión leída antes de consultar a la IA.
       if (q.actualizada !== previo.actualizada)
@@ -206,6 +293,10 @@ export class Servicio {
         return { cotizacion: q, confirmar: { id: objetivo.id, numero } };
       }
       if (res.name === 'actualizar_cotizacion') {
+        if (modo === 'modificacion_anterior') {
+          this.registrar(q, accion.mensaje, NO_ENTENDI);
+          return { cotizacion: q };
+        }
         const sinCambios =
           JSON.stringify([res.input.items, res.input.cliente]) === JSON.stringify([q.solicitudes, q.cliente]);
         if (q.estado === 'emitida' && sinCambios) {
@@ -222,6 +313,39 @@ export class Servicio {
           q.incompletos.length
             ? q.incompletos.map((i) => i.pregunta).join('\n\n')
             : 'Cotización actualizada. Revisa el detalle y genera el PDF cuando esté listo.',
+        );
+        return { cotizacion: q };
+      }
+      if (res.name === 'modificar_cotizacion') {
+        if (modo !== 'modificacion_anterior') {
+          this.registrar(q, accion.mensaje, NO_ENTENDI);
+          return { cotizacion: q };
+        }
+        const aplicado = this.aplicarModificacion(q, res.input);
+        if (!aplicado) {
+          this.registrar(q, accion.mensaje, NO_ENTENDI);
+          return { cotizacion: q };
+        }
+        const sinCambios =
+          JSON.stringify([aplicado.items, aplicado.cliente]) === JSON.stringify([q.solicitudes, q.cliente]);
+        if (sinCambios) {
+          this.registrar(
+            q,
+            accion.mensaje,
+            `No hay cambios respecto de la cotización N° ${q.numero ?? 'en borrador'}.`,
+          );
+          return { cotizacion: q };
+        }
+        q = this.editable(q, estado);
+        q.solicitudes = aplicado.items;
+        q.cliente = aplicado.cliente;
+        this.recalcular(q);
+        this.registrar(
+          q,
+          accion.mensaje,
+          q.incompletos.length
+            ? q.incompletos.map((i) => i.pregunta).join('\n\n')
+            : `Cotización actualizada${q.origen ? ` como revisión de la N° ${q.origen}` : ''}. Revisa el detalle y genera el PDF cuando esté listo.`,
         );
         return { cotizacion: q };
       }

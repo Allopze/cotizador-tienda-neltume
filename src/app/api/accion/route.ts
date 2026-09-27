@@ -5,11 +5,21 @@ import { Almacen, ErrorOcupado } from '@/servidor/almacen';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { rechazoAcceso } from '@/servidor/acceso';
 import { CommandCodeLLM, type LLM } from '@/asistente/llm';
+import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 const accionSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('nueva') }),
-  z.object({ tipo: z.literal('chat'), id: z.uuid(), mensaje: z.string().trim().min(1).max(6000) }),
+  z
+    .object({
+      tipo: z.literal('chat'),
+      id: z.uuid().optional(),
+      mensaje: z.string().trim().min(1).max(6000),
+      objetivoId: z.uuid().optional(),
+      objetivoActualizada: z.iso.datetime().optional(),
+    })
+    .strict()
+    .refine((a) => Boolean(a.objetivoId) === Boolean(a.objetivoActualizada)),
   z.object({ tipo: z.literal('quitar'), id: z.uuid(), indice: z.number().int().nonnegative() }),
   z.object({ tipo: z.enum(['emitir', 'aprobar']), id: z.uuid() }),
 ]);
@@ -23,7 +33,9 @@ export async function GET(req: Request) {
       { cotizaciones: estado.cotizaciones, asistenteConfigurado: !!process.env.CMD_API_KEY || modoFijo() },
       { headers: { 'Cache-Control': 'no-store' } },
     );
-  } catch {
+  } catch (e) {
+    if (e instanceof ErrorMigracionRequerida)
+      return Response.json({ error: e.message }, { status: 503 });
     return Response.json({ error: 'No se pudo leer el estado guardado.' }, { status: 500 });
   }
 }
@@ -47,6 +59,8 @@ export async function POST(req: Request) {
     }
     return Response.json(await new Servicio(catalogo, llm).ejecutar(parsed.data));
   } catch (e) {
+    if (e instanceof ErrorMigracionRequerida)
+      return Response.json({ error: e.message }, { status: 503 });
     if (e instanceof ErrorIA)
       return Response.json({ error: e.message, codigo: e.codigo }, { status: e.status });
     if (e instanceof ErrorUsuario) return Response.json({ error: e.message }, { status: 400 });

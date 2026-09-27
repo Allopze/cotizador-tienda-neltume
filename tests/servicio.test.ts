@@ -4,7 +4,7 @@ import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Servicio } from '../src/servidor/servicio';
-import { Almacen } from '../src/servidor/almacen';
+import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { clienteVacio, type Catalogo, type SolicitudItem } from '../src/catalogo/tipos';
 import { generarPdf, plantilla } from '../src/servidor/pdf';
 vi.mock('../src/servidor/pdf', () => ({
@@ -42,6 +42,16 @@ const solicitud: SolicitudItem = {
   cantidad: 3,
 };
 const actualizar = { name: 'actualizar_cotizacion', input: { items: [solicitud], cliente: clienteVacio() } };
+const modificarCantidad = (cantidad: number) => ({
+  name: 'modificar_cotizacion',
+  input: { items: [{ indice: 0, cambios: { cantidad } }] },
+});
+const clienteMaria = {
+  ...clienteVacio(),
+  nombre: 'María José',
+  comuna: 'Temuco',
+  proyecto: 'Casa Norte',
+};
 async function setup() {
   const dir = await mkdtemp(join(tmpdir(), 'neltume-test-'));
   dirs.push(dir);
@@ -51,7 +61,10 @@ async function setup() {
 }
 afterEach(async () => {
   vi.clearAllMocks();
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  for (const dir of dirs.splice(0)) {
+    cerrarAlmacen(join(dir, 'cotizador.sqlite'));
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 describe('Persistencia y flujo del asistente', () => {
   it('correlativo 323, reinicio, PDF inmutable, edición crea borrador, nota sin ajuste y bloqueo', async () => {
@@ -93,6 +106,147 @@ describe('Persistencia y flujo del asistente', () => {
     await reiniciado.ejecutar({ tipo: 'aprobar', id: q.id });
     expect(generarPdf).toHaveBeenCalledTimes(3);
     expect((await new Almacen(dir).leer()).siguienteCotizacion).toBe(325);
+  });
+  it('encuentra una cotización anterior sin crear un borrador y aplica solo el cambio pedido', async () => {
+    const { servicio, llm, almacen } = await setup();
+    const q = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'actualizar_cotizacion',
+      input: { items: [solicitud], cliente: clienteMaria },
+    });
+    const lista = (await servicio.ejecutar({ tipo: 'chat', id: q.id, mensaje: '3 Huilo Huilo' })).cotizacion;
+    const emitida = (await servicio.ejecutar({ tipo: 'emitir', id: lista.id })).cotizacion;
+    llm.interpretar.mockResolvedValueOnce(modificarCantidad(8));
+
+    const resultado = await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: 'La cotización de Maria Jose ahora debe ser de 8 puertas y no de 3',
+    });
+
+    expect(resultado.cotizacion.id).not.toBe(emitida.id);
+    expect(resultado.cotizacion.origen).toBe(323);
+    expect(resultado.cotizacion.solicitudes).toEqual([{ ...solicitud, cantidad: 8 }]);
+    expect(resultado.cotizacion.cliente).toEqual(clienteMaria);
+    expect(resultado.cotizacion.montos.total).toBe(1200);
+    expect(emitida.solicitudes).toEqual([solicitud]);
+    expect(emitida.pdf).toBe('cotizacion-323.pdf');
+    const estado = await almacen.leer();
+    expect(estado.cotizaciones).toHaveLength(2);
+    expect(llm.interpretar.mock.calls.at(-1)?.[0].modo).toBe('modificacion_anterior');
+    expect(JSON.stringify(llm.interpretar.mock.calls.at(-1)?.[0])).not.toMatch(/montos|precioNeto|lineas/);
+  });
+
+  it('conserva otros ítems y los campos no mencionados al aplicar un parche', async () => {
+    const { servicio, llm } = await setup();
+    const borrador = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+    const segundo = { ...solicitud, cantidad: 5, ancho: 0.85 };
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'actualizar_cotizacion',
+      input: { items: [solicitud, segundo], cliente: clienteMaria },
+    });
+    await servicio.ejecutar({ tipo: 'chat', id: borrador.id, mensaje: 'pedido para María José' });
+    llm.interpretar.mockResolvedValueOnce(modificarCantidad(8));
+    const resultado = await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: 'La cotización de María José ahora debe ser de 8 y no de 3 puertas',
+    });
+    expect(resultado.cotizacion.solicitudes).toEqual([{ ...solicitud, cantidad: 8 }, segundo]);
+    expect(resultado.cotizacion.cliente).toEqual(clienteMaria);
+  });
+
+  it('pide elegir si hay varias cotizaciones y aplica el mensaje original solo a la seleccionada', async () => {
+    const { servicio, llm, almacen } = await setup();
+    async function crearEmitida() {
+      const borrador = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+      llm.interpretar.mockResolvedValueOnce({
+        name: 'actualizar_cotizacion',
+        input: { items: [solicitud], cliente: clienteMaria },
+      });
+      await servicio.ejecutar({ tipo: 'chat', id: borrador.id, mensaje: '3 Huilo Huilo' });
+      return (await servicio.ejecutar({ tipo: 'emitir', id: borrador.id })).cotizacion;
+    }
+    const primera = await crearEmitida();
+    const segunda = await crearEmitida();
+    const mensaje = 'La cotización de María José ahora debe ser de 8 puertas y no de 3';
+
+    const opciones = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(opciones.seleccion?.map((o) => o.numero)).toEqual([324, 323]);
+    expect(opciones.cotizacion.id).toBe(opciones.seleccion?.[0].id);
+    expect(llm.interpretar).toHaveBeenCalledTimes(2);
+    expect((await almacen.leer()).cotizaciones).toHaveLength(2);
+
+    llm.interpretar.mockResolvedValueOnce(modificarCantidad(8));
+    const objetivo = opciones.seleccion![0];
+    const aplicado = await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje,
+      objetivoId: objetivo.id,
+      objetivoActualizada: objetivo.actualizada,
+    });
+
+    expect(aplicado.cotizacion.origen).toBe(segunda.numero);
+    expect(aplicado.cotizacion.solicitudes[0].cantidad).toBe(8);
+    const guardadas = (await almacen.leer()).cotizaciones;
+    expect(guardadas.find((q) => q.id === primera.id)?.solicitudes[0].cantidad).toBe(3);
+    expect(guardadas.find((q) => q.id === segunda.id)?.solicitudes[0].cantidad).toBe(3);
+    expect(guardadas).toHaveLength(3);
+  });
+
+  it('rechaza la selección obsoleta y no altera la cotización', async () => {
+    const { servicio, llm, almacen } = await setup();
+    const borrador = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'actualizar_cotizacion',
+      input: { items: [solicitud], cliente: clienteMaria },
+    });
+    await servicio.ejecutar({ tipo: 'chat', id: borrador.id, mensaje: '3 Huilo Huilo' });
+    const emitida = (await servicio.ejecutar({ tipo: 'emitir', id: borrador.id })).cotizacion;
+    const opcion = { id: emitida.id, actualizada: emitida.actualizada };
+    llm.interpretar.mockImplementationOnce(async () => {
+      await almacen.transaccion(async (estado) => {
+        estado.cotizaciones.find((q) => q.id === emitida.id)!.actualizada = '2026-06-01T00:00:00.000Z';
+      });
+      return modificarCantidad(8);
+    });
+    await expect(
+      servicio.ejecutar({
+        tipo: 'chat',
+        mensaje: 'La cotización de María José ahora debe ser de 8 y no de 3 puertas',
+        objetivoId: opcion.id,
+        objetivoActualizada: opcion.actualizada,
+      }),
+    ).rejects.toThrow('cambió');
+    expect(
+      (await almacen.leer()).cotizaciones.find((q) => q.id === emitida.id)?.solicitudes[0].cantidad,
+    ).toBe(3);
+  });
+
+  it('mantiene bloqueada una cotización aprobada aunque se la mencione por número', async () => {
+    const { servicio, llm } = await setup();
+    const borrador = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'actualizar_cotizacion',
+      input: { items: [solicitud], cliente: clienteMaria },
+    });
+    await servicio.ejecutar({ tipo: 'chat', id: borrador.id, mensaje: '3 Huilo Huilo' });
+    await servicio.ejecutar({ tipo: 'emitir', id: borrador.id });
+    await servicio.ejecutar({ tipo: 'aprobar', id: borrador.id });
+    llm.interpretar.mockClear();
+    await expect(
+      servicio.ejecutar({
+        tipo: 'chat',
+        mensaje: 'Modifica la cotización N° 323: ahora son 8 puertas',
+      }),
+    ).rejects.toThrow('aprobada');
+    expect(llm.interpretar).not.toHaveBeenCalled();
+  });
+
+  it('sin una referencia encontrada crea solo la cotización nueva para el mensaje', async () => {
+    const { servicio, llm, almacen } = await setup();
+    const resultado = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza 3 Molco' });
+    expect(resultado.cotizacion.solicitudes).toEqual([solicitud]);
+    expect((await almacen.leer()).cotizaciones).toHaveLength(1);
+    expect(llm.interpretar.mock.calls[0][0].modo).toBe('cotizacion_nueva');
   });
   it('salida inválida preserva el borrador y agrega la respuesta requerida', async () => {
     const { servicio, llm } = await setup();
@@ -140,8 +294,10 @@ describe('Persistencia y flujo del asistente', () => {
     );
     expect(reservas.sort()).toEqual([323, 324, 325, 326, 327]);
     expect((await almacen.leer()).siguienteCotizacion).toBe(328);
-    await writeFile(join(dir, 'estado.json'), '{inválido');
-    await expect(almacen.leer()).rejects.toThrow('no se reiniciaron');
+    const archivoDb = join(dir, 'cotizador.sqlite');
+    cerrarAlmacen(archivoDb);
+    await writeFile(archivoDb, '{inválido');
+    await expect(new Almacen(dir).leer()).rejects.toThrow();
   });
 });
 
@@ -175,7 +331,11 @@ describe('Aprobación, concurrencia y conflictos', () => {
     const { servicio, llm, almacen, q } = await emitida();
     const otra = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
     llm.interpretar.mockResolvedValueOnce({ name: 'aprobar_cotizacion', input: { numero: 323 } });
-    const r = await servicio.ejecutar({ tipo: 'chat', id: otra.id, mensaje: 'se aprobó la 323' });
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      id: otra.id,
+      mensaje: 'Se aprobó la cotización N° 323, haz la nota de pedido',
+    });
     expect(r.confirmar).toEqual({ id: q.id, numero: 323 });
     expect(r.archivo).toBeUndefined();
     expect(r.cotizacion.historial.at(-1)?.texto).toContain('¿Confirmas');
@@ -242,6 +402,6 @@ describe('Aprobación, concurrencia y conflictos', () => {
   it('rechaza un estado con estructura inválida sin reiniciar contadores', async () => {
     const { dir, almacen } = await setup();
     await writeFile(join(dir, 'estado.json'), JSON.stringify({ siguienteCotizacion: 'x', cotizaciones: [] }));
-    await expect(almacen.leer()).rejects.toThrow('no se reiniciaron');
+    await expect(almacen.leer()).rejects.toThrow('migrar:sqlite');
   });
 });

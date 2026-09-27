@@ -50,6 +50,7 @@ describe('Proveedor CommandCode', () => {
     expect(body.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: true });
     expect(body.tools.map((t: { name: string }) => t.name)).toEqual([
       'actualizar_cotizacion',
+      'modificar_cotizacion',
       'aprobar_cotizacion',
       'responder',
     ]);

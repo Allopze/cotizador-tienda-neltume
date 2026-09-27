@@ -1,14 +1,19 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
 import { abrirXlsx, type Hoja } from './xlsx';
-import type { Catalogo, Producto, Madera } from './tipos';
+import {
+  normalizarCatalogo,
+  resolverMaderaConfigurada,
+  validarConfiguracionCatalogo,
+  type ConfiguracionCatalogo,
+} from './configuracion';
+import type { Catalogo, Producto } from './tipos';
 const decimal = (v: unknown) => String(v).replace('.', ',');
 const limpio = (v: unknown) =>
   String(v ?? '')
     .trim()
     .toUpperCase();
 const num = (v: unknown) => Math.round(Number(v) * 10000) / 10000;
-const maderas: Record<Madera, string> = { 'PINO OREGON': 'O', LENGA: 'L', MARA: 'M', RAULI: 'R' };
 export interface Incidencia {
   fila: number;
   accion: 'correccion' | 'exclusion';
@@ -20,7 +25,8 @@ export function descripcion(p: Producto) {
   if (p.familia === 'MOLDURA') return `${base} CM X ${decimal(p.largo)} MT`;
   return p.largo < 3 ? `${base} PULG KIT` : `${base} PULG X ${decimal(p.largo)} MT`;
 }
-export async function importar(ruta: string) {
+export async function importar(ruta: string, configEntrada?: ConfiguracionCatalogo) {
+  const configuracion = validarConfiguracionCatalogo(configEntrada ?? {});
   const x = await abrirXlsx(ruta);
   const precio = x.leer(
     'Precio',
@@ -29,10 +35,8 @@ export async function importar(ruta: string) {
   const cats = x.leer(
     'Categorias',
     (c, r) =>
-      (['O', 'P'].includes(c) && r >= 4 && r <= 41) ||
-      (['R', 'S'].includes(c) && r >= 4 && r <= 40) ||
-      (['U', 'V'].includes(c) && r >= 4 && r <= 38) ||
-      (c === 'G' && r >= 4 && r <= 7),
+      (['O', 'P', 'R', 'S', 'U', 'V'].includes(c) && r >= 4 && r <= 500) ||
+      (c === 'G' && r >= 4 && r <= 500),
   );
   const plantilla = x.leer('Cotización', (c, r) => ['C', 'P', 'Q'].includes(c) && r >= 8 && r <= 32);
   const get = (h: Hoja, c: string, r: number) => h.get(`${c}${r}`)?.valor;
@@ -45,14 +49,32 @@ export async function importar(ruta: string) {
     }
     return map;
   }
-  const modelos = tabla('O', 'P', 4, 41),
-    medidas = tabla('R', 'S', 4, 40),
-    largos = tabla('U', 'V', 4, 38);
+  const modelos = tabla('O', 'P', 4, 500),
+    medidas = tabla('R', 'S', 4, 500),
+    largos = tabla('U', 'V', 4, 500);
+  const maderaCodigo = new Map(
+      configuracion.maderas.map((madera) => [normalizarCatalogo(madera.nombre), madera.codigo.toUpperCase()]),
+    ),
+    maderaPorCodigo = new Map(
+      configuracion.maderas.map((madera) => [madera.codigo.toUpperCase(), madera.nombre]),
+    ),
+    maderaPorNombreHoja = new Set(
+      Array.from({ length: 497 }, (_, i) => get(cats, 'G', i + 4))
+        .filter((valor) => valor != null)
+        .map((valor) => normalizarCatalogo(String(valor))),
+    ),
+    familiaModelo = new Map(
+      Object.entries(configuracion.familiasPorModelo).map(([modelo, familia]) => [
+        normalizarCatalogo(modelo),
+        familia,
+      ]),
+    );
   const codigoCalculado = (p: Producto) => {
     const letra = largos.get(p.familia === 'MOLDURA' ? `${p.medida}X${decimal(p.largo)}` : String(p.largo));
     const seg = medidas.get(p.medida),
-      abrev = modelos.get(p.modelo);
-    return letra && seg && abrev ? `${abrev}-${maderas[p.madera]}-${seg}-${letra}` : null;
+      abrev = modelos.get(p.modelo),
+      madera = maderaCodigo.get(normalizarCatalogo(p.madera));
+    return letra && seg && abrev && madera ? `${abrev}-${madera}-${seg}-${letra}` : null;
   };
   const clave = (p: Producto) => `${p.modelo}|${p.madera}|${p.medida}|${p.largo}`;
   const filas = [...new Set([...precio.keys()].map((k) => Number(k.replace(/[A-Z]/g, ''))))].sort(
@@ -65,14 +87,7 @@ export async function importar(ruta: string) {
     if (!codigo) continue;
     const modelo = limpio(get(precio, 'B', r)),
       tipo = limpio(get(precio, 'C', r)) || null;
-    const familia =
-      modelo === 'MARCO'
-        ? 'MARCO'
-        : modelo === 'PIEZAS T'
-          ? 'PIEZAS_T'
-          : ['ENDOLADO', 'GUARDAPOLVO', 'PILASTRA'].includes(modelo)
-            ? 'MOLDURA'
-            : 'PUERTA';
+    const familia = familiaModelo.get(normalizarCatalogo(modelo)) ?? 'PUERTA';
     const medida =
       familia === 'PUERTA'
         ? limpio(get(precio, 'D', r))
@@ -80,14 +95,16 @@ export async function importar(ruta: string) {
           ? codigo.split('-')[2]
           : `2X${get(precio, 'D', r)}`;
     const anchos = familia === 'PUERTA' ? medida.split(' A ').map((n) => Number(n.replace(',', '.'))) : [];
+    const maderaHoja = limpio(get(precio, 'G', r))
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+    const maderaConfigurada = resolverMaderaConfigurada(maderaHoja, configuracion);
     const p: Producto = {
       codigo,
       modelo,
       familia,
       tipo,
-      madera: limpio(get(precio, 'G', r))
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '') as Madera,
+      madera: maderaConfigurada ?? maderaHoja,
       medida,
       anchoMin: anchos[0] ?? null,
       anchoMax: anchos[1] ?? null,
@@ -101,7 +118,8 @@ export async function importar(ruta: string) {
     if (
       !Number.isFinite(p.precioNeto) ||
       p.precioNeto <= 0 ||
-      !maderas[p.madera] ||
+      !maderaConfigurada ||
+      !maderaPorNombreHoja.has(normalizarCatalogo(maderaConfigurada)) ||
       !codigoCalculado(p) ||
       Math.abs(conIva - bruto * 1.19) > 0.01
     ) {
@@ -129,7 +147,7 @@ export async function importar(ruta: string) {
     if (p.codigo !== calculado) {
       const [abrev, madera, seg, letra] = p.codigo.split('-');
       const modelo = [...modelos].find(([, v]) => v === abrev)?.[0];
-      const especie = (Object.keys(maderas) as Madera[]).find((k) => maderas[k] === madera);
+      const especie = maderaPorCodigo.get(madera);
       const medida = [...medidas].find(([, v]) => v === seg)?.[0];
       const largoClave = [...largos].find(
         ([k, v]) => v === letra && (p.familia === 'MOLDURA' ? k.startsWith(`${seg}X`) : !k.includes('X')),

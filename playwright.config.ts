@@ -22,7 +22,7 @@ export default defineConfig({
       NELTUME_TEST_MODE: '1',
       NELTUME_LLM: 'fijo',
       NELTUME_DATA_DIR: 'data/test-e2e',
-      NELTUME_CATALOGO: 'data/test-e2e/catalogo.json',
+      NELTUME_DB_PATH: 'data/test-e2e/cotizador.sqlite',
     },
   },
 });

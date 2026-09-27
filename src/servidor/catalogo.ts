@@ -1,25 +1,20 @@
-import { readFile, stat } from 'node:fs/promises';
-import { resolve } from 'node:path';
-import type { Catalogo } from '../catalogo/tipos';
+import { ErrorMigracionRequerida, abrirBaseDatos } from './base-datos';
+import { RepositorioCatalogoSqlite } from './repositorio-catalogo';
 export class ErrorCatalogo extends Error {}
-export const rutaCatalogo = () =>
-  resolve(/* turbopackIgnore: true */ process.env.NELTUME_CATALOGO ?? 'data/catalogo.json');
-// Caché por ruta y fecha de modificación: una reimportación se toma sin reiniciar el servidor.
-let cache: { ruta: string; mtime: number; catalogo: Catalogo } | null = null;
-export async function cargarCatalogo(): Promise<Catalogo> {
-  const ruta = rutaCatalogo();
+
+export async function cargarCatalogo(): Promise<RepositorioCatalogoSqlite> {
   try {
-    const { mtimeMs } = await stat(ruta);
-    if (cache?.ruta === ruta && cache.mtime === mtimeMs) return cache.catalogo;
-    const catalogo = JSON.parse(await readFile(ruta, 'utf8')) as Catalogo;
-    if (!Array.isArray(catalogo.productos) || !catalogo.productos.length) throw new Error('vacío');
-    cache = { ruta, mtime: mtimeMs, catalogo };
+    const db = abrirBaseDatos();
+    const catalogo = new RepositorioCatalogoSqlite(db);
+    const metadata = catalogo.metadata;
+    const cantidad = (db.prepare('SELECT COUNT(*) AS n FROM productos_catalogo').get() as { n: number }).n;
+    if (!metadata || !cantidad || metadata.cantidadProductos !== cantidad)
+      throw new Error('catálogo ausente o inconsistente');
     return catalogo;
   } catch (e) {
+    if (e instanceof ErrorMigracionRequerida) throw e;
     throw new ErrorCatalogo(
-      (e as NodeJS.ErrnoException).code === 'ENOENT'
-        ? 'Falta el catálogo. Ejecuta npm run importar -- datos-privados/COTIZADOR_2026.xlsx.'
-        : 'El catálogo está dañado. Vuelve a ejecutar npm run importar.',
+      'Falta el catálogo o la base está dañada. Revisa la importación con npm run importar.',
     );
   }
 }

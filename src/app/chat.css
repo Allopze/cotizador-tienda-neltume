@@ -99,6 +99,47 @@ h2 {
 .message.usuario .speaker {
   color: #496343;
 }
+.reference-selection {
+  margin: 14px 0;
+  padding: 15px;
+  border: 1px solid #d8ddce;
+  background: #fff;
+}
+.reference-selection > p {
+  margin: 9px 0 12px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.reference-options {
+  display: grid;
+  gap: 7px;
+}
+.reference-options button {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid #e2e5da;
+  background: #f8f9f5;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.reference-options button:hover:not(:disabled) {
+  background: #eef1e6;
+}
+.reference-options strong,
+.reference-options small {
+  display: block;
+}
+.reference-options strong {
+  color: var(--green);
+  font-size: 11px;
+}
+.reference-options small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
 .thinking {
   font-size: 11px;
   color: var(--muted);

@@ -20,16 +20,18 @@ Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium
 
 ## Configuración
 
-| Variable | Uso |
-|---|---|
-| `CMD_API_KEY` | Clave propia de CommandCode, únicamente en `.env.local`. |
-| `CMD_MODEL` | Modelo servido por CommandCode; predeterminado `claude-sonnet-5`. Claude usa `/messages`; Laguna y los otros modelos de chat usan `/chat/completions`. El modelo debe admitir herramientas y estar habilitado en tu cuenta. |
-| `CMD_TIMEOUT_MS` | Plazo por solicitud de IA en milisegundos; predeterminado 60000, configurable entre 1000 y 120000. Sin reintentos automáticos. |
-| `CHROMIUM_PATH` | Ruta opcional a Chrome/Chromium. |
-| `NELTUME_PLANILLA` | Ruta alternativa a la planilla real para importación y tests. |
-| `NELTUME_DATA_DIR` | Directorio de persistencia y PDF; predeterminado `data/`. |
-| `NELTUME_CATALOGO` | Ruta del catálogo importado; predeterminado `data/catalogo.json`. Se recarga solo si cambia el archivo. |
-| `NELTUME_HOSTS` | Hostnames adicionales permitidos, separados por coma (p. ej. el de Cloudflare Access). Siempre se aceptan `127.0.0.1`, `localhost` y `[::1]`; cualquier otro Host recibe 403 (defensa contra DNS rebinding). |
+| Variable           | Uso                                                                                                                                                                                                                         |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CMD_API_KEY`      | Clave propia de CommandCode, únicamente en `.env.local`.                                                                                                                                                                    |
+| `CMD_MODEL`        | Modelo servido por CommandCode; predeterminado `claude-sonnet-5`. Claude usa `/messages`; Laguna y los otros modelos de chat usan `/chat/completions`. El modelo debe admitir herramientas y estar habilitado en tu cuenta. |
+| `CMD_TIMEOUT_MS`   | Plazo por solicitud de IA en milisegundos; predeterminado 60000, configurable entre 1000 y 120000. Sin reintentos automáticos.                                                                                              |
+| `CHROMIUM_PATH`    | Ruta opcional a Chrome/Chromium.                                                                                                                                                                                            |
+| `NELTUME_PLANILLA` | Ruta alternativa a la planilla real para importación y tests.                                                                                                                                                               |
+| `NELTUME_DATA_DIR` | Directorio de datos y PDF; predeterminado `data/`. La base se guarda allí si no se configura otra ruta.                                                                                                                     |
+| `NELTUME_DB_PATH`  | Ruta opcional del archivo SQLite; predeterminado `NELTUME_DATA_DIR/cotizador.sqlite`.                                                                                                                                       |
+| `NELTUME_CATALOGO_CONFIG` | Ruta opcional del archivo de maderas, códigos, alias y familias; predeterminado `config/catalogo.json`.                                                                                                           |
+| `NELTUME_CATALOGO` | Ruta del JSON de catálogo anterior, usada solo por `npm run migrar:sqlite`; predeterminado `data/catalogo.json`.                                                                                                            |
+| `NELTUME_HOSTS`    | Hostnames adicionales permitidos, separados por coma (p. ej. el de Cloudflare Access). Siempre se aceptan `127.0.0.1`, `localhost` y `[::1]`; cualquier otro Host recibe 403 (defensa contra DNS rebinding).                |
 
 CommandCode es el único proveedor de IA configurado. Se conserva `@anthropic-ai/sdk` como cliente para modelos Claude; los otros modelos usan Chat Completions. Ambos apuntan exclusivamente a CommandCode; no se llama directamente a Anthropic ni se usan su clave, token o URL de entorno. La selección del modelo no cambia el proveedor.
 
@@ -52,6 +54,7 @@ Aprobar es irreversible: solo se puede aprobar una cotización ya emitida, y tan
 
 - `src/catalogo/xlsx.ts`: lectura selectiva del XML de XLSX con `fflate` y `saxes`. No construye un Workbook que materialice costos; solo decodifica valores y fórmulas de celdas permitidas.
 - `src/catalogo/importar.ts`: tablas de `Categorias`, normalización, hipótesis de corrección, duplicados, descripción, SHA-256, catálogo y reporte.
+- `config/catalogo.json`: maderas, códigos para SKU, alias y familias especiales, guardados en SQLite junto con cada importación.
 - `src/catalogo/resolver.ts`: modelos, alias, medidas, rangos y rechazos determinísticos.
 - `src/negocio/precios.ts`: precios, redondeo, IVA y validaciones.
 - `src/asistente/llm.ts`: adaptador de CommandCode y proyección explícita del contexto sin precios. Usa el [Provider API de CommandCode](https://commandcode.ai/docs/provider) con `/messages` para Claude y `/chat/completions` para los otros modelos de chat, con una única herramienta por turno y validación estricta con Zod. No se reenvían montos, catálogo completo, historial de precios ni respuestas de cálculo.
@@ -59,19 +62,33 @@ Aprobar es irreversible: solo se puede aprobar una cotización ya emitida, y tan
 - `src/servidor/`: flujo, persistencia, plantillas HTML y PDF A4 con Playwright.
 - `src/app/`: pantalla y [Route Handlers de Next.js](https://nextjs.org/docs/app/api-reference/file-conventions/route).
 
-El LLM extrae la lista completa de solicitudes y los datos del cliente; todo precio proviene del catálogo. Recibe además los últimos seis turnos de la conversación (solo texto, recortado), para poder responder a una pregunta previa del asistente, por ejemplo el número de la cotización a aprobar. La consulta a la IA se hace fuera del bloqueo del estado: si la cotización cambió mientras tanto, la respuesta no se aplica y se pide reenviar el mensaje. Una salida inválida no modifica las solicitudes, el cliente ni los montos y responde «No entendí, ¿puedes reformularlo?».
+En una cotización nueva, el LLM extrae la lista completa de solicitudes y los datos del cliente; al modificar una anterior devuelve solo los cambios pedidos. El servidor puede resolver una referencia por número, nombre, proyecto o comuna con búsqueda local insensible a tildes. Si encuentra varias, muestra opciones sin modificarlas. Todo precio proviene del catálogo y nunca se envía al LLM. La consulta a la IA se hace fuera del bloqueo del estado: si la cotización cambió mientras tanto, la respuesta no se aplica y se pide reenviar el mensaje. Una salida inválida no modifica las solicitudes, el cliente ni los montos y responde «No entendí, ¿puedes reformularlo?».
 
 ## Archivos y persistencia
 
 - `datos-privados/`: originales confidenciales, excluidos de Git junto con todo `*.xlsx`.
-- `data/catalogo.json`: 8.772 productos, fuente, hash y fecha. También se excluye de Git.
+- `data/cotizador.sqlite`: base activa con catálogo normalizado, cotizaciones, solicitudes e historial, montos calculados, snapshots de productos, correlativos y notas de pedido. Se excluye de Git junto con sus archivos WAL/SHM.
+- `data/respaldo-migracion/<fecha>/`: copia privada e inactiva de los JSON anteriores, creada después de verificar la migración y excluida de Git.
 - [Reporte de importación](data/reporte-importacion.md): 29 correcciones, cero exclusiones y errores de plantilla, sin costos ni márgenes.
 - [Verificación de fuentes](data/verificacion-fuentes.md): cinco planillas, comparación de columnas permitidas con rev-4F y lectura de las siete páginas de la transcripción. Para repetir la revisión de planillas: `npx tsx scripts/verificar-fuentes.ts`.
 - `public/logo-neltume.svg`: logo original extraído de `xl/media/image2.svg`.
-- `data/estado.json`: solicitudes, cliente, historial, copias de productos/precios calculados, documentos, fechas (incluida la de emisión) y correlativos. Escritura temporal con `fsync` + rename, validación estructural al leer y bloqueo entre procesos en `data/.estado.lock`.
-- `data/pdf/cotizacion-323.pdf`, `data/pdf/nota-pedido-1.pdf`: documentos emitidos. El E2E usa `data/test-e2e/` (estado, PDF y su propio catálogo) para no consumir los números reales ni reescribir `data/catalogo.json`.
+- `data/pdf/`: documentos emitidos; sus nombres se guardan en SQLite. El E2E usa su propia base y carpeta PDF en `data/test-e2e/`.
 
-El número se reserva en disco antes de generar el PDF. Un fallo puede dejar un salto, nunca reutilizar un correlativo. La nota usa los precios de lista guardados en la cotización, aunque el catálogo haya cambiado. Respalda `data/estado.json` y `data/pdf/` juntos. No borres el estado para reiniciar los números de una operación real.
+### Agregar modelos y maderas
+
+No hay un panel de administración: el catálogo se mantiene con la planilla y `config/catalogo.json`.
+
+1. Para agregar un modelo de puerta, agrega su nombre y código en `Categorias!O:P` y sus productos en la hoja `Precio`. Se admiten filas de categorías hasta la 500. Los nombres de modelo y madera se normalizan sin distinguir mayúsculas ni tildes.
+2. Para una madera nueva, agrega su nombre en `Categorias!G`, sus productos en `Precio!G` y una entrada en `config/catalogo.json` con `nombre`, `codigo` único y los `alias` que se usan al pedirla. El código se usa en los SKU importados.
+3. Para clasificar un modelo como marco, piezas T o moldura, agrega su familia en `familiasPorModelo`. Los modelos sin entrada se consideran puertas. Las familias disponibles son `PUERTA`, `MARCO`, `PIEZAS_T` y `MOLDURA`.
+4. Si la gente usa nombres alternativos para un modelo, agrégalos en `aliasModelos`, bajo el nombre canónico.
+5. Importa la planilla actualizada con `npm run importar -- ruta.xlsx`. La operación reemplaza productos y configuración juntos en una transacción; si la validación falla, ambos quedan como estaban. Las cotizaciones existentes conservan sus snapshots.
+
+Ejemplo de entrada para una madera: `{ "nombre": "ROBLE", "codigo": "RB", "alias": ["ROBLE AMERICANO"] }`. Configuración y catálogo aplicados quedan en la base SQLite; el JSON es la fuente editable para la próxima importación. El cambio de esquema añade esta configuración de forma compatible al abrir una base existente.
+
+Para actualizar una instalación que todavía tiene `catalogo.json` o `estado.json`, detén el servidor y ejecuta `npm run migrar:sqlite`. El comando valida una base temporal, conserva los JSON en un respaldo fechado y no sobrescribe una base SQLite existente que no haya sido migrada. No inicializa una base vacía ignorando JSON anteriores. En una instalación nueva, `npm run importar -- datos-privados/COTIZADOR_2026.xlsx` carga catálogo y configuración directamente en SQLite.
+
+Los cambios se confirman con transacciones SQLite; el bloqueo en `data/.estado.lock` se mantiene para coordinar operaciones que generan PDFs. El correlativo se confirma antes de generar cada documento: un fallo puede dejar un salto, nunca reutilizar un número. Las notas y cotizaciones conservan sus snapshots de precios aunque el catálogo cambie. Para respaldar una operación real, detén el servidor y copia juntos `data/cotizador.sqlite`, `data/pdf/` y `config/catalogo.json`. No borres la base para reiniciar los correlativos.
 
 ## Errores confirmados y supuestos
 
@@ -106,7 +123,7 @@ El E2E recorre los cinco pasos secuencialmente, con respuestas fijas del adaptad
 - Se bloquea la emisión con ítems incompletos para impedir una cotización parcial accidental. Editar una emitida abre una nueva revisión como borrador.
 - LibreOffice no está instalado: no se ejecutó el recálculo aleatorio opcional de 600 líneas. La paridad se valida contra los ocho oráculos sobre la planilla real.
 - La meta de respuesta en menos de cinco segundos depende de la disponibilidad de CommandCode y del modelo. El E2E prueba un adaptador fijo; no acredita latencia del proveedor. Un vencimiento del plazo devuelve HTTP 504 (`ia_timeout`) y conserva el borrador. Los errores de acceso, configuración, límite y disponibilidad se muestran con mensajes específicos sin revelar la respuesta cruda ni las credenciales.
-- No incluye enchapadas, prepintadas, Puertas Flores SPA, muebles, cuentas de usuario, base de datos, edición del catálogo ni envíos. Catálogo, resolución y precios están separados para extender líneas en el futuro.
+- No incluye enchapadas, prepintadas, Puertas Flores SPA, muebles, cuentas de usuario, una interfaz gráfica de administración ni envíos. Los tipos de familia y las reglas de precios siguen limitados a los valores documentados.
 
 ## Prueba remota con acceso restringido
 

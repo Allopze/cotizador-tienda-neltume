@@ -7,6 +7,9 @@ datos-privados/
 *.pdf
 data/catalogo.json
 data/estado*.json
+*.sqlite
+*.sqlite-*
+data/respaldo-migracion/
 data/pdf/
 .estado.lock/
 *.tmp

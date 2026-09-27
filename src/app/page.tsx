@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
 import type { Cotizacion } from '@/negocio/estado';
+import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel } from './cotizacion-panel';
 import { Historial } from './historial';
 const ejemplo = 'Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco';
@@ -12,6 +13,11 @@ export default function Page() {
   const [mensaje, setMensaje] = useState(''),
     [ocupado, setOcupado] = useState(false),
     [error, setError] = useState('');
+  const [seleccion, setSeleccion] = useState<{
+    mensaje: string;
+    contextoId: string | null;
+    opciones: OpcionCotizacion[];
+  } | null>(null);
   const [cargando, setCargando] = useState(true),
     [configurado, setConfigurado] = useState(true),
     [archivo, setArchivo] = useState<string | null>(null);
@@ -31,7 +37,7 @@ export default function Page() {
   }, []);
   useEffect(() => {
     fin.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [actual?.historial.length, ocupado]);
+  }, [actual?.historial.length, ocupado, seleccion?.opciones.length]);
   async function peticion(body: Record<string, unknown>) {
     const r = await fetch('/api/accion', {
       method: 'POST',
@@ -40,7 +46,12 @@ export default function Page() {
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error ?? 'No se pudo completar la operación.');
-    return data as { cotizacion: Cotizacion; archivo?: string; confirmar?: { id: string; numero: number } };
+    return data as {
+      cotizacion: Cotizacion;
+      archivo?: string;
+      confirmar?: { id: string; numero: number };
+      seleccion?: OpcionCotizacion[];
+    };
   }
   function confirmarAprobacion(numero: number) {
     return window.confirm(
@@ -56,6 +67,7 @@ export default function Page() {
     setActual(null);
     setArchivo(null);
     setError('');
+    setSeleccion(null);
     setMensaje('');
     input.current?.focus();
   }
@@ -88,22 +100,54 @@ export default function Page() {
     setOcupado(true);
     setError('');
     setArchivo(null);
+    const texto = mensaje;
     try {
-      let q = actual;
-      if (!q) {
-        const d = await peticion({ tipo: 'nueva' });
-        q = d.cotizacion;
-        recibir(q);
-      }
-      const d = await peticion({ tipo: 'chat', id: q.id, mensaje });
-      recibir(d.cotizacion);
+      const d = await peticion({
+        tipo: 'chat',
+        ...(actual ? { id: actual.id } : {}),
+        mensaje: texto,
+      });
       setMensaje('');
+      if (d.seleccion) {
+        setSeleccion({ mensaje: texto, contextoId: actual?.id ?? null, opciones: d.seleccion });
+        return;
+      }
+      setSeleccion(null);
+      recibir(d.cotizacion);
       if (d.archivo) descargar(d.archivo);
       if (d.confirmar && confirmarAprobacion(d.confirmar.numero)) {
         const aprobada = await peticion({ tipo: 'aprobar', id: d.confirmar.id });
         recibir(aprobada.cotizacion);
         if (aprobada.archivo) descargar(aprobada.archivo);
       }
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setOcupado(false);
+      input.current?.focus();
+    }
+  }
+  async function elegirReferencia(opcion: OpcionCotizacion) {
+    if (!seleccion || ocupado) return;
+    const pendiente = seleccion;
+    setOcupado(true);
+    setError('');
+    setArchivo(null);
+    setSeleccion(null);
+    try {
+      const d = await peticion({
+        tipo: 'chat',
+        ...(pendiente.contextoId ? { id: pendiente.contextoId } : {}),
+        objetivoId: opcion.id,
+        objetivoActualizada: opcion.actualizada,
+        mensaje: pendiente.mensaje,
+      });
+      if (d.seleccion) {
+        setSeleccion({ ...pendiente, opciones: d.seleccion });
+        return;
+      }
+      recibir(d.cotizacion);
+      if (d.archivo) descargar(d.archivo);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -180,6 +224,51 @@ export default function Page() {
                 <p>{m.texto}</p>
               </div>
             ))}
+            {seleccion && (
+              <>
+                <div className="message usuario">
+                  <span className="speaker">TÚ</span>
+                  <p>{seleccion.mensaje}</p>
+                </div>
+                <div
+                  className="reference-selection"
+                  role="group"
+                  aria-label="Seleccionar cotización anterior"
+                >
+                  <span className="speaker">NELTUME</span>
+                  <p>Encontré varias cotizaciones que podrían ser. Elige cuál quieres modificar:</p>
+                  <div className="reference-options">
+                    {seleccion.opciones.map((opcion) => {
+                      const numero = opcion.numero ? `N° ${opcion.numero}` : 'Borrador';
+                      const fecha = new Date(opcion.fecha).toLocaleDateString('es-CL', {
+                        timeZone: 'America/Santiago',
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      });
+                      return (
+                        <button
+                          type="button"
+                          key={opcion.id}
+                          disabled={ocupado}
+                          onClick={() => elegirReferencia(opcion)}
+                          aria-label={`Elegir cotización ${numero} de ${opcion.cliente}`}
+                        >
+                          <strong>
+                            {numero} · {opcion.cliente}
+                          </strong>
+                          <small>
+                            {[fecha, opcion.proyecto, opcion.comuna, opcion.detalle]
+                              .filter(Boolean)
+                              .join(' · ')}
+                          </small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </>
+            )}
             {ocupado && (
               <div className="thinking" role="status">
                 Preparando los detalles<span> · · ·</span>
@@ -206,7 +295,7 @@ export default function Page() {
                   ? 'Cotización aprobada. Crea una nueva para continuar.'
                   : 'Escribe el pedido o agrega un detalle…'
               }
-              disabled={ocupado || bloqueada || cargando}
+              disabled={ocupado || bloqueada || cargando || !!seleccion}
               rows={3}
               maxLength={6000}
               onKeyDown={(e) => {
@@ -221,7 +310,7 @@ export default function Page() {
               <button
                 type="submit"
                 aria-label="Enviar mensaje"
-                disabled={!mensaje.trim() || ocupado || bloqueada || cargando}
+                disabled={!mensaje.trim() || ocupado || bloqueada || cargando || !!seleccion}
               >
                 Enviar <span aria-hidden>↗</span>
               </button>
@@ -254,6 +343,7 @@ export default function Page() {
         ocupado={ocupado}
         abrir={(q) => {
           setActual(q);
+          setSeleccion(null);
           setArchivo(null);
           setError('');
         }}

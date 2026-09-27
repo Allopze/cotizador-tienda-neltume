@@ -1,20 +1,14 @@
-import type { Catalogo, Madera, Producto, SolicitudItem } from './tipos';
-export const normalizar = (s: string) =>
-  s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
+import type { Catalogo, Producto, SolicitudItem } from './tipos';
+import {
+  aliasMaderasConfiguradas,
+  CONFIGURACION_CATALOGO_BASE,
+  normalizarCatalogo,
+  resolverMaderaConfigurada,
+  resolverModeloConfigurado,
+} from './configuracion';
+export const normalizar = normalizarCatalogo;
 export const metros = (n: number) => (n > 10 ? n / 100 : n);
 export const normalizarMedida = (s: string) => s.toUpperCase().replace(/\s/g, '').replace('.', ',');
-const alias: Record<string, Madera> = {
-  OREGON: 'PINO OREGON',
-  PINO: 'PINO OREGON',
-  PINOOREGON: 'PINO OREGON',
-  RAULI: 'RAULI',
-  LENGA: 'LENGA',
-  MARA: 'MARA',
-};
 export type Rechazo =
   | { tipo: 'faltan_datos'; campos: string[]; disponibles: Record<string, string[]> }
   | { tipo: 'modelo_desconocido'; valor: string; disponibles: string[] }
@@ -28,7 +22,29 @@ export type Rechazo =
     }
   | { tipo: 'cantidad_invalida'; valor: number | null; disponibles: string[] };
 export type Resolucion = { ok: true; producto: Producto; cantidad: number } | { ok: false; rechazo: Rechazo };
-export function resolverItem(catalogo: Catalogo, entrada: Partial<SolicitudItem>): Resolucion {
+export interface FuenteCatalogo {
+  modelos(): string[];
+  maderas(): string[];
+  productosDeModelo(modeloNormalizado: string): Producto[];
+  resolverMadera?(valor: string): string | null;
+  resolverModelo?(valor: string): string;
+  aliasMaderas?(): Record<string, string[]>;
+  aliasModelos?(): Record<string, string[]>;
+}
+export type CatalogoConsultable = Catalogo | FuenteCatalogo;
+export const modelosCatalogo = (catalogo: CatalogoConsultable) =>
+  'productos' in catalogo
+    ? [...new Set(catalogo.productos.map((p) => p.modelo))]
+    : catalogo.modelos();
+export const maderasCatalogo = (catalogo: CatalogoConsultable) =>
+  'productos' in catalogo
+    ? [...new Set(catalogo.productos.map((p) => p.madera))]
+    : catalogo.maderas();
+export const aliasMaderasCatalogo = (catalogo: CatalogoConsultable) =>
+  'productos' in catalogo ? aliasMaderasConfiguradas(CONFIGURACION_CATALOGO_BASE) : (catalogo.aliasMaderas?.() ?? {});
+export const aliasModelosCatalogo = (catalogo: CatalogoConsultable) =>
+  'productos' in catalogo ? CONFIGURACION_CATALOGO_BASE.aliasModelos : (catalogo.aliasModelos?.() ?? {});
+export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
     modelo: entrada.modelo ?? null,
     madera: entrada.madera ?? null,
@@ -37,7 +53,6 @@ export function resolverItem(catalogo: Catalogo, entrada: Partial<SolicitudItem>
     medida: entrada.medida ?? null,
     cantidad: entrada.cantidad ?? null,
   };
-  const productos = catalogo.productos;
   const unicos = (ps: Producto[], campo: 'modelo' | 'madera' | 'medida' | 'largo') => [
     ...new Set(ps.map((p) => String(p[campo]))),
   ];
@@ -46,14 +61,29 @@ export function resolverItem(catalogo: Catalogo, entrada: Partial<SolicitudItem>
     return no({
       tipo: 'faltan_datos',
       campos: ['modelo'],
-      disponibles: { modelo: unicos(productos, 'modelo') },
+      disponibles: { modelo: modelosCatalogo(catalogo) },
     });
-  let opciones = productos.filter((p) => normalizar(p.modelo) === normalizar(s.modelo!));
+  const modelo =
+    'productos' in catalogo
+      ? resolverModeloConfigurado(s.modelo, CONFIGURACION_CATALOGO_BASE)
+      : (catalogo.resolverModelo?.(s.modelo) ?? s.modelo);
+  let opciones =
+    'productos' in catalogo
+      ? catalogo.productos.filter((p) => normalizar(p.modelo) === normalizar(modelo))
+      : catalogo.productosDeModelo(normalizar(modelo));
   if (!opciones.length)
-    return no({ tipo: 'modelo_desconocido', valor: s.modelo, disponibles: unicos(productos, 'modelo') });
+    return no({ tipo: 'modelo_desconocido', valor: s.modelo, disponibles: modelosCatalogo(catalogo) });
   const familia = opciones[0].familia,
     puerta = familia === 'PUERTA';
-  const madera = s.madera ? alias[normalizar(s.madera)] : null;
+  const madera = s.madera
+    ? 'productos' in catalogo
+      ? resolverMaderaConfigurada(s.madera, CONFIGURACION_CATALOGO_BASE) ??
+        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(s.madera!)) ??
+        null
+      : (catalogo.resolverMadera?.(s.madera) ??
+        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(s.madera!)) ??
+        null)
+    : null;
   if (s.madera && !madera)
     return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: unicos(opciones, 'madera') });
   if (madera) {

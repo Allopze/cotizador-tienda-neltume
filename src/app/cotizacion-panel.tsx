@@ -146,7 +146,9 @@ export function CotizacionPanel({ actual, ocupado, accion }: Props) {
           ? 'Cotización aprobada y bloqueada para edición.'
           : actual?.estado === 'emitida'
             ? `${actual.fechaEmision ? `Emitida el ${new Date(actual.fechaEmision).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })}. ` : ''}Si haces cambios, se creará un nuevo borrador y se conservará este PDF.`
-            : 'Revisa antes de compartir. Tú decides cuándo enviarla.'}
+            : actual?.origen
+              ? `Revisión de la cotización N° ${actual.origen}. Revisa antes de compartir; tú decides cuándo emitirla.`
+              : 'Revisa antes de compartir. Tú decides cuándo enviarla.'}
       </p>
       <div className="conditions">
         <span>Valores puestos en fábrica.</span>

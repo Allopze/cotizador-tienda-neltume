@@ -1,4 +1,5 @@
-export type Madera = 'PINO OREGON' | 'LENGA' | 'MARA' | 'RAULI';
+/** Nombre canónico de una madera configurada en config/catalogo.json. */
+export type Madera = string;
 export type Familia = 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA';
 export interface Producto {
   codigo: string;

@@ -4,6 +4,17 @@ import { clienteVacio, type SolicitudItem } from '../catalogo/tipos';
 export class LLMFijo implements LLM {
   async interpretar(c: ContextoLLM) {
     const items = structuredClone(c.borrador.items);
+    if (c.modo === 'modificacion_anterior') {
+      const cambio = c.mensaje.match(
+        /\b(?:ahora(?:\s+debe\s+ser)?|pasa\s+a|cambia\s+a|sube\s+a)\s+(?:de\s+)?(\d{1,4})\b/i,
+      );
+      if (cambio && items.length === 1)
+        return {
+          name: 'modificar_cotizacion',
+          input: { items: [{ indice: 0, cambios: { cantidad: Number(cambio[1]) } }] },
+        };
+      return { name: 'responder', input: { texto: '¿Qué cambio quieres hacer en la cotización?' } };
+    }
     const inicial: SolicitudItem = {
       modelo: 'HUILO HUILO',
       madera: 'PINO OREGON',
@@ -34,7 +45,14 @@ export class LLMFijo implements LLM {
     else if (/Huilo Huilo/i.test(c.mensaje))
       return {
         name: 'actualizar_cotizacion',
-        input: { items: [inicial], cliente: { ...clienteVacio(), nombre: 'Juan Pérez', comuna: 'Temuco' } },
+        input: {
+          items: [inicial],
+          cliente: {
+            ...clienteVacio(),
+            nombre: /Mar[ií]a\s+Jos[eé]/i.test(c.mensaje) ? 'María José' : 'Juan Pérez',
+            comuna: 'Temuco',
+          },
+        },
       };
     else return null;
     return { name: 'actualizar_cotizacion', input: { items, cliente: c.borrador.cliente } };

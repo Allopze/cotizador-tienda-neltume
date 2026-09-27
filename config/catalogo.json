@@ -1,0 +1,19 @@
+{
+  "maderas": [
+    { "nombre": "PINO OREGON", "codigo": "O", "alias": ["PINO", "OREGON"] },
+    { "nombre": "LENGA", "codigo": "L", "alias": [] },
+    { "nombre": "MARA", "codigo": "M", "alias": [] },
+    { "nombre": "RAULI", "codigo": "R", "alias": ["RAULÍ"] }
+  ],
+  "familiasPorModelo": {
+    "MARCO": "MARCO",
+    "PIEZAS T": "PIEZAS_T",
+    "ENDOLADO": "MOLDURA",
+    "GUARDAPOLVO": "MOLDURA",
+    "PILASTRA": "MOLDURA"
+  },
+  "aliasModelos": {
+    "HUILO HUILO": ["WILLOW WILLOW"],
+    "PANGUIPULLI": ["PANGIPULLI"]
+  }
+}
