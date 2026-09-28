@@ -2,7 +2,7 @@ import Database from 'better-sqlite3';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-const VERSION_ESQUEMA = 2;
+const VERSION_ESQUEMA = 5;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -49,6 +49,20 @@ function crearEsquema(db: Database.Database) {
   if (version > VERSION_ESQUEMA)
     throw new Error(`La base SQLite usa una versión de esquema más nueva (${version}).`);
   if (version === VERSION_ESQUEMA) return;
+  if (version < 4) crearEsquemaHasta4(db, version);
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ajustes (
+        clave TEXT PRIMARY KEY,
+        valor_json TEXT NOT NULL,
+        actualizada TEXT NOT NULL
+      );
+      PRAGMA user_version = ${VERSION_ESQUEMA};
+    `);
+  }).immediate();
+}
+
+function crearEsquemaHasta4(db: Database.Database, version: number) {
 
   if (version === 1) {
     db.transaction(() => {
@@ -58,7 +72,74 @@ function crearEsquema(db: Database.Database) {
           configuracion_json TEXT NOT NULL
         );
         INSERT OR IGNORE INTO catalogo_configuracion (id, configuracion_json) VALUES (1, '{}');
-        PRAGMA user_version = 2;
+        CREATE TABLE IF NOT EXISTS productos_adicionales (
+          codigo TEXT PRIMARY KEY,
+          modelo TEXT NOT NULL,
+          modelo_normalizado TEXT NOT NULL,
+          familia TEXT NOT NULL CHECK (familia IN ('PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA')),
+          tipo TEXT,
+          madera TEXT NOT NULL,
+          medida TEXT NOT NULL,
+          ancho_min REAL,
+          ancho_max REAL,
+          largo REAL NOT NULL,
+          precio_neto REAL NOT NULL CHECK (precio_neto > 0),
+          descripcion TEXT NOT NULL,
+          fila_origen INTEGER NOT NULL DEFAULT 0,
+          creada TEXT NOT NULL,
+          UNIQUE (modelo_normalizado, madera, medida, largo)
+        );
+        CREATE INDEX IF NOT EXISTS idx_producto_adicional_modelo
+          ON productos_adicionales(modelo_normalizado, creada);
+        CREATE TABLE IF NOT EXISTS productos_pendientes (
+          id TEXT PRIMARY KEY,
+          version INTEGER NOT NULL,
+          version_catalogo TEXT NOT NULL,
+          borrador_json TEXT NOT NULL,
+          mensajes_json TEXT NOT NULL,
+          propuesta_json TEXT,
+          actualizada TEXT NOT NULL,
+          expira TEXT NOT NULL
+        );
+        PRAGMA user_version = 4;
+      `);
+    }).immediate();
+    return;
+  }
+
+  if (version === 2 || version === 3) {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS productos_adicionales (
+          codigo TEXT PRIMARY KEY,
+          modelo TEXT NOT NULL,
+          modelo_normalizado TEXT NOT NULL,
+          familia TEXT NOT NULL CHECK (familia IN ('PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA')),
+          tipo TEXT,
+          madera TEXT NOT NULL,
+          medida TEXT NOT NULL,
+          ancho_min REAL,
+          ancho_max REAL,
+          largo REAL NOT NULL,
+          precio_neto REAL NOT NULL CHECK (precio_neto > 0),
+          descripcion TEXT NOT NULL,
+          fila_origen INTEGER NOT NULL DEFAULT 0,
+          creada TEXT NOT NULL,
+          UNIQUE (modelo_normalizado, madera, medida, largo)
+        );
+        CREATE INDEX IF NOT EXISTS idx_producto_adicional_modelo
+          ON productos_adicionales(modelo_normalizado, creada);
+        CREATE TABLE IF NOT EXISTS productos_pendientes (
+          id TEXT PRIMARY KEY,
+          version INTEGER NOT NULL,
+          version_catalogo TEXT NOT NULL,
+          borrador_json TEXT NOT NULL,
+          mensajes_json TEXT NOT NULL,
+          propuesta_json TEXT,
+          actualizada TEXT NOT NULL,
+          expira TEXT NOT NULL
+        );
+        PRAGMA user_version = 4;
       `);
     }).immediate();
     return;
@@ -87,6 +168,37 @@ function crearEsquema(db: Database.Database) {
         configuracion_json TEXT NOT NULL
       );
       INSERT OR IGNORE INTO catalogo_configuracion (id, configuracion_json) VALUES (1, '{}');
+
+      CREATE TABLE IF NOT EXISTS productos_adicionales (
+        codigo TEXT PRIMARY KEY,
+        modelo TEXT NOT NULL,
+        modelo_normalizado TEXT NOT NULL,
+        familia TEXT NOT NULL CHECK (familia IN ('PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA')),
+        tipo TEXT,
+        madera TEXT NOT NULL,
+        medida TEXT NOT NULL,
+        ancho_min REAL,
+        ancho_max REAL,
+        largo REAL NOT NULL,
+        precio_neto REAL NOT NULL CHECK (precio_neto > 0),
+        descripcion TEXT NOT NULL,
+        fila_origen INTEGER NOT NULL DEFAULT 0,
+        creada TEXT NOT NULL,
+        UNIQUE (modelo_normalizado, madera, medida, largo)
+      );
+      CREATE INDEX IF NOT EXISTS idx_producto_adicional_modelo
+        ON productos_adicionales(modelo_normalizado, creada);
+
+      CREATE TABLE IF NOT EXISTS productos_pendientes (
+        id TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        version_catalogo TEXT NOT NULL,
+        borrador_json TEXT NOT NULL,
+        mensajes_json TEXT NOT NULL,
+        propuesta_json TEXT,
+        actualizada TEXT NOT NULL,
+        expira TEXT NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS productos_catalogo (
         codigo TEXT PRIMARY KEY,
@@ -231,7 +343,7 @@ function crearEsquema(db: Database.Database) {
         sha256_estado TEXT NOT NULL,
         cantidad_cotizaciones INTEGER NOT NULL
       );
-      PRAGMA user_version = ${VERSION_ESQUEMA};
+      PRAGMA user_version = 4;
     `);
   }).immediate();
 }

@@ -102,6 +102,10 @@ p {
   align-items: center;
   justify-content: space-between;
 }
+.heading-actions {
+  display: flex;
+  gap: 9px;
+}
 .eyebrow {
   font-size: 9px;
   letter-spacing: 2px;

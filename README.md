@@ -2,17 +2,21 @@
 
 Demo local para Paula y Paulette: pedido por chat, cotización revisable, PDF con correlativo y nota de pedido a fábrica al aprobar. Solo puertas sólidas y accesorios. No envía mensajes ni documentos a clientes.
 
-## Arranque en tres comandos
+## Arranque inicial
 
 Requisitos: Node.js 22.13+ (verificado con 24), npm y Google Chrome/Chromium. Coloca la planilla oficial en `datos-privados/COTIZADOR_2026.xlsx`. Las cinco planillas y la transcripción entregadas ya quedaron resguardadas en `datos-privados/`, sin modificar su contenido.
 
-Crea `.env.local` a partir de `.env.example` e ingresa tu propia clave de API de CommandCode antes de usar el chat. Sin clave, la pantalla funciona y explica cómo configurarla; no se simula una respuesta real.
+Crea `.env.local` a partir de `.env.example`, agrega tu clave de API de CommandCode y genera un secreto para las sesiones con `openssl rand -base64 32`. En producción, configura también `BETTER_AUTH_URL` con el origen HTTPS público. Sin clave de IA, el login y la pantalla siguen disponibles, pero el chat explica cómo configurar el asistente.
 
 ```sh
 npm install
 npm run importar -- datos-privados/COTIZADOR_2026.xlsx
+npm run auth:migrar
+npm run usuarios -- crear admin@example.com Admin --admin
 npm run dev
 ```
+
+Reemplaza `admin@example.com` por el correo real de la persona responsable. El comando solicita la contraseña sin mostrarla ni incluirla en el historial de la terminal. Crea las demás cuentas con `npm run usuarios -- crear correo@neltume.cl Nombre`; también permite `desactivar`, `activar` y `restablecer-clave`. La primera cuenta debe llevar `--admin` para habilitar la gestión local de cuentas. Si la instalación todavía tiene `estado.json` o `catalogo.json` antiguos, ejecuta primero `npm run migrar:sqlite`.
 
 Abre [http://127.0.0.1:3000](http://127.0.0.1:3000). Los scripts de desarrollo y producción escuchan solo en `127.0.0.1`.
 
@@ -23,7 +27,9 @@ Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium
 | Variable           | Uso                                                                                                                                                                                                                         |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CMD_API_KEY`      | Clave propia de CommandCode, únicamente en `.env.local`.                                                                                                                                                                    |
-| `CMD_MODEL`        | Modelo servido por CommandCode; predeterminado `claude-sonnet-5`. Claude usa `/messages`; Laguna y los otros modelos de chat usan `/chat/completions`. El modelo debe admitir herramientas y estar habilitado en tu cuenta. |
+| `BETTER_AUTH_SECRET` | Secreto aleatorio de al menos 32 caracteres para sesiones; obligatorio en producción. |
+| `BETTER_AUTH_URL` | Origen del cotizador; en producción debe ser HTTPS y coincidir con el hostname permitido. |
+| `CMD_MODEL`        | Modelo inicial de CommandCode mientras no se guarde otro desde **Configuración**; predeterminado `claude-sonnet-5`. Claude usa `/messages`; Laguna y los otros modelos de chat usan `/chat/completions`. El modelo debe admitir herramientas y estar habilitado en tu cuenta. |
 | `CMD_TIMEOUT_MS`   | Plazo por solicitud de IA en milisegundos; predeterminado 60000, configurable entre 1000 y 120000. Sin reintentos automáticos.                                                                                              |
 | `CHROMIUM_PATH`    | Ruta opcional a Chrome/Chromium.                                                                                                                                                                                            |
 | `NELTUME_PLANILLA` | Ruta alternativa a la planilla real para importación y tests.                                                                                                                                                               |
@@ -33,7 +39,11 @@ Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium
 | `NELTUME_CATALOGO` | Ruta del JSON de catálogo anterior, usada solo por `npm run migrar:sqlite`; predeterminado `data/catalogo.json`.                                                                                                            |
 | `NELTUME_HOSTS`    | Hostnames adicionales permitidos, separados por coma (p. ej. el de Cloudflare Access). Siempre se aceptan `127.0.0.1`, `localhost` y `[::1]`; cualquier otro Host recibe 403 (defensa contra DNS rebinding).                |
 
-CommandCode es el único proveedor de IA configurado. Se conserva `@anthropic-ai/sdk` como cliente para modelos Claude; los otros modelos usan Chat Completions. Ambos apuntan exclusivamente a CommandCode; no se llama directamente a Anthropic ni se usan su clave, token o URL de entorno. La selección del modelo no cambia el proveedor.
+### Modelo de IA desde la interfaz
+
+El botón con el nombre del modelo, arriba a la derecha, abre **Configuración del asistente**. Ahí se escribe el modelo de CommandCode; la clave sigue solo en `.env.local`. La elección se guarda en la tabla `ajustes` de SQLite y aplica al chat y al alta de productos.
+
+CommandCode es el único proveedor. Se conserva `@anthropic-ai/sdk` como cliente para modelos Claude; los otros modelos usan Chat Completions. Ambos apuntan exclusivamente a CommandCode; no se llama directamente a Anthropic ni se usan su clave, token o URL de entorno. La selección del modelo no cambia el proveedor.
 
 El ajuste y el IVA se configuran en `REGLAS`, en `src/negocio/precios.ts`: +25 % e IVA 19 %. La tasa mostrada en pantalla y en los PDF se deriva de `REGLAS`. La nota de pedido usa ajuste cero, manteniendo el mismo redondeo por unidad.
 
@@ -58,16 +68,21 @@ Aprobar es irreversible: solo se puede aprobar una cotización ya emitida, y tan
 - `src/catalogo/resolver.ts`: modelos, alias, medidas, rangos y rechazos determinísticos.
 - `src/negocio/precios.ts`: precios, redondeo, IVA y validaciones.
 - `src/asistente/llm.ts`: adaptador de CommandCode y proyección explícita del contexto sin precios. Usa el [Provider API de CommandCode](https://commandcode.ai/docs/provider) con `/messages` para Claude y `/chat/completions` para los otros modelos de chat, con una única herramienta por turno y validación estricta con Zod. No se reenvían montos, catálogo completo, historial de precios ni respuestas de cálculo.
+- `src/servidor/alta-catalogo.ts`: conversación de alta de producto, extracción de atributos, validación del precio explícito y confirmación transaccional.
+- `src/app/api/catalogo/route.ts`: endpoint interno para proponer y confirmar productos nuevos.
 - `src/asistente/preguntas.ts`: preguntas determinísticas a partir de los rechazos, sin segunda llamada al modelo.
 - `src/servidor/`: flujo, persistencia, plantillas HTML y PDF A4 con Playwright.
+- `src/servidor/autenticacion.ts`: sesiones y verificación de acceso con Better Auth sobre la misma base SQLite.
+- `scripts/usuarios.ts`: alta, desactivación, activación y restablecimiento de cuentas desde terminal.
 - `src/app/`: pantalla y [Route Handlers de Next.js](https://nextjs.org/docs/app/api-reference/file-conventions/route).
 
-En una cotización nueva, el LLM extrae la lista completa de solicitudes y los datos del cliente; al modificar una anterior devuelve solo los cambios pedidos. El servidor puede resolver una referencia por número, nombre, proyecto o comuna con búsqueda local insensible a tildes. Si encuentra varias, muestra opciones sin modificarlas. Todo precio proviene del catálogo y nunca se envía al LLM. La consulta a la IA se hace fuera del bloqueo del estado: si la cotización cambió mientras tanto, la respuesta no se aplica y se pide reenviar el mensaje. Una salida inválida no modifica las solicitudes, el cliente ni los montos y responde «No entendí, ¿puedes reformularlo?».
+En una cotización nueva, el LLM extrae la lista completa de solicitudes y los datos del cliente; al modificar una anterior devuelve solo los cambios pedidos. El servidor puede resolver una referencia por número, nombre, proyecto o comuna con búsqueda local insensible a tildes. Si encuentra varias, muestra opciones sin modificarlas. En el flujo de cotización, los montos siempre se calculan en el servidor y no se envían al LLM. En el alta de producto, la IA extrae solo atributos; el servidor interpreta el precio neto desde el texto original y exige confirmación. La consulta a la IA se hace fuera del bloqueo del estado: si la cotización cambió mientras tanto, la respuesta no se aplica y se pide reenviar el mensaje. Una salida inválida no modifica las solicitudes, el cliente ni los montos y responde «No entendí, ¿puedes reformularlo?».
 
 ## Archivos y persistencia
 
 - `datos-privados/`: originales confidenciales, excluidos de Git junto con todo `*.xlsx`.
 - `data/cotizador.sqlite`: base activa con catálogo normalizado, cotizaciones, solicitudes e historial, montos calculados, snapshots de productos, correlativos y notas de pedido. Se excluye de Git junto con sus archivos WAL/SHM.
+- `productos_adicionales` en SQLite: productos confirmados desde el alta con IA. El precio se extrae del texto original del usuario en el servidor; no se envían precios existentes al modelo.
 - `data/respaldo-migracion/<fecha>/`: copia privada e inactiva de los JSON anteriores, creada después de verificar la migración y excluida de Git.
 - [Reporte de importación](data/reporte-importacion.md): 29 correcciones, cero exclusiones y errores de plantilla, sin costos ni márgenes.
 - [Verificación de fuentes](data/verificacion-fuentes.md): cinco planillas, comparación de columnas permitidas con rev-4F y lectura de las siete páginas de la transcripción. Para repetir la revisión de planillas: `npx tsx scripts/verificar-fuentes.ts`.
@@ -86,6 +101,8 @@ No hay un panel de administración: el catálogo se mantiene con la planilla y `
 
 Ejemplo de entrada para una madera: `{ "nombre": "ROBLE", "codigo": "RB", "alias": ["ROBLE AMERICANO"] }`. Configuración y catálogo aplicados quedan en la base SQLite; el JSON es la fuente editable para la próxima importación. El cambio de esquema añade esta configuración de forma compatible al abrir una base existente.
 
+En la aplicación también puedes pulsar **Agregar producto** y describirlo en lenguaje natural. Indica familia, modelo, madera, medidas y precio neto unitario; la IA pregunta los datos que falten. El precio debe aparecer explícitamente en el texto. El servidor genera un código, presenta una vista previa y guarda el producto solo después de tu confirmación. Estos productos permanecen en SQLite y sobreviven a futuras importaciones de Excel; si la planilla contiene el mismo código o combinación de atributos, se rechaza la importación completa.
+
 Para actualizar una instalación que todavía tiene `catalogo.json` o `estado.json`, detén el servidor y ejecuta `npm run migrar:sqlite`. El comando valida una base temporal, conserva los JSON en un respaldo fechado y no sobrescribe una base SQLite existente que no haya sido migrada. No inicializa una base vacía ignorando JSON anteriores. En una instalación nueva, `npm run importar -- datos-privados/COTIZADOR_2026.xlsx` carga catálogo y configuración directamente en SQLite.
 
 Los cambios se confirman con transacciones SQLite; el bloqueo en `data/.estado.lock` se mantiene para coordinar operaciones que generan PDFs. El correlativo se confirma antes de generar cada documento: un fallo puede dejar un salto, nunca reutilizar un número. Las notas y cotizaciones conservan sus snapshots de precios aunque el catálogo cambie. Para respaldar una operación real, detén el servidor y copia juntos `data/cotizador.sqlite`, `data/pdf/` y `config/catalogo.json`. No borres la base para reiniciar los correlativos.
@@ -100,7 +117,7 @@ Se corrigieron por consistencia, no por una lista fija de filas:
 - `C8:C32`: búsquedas limitadas a fila 603.
 - `Q8`: +25 % solo en la primera línea, frente al −25 % de rev-4F.
 
-Supuestos: +25 % uniforme, medidas de la puerta (sin conversión de vano), cliente opcional, un usuario sin login y ninguna entrega automática. Los montos visibles se redondean a pesos enteros; esa es la diferencia intencional con el cálculo decimal de Excel. El precio neto importado conserva cuatro decimales.
+Supuestos: +25 % uniforme, medidas de la puerta (sin conversión de vano), cliente opcional, usuarios autenticados con un espacio compartido y ninguna entrega automática. No hay registro ni recuperación por correo: el responsable administra las cuentas desde terminal. Todas las cuentas pueden operar las mismas cotizaciones y catálogo. Los montos visibles se redondean a pesos enteros; esa es la diferencia intencional con el cálculo decimal de Excel. El precio neto importado conserva cuatro decimales.
 
 ## Verificación
 
@@ -123,8 +140,8 @@ El E2E recorre los cinco pasos secuencialmente, con respuestas fijas del adaptad
 - Se bloquea la emisión con ítems incompletos para impedir una cotización parcial accidental. Editar una emitida abre una nueva revisión como borrador.
 - LibreOffice no está instalado: no se ejecutó el recálculo aleatorio opcional de 600 líneas. La paridad se valida contra los ocho oráculos sobre la planilla real.
 - La meta de respuesta en menos de cinco segundos depende de la disponibilidad de CommandCode y del modelo. El E2E prueba un adaptador fijo; no acredita latencia del proveedor. Un vencimiento del plazo devuelve HTTP 504 (`ia_timeout`) y conserva el borrador. Los errores de acceso, configuración, límite y disponibilidad se muestran con mensajes específicos sin revelar la respuesta cruda ni las credenciales.
-- No incluye enchapadas, prepintadas, Puertas Flores SPA, muebles, cuentas de usuario, una interfaz gráfica de administración ni envíos. Los tipos de familia y las reglas de precios siguen limitados a los valores documentados.
+- No incluye enchapadas, prepintadas, Puertas Flores SPA, muebles, registro público, recuperación de contraseñas por correo, un panel de administración ni envíos. Los tipos de familia y las reglas de precios siguen limitados a los valores documentados.
 
 ## Prueba remota con acceso restringido
 
-No hay túnel configurado. Sigue la [guía oficial de aplicaciones protegidas con Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/). Si se necesita una demostración remota, crea en Cloudflare Zero Trust una aplicación **Access** para el hostname, con una política Allow limitada a los correos autorizados y denegación para los demás. Después configura un Cloudflare Tunnel cuyo servicio sea `http://127.0.0.1:3000`, asociado a ese mismo hostname, y agrega ese hostname a `NELTUME_HOSTS` en `.env.local` (si no, la app responde 403). Verifica en una ventana privada que Access exija autenticación antes de compartir la URL. No uses un Quick Tunnel público ni expongas el puerto directamente: la demo no tiene login propio.
+No hay túnel configurado. Sigue la [guía oficial de aplicaciones protegidas con Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/). Para una demostración remota, crea en Cloudflare Zero Trust una aplicación **Access** para el hostname, con una política Allow limitada a los correos autorizados. Después configura un Cloudflare Tunnel cuyo servicio sea `http://127.0.0.1:3000`, asociado a ese hostname; configura `NELTUME_HOSTS` con el hostname y `BETTER_AUTH_URL` con su origen `https://`. La aplicación exige además una cuenta local. No uses un Quick Tunnel público ni expongas el puerto directamente.

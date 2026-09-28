@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import { normalizar, type FuenteCatalogo } from '../catalogo/resolver';
+import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/resolver';
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
@@ -40,6 +40,9 @@ const convertirProducto = (p: FilaProducto): Producto => ({
   filaOrigen: p.fila_origen,
 });
 
+const claveProducto = (producto: Pick<Producto, 'modelo' | 'madera' | 'medida' | 'largo'>) =>
+  `${normalizar(producto.modelo)}|${normalizar(producto.madera)}|${normalizarMedida(producto.medida)}|${Math.round(producto.largo * 1_000_000)}`;
+
 export function guardarCatalogo(
   db: Database.Database,
   catalogo: Catalogo,
@@ -57,6 +60,12 @@ export function guardarCatalogo(
     )
   `);
   db.transaction(() => {
+    const metaAnterior = db.prepare('SELECT fecha FROM catalogo_meta WHERE id = 1').get() as
+      | { fecha: string }
+      | undefined;
+    const fecha = new Date(
+      Math.max(Date.parse(catalogo.fecha), metaAnterior ? Date.parse(metaAnterior.fecha) + 1 : 0),
+    ).toISOString();
     db.prepare('DELETE FROM productos_catalogo').run();
     catalogo.productos.forEach((p, orden) =>
       insertar.run({
@@ -76,6 +85,20 @@ export function guardarCatalogo(
         fila_origen: p.filaOrigen,
       }),
     );
+    const manuales = db
+      .prepare('SELECT codigo, modelo, madera, medida, largo FROM productos_adicionales')
+      .all() as Pick<Producto, 'codigo' | 'modelo' | 'madera' | 'medida' | 'largo'>[];
+    const codigosManuales = new Set(manuales.map((p) => p.codigo.toUpperCase()));
+    const clavesManuales = new Set(manuales.map(claveProducto));
+    if (
+      catalogo.productos.some(
+        (p) => codigosManuales.has(p.codigo.toUpperCase()) || clavesManuales.has(claveProducto(p)),
+      )
+    )
+      throw new Error('La planilla repite un código o producto agregado manualmente.');
+    const cantidad = db
+      .prepare('SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n')
+      .get() as { n: number };
     db.prepare(`
       INSERT INTO catalogo_meta (id, fuente, sha256, fecha, cantidad_productos)
       VALUES (1, ?, ?, ?, ?)
@@ -84,7 +107,7 @@ export function guardarCatalogo(
         sha256 = excluded.sha256,
         fecha = excluded.fecha,
         cantidad_productos = excluded.cantidad_productos
-    `).run(catalogo.fuente, catalogo.sha256, catalogo.fecha, catalogo.productos.length);
+    `).run(catalogo.fuente, catalogo.sha256, fecha, cantidad.n);
     db.prepare(`
       INSERT INTO catalogo_configuracion (id, configuracion_json) VALUES (1, ?)
       ON CONFLICT(id) DO UPDATE SET configuracion_json = excluded.configuracion_json
@@ -126,9 +149,20 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       : null;
   }
 
+  get version(): string | null {
+    const metadata = this.metadata;
+    return metadata ? `${metadata.sha256}:${metadata.fecha}` : null;
+  }
+
   modelos() {
     return this.db
-      .prepare('SELECT modelo FROM productos_catalogo GROUP BY modelo ORDER BY MIN(orden)')
+      .prepare(`
+        SELECT modelo FROM (
+          SELECT modelo, orden AS orden, 0 AS fuente FROM productos_catalogo
+          UNION ALL
+          SELECT modelo, rowid AS orden, 1 AS fuente FROM productos_adicionales
+        ) GROUP BY modelo ORDER BY MIN(fuente), MIN(orden)
+      `)
       .all()
       .map((r) => (r as { modelo: string }).modelo);
   }
@@ -138,7 +172,15 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       .prepare(`
         SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
                largo, precio_neto, descripcion, fila_origen
-        FROM productos_catalogo ORDER BY orden
+        FROM (
+          SELECT 0 AS fuente, orden, codigo, modelo, familia, tipo, madera, medida,
+                 ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+          FROM productos_catalogo
+          UNION ALL
+          SELECT 1 AS fuente, rowid AS orden, codigo, modelo, familia, tipo, madera, medida,
+                 ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+          FROM productos_adicionales
+        ) ORDER BY fuente, orden
       `)
       .all() as FilaProducto[];
     return filas.map(convertirProducto);
@@ -146,7 +188,13 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   maderas() {
     return this.db
-      .prepare('SELECT madera FROM productos_catalogo GROUP BY madera ORDER BY MIN(orden)')
+      .prepare(`
+        SELECT madera FROM (
+          SELECT madera, orden AS orden, 0 AS fuente FROM productos_catalogo
+          UNION ALL
+          SELECT madera, rowid AS orden, 1 AS fuente FROM productos_adicionales
+        ) GROUP BY madera ORDER BY MIN(fuente), MIN(orden)
+      `)
       .all()
       .map((r) => (r as { madera: Madera }).madera);
   }
@@ -184,9 +232,16 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       .prepare(`
         SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
                largo, precio_neto, descripcion, fila_origen
-        FROM productos_catalogo
-        WHERE modelo_normalizado = ?
-        ORDER BY orden
+        FROM (
+          SELECT modelo_normalizado, 0 AS fuente, orden, codigo, modelo, familia, tipo, madera,
+                 medida, ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+          FROM productos_catalogo
+          UNION ALL
+          SELECT modelo_normalizado, 1 AS fuente, rowid AS orden, codigo, modelo, familia, tipo, madera,
+                 medida, ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+          FROM productos_adicionales
+        ) WHERE modelo_normalizado = ?
+        ORDER BY fuente, orden
       `)
       .all(modeloNormalizado) as FilaProducto[];
     return filas.map(convertirProducto);
@@ -198,8 +253,77 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
                largo, precio_neto, descripcion, fila_origen
         FROM productos_catalogo WHERE codigo = ?
+        UNION ALL
+        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
+               largo, precio_neto, descripcion, fila_origen
+        FROM productos_adicionales WHERE codigo = ?
+        LIMIT 1
       `)
-      .get(codigo) as FilaProducto | undefined;
+      .get(codigo, codigo) as FilaProducto | undefined;
     return fila ? convertirProducto(fila) : undefined;
+  }
+
+  productoDuplicado(producto: Producto) {
+    const porCodigo = this.buscarPorCodigo(producto.codigo);
+    if (porCodigo) return porCodigo;
+    return (
+      this.productosDeModelo(normalizar(producto.modelo)).find(
+        (existente) =>
+          normalizar(existente.madera) === normalizar(producto.madera) &&
+            normalizarMedida(existente.medida) === normalizarMedida(producto.medida) &&
+            Math.abs(existente.largo - producto.largo) < 0.000001,
+      ) ?? null
+    );
+  }
+
+  familiaExistente(modelo: string) {
+    return this.productosDeModelo(normalizar(modelo))[0]?.familia ?? null;
+  }
+
+  agregarProductoManual(producto: Producto, versionEsperada: string, pendienteId?: string) {
+    return this.db.transaction(() => {
+      if (!this.version || this.version !== versionEsperada)
+        throw new Error('El catálogo cambió mientras revisabas el producto. Vuelve a generar la propuesta.');
+      const familia = this.familiaExistente(producto.modelo);
+      if (familia && familia !== producto.familia)
+        throw new Error('Ese modelo ya existe con otra familia. Usa un nombre de modelo distinto.');
+      if (this.productoDuplicado(producto)) throw new Error('Ya existe un producto con esos atributos.');
+      const creada = new Date().toISOString();
+      this.db
+        .prepare(`
+          INSERT INTO productos_adicionales (
+            codigo, modelo, modelo_normalizado, familia, tipo, madera, medida, ancho_min, ancho_max,
+            largo, precio_neto, descripcion, fila_origen, creada
+          ) VALUES (
+            @codigo, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida, @ancho_min, @ancho_max,
+            @largo, @precio_neto, @descripcion, 0, @creada
+          )
+        `)
+        .run({
+          codigo: producto.codigo,
+          modelo: producto.modelo,
+          modelo_normalizado: normalizar(producto.modelo),
+          familia: producto.familia,
+          tipo: producto.tipo,
+          madera: producto.madera,
+          medida: producto.medida,
+          ancho_min: producto.anchoMin,
+          ancho_max: producto.anchoMax,
+          largo: producto.largo,
+          precio_neto: producto.precioNeto,
+          descripcion: producto.descripcion,
+          creada,
+        });
+      const cantidad = this.db
+        .prepare('SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n')
+        .get() as { n: number };
+      const fechaAnterior = this.metadata?.fecha;
+      const fecha = new Date(Math.max(Date.now(), fechaAnterior ? Date.parse(fechaAnterior) + 1 : 0)).toISOString();
+      this.db
+        .prepare('UPDATE catalogo_meta SET fecha = ?, cantidad_productos = ? WHERE id = 1')
+        .run(fecha, cantidad.n);
+      if (pendienteId) this.db.prepare('DELETE FROM productos_pendientes WHERE id = ?').run(pendienteId);
+      return producto;
+    }).immediate();
   }
 }

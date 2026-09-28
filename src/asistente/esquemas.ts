@@ -57,6 +57,19 @@ export const modificarSchema = z
 export type ModificacionCotizacion = z.infer<typeof modificarSchema>;
 export const aprobarSchema = z.object({ numero: z.number().int().positive() }).strict();
 export const responderSchema = z.object({ texto: z.string().min(1).max(2000) }).strict();
+/** Extracción de atributos para un producto nuevo. El precio nunca se solicita al LLM. */
+export const atributosProductoSchema = z
+  .object({
+    modelo: z.string().trim().min(1).max(100).nullable(),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).nullable(),
+    madera: z.string().trim().min(1).max(80).nullable(),
+    tipo: z.string().trim().max(120).nullable(),
+    medida: z.string().trim().max(60).nullable(),
+    anchoMin: z.number().finite().nullable(),
+    anchoMax: z.number().finite().nullable(),
+    largo: z.number().finite().nullable(),
+  })
+  .strict();
 export const salidaSchema = z.discriminatedUnion('name', [
   z.object({ name: z.literal('actualizar_cotizacion'), input: actualizarSchema }).strict(),
   z.object({ name: z.literal('modificar_cotizacion'), input: modificarSchema }).strict(),

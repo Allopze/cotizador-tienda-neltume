@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 const config: NextConfig = {
   devIndicators: false,
-  serverExternalPackages: ['playwright', 'proper-lockfile', 'better-sqlite3'],
+  serverExternalPackages: ['playwright', 'proper-lockfile', 'better-sqlite3', 'better-auth'],
   outputFileTracingExcludes: { '/*': ['./datos-privados/**', './**/*.xlsx', './data/test-*/**'] },
 };
 export default config;

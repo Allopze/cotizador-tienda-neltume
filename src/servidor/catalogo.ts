@@ -7,7 +7,11 @@ export async function cargarCatalogo(): Promise<RepositorioCatalogoSqlite> {
     const db = abrirBaseDatos();
     const catalogo = new RepositorioCatalogoSqlite(db);
     const metadata = catalogo.metadata;
-    const cantidad = (db.prepare('SELECT COUNT(*) AS n FROM productos_catalogo').get() as { n: number }).n;
+    const cantidad = (
+      db
+        .prepare('SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n')
+        .get() as { n: number }
+    ).n;
     if (!metadata || !cantidad || metadata.cantidadProductos !== cantidad)
       throw new Error('catálogo ausente o inconsistente');
     return catalogo;

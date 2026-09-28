@@ -5,6 +5,7 @@ import { Almacen } from '../src/servidor/almacen';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, pesos } from '../src/negocio/precios';
+import { iniciarSesion } from './login-e2e';
 async function textoPdf(ruta: string) {
   const task = getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: true });
   const doc = await task.promise;
@@ -27,7 +28,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     { producto: puerta, cantidad: 3 },
     { producto: marco, cantidad: 3 },
   ]);
-  await page.goto('/');
+  await iniciarSesion(page);
   async function enviar(texto: string) {
     await page.getByLabel('Escribe tu pedido').fill(texto);
     await page.getByRole('button', { name: 'Enviar mensaje' }).click();
@@ -90,7 +91,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
 });
 
 test('modifica una cotización anterior por nombre y pide elegir entre coincidencias', async ({ page }) => {
-  await page.goto('/');
+  await iniciarSesion(page);
   const enviar = async (texto: string) => {
     await page.getByLabel('Escribe tu pedido').fill(texto);
     await page.getByRole('button', { name: 'Enviar mensaje' }).click();

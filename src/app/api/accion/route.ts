@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { Servicio, ErrorUsuario } from '@/servidor/servicio';
 import { Almacen, ErrorOcupado } from '@/servidor/almacen';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
-import { rechazoAcceso } from '@/servidor/acceso';
-import { CommandCodeLLM, type LLM } from '@/asistente/llm';
+import { rechazoSesion } from '@/servidor/acceso-autenticado';
+import type { LLM } from '@/asistente/llm';
+import { asistenteConfigurado, crearLLM } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -25,12 +26,12 @@ const accionSchema = z.discriminatedUnion('tipo', [
 ]);
 const modoFijo = () => process.env.NELTUME_LLM === 'fijo' && process.env.NELTUME_TEST_MODE === '1';
 export async function GET(req: Request) {
-  const rechazo = rechazoAcceso(req);
+  const rechazo = await rechazoSesion(req);
   if (rechazo) return rechazo;
   try {
     const estado = await new Almacen().leer();
     return Response.json(
-      { cotizaciones: estado.cotizaciones, asistenteConfigurado: !!process.env.CMD_API_KEY || modoFijo() },
+      { cotizaciones: estado.cotizaciones, asistenteConfigurado: modoFijo() || asistenteConfigurado() },
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (e) {
@@ -40,7 +41,7 @@ export async function GET(req: Request) {
   }
 }
 export async function POST(req: Request) {
-  const rechazo = rechazoAcceso(req, { escritura: true });
+  const rechazo = await rechazoSesion(req, { escritura: true });
   if (rechazo) return rechazo;
   let cuerpo: unknown;
   try {
@@ -52,11 +53,11 @@ export async function POST(req: Request) {
   if (!parsed.success) return Response.json({ error: 'Solicitud inválida.' }, { status: 400 });
   try {
     const catalogo = await cargarCatalogo();
-    let llm: LLM = new CommandCodeLLM();
+    let llm: LLM;
     if (modoFijo()) {
       const { LLMFijo } = await import('@/asistente/fijo');
       llm = new LLMFijo();
-    }
+    } else llm = crearLLM();
     return Response.json(await new Servicio(catalogo, llm).ejecutar(parsed.data));
   } catch (e) {
     if (e instanceof ErrorMigracionRequerida)

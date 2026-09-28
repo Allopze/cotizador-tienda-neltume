@@ -1,10 +1,10 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { directorioDatos } from '@/servidor/almacen';
-import { rechazoAcceso } from '@/servidor/acceso';
+import { rechazoSesion } from '@/servidor/acceso-autenticado';
 export const runtime = 'nodejs';
 export async function GET(req: Request, ctx: { params: Promise<{ archivo: string }> }) {
-  const rechazo = rechazoAcceso(req);
+  const rechazo = await rechazoSesion(req);
   if (rechazo) return rechazo;
   const { archivo } = await ctx.params;
   if (!/^(cotizacion|nota-pedido)-\d+\.pdf$/.test(archivo))
