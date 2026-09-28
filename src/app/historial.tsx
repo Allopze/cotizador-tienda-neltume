@@ -4,7 +4,7 @@ import { etiquetaEstado, type EstadoCotizacion, type ResumenCotizacion } from '@
 import { pesos } from '@/negocio/precios';
 import type { Listado } from './contrato';
 import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, plural } from './formato';
-import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
+import { esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
 
 type Filtro = 'todas' | EstadoCotizacion;
 const FILTROS: [Filtro, string][] = [
@@ -27,6 +27,17 @@ const SIN_FILTROS: Filtros = { q: '', estado: 'todas', desde: '', hasta: '' };
 // «N° 323», «nº323», «nro. 323» o «n 323» buscan el número; «Nuñez» queda intacto.
 const limpiarTermino = (s: string) => s.trim().replace(/^(?:n[°º]|nro\.?(?=\s*\d)|n(?=\s*\d))\s*/i, '');
 
+/** Filtros del listado como parámetros de /api/accion (los comparte la exportación). */
+function parametros(f: Filtros) {
+  const params = new URLSearchParams();
+  const q = limpiarTermino(f.q);
+  if (q) params.set('q', q);
+  if (f.estado !== 'todas') params.set('estado', f.estado);
+  if (f.desde) params.set('desde', f.desde);
+  if (f.hasta) params.set('hasta', f.hasta);
+  return params;
+}
+
 /** Listado paginado del servidor con búsqueda diferida; la cotizadora lo recarga tras cada acción. */
 export function useHistorial(alListar: (d: Listado) => void) {
   const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS);
@@ -47,12 +58,9 @@ export function useHistorial(alListar: (d: Listado) => void) {
     control.current?.abort();
     const c = new AbortController();
     control.current = c;
-    const params = new URLSearchParams({ pagina: String(pag), porPagina: String(porPagina) });
-    const q = limpiarTermino(f.q);
-    if (q) params.set('q', q);
-    if (f.estado !== 'todas') params.set('estado', f.estado);
-    if (f.desde) params.set('desde', f.desde);
-    if (f.hasta) params.set('hasta', f.hasta);
+    const params = parametros(f);
+    params.set('pagina', String(pag));
+    params.set('porPagina', String(porPagina));
     setBuscando(true);
     try {
       const d = await pedirJSON<Listado>(`/api/accion?${params}`, { signal: c.signal, cache: 'no-store' });
@@ -109,8 +117,6 @@ export function useHistorial(alListar: (d: Listado) => void) {
 }
 export type EstadoHistorial = ReturnType<typeof useHistorial>;
 
-// Fecha que mejor describe el documento: aprobación, emisión o última edición del borrador.
-const fechaReferencia = (q: ResumenCotizacion) => q.nota?.fecha ?? q.fechaEmision ?? q.actualizada;
 const hayFiltros = (f: Filtros) => !!(f.q.trim() || f.estado !== 'todas' || f.desde || f.hasta);
 
 interface Props {
@@ -127,12 +133,29 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
   // El servidor ordena por última actualización: los grupos por mes siguen ese orden.
   const grupos: [string, ResumenCotizacion[]][] = [];
   for (const q of items) {
-    const k = mesAnio(q.actualizada);
+    // Misma fecha con que el servidor ordena y filtra, y la que muestra cada fila.
+    const k = mesAnio(q.fecha);
     const g = grupos.at(-1);
     if (g?.[0] === k) g[1].push(q);
     else grupos.push([k, [q]]);
   }
   const filtrado = hayFiltros(filtros);
+  const [exportando, setExportando] = useState(false),
+    [errorExportar, setErrorExportar] = useState('');
+  async function exportar() {
+    setExportando(true);
+    setErrorExportar('');
+    try {
+      const params = parametros(filtros);
+      params.set('formato', 'csv');
+      const { blob, nombre } = await pedirArchivo(`/api/accion?${params}`);
+      guardarArchivo(blob, nombre ?? 'cotizaciones.csv');
+    } catch (e) {
+      if (!esSilencioso(e)) setErrorExportar(mensajeDe(e));
+    } finally {
+      setExportando(false);
+    }
+  }
   return (
     <section className="history" aria-labelledby="historial-titulo" aria-busy={buscando}>
       <div className="history-heading">
@@ -174,6 +197,15 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
             />
           </label>
         </div>
+        <button
+          type="button"
+          className="button secondary small"
+          onClick={exportar}
+          disabled={exportando || cargando || !total}
+          title="Descarga las cotizaciones del listado, con los filtros aplicados, para abrir en Excel"
+        >
+          {exportando ? 'Exportando…' : 'Exportar CSV'}
+        </button>
         <div className="history-filters" role="group" aria-label="Filtrar por estado">
           {FILTROS.map(([f, etiqueta]) => (
             <button
@@ -187,6 +219,11 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
           ))}
         </div>
       </div>
+      {errorExportar && (
+        <p className="history-empty catalog-error" role="alert">
+          {errorExportar}
+        </p>
+      )}
       {error && (
         <p className="history-empty catalog-error" role="alert">
           {error}{' '}
@@ -279,7 +316,7 @@ function Fila({
           {q.productos && <small className="history-productos">{q.productos}</small>}
         </span>
         <span className="history-meta">
-          {abriendo ? 'Abriendo…' : fechaCorta(fechaReferencia(q))}
+          {abriendo ? 'Abriendo…' : fechaCorta(q.fecha)}
           <small>
             {plural(q.items, 'ítem')}
             {q.pendientes ? ` · ${plural(q.pendientes, 'pendiente')}` : ''}

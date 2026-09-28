@@ -10,6 +10,8 @@
     "migrar:sqlite": "tsx scripts/migrar-sqlite.ts",
     "auth:migrar": "tsx scripts/migrar-auth.ts",
     "usuarios": "tsx scripts/usuarios.ts",
+    "limpiar-borradores": "tsx scripts/limpiar-borradores.ts",
+    "feriados": "tsx scripts/feriados.ts",
     "test": "vitest run && npm run test:e2e",
     "test:unit": "vitest run",
     "test:e2e": "tsx scripts/preparar-e2e.ts && playwright test",

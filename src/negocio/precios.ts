@@ -1,4 +1,5 @@
 import type { Producto } from '../catalogo/tipos';
+import { conDosDecimales } from './cifras';
 /**
  * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
  * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × unitario.
@@ -72,7 +73,7 @@ export const montosVacios = (): Montos => ({
   total: 0,
 });
 export const descuentoValido = (d: number) =>
-  Number.isFinite(d) && d >= 0 && d <= REGLAS.descuentoMaximo && Math.round(d * 100) === d * 100;
+  Number.isFinite(d) && d >= 0 && d <= REGLAS.descuentoMaximo && conDosDecimales(d);
 export const fleteValido = (f: number) => Number.isSafeInteger(f) && f >= 0 && f <= 100_000_000;
 export function cotizar(
   items: ItemPrecio[],

@@ -16,6 +16,7 @@ import {
   vencida,
 } from './formato';
 import { Documento, Totales } from './panel-totales';
+import { Actividad } from './actividad';
 
 export type Operacion =
   'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'duplicar' | 'eliminar' | 'anular';
@@ -92,6 +93,15 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
       ? 'Completa o quita los ítems pendientes para generar el PDF.'
       : 'Se asignará un número correlativo y quedará emitida.';
   const quien = actual ? autoria(actual) : '';
+  // Las bloqueadas no muestran el botón de quitar: no hay nada que hacer con él.
+  const conQuitar = !!actual && esEditable(actual);
+  const despacho = actual?.nota?.despacho;
+  const condicionDespacho =
+    despacho && (despacho.direccion || despacho.transporte)
+      ? `Despacho: ${[despacho.direccion, despacho.transporte].filter(Boolean).join(' · ')}`
+      : actual?.montos.flete
+        ? `Incluye flete por ${pesos(actual.montos.flete)} neto`
+        : 'Despacho por confirmar';
   return (
     <section className="quote-panel" aria-label="Cotización en curso">
       <div className="panel-heading">
@@ -144,9 +154,11 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                 <th>CANT.</th>
                 <th>UNITARIO</th>
                 <th>TOTAL</th>
-                <th>
-                  <span className="sr-only">Acciones</span>
-                </th>
+                {conQuitar && (
+                  <th>
+                    <span className="sr-only">Acciones</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
@@ -191,18 +203,19 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                     </td>
                     <td>{linea ? pesos(linea.precioUnitario) : '—'}</td>
                     <td>{linea ? pesos(linea.total) : '—'}</td>
-                    <td>
-                      <button
-                        type="button"
-                        className="remove"
-                        onClick={() => acciones.quitar(i)}
-                        disabled={!editable}
-                        aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
-                        aria-describedby={actual && !esEditable(actual) ? 'nota-revision' : undefined}
-                      >
-                        ×
-                      </button>
-                    </td>
+                    {conQuitar && (
+                      <td>
+                        <button
+                          type="button"
+                          className="remove"
+                          onClick={() => acciones.quitar(i)}
+                          disabled={!editable}
+                          aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
+                        >
+                          ×
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -315,12 +328,6 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               anulado={actual.nota.anulada}
             />
           )}
-          {actual.nota && (actual.nota.despacho.direccion || actual.nota.despacho.transporte) && (
-            <p className="doc-despacho">
-              Despacho:{' '}
-              {[actual.nota.despacho.direccion, actual.nota.despacho.transporte].filter(Boolean).join(' · ')}
-            </p>
-          )}
           {conItems && (
             <div>
               <span className="doc-nombre muted">Resumen en texto para correo o WhatsApp</span>
@@ -337,10 +344,11 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
       <div className="conditions">
         <span>Valores puestos en fábrica.</span>
         <span className={esVencida ? 'vencida-texto' : undefined}>
-          Despacho por confirmar · {validez(actual)}
+          {condicionDespacho} · {validez(actual)}
           {esVencida ? ' (vencida)' : ''}
         </span>
       </div>
+      {actual && <Actividad id={actual.id} version={actual.actualizada} />}
     </section>
   );
 }

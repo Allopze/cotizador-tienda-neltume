@@ -10,7 +10,9 @@ const navegador = vi.hoisted(() => ({ demora: 0, cerrado: 0 }));
 vi.mock('playwright', () => ({
   chromium: {
     launch: vi.fn(async () => ({
+      on: () => {},
       newPage: async () => ({
+        close: async () => {},
         setDefaultTimeout: () => {},
         route: async () => {},
         setContent: async () => {},

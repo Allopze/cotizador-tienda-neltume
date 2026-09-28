@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
-import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
+import { esEditable, etiquetaEstado, type Cotizacion, type Mensaje } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
@@ -9,6 +9,7 @@ import { Historial, useHistorial } from './historial';
 import { AltaProducto } from './alta-producto';
 import { ConfiguracionIA, type EstadoAjustes } from './configuracion-ia';
 import { LogoutButton } from './logout-button';
+import { CambiarClave } from './cambiar-clave';
 import { Avisos, useAvisos } from './avisos';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAprobacion } from './dialogos-cotizacion';
@@ -27,8 +28,10 @@ import {
 import {
   ErrorCancelado,
   ErrorSolicitud,
+  codigoDe,
   alExpirarSesion,
   esSilencioso,
+  guardarArchivo,
   guardarBorrador,
   leerBorrador,
   mensajeDe,
@@ -52,7 +55,11 @@ interface NotaLocal {
   tipo?: 'cambios';
 }
 
-export function Cotizador({ email }: { email: string }) {
+/** Id propuesto para el borrador que cree el próximo mensaje (sin contexto seguro no hay UUID). */
+const idNuevo = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined;
+
+export function Cotizador({ email, nombre }: { email: string; nombre: string }) {
   const [actual, setActual] = useState<Cotizacion | null>(null);
   const [mensaje, setMensaje] = useState(''),
     [enCurso, setEnCurso] = useState<Operacion | null>(null),
@@ -60,6 +67,11 @@ export function Cotizador({ email }: { email: string }) {
     [descargando, setDescargando] = useState<string | null>(null),
     [abriendo, setAbriendo] = useState<string | null>(null);
   const [altaProducto, setAltaProducto] = useState(false);
+  const [cambiarClave, setCambiarClave] = useState(false);
+  /** Intercambio sin borrador (preguntas, aprobaciones) mientras no hay cotización abierta. */
+  const [charla, setCharla] = useState<Mensaje[]>([]);
+  /** Id del borrador que creará el mensaje en curso; sobrevive a una cancelación para no duplicar. */
+  const idPendiente = useRef<string | null>(null);
   const [configuracion, setConfiguracion] = useState(false),
     [estadoIA, setEstadoIA] = useState<EstadoAjustes | null>(null),
     [errorAjustes, setErrorAjustes] = useState('');
@@ -198,7 +210,7 @@ export function Cotizador({ email }: { email: string }) {
   useEffect(() => {
     const el = mensajes.current;
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: comportamientoScroll() });
-  }, [actualId, largoHistorial, seleccion, notaLocal]);
+  }, [actualId, largoHistorial, seleccion, notaLocal, charla]);
 
   // Al abrir desde el historial: llevar la vista al área de trabajo y el foco al título.
   useEffect(() => {
@@ -226,6 +238,8 @@ export function Cotizador({ email }: { email: string }) {
       setActual(q);
       setSeleccion(null);
       setNotaLocal(null);
+      setCharla([]);
+      idPendiente.current = null;
       if (enfocarTitulo) setEnfocar((n) => n + 1);
       return q;
     } finally {
@@ -233,7 +247,8 @@ export function Cotizador({ email }: { email: string }) {
     }
   }
 
-  function fallo(e: unknown, q: Cotizacion | null = actual) {
+  /** `pendiente`: id del borrador que iba a crear un primer mensaje cancelado. */
+  function fallo(e: unknown, q: Cotizacion | null = actual, pendiente: string | null = null) {
     if (e instanceof ErrorCancelado) {
       avisar(
         'info',
@@ -245,6 +260,7 @@ export function Cotizador({ email }: { email: string }) {
             fn: () => {
               recargarLista().catch(() => {});
               if (q) recargarActual(q.id, true).catch((x) => fallo(x, null));
+              else if (pendiente) abrirPendiente(pendiente);
             },
           },
         },
@@ -253,6 +269,14 @@ export function Cotizador({ email }: { email: string }) {
     }
     if (esSilencioso(e)) return;
     const codigo = e instanceof ErrorSolicitud ? e.codigo : undefined;
+    // El mensaje ya se había procesado antes de cancelar la espera: se abre su cotización.
+    if (codigo === 'mensaje_procesado' && e instanceof ErrorSolicitud && typeof e.detalle?.id === 'string') {
+      idPendiente.current = null;
+      setMensaje('');
+      avisar('info', mensajeDe(e), { clave: 'operacion' });
+      abrirPorId(e.detalle.id).catch((x) => fallo(x, null));
+      return;
+    }
     // Revisión ya abierta de esta emitida: se abre esa en vez de fallar.
     if (codigo === 'revision_abierta' && e instanceof ErrorSolicitud && typeof e.detalle?.id === 'string') {
       avisar('info', `${mensajeDe(e)} Se abrió la revisión en curso.`, { clave: 'operacion' });
@@ -271,10 +295,35 @@ export function Cotizador({ email }: { email: string }) {
     }
   }
 
+  /** Tras cancelar el primer mensaje: abre su borrador si el servidor alcanzó a crearlo. */
+  function abrirPendiente(id: string) {
+    abrirPorId(id)
+      .then(() => {
+        setMensaje('');
+      })
+      .catch((x) => {
+        if (x instanceof ErrorSolicitud && x.status === 404)
+          avisar('info', 'El mensaje no alcanzó a crear una cotización. Puedes reenviarlo.', {
+            clave: 'operacion',
+          });
+        else if (!esSilencioso(x)) avisar('error', mensajeDe(x), { clave: 'operacion' });
+      });
+  }
+
   /** Aplica un resultado: cotización nueva (puede ser otra: revisión o duplicado), avisos y cambios. */
   function recibir(d: Resultado, opciones: { anunciar?: boolean; previa?: Cotizacion | null } = {}) {
     const q = d.cotizacion,
       previa = opciones.previa ?? actual;
+    if (d.efimera) {
+      // Sin pedido todavía: se muestra el intercambio, pero no se abre un borrador vacío.
+      setActual(null);
+      setCharla((c) => [...c, ...q.historial.slice(-2)].slice(-12));
+      for (const a of d.avisos ?? []) avisar('info', a);
+      const ultimo = q.historial.at(-1);
+      if (opciones.anunciar && ultimo?.rol === 'asistente') setAnuncio(ultimo.texto);
+      return;
+    }
+    setCharla([]);
     if (d.eliminada) {
       setActual(null);
       setNotaLocal(null);
@@ -306,6 +355,8 @@ export function Cotizador({ email }: { email: string }) {
     setActual(null);
     setSeleccion(null);
     setNotaLocal(null);
+    setCharla([]);
+    idPendiente.current = null;
     limpiar('operacion');
     input.current?.focus();
   }
@@ -313,16 +364,9 @@ export function Cotizador({ email }: { email: string }) {
   async function descargar(archivo: string) {
     setDescargando(archivo);
     try {
-      const blob = await pedirArchivo(`/api/documento/${encodeURIComponent(archivo)}`);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = archivo;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60_000);
-      avisar('exito', `Documento listo: se descargó ${archivo}.`, { clave: 'descarga' });
+      const { blob, nombre } = await pedirArchivo(`/api/documento/${encodeURIComponent(archivo)}`);
+      guardarArchivo(blob, nombre ?? archivo);
+      avisar('exito', `Documento listo: se descargó ${nombre ?? archivo}.`, { clave: 'descarga' });
     } catch (e) {
       fallo(e);
     } finally {
@@ -526,7 +570,11 @@ export function Cotizador({ email }: { email: string }) {
     }
   }
 
-  async function aprobarDesdeChat(c: NonNullable<Resultado['confirmar']>, conversacion: Cotizacion) {
+  async function aprobarDesdeChat(
+    c: NonNullable<Resultado['confirmar']>,
+    conversacion: Cotizacion,
+    efimera = false,
+  ) {
     if (c.id !== conversacion.id) {
       const texto = `Abriendo cotización N° ${c.numero}`;
       avisar('info', `${texto}.`, { clave: 'operacion' });
@@ -541,14 +589,15 @@ export function Cotizador({ email }: { email: string }) {
       direccion: c.id === conversacion.id ? conversacion.cliente.direccion : null,
     });
     if (!ok) {
-      setNotaLocal({ id: conversacion.id, texto: 'Aprobación cancelada.' });
+      if (efimera) setCharla((m) => [...m, { rol: 'asistente', texto: 'Aprobación cancelada.' }]);
+      else setNotaLocal({ id: conversacion.id, texto: 'Aprobación cancelada.' });
       setAnuncio('Aprobación cancelada.');
     }
   }
 
   async function responder(d: Resultado, previa: Cotizacion | null) {
     recibir(d, { anunciar: true, previa });
-    if (d.confirmar) await aprobarDesdeChat(d.confirmar, d.cotizacion);
+    if (d.confirmar) await aprobarDesdeChat(d.confirmar, d.cotizacion, !!d.efimera);
   }
 
   async function enviar(e: FormEvent) {
@@ -561,15 +610,23 @@ export function Cotizador({ email }: { email: string }) {
     setNotaLocal(null);
     limpiar('operacion');
     const previa = actual;
+    if (!previa && !idPendiente.current) idPendiente.current = idNuevo() ?? null;
+    const nuevoId = previa ? null : idPendiente.current;
     try {
       const d = await peticion(
         {
           tipo: 'chat',
-          ...(previa ? { id: previa.id, actualizada: previa.actualizada } : {}),
+          ...(previa
+            ? { id: previa.id, actualizada: previa.actualizada }
+            : {
+                ...(nuevoId ? { nuevoId } : {}),
+                ...(charla.length ? { contexto: charla } : {}),
+              }),
           mensaje: texto,
         },
         control.signal,
       );
+      idPendiente.current = null;
       setMensaje('');
       if (d.seleccion) {
         setSeleccion({ mensaje: texto, contextoId: previa?.id ?? null, opciones: d.seleccion });
@@ -579,7 +636,9 @@ export function Cotizador({ email }: { email: string }) {
       setSeleccion(null);
       await responder(d, previa);
     } catch (e) {
-      fallo(e, previa);
+      // Tras cancelar o perder la red el servidor pudo procesarlo: el mismo id evita un duplicado.
+      if (!(e instanceof ErrorCancelado || codigoDe(e) === 'red')) idPendiente.current = null;
+      fallo(e, previa, nuevoId);
     } finally {
       abortar.current = null;
       volverAlCompositor.current = true;
@@ -633,6 +692,7 @@ export function Cotizador({ email }: { email: string }) {
     setSeleccion(null);
     setActual(null);
     setNotaLocal(null);
+    setCharla([]);
     requestAnimationFrame(() => input.current?.focus());
   }
 
@@ -739,8 +799,24 @@ export function Cotizador({ email }: { email: string }) {
           </button>
           <div id="menu-cuenta" className="account-controls">
             <span className="account-email" title={email}>
-              {email}
+              {nombre && nombre !== email ? (
+                <>
+                  <strong>{nombre}</strong> <small>{email}</small>
+                </>
+              ) : (
+                email
+              )}
             </span>
+            <button
+              type="button"
+              className="ia-settings-button"
+              onClick={() => {
+                setMenuCuenta(false);
+                setCambiarClave(true);
+              }}
+            >
+              Cambiar contraseña
+            </button>
             <button
               type="button"
               className="ia-settings-button"
@@ -768,9 +844,8 @@ export function Cotizador({ email }: { email: string }) {
             className="button secondary"
             onClick={() => setAltaProducto(true)}
             disabled={cargando}
-            aria-describedby={!configurado ? 'aviso-asistente' : undefined}
           >
-            <span aria-hidden>＋</span> Agregar producto
+            Catálogo
           </button>
           <button
             type="button"
@@ -804,7 +879,7 @@ export function Cotizador({ email }: { email: string }) {
                 Indica el modelo, la madera, las medidas y la cantidad. También puedes incluir los datos del
                 cliente.
               </div>
-              {!actual?.historial.length && (
+              {!actual?.historial.length && !charla.length && (
                 <button
                   type="button"
                   className="example"
@@ -819,6 +894,13 @@ export function Cotizador({ email }: { email: string }) {
                 </button>
               )}
             </div>
+            {!actual &&
+              charla.map((m, i) => (
+                <div key={`charla-${i}`} className={`message ${m.rol}`}>
+                  <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
+                  <p>{m.texto}</p>
+                </div>
+              ))}
             {actual?.historial.map((m, i) => (
               <div key={i} className={`message ${m.rol}`}>
                 <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
@@ -989,6 +1071,7 @@ export function Cotizador({ email }: { email: string }) {
         cerrar={() => setAltaProducto(false)}
         avisar={avisar}
       />
+      <CambiarClave abierta={cambiarClave} cerrar={() => setCambiarClave(false)} avisar={avisar} />
       <ConfiguracionIA
         abierta={configuracion}
         estado={estadoIA}

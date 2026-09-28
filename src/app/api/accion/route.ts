@@ -1,7 +1,9 @@
 import { ErrorIA } from '@/asistente/errores';
 import { z } from 'zod';
 import { Servicio } from '@/servidor/servicio';
-import { Almacen } from '@/servidor/almacen';
+import { Almacen, type FiltrosListado } from '@/servidor/almacen';
+import { csvCotizaciones, MAX_EXPORTACION } from '@/servidor/exportar';
+import { fechaLocal } from '@/negocio/vigencia';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { leerJson } from '@/servidor/cuerpo';
@@ -10,7 +12,7 @@ import { asistenteConfigurado, crearLLM } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
 import { ErrorPrecio, REGLAS } from '@/negocio/precios';
-import { ESTADOS, type EstadoCotizacion } from '@/negocio/estado';
+import { ESTADOS, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -36,6 +38,17 @@ const accionSchema = z.discriminatedUnion('tipo', [
       mensaje: z.string().trim().min(1).max(6000),
       objetivoId: z.uuid().optional(),
       objetivoActualizada: version.optional(),
+      nuevoId: z.uuid().optional(),
+      contexto: z
+        .array(
+          z
+            .object({ rol: z.enum(['usuario', 'asistente']), texto: z.string().max(6000) })
+            .strict()
+            .transform((m) => ({ ...m, texto: m.texto.slice(0, 500) })),
+        )
+        .max(12)
+        .transform((ms) => ms.slice(-6))
+        .optional(),
     })
     .strict()
     .refine((a) => Boolean(a.objetivoId) === Boolean(a.objetivoActualizada))
@@ -102,6 +115,7 @@ const listadoSchema = z.object({
   hasta: fecha.optional(),
   pagina: z.coerce.number().int().min(1).max(10000).optional(),
   porPagina: z.coerce.number().int().min(1).max(200).optional(),
+  formato: z.literal('csv').optional(),
 });
 const modoFijo = () => process.env.NELTUME_LLM === 'fijo' && process.env.NELTUME_TEST_MODE === '1';
 const sinCache = { 'Cache-Control': 'no-store' };
@@ -155,17 +169,40 @@ export async function GET(req: Request) {
           { error: 'No se encontró la cotización.', codigo: 'no_encontrada' },
           { status: 404, headers: sinCache },
         );
-      return Response.json({ cotizacion, asistenteConfigurado: configurado() }, { headers: sinCache });
+      return Response.json(
+        { cotizacion, eventos: almacen.eventos(cotizacion.id), asistenteConfigurado: configurado() },
+        { headers: sinCache },
+      );
     }
     const filtros = listadoSchema.safeParse(Object.fromEntries(url.searchParams));
     if (!filtros.success)
       return Response.json({ error: 'Filtros inválidos.', codigo: 'solicitud_invalida' }, { status: 400 });
-    const { estado, ...resto } = filtros.data;
-    const pagina = almacen.listar({ ...resto, estados: estado as EstadoCotizacion[] | undefined });
+    const { estado, formato, ...resto } = filtros.data;
+    const estados = estado as EstadoCotizacion[] | undefined;
+    if (formato === 'csv') return exportarCsv(almacen, { ...resto, estados });
+    const pagina = almacen.listar({ ...resto, estados });
     return Response.json({ ...pagina, asistenteConfigurado: configurado() }, { headers: sinCache });
   } catch (e) {
     return responderError(e);
   }
+}
+
+/** Listado completo con los filtros vigentes, en CSV (separador «;» y BOM para Excel en español). */
+function exportarCsv(almacen: Almacen, filtros: FiltrosListado) {
+  const filas: ResumenCotizacion[] = [];
+  for (let pagina = 1; filas.length < MAX_EXPORTACION; pagina++) {
+    const p = almacen.listar({ ...filtros, pagina, porPagina: 200 });
+    filas.push(...p.cotizaciones);
+    if (filas.length >= p.total || !p.cotizaciones.length) break;
+  }
+  const hoy = fechaLocal(new Date());
+  return new Response(`\uFEFF${csvCotizaciones(filas.slice(0, MAX_EXPORTACION))}`, {
+    headers: {
+      'Content-Type': 'text/csv; charset=utf-8',
+      'Content-Disposition': `attachment; filename="cotizaciones-${hoy}.csv"`,
+      ...sinCache,
+    },
+  });
 }
 
 export async function POST(req: Request) {

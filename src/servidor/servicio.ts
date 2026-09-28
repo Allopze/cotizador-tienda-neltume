@@ -19,7 +19,8 @@ import {
 } from '../catalogo/resolver';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
-import type { Cotizacion, Despacho } from '../negocio/estado';
+import { aCentesimas } from '../negocio/cifras';
+import type { Cotizacion, Despacho, Mensaje } from '../negocio/estado';
 import {
   cotizar,
   descuentoValido,
@@ -33,6 +34,7 @@ import {
 import { calcularVence, estaVencida, fechaChilena } from '../negocio/vigencia';
 import { Almacen, type Unidad } from './almacen';
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
+import { prepararFeriados } from './feriados-sync';
 import { generarPdf, plantilla } from './pdf';
 import { resolverReferencia, type OpcionCotizacion } from './referencias';
 
@@ -49,6 +51,13 @@ export type Accion =
       mensaje: string;
       objetivoId?: string;
       objetivoActualizada?: string;
+      /**
+       * Id que la interfaz propone para el borrador nuevo. Si la persona cancela la espera y reenvía,
+       * el servidor reconoce que ese mensaje ya se procesó en vez de crear un duplicado.
+       */
+      nuevoId?: string;
+      /** Intercambio previo que no generó borrador (preguntas, aprobaciones); solo contexto para la IA. */
+      contexto?: Mensaje[];
     }
   | { tipo: 'quitar'; id: string; actualizada: string; indice: number }
   | { tipo: 'emitir'; id: string; actualizada: string }
@@ -95,6 +104,11 @@ export interface Resultado {
   cambios?: CambiosCotizacion;
   /** Solo en `eliminar`: la cotización devuelta ya no existe. */
   eliminada?: true;
+  /**
+   * Respuesta sin pedido (pregunta, aprobación, mensaje sin productos ni cliente) desde una pantalla
+   * nueva: no se guarda un borrador vacío; la cotización devuelta solo lleva el intercambio.
+   */
+  efimera?: true;
 }
 export interface UsuarioServicio {
   nombre: string;
@@ -125,6 +139,23 @@ const CAMPOS_CLIENTE: (keyof Cliente)[] = [
 const marca = (anterior?: string) =>
   new Date(Math.max(Date.now(), anterior ? Date.parse(anterior) + 1 : 0)).toISOString();
 const decimal = (n: number) => n.toFixed(2).replace('.', ',');
+
+/** Texto breve de las diferencias, para el registro de actividad. */
+export function textoCambios(c: CambiosCotizacion | undefined, extras: string[] = []) {
+  const partes = [
+    ...(c?.agregados.map((x) => `Agregado: ${x.descripcion}`) ?? []),
+    ...(c?.quitados.map((x) => `Quitado: ${x.descripcion}`) ?? []),
+    ...(c?.modificados.map((x) =>
+      x.antes.descripcion === x.despues.descripcion
+        ? `Modificado: ${x.despues.descripcion}`
+        : `${x.antes.descripcion} → ${x.despues.descripcion}`,
+    ) ?? []),
+    ...(c?.cliente.length ? [`Datos del cliente: ${c.cliente.join(', ')}`] : []),
+    ...extras,
+  ];
+  return partes.length ? partes.join(' · ') : null;
+}
+const porcentajeTexto = (n: number) => `${String(n).replace('.', ',')} %`;
 
 export class Servicio {
   private readonly autor: string | null;
@@ -304,6 +335,7 @@ export class Servicio {
       versionCatalogo: null,
     };
     u.guardar(copia);
+    u.registrarEvento(copia.id, 'revision', this.autor, `Revisión de N° ${q.numero}`);
     return copia;
   }
 
@@ -423,6 +455,7 @@ export class Servicio {
           this.recalcular(destino);
           u.guardar(destino);
           const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
+          u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios));
           return { cotizacion: destino, ...(cambios ? { cambios } : {}) };
         });
       case 'editar':
@@ -433,6 +466,9 @@ export class Servicio {
           const q = this.nueva();
           q.solicitudes = structuredClone(origen.solicitudes);
           q.cliente = structuredClone(origen.cliente);
+          // El descuento y el flete acordados forman parte de lo que se duplica.
+          q.descuento = origen.descuento;
+          q.flete = origen.flete;
           q.historial = [
             {
               rol: 'asistente',
@@ -441,6 +477,12 @@ export class Servicio {
           ];
           this.recalcular(q);
           u.guardar(q);
+          u.registrarEvento(
+            q.id,
+            'duplicada',
+            this.autor,
+            origen.numero ? `Copia de N° ${origen.numero}` : 'Copia de un borrador',
+          );
           return { cotizacion: q };
         });
       case 'eliminar':
@@ -474,13 +516,30 @@ export class Servicio {
           q.fechaAnulacion = fecha;
           q.motivoAnulacion = motivo;
           if (q.nota) q.nota.anulada = true;
+          // Una revisión en borrador de esta emitida ya no revisa nada: sigue como cotización nueva.
+          const avisos: string[] = [];
+          const revision = q.numero !== null ? u.revisionAbierta(q) : null;
+          if (revision) {
+            revision.origen = null;
+            revision.historial.push({
+              rol: 'asistente',
+              texto: `La cotización N° ${q.numero} se anuló. Este borrador sigue disponible como cotización nueva.`,
+            });
+            revision.actualizada = marca(revision.actualizada);
+            u.guardar(revision);
+            u.registrarEvento(revision.id, 'desvinculada', this.autor, `N° ${q.numero} anulada`);
+            avisos.push(
+              `El borrador de revisión de la N° ${q.numero} quedó como cotización nueva, sin relación con la anulada.`,
+            );
+          }
           q.historial.push({
             rol: 'asistente',
             texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido N° ${q.nota.numero}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}.`,
           });
           q.actualizada = marca(q.actualizada);
           u.guardar(q);
-          return { cotizacion: q };
+          u.registrarEvento(q.id, 'anulada', this.autor, motivo);
+          return { cotizacion: q, ...(avisos.length ? { avisos } : {}) };
         });
     }
   }
@@ -509,9 +568,10 @@ export class Servicio {
       if (!fleteValido(flete))
         throw new ErrorUsuario('El flete debe ser un monto neto entero en pesos, desde $0.');
       const extra = avisos.length ? { avisos } : {};
+      const descuentoNuevo = aCentesimas(descuento);
       if (
         JSON.stringify([solicitudes, cliente]) === JSON.stringify([q.solicitudes, q.cliente]) &&
-        descuento === q.descuento &&
+        descuentoNuevo === q.descuento &&
         flete === q.flete
       )
         return { cotizacion: q, ...extra };
@@ -520,11 +580,18 @@ export class Servicio {
         clienteAntes = destino.cliente;
       destino.solicitudes = solicitudes;
       destino.cliente = cliente;
-      destino.descuento = descuento;
+      const extras = [
+        ...(descuentoNuevo !== destino.descuento
+          ? [`Descuento ${porcentajeTexto(destino.descuento)} → ${porcentajeTexto(descuentoNuevo)}`]
+          : []),
+        ...(flete !== destino.flete ? [`Flete ${pesos(destino.flete)} → ${pesos(flete)}`] : []),
+      ];
+      destino.descuento = descuentoNuevo;
       destino.flete = flete;
       this.recalcular(destino);
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
+      u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, extras));
       return { cotizacion: destino, ...extra, ...(cambios ? { cambios } : {}) };
     });
   }
@@ -552,6 +619,8 @@ export class Servicio {
     });
     if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.pdf! };
     const { copia, numero, avisos, version } = preparado;
+    // La vigencia cuenta días hábiles: antes se actualizan los feriados decretados (sin bloquear si no hay red).
+    await prepararFeriados(this.almacen.baseDatos());
     const archivo = `cotizacion-${numero}.pdf`,
       fecha = new Date().toISOString(),
       vence = calcularVence(fecha);
@@ -595,9 +664,11 @@ export class Servicio {
             original.reemplazadaPor = numero;
             original.actualizada = marca(original.actualizada);
             u.guardar(original);
+            u.registrarEvento(original.id, 'reemplazada', this.autor, `Por la revisión N° ${numero}`);
           }
         }
         u.guardar(q);
+        u.registrarEvento(q.id, 'emitida', this.autor, `N° ${numero}`);
         return { cotizacion: q, archivo, ...(avisos.length ? { avisos } : {}) };
       });
     } catch (error) {
@@ -616,7 +687,16 @@ export class Servicio {
           'Genera y revisa el PDF de la cotización antes de aprobarla.',
           'estado_invalido',
         );
-      if (q.estado !== 'emitida') this.exigirEditable(q);
+      if (q.estado === 'reemplazada')
+        throw new ErrorConflicto(
+          `La cotización N° ${q.numero} fue reemplazada${q.reemplazadaPor ? ` por la N° ${q.reemplazadaPor}` : ''} y ya no se puede aprobar. Aprueba la más reciente.`,
+          'estado_invalido',
+        );
+      if (q.estado === 'anulada')
+        throw new ErrorConflicto(
+          `La cotización N° ${q.numero} está anulada y no se puede aprobar. Duplícala para preparar una nueva.`,
+          'estado_invalido',
+        );
       this.verificarVersion(q, accion.actualizada);
       this.verificarSerieNoAprobada(q, u);
       if (estaVencida(q.vence) && !accion.confirmarVencida)
@@ -669,6 +749,7 @@ export class Servicio {
         });
         q.actualizada = marca(q.actualizada);
         u.guardar(q);
+        u.registrarEvento(q.id, 'aprobada', this.autor, `Nota de pedido N° ${numero}`);
         // Las demás emitidas de la serie ya no pueden aprobarse: una sola nota por pedido.
         for (const otra of u.serie(q.id))
           if (otra.id !== q.id && otra.estado === 'emitida') {
@@ -676,6 +757,7 @@ export class Servicio {
             otra.reemplazadaPor = q.numero;
             otra.actualizada = marca(otra.actualizada);
             u.guardar(otra);
+            u.registrarEvento(otra.id, 'reemplazada', this.autor, `Se aprobó la N° ${q.numero}`);
           }
         return { cotizacion: q, archivo };
       });
@@ -723,6 +805,7 @@ export class Servicio {
     // para no dejar esperando (ni fallar) las acciones de otra persona.
     const conversacion = accion.id ? this.almacen.obtener(accion.id) : null;
     if (accion.id && !conversacion) throw new ErrorNoEncontrado();
+    if (!accion.id && accion.nuevoId) this.verificarNoProcesado(accion.nuevoId);
     if (conversacion && accion.actualizada !== undefined && accion.actualizada !== conversacion.actualizada)
       throw new ErrorConflicto(VERSION_OBSOLETA);
     let previo: Cotizacion | null = null;
@@ -739,6 +822,10 @@ export class Servicio {
       const referencia = SOLICITUD_APROBACION.test(accion.mensaje)
         ? { tipo: 'ninguna' as const }
         : resolverReferencia(accion.mensaje, this.almacen.candidatas(), conversacion?.id);
+      if (referencia.tipo === 'inexistente')
+        throw new ErrorNoEncontrado(
+          `No existe la cotización N° ${referencia.numero}. Revisa el número o búscala en el historial; no se aplicó ningún cambio.`,
+        );
       if (referencia.tipo === 'multiples') {
         const contexto = conversacion ?? this.almacen.obtener(referencia.opciones[0].id);
         if (!contexto) throw new ErrorNoEncontrado('No se encontró la cotización seleccionada.');
@@ -754,8 +841,10 @@ export class Servicio {
     // M4: si la emitida ya tiene una revisión abierta, el cambio se aplica sobre esa revisión.
     if (previo?.estado === 'emitida') previo = this.almacen.revisionAbierta(previo) ?? previo;
     // M1: el borrador nuevo se escribe recién con la respuesta de la IA; si falla, no queda nada.
-    const nuevo = previo ? null : this.nueva();
+    const nuevo = previo ? null : { ...this.nueva(), ...(accion.nuevoId ? { id: accion.nuevoId } : {}) };
     const base = previo ?? nuevo!;
+    // Sin borrador, el contexto de la conversación es el intercambio previo que no se guardó.
+    const historialIA = nuevo ? (accion.contexto ?? []) : base.historial;
     let salida: unknown;
     try {
       salida = await this.llm.interpretar(
@@ -765,7 +854,7 @@ export class Servicio {
           base.cliente,
           modelosCatalogo(this.catalogo),
           maderasCatalogo(this.catalogo),
-          base.historial,
+          historialIA,
           modo,
           modo === 'modificacion_anterior'
             ? { numero: base.numero ?? base.origen ?? null, estado: base.estado }
@@ -780,8 +869,9 @@ export class Servicio {
     return this.almacen.transaccion((u): Resultado => {
       let q: Cotizacion;
       if (nuevo) {
+        // Se guarda recién si el mensaje trae un pedido o datos del cliente (ver `efimera`).
+        if (u.obtener(nuevo.id)) throw this.errorProcesado(nuevo.id);
         q = nuevo;
-        u.guardar(q);
       } else {
         q = this.obtener(u, base.id);
         // Control optimista: la respuesta se calculó sobre la versión leída antes de consultar a la IA.
@@ -793,6 +883,7 @@ export class Servicio {
       }
       const responder = (texto: string, extra: Omit<Resultado, 'cotizacion'> = {}): Resultado => {
         this.registrar(q, accion.mensaje, texto);
+        if (q === nuevo) return { cotizacion: q, ...extra, efimera: true };
         u.guardar(q);
         return { cotizacion: q, ...extra };
       };
@@ -860,6 +951,11 @@ export class Servicio {
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
       const avisos = [...avisosItems, ...avisosCliente];
       const extra = avisos.length ? { avisos } : {};
+      if (q === nuevo && !solicitudes.length && Object.values(cliente).every((v) => v === null))
+        return responder(
+          'Cuéntame qué necesitas cotizar: modelo, madera, medidas y cantidad. También puedes agregar los datos del cliente.',
+          extra,
+        );
       if (
         this.sinCambios(q, solicitudes, cliente) &&
         (q.estado !== 'borrador' || modo === 'modificacion_anterior')
@@ -891,7 +987,22 @@ export class Servicio {
       );
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
+      if (destino === nuevo) u.registrarEvento(destino.id, 'creada', this.autor, textoCambios(cambios));
+      else u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios));
       return { cotizacion: destino, ...extra, ...(cambios ? { cambios } : {}) };
     });
+  }
+
+  private errorProcesado(id: string) {
+    return new ErrorConflicto(
+      'Tu mensaje anterior ya se había procesado. Se abrió la cotización resultante.',
+      'mensaje_procesado',
+      { id },
+    );
+  }
+
+  /** Un reenvío tras cancelar la espera no crea un segundo borrador con el mismo pedido. */
+  private verificarNoProcesado(id: string) {
+    if (this.almacen.obtener(id)) throw this.errorProcesado(id);
   }
 }

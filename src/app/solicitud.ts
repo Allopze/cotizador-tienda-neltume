@@ -120,12 +120,28 @@ export async function pedirJSON<T>(url: string, init?: RequestInit & { json?: un
   return data as T;
 }
 
-/** Descarga binaria autenticada (PDF). */
-export async function pedirArchivo(url: string, init?: RequestInit): Promise<Blob> {
+/** Descarga binaria autenticada (PDF, CSV) con el nombre que propone el servidor. */
+export async function pedirArchivo(
+  url: string,
+  init?: RequestInit,
+): Promise<{ blob: Blob; nombre: string | null }> {
   const r = await pedir(url, init);
   if (r.status === 401) expirarSesion();
   if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status), r.status);
-  return r.blob();
+  const nombre = r.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null;
+  return { blob: await r.blob(), nombre };
+}
+
+/** Entrega un archivo al navegador como descarga. */
+export function guardarArchivo(blob: Blob, nombre: string) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = nombre;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /** Errores que no deben pintarse como aviso rojo (ya se informaron de otra forma). */

@@ -176,6 +176,15 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     return metadata ? `${metadata.sha256}:${metadata.fecha}` : null;
   }
 
+  /**
+   * ¿La versión corresponde a la misma planilla importada? Editar o agregar productos manuales cambia
+   * la fecha de la versión, pero no invalida una propuesta en curso: sus reglas se revalidan al guardar.
+   */
+  mismaImportacion(version: string) {
+    const actual = this.metadata;
+    return !!actual && version.split(':')[0] === actual.sha256;
+  }
+
   modelos() {
     return this.db
       .prepare(
@@ -433,7 +442,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
   ) {
     return this.db
       .transaction(() => {
-        if (!this.version || this.version !== versionEsperada)
+        if (!this.mismaImportacion(versionEsperada))
           throw new ErrorUsuarioCatalogo(
             'El catálogo cambió mientras revisabas el producto. Vuelve a generar la propuesta.',
             'version_obsoleta',

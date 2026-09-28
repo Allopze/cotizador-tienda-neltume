@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { leerPesos } from '@/negocio/cifras';
 import { pesos } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
 import type { ProductoManual } from './contrato';
@@ -9,7 +10,8 @@ import { fechaCorta } from './formato';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 type Avisar = (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
-const numero = (v: string) => Number(v.replace(/[$.\s]/g, '').replace(',', '.'));
+// Misma lectura que el alta: «45,990» y «45.990» son $45.990; «45,99» lleva decimales.
+const numero = leerPesos;
 
 /** Productos agregados a mano: listar, corregir precio o descripción y eliminar. */
 export function ProductosManuales({ avisar }: { avisar: Avisar }) {

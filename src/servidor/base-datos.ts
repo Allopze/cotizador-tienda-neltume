@@ -2,9 +2,10 @@ import Database from 'better-sqlite3';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA } from '../negocio/estado';
+import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 6;
+const VERSION_ESQUEMA = 8;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -63,6 +64,40 @@ function crearEsquema(db: Database.Database) {
       `);
     }).immediate();
   if (version < 6) migrarA6(db);
+  if (version < 7)
+    db.transaction(() => {
+      // v7: registro de actividad por cotización (quién hizo qué y cuándo).
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS eventos (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          fecha TEXT NOT NULL,
+          usuario TEXT,
+          tipo TEXT NOT NULL,
+          detalle TEXT
+        );
+        CREATE INDEX IF NOT EXISTS eventos_cotizacion ON eventos(cotizacion_id, id);
+        PRAGMA user_version = 7;
+      `);
+    }).immediate();
+  if (version < 8)
+    db.transaction(() => {
+      // v8: feriados sincronizados desde la fuente pública y estado de la sincronización por año.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS feriados (
+          fecha TEXT PRIMARY KEY,
+          anio INTEGER NOT NULL,
+          nombre TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS feriados_sincronizacion (
+          anio INTEGER PRIMARY KEY,
+          sincronizado TEXT,
+          intentado TEXT NOT NULL,
+          error TEXT
+        );
+        PRAGMA user_version = 8;
+      `);
+    }).immediate();
 }
 
 const COLUMNAS_COTIZACION_V4 = `id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut,
@@ -519,6 +554,10 @@ export function abrirBaseDatos(
     nueva.pragma('synchronous = FULL');
     crearEsquema(nueva);
     chmodSync(absoluta, 0o600);
+    // Feriados sincronizados antes: los días hábiles quedan bien desde el primer cálculo tras reiniciar.
+    registrarFeriadosExternos(
+      (nueva.prepare('SELECT fecha FROM feriados').all() as { fecha: string }[]).map((f) => f.fecha),
+    );
   } catch (error) {
     nueva.close();
     throw error;

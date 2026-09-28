@@ -5,8 +5,14 @@ const bonito = (s: string) =>
     .replace(/(^|\s)\S/g, (l) => l.toUpperCase())
     .replace('Rauli', 'Raulí')
     .replace('Oregon', 'Oregón');
+/** Máximo de opciones por pregunta: una lista más larga no se lee; el resto está en «Catálogo». */
+export const MAX_OPCIONES = 15;
+const listar = (a: string[]) =>
+  a.length > MAX_OPCIONES
+    ? `${a.slice(0, MAX_OPCIONES).join(', ')} y ${a.length - MAX_OPCIONES} más (revisa «Catálogo»)`
+    : a.join(', ');
 const opciones = (a: string[]) =>
-  a.map((s) => (/^\d+\.\d+$/.test(s) ? s.replace('.', ',') : s.replace(' A ', '–'))).join(', ');
+  listar(a.map((s) => (/^\d+\.\d+$/.test(s) ? s.replace('.', ',') : s.replace(' A ', '–'))));
 export function pregunta(r: Rechazo, modelo: string | null) {
   const nombre = bonito(modelo ?? 'producto');
   switch (r.tipo) {
@@ -20,9 +26,9 @@ export function pregunta(r: Rechazo, modelo: string | null) {
     case 'modelo_desconocido':
       return `No encontré el modelo “${r.valor}” en puertas sólidas. Modelos disponibles: ${opciones(r.disponibles.map(bonito))}.`;
     case 'madera_desconocida':
-      return `No trabajamos “${r.valor}” en este catálogo. Maderas disponibles: ${r.disponibles.map(bonito).join(', ')}.`;
+      return `No trabajamos “${r.valor}” en este catálogo. Maderas disponibles: ${listar(r.disponibles.map(bonito))}.`;
     case 'madera_no_disponible':
-      return `${nombre} no viene en ${bonito(r.valor)}. Maderas disponibles: ${r.disponibles.map(bonito).join(', ')}.`;
+      return `${nombre} no viene en ${bonito(r.valor)}. Maderas disponibles: ${listar(r.disponibles.map(bonito))}.`;
     case 'cantidad_invalida':
       return `La cantidad de ${nombre} debe ser un entero entre 1 y 10.000. ¿Cuántas unidades necesitas?`;
     case 'medida_implausible':

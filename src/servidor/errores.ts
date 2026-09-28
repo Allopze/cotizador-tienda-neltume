@@ -10,6 +10,7 @@ export type CodigoError =
   | 'serie_aprobada'
   | 'cotizacion_vencida'
   | 'ocupado'
+  | 'mensaje_procesado'
   | 'pdf_no_disponible';
 
 export class ErrorUsuario extends Error {

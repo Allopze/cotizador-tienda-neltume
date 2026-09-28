@@ -10,5 +10,5 @@ export default async function Page() {
   validarConfiguracionAutenticacion();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect('/login');
-  return <Cotizador email={session.user.email} />;
+  return <Cotizador email={session.user.email} nombre={session.user.name || session.user.email} />;
 }

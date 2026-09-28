@@ -65,10 +65,10 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await expect(titulo).toHaveText(/^N° \d+$/);
   const numero = (await titulo.textContent())!.trim();
 
-  // Duplicar: borrador nuevo sin descuento ni flete, con las mismas cantidades.
+  // Duplicar: borrador nuevo con las mismas cantidades, descuento y flete.
   await panel.getByRole('button', { name: 'Duplicar', exact: true }).click();
   await expect(titulo).toHaveText('Sin número');
-  await expect(total).toHaveText(pesos(montos(5).total));
+  await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));
 
   // Eliminar el duplicado (borrador sin número).
   await panel.getByRole('button', { name: 'Eliminar borrador' }).click();

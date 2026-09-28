@@ -1,7 +1,9 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { directorioDatos } from '@/servidor/almacen';
+import { Almacen, directorioDatos } from '@/servidor/almacen';
 import { rechazoSesion } from '@/servidor/acceso-autenticado';
+import { documentoAnulado } from '@/servidor/documentos';
+import { registrarError } from '@/servidor/errores';
 export const runtime = 'nodejs';
 
 const ARCHIVO_VALIDO = /^(cotizacion|nota-pedido)-\d+\.pdf$/;
@@ -16,11 +18,22 @@ export async function GET(req: Request, ctx: { params: Promise<{ archivo: string
   if (rechazo) return rechazo;
   const { archivo } = await ctx.params;
   if (!ARCHIVO_VALIDO.test(archivo)) return noEncontrado();
+  const url = new URL(req.url);
   // `?ver=1` abre el PDF en el navegador; por defecto se descarga.
-  const disposicion = new URL(req.url).searchParams.get('ver') === '1' ? 'inline' : 'attachment';
+  const disposicion = url.searchParams.get('ver') === '1' ? 'inline' : 'attachment';
+  let nombre = archivo;
   let pdf: Buffer;
   try {
-    pdf = await readFile(join(directorioDatos(), 'pdf', archivo));
+    // Un documento anulado se entrega con la marca «ANULADA»; el original queda intacto en disco.
+    let ruta = join(directorioDatos(), 'pdf', archivo);
+    try {
+      const anulado = await documentoAnulado(new Almacen(), archivo);
+      if (anulado) ({ ruta, nombre } = anulado);
+    } catch (error) {
+      // Sin Chromium u otra falla: se entrega el original antes que no entregar nada.
+      registrarError('documento', error);
+    }
+    pdf = await readFile(/* turbopackIgnore: true */ ruta);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return noEncontrado();
     console.error(
@@ -32,7 +45,7 @@ export async function GET(req: Request, ctx: { params: Promise<{ archivo: string
   return new Response(new Uint8Array(pdf), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `${disposicion}; filename="${archivo}"`,
+      'Content-Disposition': `${disposicion}; filename="${nombre}"`,
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     },

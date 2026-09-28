@@ -7,6 +7,8 @@ import { ErrorCatalogo, cargarCatalogo } from '@/servidor/catalogo';
 import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
 import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
 import { ErrorUsuario, registrarError } from '@/servidor/errores';
+import { normalizarTexto } from '@/servidor/busqueda';
+import { REGLAS } from '@/negocio/precios';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -40,6 +42,64 @@ const peticionSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('eliminar'), codigo }).strict(),
 ]);
 const sinCache = { 'Cache-Control': 'no-store' };
+
+const consultaSchema = z.object({
+  q: z.string().max(100).optional(),
+  familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
+});
+const MAX_RESULTADOS = 300;
+
+/** Consulta del catálogo vigente (importado y manual) con el precio unitario que usa la cotización. */
+export async function GET(req: Request) {
+  const sesion = await exigirSesion(req);
+  if (!sesion.ok) return sesion.respuesta;
+  const filtros = consultaSchema.safeParse(Object.fromEntries(new URL(req.url).searchParams));
+  if (!filtros.success)
+    return Response.json({ error: 'Filtros inválidos.', codigo: 'solicitud_invalida' }, { status: 400 });
+  try {
+    const catalogo = await cargarCatalogo();
+    const terminos = normalizarTexto(filtros.data.q ?? '')
+      .split(' ')
+      .filter(Boolean);
+    const manuales = new Set(catalogo.listarManuales().map((p) => p.codigo));
+    const coinciden = catalogo.todos().filter((p) => {
+      if (filtros.data.familia && p.familia !== filtros.data.familia) return false;
+      const texto = normalizarTexto(`${p.codigo} ${p.modelo} ${p.madera} ${p.tipo ?? ''} ${p.descripcion}`);
+      return terminos.every((t) => texto.includes(t));
+    });
+    return Response.json(
+      {
+        total: coinciden.length,
+        productos: coinciden.slice(0, MAX_RESULTADOS).map((p) => ({
+          codigo: p.codigo,
+          modelo: p.modelo,
+          familia: p.familia,
+          tipo: p.tipo,
+          madera: p.madera,
+          medida: p.medida,
+          largo: p.largo,
+          descripcion: p.descripcion,
+          unitario: Math.round(p.precioNeto * (1 + REGLAS.ajuste)),
+          manual: manuales.has(p.codigo),
+        })),
+      },
+      { headers: sinCache },
+    );
+  } catch (error) {
+    if (error instanceof ErrorMigracionRequerida || error instanceof ErrorCatalogo) {
+      registrarError('api/catalogo', error);
+      return Response.json(
+        {
+          error: 'El catálogo no está disponible. Pide a quien administra el cotizador que lo revise.',
+          codigo: 'no_configurado',
+        },
+        { status: 503 },
+      );
+    }
+    registrarError('api/catalogo', error);
+    return Response.json({ error: 'No se pudo leer el catálogo.', codigo: 'error_interno' }, { status: 500 });
+  }
+}
 
 export async function POST(req: Request) {
   const sesion = await exigirSesion(req, { escritura: true });

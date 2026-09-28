@@ -1,7 +1,8 @@
 'use client';
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Producto } from '@/catalogo/tipos';
-import { pesos } from '@/negocio/precios';
+import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
+import { CatalogoConsulta } from './catalogo-consulta';
 import { Dialogo, useConfirmacion } from './dialogo';
 import { enterEnvia } from './formato';
 import { ProductosManuales } from './productos-manuales';
@@ -25,8 +26,11 @@ interface Respuesta {
   avisos?: string[];
 }
 
+const ajuste = porcentaje(REGLAS.ajuste * 100);
+const venta = (neto: number) => Math.round(neto * (1 + REGLAS.ajuste));
+
 export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
-  const [pestana, setPestana] = useState<'alta' | 'manuales'>('alta');
+  const [pestana, setPestana] = useState<'consultar' | 'alta' | 'manuales'>('consultar');
   const [avisosAlta, setAvisosAlta] = useState<string[]>([]);
   const [id, setId] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
@@ -76,7 +80,8 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
       mensaje: (
         <p>
           ¿Agregar «{propuesta.descripcion}» al catálogo con precio neto unitario{' '}
-          {pesos(propuesta.precioNeto)}?
+          {pesos(propuesta.precioNeto)}? En las cotizaciones se mostrará a{' '}
+          {pesos(venta(propuesta.precioNeto))} (neto + {ajuste}).
         </p>
       ),
       aceptar: 'Agregar al catálogo',
@@ -114,7 +119,7 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
     setGuardado(null);
     setError('');
     setAvisosAlta([]);
-    setPestana('alta');
+    setPestana('consultar');
     cerrar();
   }
 
@@ -125,9 +130,20 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
       cerrable={!ocupado}
       titulo="Catálogo de productos"
       eyebrow="CATÁLOGO"
-      focoInicial={asistente ? entrada : undefined}
+      focoInicial={asistente && pestana === 'alta' ? entrada : undefined}
     >
       <div className="pestanas" role="tablist" aria-label="Secciones del catálogo">
+        <button
+          type="button"
+          role="tab"
+          id="tab-consultar"
+          aria-selected={pestana === 'consultar'}
+          aria-controls="panel-catalogo"
+          onClick={() => setPestana('consultar')}
+          disabled={ocupado}
+        >
+          Consultar
+        </button>
         <button
           type="button"
           role="tab"
@@ -151,12 +167,10 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
           Agregados manualmente
         </button>
       </div>
-      <div
-        id="panel-catalogo"
-        role="tabpanel"
-        aria-labelledby={pestana === 'alta' ? 'tab-alta' : 'tab-manuales'}
-      >
-        {pestana === 'manuales' ? (
+      <div id="panel-catalogo" role="tabpanel" aria-labelledby={`tab-${pestana}`}>
+        {pestana === 'consultar' ? (
+          <CatalogoConsulta />
+        ) : pestana === 'manuales' ? (
           <ProductosManuales avisar={avisar} />
         ) : guardado ? (
           <div className="catalog-success" role="status">
@@ -180,7 +194,8 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
             )}
             <p className="catalog-modal-intro">
               Describe el modelo, la familia, la madera, las medidas y el precio neto unitario. El asistente
-              te preguntará lo que falte.
+              te preguntará lo que falte. <strong>Ingresa el precio base neto, no el de venta:</strong> las
+              cotizaciones le suman {ajuste} automáticamente, igual que a los productos de la planilla.
             </p>
             <div className="catalog-chat" aria-busy={ocupado}>
               {!mensajes.length ? (
@@ -222,6 +237,10 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
                   <div>
                     <dt>Precio neto unitario</dt>
                     <dd>{pesos(propuesta.precioNeto)}</dd>
+                  </div>
+                  <div>
+                    <dt>Unitario en cotizaciones (+{ajuste})</dt>
+                    <dd>{pesos(venta(propuesta.precioNeto))}</dd>
                   </div>
                 </dl>
                 {avisosAlta.length > 0 && (

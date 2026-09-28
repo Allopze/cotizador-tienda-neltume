@@ -87,6 +87,8 @@ export interface ResumenCotizacion {
   productos: string;
   creada: string;
   actualizada: string;
+  /** Fecha que describe el documento (anulación, aprobación, emisión o última edición); ordena el listado. */
+  fecha: string;
   fechaEmision: string | null;
   vence: string | null;
   vencida: boolean;
@@ -100,6 +102,34 @@ export interface ResumenCotizacion {
   fechaAnulacion: string | null;
   nota: { numero: number; pdf: string; fecha: string; anulada: boolean } | null;
 }
+/** Entrada del registro de actividad de una cotización. */
+export interface EventoCotizacion {
+  fecha: string;
+  usuario: string | null;
+  tipo: TipoEvento;
+  detalle: string | null;
+}
+export type TipoEvento =
+  | 'creada'
+  | 'revision'
+  | 'duplicada'
+  | 'modificada'
+  | 'emitida'
+  | 'aprobada'
+  | 'anulada'
+  | 'reemplazada'
+  | 'desvinculada';
+export const etiquetaEvento: Record<TipoEvento, string> = {
+  creada: 'Creada',
+  revision: 'Revisión creada',
+  duplicada: 'Duplicada',
+  modificada: 'Modificada',
+  emitida: 'Emitida',
+  aprobada: 'Aprobada',
+  anulada: 'Anulada',
+  reemplazada: 'Reemplazada',
+  desvinculada: 'Queda como cotización nueva',
+};
 export interface Estado {
   siguienteCotizacion: number;
   siguienteNota: number;

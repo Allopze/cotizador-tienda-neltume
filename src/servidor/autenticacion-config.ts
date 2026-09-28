@@ -153,6 +153,7 @@ export function opcionesAutenticacion(
       max: 100,
       customRules: {
         '/sign-in/email': { window: 15 * 60, max: 5 },
+        '/change-password': { window: 15 * 60, max: 5 },
       },
     },
     plugins: [admin({ defaultRole: 'user' })],

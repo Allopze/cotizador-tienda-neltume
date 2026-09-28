@@ -316,9 +316,64 @@ td small {
   gap: 8px;
   margin-top: 12px;
 }
-.doc-despacho {
-  font-size: var(--fs-xs);
+.actividad {
+  margin-top: 16px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  font-size: var(--fs-sm);
+}
+.actividad summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--ink);
+}
+.actividad ol {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.actividad li {
+  display: grid;
+  gap: 2px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+}
+.actividad time,
+.actividad small {
   color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.actividad small {
+  overflow-wrap: anywhere;
+}
+.catalogo-consulta {
+  display: grid;
+  gap: 10px;
+}
+.catalogo-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.catalogo-filtros input {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.catalogo-lista {
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+}
+.catalogo-lista table {
+  width: 100%;
+  font-size: var(--fs-sm);
+}
+.catalogo-lista td small {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-xs);
 }
 .vencida-texto {
   color: #7a5518;

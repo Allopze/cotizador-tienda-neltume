@@ -27,6 +27,7 @@ export default defineConfig({
     env: {
       NELTUME_TEST_MODE: '1',
       NELTUME_LLM: 'fijo',
+      NELTUME_FERIADOS_SYNC: '0',
       NELTUME_DATA_DIR: dataE2E,
       NELTUME_DB_PATH: dbE2E,
       BETTER_AUTH_SECRET: 'playwright-secret-neltume-0123456789abcdef',

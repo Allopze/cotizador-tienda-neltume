@@ -4,7 +4,15 @@ import { join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
 import type { Producto, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
-import type { Cotizacion, Estado, EstadoCotizacion, Mensaje, ResumenCotizacion } from '../negocio/estado';
+import type {
+  Cotizacion,
+  Estado,
+  EstadoCotizacion,
+  EventoCotizacion,
+  Mensaje,
+  ResumenCotizacion,
+  TipoEvento,
+} from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { calcularVence, estaVencida, inicioDiaSantiago } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
@@ -578,7 +586,13 @@ export class Unidad {
   private cache = new Map<string, Cotizacion>();
   private sucias = new Set<string>();
   private eliminadas = new Set<string>();
+  private eventos: (EventoCotizacion & { id: string })[] = [];
   constructor(private db: Database.Database) {}
+
+  /** Anota una entrada del registro de actividad; se escribe al confirmar, junto con la cotización. */
+  registrarEvento(id: string, tipo: TipoEvento, usuario: string | null, detalle: string | null = null) {
+    this.eventos.push({ id, tipo, usuario, detalle, fecha: new Date().toISOString() });
+  }
 
   obtener(id: string): Cotizacion | null {
     if (this.eliminadas.has(id)) return null;
@@ -677,7 +691,7 @@ export class Unidad {
   }
 
   confirmar() {
-    if (!this.sucias.size && !this.eliminadas.size) return;
+    if (!this.sucias.size && !this.eliminadas.size && !this.eventos.length) return;
     this.db
       .transaction(() => {
         for (const id of this.eliminadas) this.db.prepare('DELETE FROM cotizaciones WHERE id = ?').run(id);
@@ -685,12 +699,24 @@ export class Unidad {
         const pendientes = [...this.sucias].map((id) => this.cache.get(id)!);
         pendientes.sort((a, b) => Number(a.origen != null) - Number(b.origen != null));
         for (const q of pendientes) persistirCotizacion(this.db, q);
+        const insertar = this.db.prepare(
+          'INSERT INTO eventos (cotizacion_id, fecha, usuario, tipo, detalle) VALUES (?, ?, ?, ?, ?)',
+        );
+        for (const e of this.eventos)
+          if (!this.eliminadas.has(e.id)) insertar.run(e.id, e.fecha, e.usuario, e.tipo, e.detalle);
       })
       .immediate();
     this.sucias.clear();
     this.eliminadas.clear();
+    this.eventos = [];
   }
 }
+
+/**
+ * Fecha que describe cada cotización en el listado: anulación, aprobación, emisión o, en un borrador,
+ * su última edición. Ordena, agrupa y filtra con el mismo criterio que se muestra en pantalla.
+ */
+const FECHA_REFERENCIA = 'COALESCE(c.fecha_anulacion, n.fecha, c.fecha_emision, c.actualizada)';
 
 const mapaEstados = new Set<EstadoCotizacion>(['borrador', 'emitida', 'aprobada', 'reemplazada', 'anulada']);
 
@@ -709,6 +735,11 @@ export class Almacen {
     return abrirBaseDatos(this.rutaDb);
   }
 
+  /** Conexión de esta base, para módulos que guardan datos propios (p. ej. feriados sincronizados). */
+  baseDatos() {
+    return this.db;
+  }
+
   async leer(): Promise<Estado> {
     return leerEstadoDeBase(this.db);
   }
@@ -723,6 +754,71 @@ export class Almacen {
 
   revisionAbierta(original: Cotizacion): Cotizacion | null {
     return new Unidad(this.db).revisionAbierta(original);
+  }
+
+  /**
+   * Borradores sin número que nadie toca hace `dias` días. Sin `conItems`, solo los vacíos (sin ítems
+   * ni datos del cliente), que no guardan trabajo de nadie.
+   */
+  borradoresAbandonados({ dias, conItems = false }: { dias: number; conItems?: boolean }) {
+    const limite = new Date(Date.now() - dias * 86_400_000).toISOString();
+    return this.db
+      .prepare(
+        `
+        SELECT c.id, c.creada, c.actualizada, c.creada_por AS creadaPor, c.cliente_nombre AS cliente,
+               (SELECT COUNT(*) FROM solicitudes s WHERE s.cotizacion_id = c.id) AS items
+        FROM cotizaciones c
+        WHERE c.estado = 'borrador' AND c.numero IS NULL AND c.actualizada < ?
+          ${
+            conItems
+              ? ''
+              : `AND NOT EXISTS (SELECT 1 FROM solicitudes s WHERE s.cotizacion_id = c.id)
+                 AND COALESCE(c.cliente_nombre, c.cliente_rut, c.cliente_giro, c.cliente_telefono,
+                              c.cliente_direccion, c.cliente_comuna, c.cliente_proyecto) IS NULL`
+          }
+        ORDER BY c.actualizada
+      `,
+      )
+      .all(limite) as {
+      id: string;
+      creada: string;
+      actualizada: string;
+      creadaPor: string | null;
+      cliente: string | null;
+      items: number;
+    }[];
+  }
+
+  /** Elimina borradores sin número dentro del bloqueo; ignora los que cambiaron de estado. */
+  async eliminarBorradores(ids: string[]) {
+    return this.transaccion((u) => {
+      let eliminados = 0;
+      for (const id of ids) {
+        const q = u.obtener(id);
+        if (q?.estado !== 'borrador' || q.numero !== null) continue;
+        u.eliminar(id);
+        eliminados++;
+      }
+      return eliminados;
+    });
+  }
+
+  /** Cotización dueña de un PDF emitido (cotización o nota de pedido). */
+  porDocumento(archivo: string): Cotizacion | null {
+    const fila = this.db
+      .prepare(
+        `SELECT id FROM cotizaciones WHERE pdf = ?
+         UNION ALL SELECT cotizacion_id AS id FROM notas_pedido WHERE pdf = ? LIMIT 1`,
+      )
+      .get(archivo, archivo) as { id: string } | undefined;
+    return fila ? cargarUna(this.db, fila.id) : null;
+  }
+
+  /** Registro de actividad de una cotización, del más antiguo al más reciente. */
+  eventos(id: string): EventoCotizacion[] {
+    return this.db
+      .prepare('SELECT fecha, usuario, tipo, detalle FROM eventos WHERE cotizacion_id = ? ORDER BY id')
+      .all(id) as EventoCotizacion[];
   }
 
   /** Datos livianos de todas las cotizaciones para resolver referencias: dos consultas. */
@@ -796,22 +892,26 @@ export class Almacen {
       params.push(...estados);
     }
     if (filtros.desde) {
-      condiciones.push('COALESCE(c.fecha_emision, c.creada) >= ?');
+      condiciones.push(`${FECHA_REFERENCIA} >= ?`);
       params.push(inicioDiaSantiago(filtros.desde));
     }
     if (filtros.hasta) {
-      condiciones.push('COALESCE(c.fecha_emision, c.creada) < ?');
+      condiciones.push(`${FECHA_REFERENCIA} < ?`);
       params.push(inicioDiaSantiago(sumarDiasCalendario(filtros.hasta, 1)));
     }
     const donde = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
     return db.transaction(() => {
       const total = (
-        db.prepare(`SELECT COUNT(*) AS n FROM cotizaciones c ${donde}`).get(...params) as { n: number }
+        db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM cotizaciones c LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id ${donde}`,
+          )
+          .get(...params) as { n: number }
       ).n;
       const filas = db
         .prepare(
           `
-          SELECT c.*, o.numero AS origen_numero, m.neto, m.iva, m.total, m.subtotal,
+          SELECT c.*, ${FECHA_REFERENCIA} AS fecha_referencia, o.numero AS origen_numero, m.neto, m.iva, m.total, m.subtotal,
                  m.descuento AS descuento_monto, m.flete AS flete_monto,
                  n.numero AS nota_numero, n.pdf AS nota_pdf, n.fecha AS nota_fecha, n.anulada AS nota_anulada,
                  (SELECT COUNT(*) FROM solicitudes s WHERE s.cotizacion_id = c.id) AS items,
@@ -821,7 +921,7 @@ export class Almacen {
           LEFT JOIN cotizacion_montos m ON m.cotizacion_id = c.id
           LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id
           ${donde}
-          ORDER BY c.actualizada DESC, c.orden DESC
+          ORDER BY fecha_referencia DESC, c.orden DESC
           LIMIT ? OFFSET ?
         `,
         )
@@ -836,6 +936,7 @@ export class Almacen {
         nota_pdf: string | null;
         nota_fecha: string | null;
         nota_anulada: number | null;
+        fecha_referencia: string;
         items: number;
         pendientes: number;
       })[];
@@ -886,6 +987,7 @@ export class Almacen {
             .join(', '),
           creada: f.creada,
           actualizada: f.actualizada,
+          fecha: f.fecha_referencia,
           fechaEmision: f.fecha_emision,
           vence,
           vencida: f.estado === 'emitida' && estaVencida(vence),

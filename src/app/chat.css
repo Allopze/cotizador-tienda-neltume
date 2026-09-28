@@ -521,6 +521,145 @@ h2 {
 .ia-field input:focus-visible {
   outline-offset: 1px;
 }
+.ia-model-selector {
+  position: relative;
+}
+.ia-model-trigger {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 11px;
+  border: 1px solid #cfd5c4;
+  background: #fff;
+  color: var(--ink);
+  text-align: left;
+}
+.ia-model-trigger:disabled {
+  background: var(--pale);
+  color: var(--muted);
+}
+.ia-model-selection {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.ia-model-selection strong {
+  overflow: hidden;
+  font-size: var(--fs-md);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ia-model-selection code,
+.ia-model-option-name code {
+  overflow: hidden;
+  color: var(--muted);
+  font: 0.72rem ui-monospace, Menlo, monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ia-model-chevron {
+  flex: none;
+  color: var(--muted);
+  font-size: 1.15rem;
+}
+.ia-model-popover {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #cfd5c4;
+  background: #fff;
+  box-shadow: 0 14px 32px rgb(23 33 25 / 18%);
+}
+.ia-model-popover input {
+  min-height: 42px;
+  padding: 0 10px;
+  font: var(--fs-sm) Arial, sans-serif;
+}
+.ia-model-sort-note {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+.ia-model-options {
+  max-height: min(44vh, 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.ia-model-group-title {
+  padding: 10px 7px 5px;
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.9px;
+}
+.ia-model-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 7px;
+  border-bottom: 1px solid #edf0e8;
+  cursor: pointer;
+}
+.ia-model-option:hover,
+.ia-model-option[data-activo='true'],
+.ia-model-option[aria-selected='true'] {
+  background: #eef1e6;
+}
+.ia-model-option-name {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+.ia-model-option-name strong {
+  overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ia-model-option-price {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  text-align: right;
+}
+.ia-model-option-price b {
+  padding: 2px 5px;
+  background: #e5eddf;
+  color: var(--green);
+  font-size: 0.62rem;
+  letter-spacing: 0.5px;
+}
+.ia-model-option-price small {
+  color: var(--muted);
+  font-size: 0.69rem;
+  white-space: nowrap;
+}
+.ia-model-list-status,
+.ia-model-unavailable {
+  padding: 9px 7px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.ia-model-unavailable {
+  padding: 5px 0 0;
+  color: #7d5b24;
+}
+.ia-model-list-status .link {
+  margin-left: 4px;
+}
 .ia-status {
   font-size: var(--fs-sm);
   line-height: 1.6;
@@ -550,6 +689,21 @@ h2 {
   font: inherit;
   font-size: var(--fs-md);
   resize: vertical;
+}
+@media (max-width: 520px) {
+  .ia-model-option {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+  .ia-model-option-price {
+    display: flex;
+    align-items: center;
+    justify-items: start;
+    text-align: left;
+  }
+  .ia-model-option-price small {
+    white-space: normal;
+  }
 }
 .dialogo-check {
   display: flex;

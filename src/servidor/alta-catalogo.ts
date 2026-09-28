@@ -6,6 +6,7 @@ import type { LLM, ContextoAltaProducto } from '../asistente/llm';
 import { descripcion } from '../catalogo/importar';
 import type { Familia, Producto } from '../catalogo/tipos';
 import { normalizarMedida } from '../catalogo/resolver';
+import { interpretarCifra } from '../negocio/cifras';
 import { REGLAS } from '../negocio/precios';
 import { ErrorUsuarioCatalogo } from './errores';
 import { RepositorioCatalogoSqlite } from './repositorio-catalogo';
@@ -128,27 +129,7 @@ const sinTildes = (s: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 
-/**
- * Cifra con separadores chilenos: el punto separa miles y la coma decimales, pero una coma seguida de
- * exactamente tres dígitos (sin otro separador) también es de miles: «45,990» = 45990, «45,99» = 45,99.
- * Si aparecen ambos, el último es el decimal. «1.5» es decimal (no hay grupo de tres).
- */
-export function interpretarCifra(cifra: string): number {
-  const c = cifra.replace(/\s/g, '');
-  const miles = (grupos: string[]) => grupos.slice(1).every((g) => g.length === 3);
-  if (c.includes('.') && c.includes(',')) {
-    const decimal = c.lastIndexOf('.') > c.lastIndexOf(',') ? '.' : ',';
-    const otro = decimal === '.' ? ',' : '.';
-    return Number(c.split(otro).join('').replace(decimal, '.'));
-  }
-  for (const sep of [',', '.']) {
-    if (!c.includes(sep)) continue;
-    const grupos = c.split(sep);
-    if (miles(grupos)) return Number(grupos.join(''));
-    return grupos.length === 2 ? Number(grupos.join('.')) : NaN;
-  }
-  return Number(c);
-}
+export { interpretarCifra };
 
 const MARCADOR =
   /\bprecio(?:\s+(?:unitario|neto|bruto))*|\bneto(?:\s+unitario)?|\bvalor(?:\s+(?:unitario|neto|bruto))*|\b(?:cuesta|vale|sale)\b|\$/gi;
@@ -394,7 +375,7 @@ export class ServicioAltaCatalogo {
       this.db.prepare('DELETE FROM productos_pendientes WHERE id = ?').run(fila.id);
       throw new ErrorUsuarioCatalogo('La conversación de alta expiró. Inicia otra vez.');
     }
-    if (this.catalogo.version !== fila.version_catalogo)
+    if (!this.catalogo.mismaImportacion(fila.version_catalogo))
       throw new ErrorUsuarioCatalogo('El catálogo cambió durante el alta. Inicia una propuesta nueva.');
     if (!this.llm.interpretarProducto)
       throw new ErrorUsuarioCatalogo('El asistente actual no tiene habilitada el alta de productos.');

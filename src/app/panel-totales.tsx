@@ -1,5 +1,6 @@
 'use client';
 import type { Cotizacion } from '@/negocio/estado';
+import { conDosDecimales, leerPesos, leerPorcentaje } from '@/negocio/cifras';
 import { pesos, REGLAS } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
 import type { CambiosEdicion } from './contrato';
@@ -11,7 +12,6 @@ interface Props {
   guardando: string | null;
   editar: (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
 }
-const numero = (v: string) => Number(v.replace(/\./g, '').replace(',', '.'));
 
 /** Totales con descuento (%) y flete (CLP neto) editables. */
 export function Totales({ actual, editable, guardando, editar }: Props) {
@@ -38,13 +38,13 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
             tipo="text"
             sufijo="%"
             validar={(v) => {
-              const n = numero(v || '0');
+              const n = leerPorcentaje(v);
               if (!Number.isFinite(n) || n < 0 || n > REGLAS.descuentoMaximo)
                 return `El descuento debe estar entre 0 y ${REGLAS.descuentoMaximo}%.`;
-              if (Math.round(n * 100) !== n * 100) return 'Usa como máximo dos decimales.';
+              if (!conDosDecimales(n)) return 'Usa como máximo dos decimales.';
               return null;
             }}
-            guardar={(v) => editar({ descuento: numero(v || '0') }, 'descuento')}
+            guardar={(v) => editar({ descuento: Math.round(leerPorcentaje(v) * 100) / 100 }, 'descuento')}
           />
         </div>
       )}
@@ -59,12 +59,12 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
             tipo="text"
             sufijo="$"
             validar={(v) => {
-              const n = numero(v || '0');
+              const n = leerPesos(v);
               if (!Number.isInteger(n) || n < 0 || n > 100_000_000)
                 return 'El flete debe ser un monto entero en pesos, sin decimales.';
               return null;
             }}
-            guardar={(v) => editar({ flete: numero(v || '0') }, 'flete')}
+            guardar={(v) => editar({ flete: leerPesos(v) }, 'flete')}
           />
         </div>
       )}

@@ -1,6 +1,6 @@
 // Formas de las respuestas de la API usadas por la interfaz (copiadas de src/servidor: no se importa
 // código de servidor en el cliente). Ver contrato-api del backend v6.
-import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
+import type { Cotizacion, EventoCotizacion, ResumenCotizacion } from '@/negocio/estado';
 import type { Producto } from '@/catalogo/tipos';
 import type { Cliente } from '@/catalogo/tipos';
 import type { OpcionCotizacion } from '@/servidor/referencias';
@@ -23,6 +23,8 @@ export interface Resultado {
   avisos?: string[];
   cambios?: CambiosCotizacion;
   eliminada?: true;
+  /** Respuesta sin pedido desde una pantalla nueva: no se guardó un borrador. */
+  efimera?: true;
 }
 export interface Listado {
   cotizaciones: ResumenCotizacion[];
@@ -33,6 +35,7 @@ export interface Listado {
 }
 export interface Detalle {
   cotizacion: Cotizacion;
+  eventos: EventoCotizacion[];
   asistenteConfigurado: boolean;
 }
 export type ProductoManual = Producto & {
@@ -45,6 +48,19 @@ export interface CambiosEdicion {
   cantidades?: { indice: number; cantidad: number }[];
   descuento?: number;
   flete?: number;
+}
+/** Producto del catálogo tal como lo muestra la consulta: con el precio unitario de la cotización. */
+export interface ProductoConsulta {
+  codigo: string;
+  modelo: string;
+  familia: Producto['familia'];
+  tipo: string | null;
+  madera: string;
+  medida: string;
+  largo: number;
+  descripcion: string;
+  unitario: number;
+  manual: boolean;
 }
 export interface Despacho {
   direccion?: string;

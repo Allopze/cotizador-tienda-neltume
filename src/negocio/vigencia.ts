@@ -1,5 +1,6 @@
 import { REGLAS } from './precios';
-// Fechas de calendario en la zona de Chile. Días hábiles: lunes a viernes, sin feriados.
+import { esFeriado } from './feriados';
+// Fechas de calendario en la zona de Chile. Días hábiles: lunes a viernes que no sean feriado nacional.
 const ZONA = 'America/Santiago';
 
 /** Fecha local (YYYY-MM-DD) de un instante ISO en Santiago. */
@@ -17,7 +18,7 @@ export function sumarDiasHabiles(fecha: string, dias: number): string {
   while (restantes > 0) {
     d.setUTCDate(d.getUTCDate() + 1);
     const dia = d.getUTCDay();
-    if (dia !== 0 && dia !== 6) restantes--;
+    if (dia !== 0 && dia !== 6 && !esFeriado(d.toISOString().slice(0, 10))) restantes--;
   }
   return d.toISOString().slice(0, 10);
 }

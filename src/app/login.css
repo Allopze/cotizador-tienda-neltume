@@ -191,3 +191,7 @@
     padding: 32px 24px 27px;
   }
 }
+.account-email strong {
+  color: var(--ink);
+  font-weight: 600;
+}

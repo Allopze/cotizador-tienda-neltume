@@ -73,7 +73,8 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await dialogo.getByRole('button', { name: 'Aprobar y generar nota' }).click();
   expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-1.pdf');
   await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
-  await expect(page.getByRole('button', { name: /^Quitar ítem 1:/ })).toBeDisabled();
+  // Una aprobada no ofrece quitar ítems.
+  await expect(page.getByRole('button', { name: /^Quitar ítem 1:/ })).toHaveCount(0);
   const fabrica = cotizar(
     [
       { producto: puerta, cantidad: 3 },

@@ -15,6 +15,8 @@ export interface OpcionCotizacion {
 
 export type ResolucionReferencia =
   | { tipo: 'ninguna' }
+  /** El mensaje nombra explícitamente un número que no existe: no se aplica a otra cotización. */
+  | { tipo: 'inexistente'; numero: number }
   | { tipo: 'unica'; cotizacion: CandidataReferencia }
   | { tipo: 'multiples'; opciones: OpcionCotizacion[] };
 
@@ -139,7 +141,7 @@ export function resolverReferencia(
   const numero = numeroExplicito(mensaje);
   if (numero !== null) {
     const cotizacion = cotizaciones.find((q) => q.numero === numero);
-    return cotizacion ? { tipo: 'unica', cotizacion } : { tipo: 'ninguna' };
+    return cotizacion ? { tipo: 'unica', cotizacion } : { tipo: 'inexistente', numero };
   }
   if (!tieneReferencia(mensaje)) return { tipo: 'ninguna' };
 

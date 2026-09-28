@@ -101,7 +101,7 @@ export function CampoEditable({
           ref={entrada}
           id={id}
           type={tipo}
-          inputMode={tipo === 'number' ? 'decimal' : undefined}
+          inputMode={tipo === 'number' ? (paso === 1 ? 'numeric' : 'decimal') : undefined}
           min={min}
           max={max}
           step={paso}
