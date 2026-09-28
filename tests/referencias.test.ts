@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { clienteVacio, type SolicitudItem } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
-import { resolverReferencia } from '../src/servidor/referencias';
+import { numeroExplicito, resolverReferencia } from '../src/servidor/referencias';
+import { montosVacios } from '../src/negocio/precios';
 
 const puerta: SolicitudItem = {
   modelo: 'HUILO HUILO',
@@ -20,13 +21,24 @@ function cotizacion(id: string, numero: number, nombre = 'María José', cantida
     estado: 'emitida',
     cliente: { ...clienteVacio(), nombre, comuna: 'Temuco', proyecto: 'Casa Norte' },
     solicitudes: [{ ...puerta, cantidad }],
-    montos: { lineas: [], neto: 0, iva: 0, total: 0 },
+    montos: montosVacios(),
     incompletos: [],
     historial: [],
     creada: fecha,
     actualizada: fecha,
     fechaEmision: fecha,
     pdf: `cotizacion-${numero}.pdf`,
+    vence: null,
+    descuento: 0,
+    flete: 0,
+    creadaPor: null,
+    emitidaPor: null,
+    aprobadaPor: null,
+    anuladaPor: null,
+    fechaAnulacion: null,
+    motivoAnulacion: null,
+    reemplazadaPor: null,
+    versionCatalogo: null,
     nota: null,
   };
 }
@@ -73,6 +85,49 @@ describe('Resolución de referencias a cotizaciones', () => {
     const q = cotizacion('maria-1', 323);
     expect(resolverReferencia('Cotiza 3 Huilo Huilo para María José, Temuco', [q])).toEqual({
       tipo: 'ninguna',
+    });
+  });
+
+  it('A1: no confunde un número de dirección con una cotización', () => {
+    for (const texto of [
+      'Despacho a Los Carrera #450, Temuco',
+      'Dirección: Pasaje 3 N° 450',
+      'Avenida Alemania nro 450, casa la 450',
+      'Calle la 450',
+    ])
+      expect(numeroExplicito(texto)).toBeNull();
+    for (const [texto, numero] of [
+      ['cotización 450', 450],
+      ['Revisa la cotización N° 450 por favor', 450],
+      ['nro de cotización 451', 451],
+      ['número de la cotización 452', 452],
+      ['cambia la 453: son 4 puertas', 453],
+      ['cotizacion #454', 454],
+    ] as const)
+      expect(numeroExplicito(texto)).toBe(numero);
+    const q = cotizacion('maria-450', 450);
+    expect(resolverReferencia('La de María José, despacho a Los Carrera #450', [q]).tipo).toBe('unica');
+    expect(resolverReferencia('Agrega 2 puertas, despacho en Pasaje 3 N° 450', [q])).toEqual({
+      tipo: 'ninguna',
+    });
+  });
+
+  it('A1: prefiere la conversación activa entre varias coincidencias y omite reemplazadas', () => {
+    const a = cotizacion('maria-1', 323);
+    const b = cotizacion('maria-2', 324);
+    expect(resolverReferencia('La cotización de María José debe cambiar', [a, b], 'maria-1')).toEqual({
+      tipo: 'unica',
+      cotizacion: a,
+    });
+    const reemplazada = { ...b, estado: 'reemplazada' as const };
+    expect(resolverReferencia('La cotización de María José debe cambiar', [a, reemplazada])).toEqual({
+      tipo: 'unica',
+      cotizacion: a,
+    });
+    // Por número explícito sí se alcanza, para informar que fue reemplazada.
+    expect(resolverReferencia('cotización 324', [a, reemplazada])).toEqual({
+      tipo: 'unica',
+      cotizacion: reemplazada,
     });
   });
 });

@@ -7,11 +7,21 @@ export const solicitudSchema = z
     ancho: z.number().nullable(),
     alto: z.number().nullable(),
     medida: texto,
+    // Se acepta cualquier número y el servidor anula cantidades no enteras o fuera de 1–10.000 (con aviso).
     cantidad: z.number().nullable(),
   })
   .strict();
 export const clienteSchema = z
-  .object({ nombre: texto, rut: texto, telefono: texto, direccion: texto, comuna: texto, proyecto: texto })
+  .object({
+    nombre: texto,
+    rut: texto,
+    // Opcional para no rechazar respuestas que no lo incluyan: si falta se conserva el giro previo.
+    giro: texto.optional(),
+    telefono: texto,
+    direccion: texto,
+    comuna: texto,
+    proyecto: texto,
+  })
   .strict();
 export const actualizarSchema = z
   .object({ items: z.array(solicitudSchema).max(100), cliente: clienteSchema })
@@ -30,6 +40,7 @@ const clienteCambioSchema = z
   .object({
     nombre: texto.optional(),
     rut: texto.optional(),
+    giro: texto.optional(),
     telefono: texto.optional(),
     direccion: texto.optional(),
     comuna: texto.optional(),

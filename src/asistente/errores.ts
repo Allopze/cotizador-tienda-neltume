@@ -1,8 +1,13 @@
+/** Mensaje para quien usa el cotizador: no revela variables de entorno ni rutas. */
+export const MENSAJE_SIN_CONFIGURAR =
+  'El asistente no está configurado. Pide a quien administra el cotizador que lo revise.';
 export class ErrorIA extends Error {
   constructor(
     public codigo: string,
     mensaje: string,
     public status = 502,
+    /** Detalle técnico solo para el registro del servidor; nunca se envía al navegador. */
+    public tecnico?: string,
   ) {
     super(mensaje);
     this.name = 'ErrorIA';
@@ -10,7 +15,12 @@ export class ErrorIA extends Error {
 }
 export function errorProveedor(status?: number): ErrorIA {
   if (status === 401)
-    return new ErrorIA('ia_autenticacion', 'CommandCode rechazó la clave. Revisa CMD_API_KEY en .env.local.');
+    return new ErrorIA(
+      'ia_autenticacion',
+      MENSAJE_SIN_CONFIGURAR,
+      502,
+      'CommandCode rechazó la clave (401). Revisa CMD_API_KEY en .env.local.',
+    );
   if (status === 402 || status === 403)
     return new ErrorIA(
       'ia_acceso',

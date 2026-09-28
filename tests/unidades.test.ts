@@ -24,12 +24,29 @@ describe('Motor de precios', () => {
     expect(r.lineas[0].precioUnitario).toBe(126);
     expect([r.neto, r.iva, r.total]).toEqual([378, 72, 450]);
   });
-  it('respeta el ajuste explícito por línea, incluido cero', () => {
-    const r = cotizar([
-      { producto, cantidad: 2, ajuste: 0 },
-      { producto, cantidad: 1, ajuste: -0.5 },
-    ]);
-    expect(r.lineas.map((l) => l.precioUnitario)).toEqual([100, 50]);
+  it('respeta el ajuste de las reglas, incluido cero (nota de pedido)', () => {
+    expect(cotizar([{ producto, cantidad: 2 }], { ajuste: 0, iva: 0.19 }).lineas[0].precioUnitario).toBe(100);
+    expect(cotizar([{ producto, cantidad: 1 }], { ajuste: -0.5, iva: 0.19 }).lineas[0].precioUnitario).toBe(
+      50,
+    );
+  });
+  it('aplica descuento al subtotal y suma el flete antes del IVA, redondeando a pesos', () => {
+    const r = cotizar(
+      [{ producto, cantidad: 3 }],
+      { ajuste: 0.25, iva: 0.19 },
+      { descuento: 12.5, flete: 1000 },
+    );
+    expect(r.subtotal).toBe(378);
+    expect(r.descuento).toBe(47); // round(378 × 0,125) = 47,25 → 47
+    expect(r.neto).toBe(378 - 47 + 1000);
+    expect(r.iva).toBe(Math.round(1331 * 0.19));
+    expect(r.total).toBe(1331 + 253);
+    for (const descuento of [-1, 50.01, 1.234, NaN])
+      expect(() => cotizar([{ producto, cantidad: 1 }], undefined, { descuento })).toThrowError(
+        'descuento_invalido',
+      );
+    for (const flete of [-1, 1.5, Infinity])
+      expect(() => cotizar([{ producto, cantidad: 1 }], undefined, { flete })).toThrowError('flete_invalido');
   });
   it('valida sin ítems, cantidades, precios, ajustes e IVA', () => {
     expect(() => cotizar([])).toThrowError(ErrorPrecio);
@@ -43,7 +60,6 @@ describe('Motor de precios', () => {
       expect(() => cotizar([{ producto, cantidad: 1 }], { ajuste, iva: 0.19 })).toThrowError(
         'ajuste_invalido',
       );
-      expect(() => cotizar([{ producto, cantidad: 1, ajuste }])).toThrowError('ajuste_invalido');
     }
     for (const iva of [-1, 1.01, NaN])
       expect(() => cotizar([{ producto, cantidad: 1 }], { ajuste: 0.25, iva })).toThrowError('iva_invalido');
@@ -57,7 +73,15 @@ it('normaliza nombres, centímetros y secciones sin inventar datos', () => {
   expect(normalizar('  Huilo-huilo!')).toBe('HUILOHUILO');
   expect(metros(210)).toBe(2.1);
   expect(metros(2.1)).toBe(2.1);
+  expect(metros(300)).toBe(3);
+  expect(metros(2100)).toBe(2.1);
+  expect(metros(800)).toBe(0.8);
+  // B2: fuera de 0,3–3 m es implausible (se pregunta en vez de adivinar).
+  for (const n of [0.2, 5, 20, 3500, 0, -1]) expect(metros(n)).toBeNull();
   expect(normalizarMedida('6 x 4.5')).toBe('6X4,5');
+  // B1: ×, * y todos los puntos.
+  expect(normalizarMedida('6×4.5')).toBe('6X4,5');
+  expect(normalizarMedida('1.5*4.5')).toBe('1,5X4,5');
 });
 it('preguntas determinísticas contienen los datos que faltan y las opciones', () => {
   const texto = pregunta(

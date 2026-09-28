@@ -1,52 +1,105 @@
 import { z } from 'zod';
 import { crearLLM } from '@/servidor/ajustes-ia';
-import { rechazoSesion } from '@/servidor/acceso-autenticado';
+import { exigirSesion } from '@/servidor/acceso-autenticado';
+import { leerJson } from '@/servidor/cuerpo';
 import { ErrorIA } from '@/asistente/errores';
 import { ErrorCatalogo, cargarCatalogo } from '@/servidor/catalogo';
 import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
-import { ErrorUsuarioCatalogo, ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
+import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
+import { ErrorUsuario, registrarError } from '@/servidor/errores';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+const codigo = z.string().trim().min(1).max(80);
 const peticionSchema = z.discriminatedUnion('tipo', [
-  z.object({ tipo: z.literal('mensaje'), id: z.uuid().optional(), mensaje: z.string().trim().min(1).max(3000) }).strict(),
+  z
+    .object({
+      tipo: z.literal('mensaje'),
+      id: z.uuid().optional(),
+      mensaje: z.string().trim().min(1).max(3000),
+    })
+    .strict(),
   z.object({ tipo: z.literal('confirmar'), id: z.uuid() }).strict(),
   z.object({ tipo: z.literal('cancelar'), id: z.uuid() }).strict(),
+  z.object({ tipo: z.literal('listar_manuales') }).strict(),
+  z
+    .object({
+      tipo: z.literal('editar'),
+      codigo,
+      cambios: z
+        .object({
+          precioNeto: z.number().positive().max(100_000_000).optional(),
+          descripcion: z.string().trim().min(1).max(300).optional(),
+          tipo: z.string().trim().max(120).nullable().optional(),
+        })
+        .strict()
+        .refine((c) => Object.keys(c).length > 0),
+    })
+    .strict(),
+  z.object({ tipo: z.literal('eliminar'), codigo }).strict(),
 ]);
+const sinCache = { 'Cache-Control': 'no-store' };
 
 export async function POST(req: Request) {
-  const rechazo = await rechazoSesion(req, { escritura: true });
-  if (rechazo) return rechazo;
-  let cuerpo: unknown;
-  try {
-    cuerpo = await req.json();
-  } catch {
-    return Response.json({ error: 'Solicitud inválida.' }, { status: 400 });
-  }
-  const parsed = peticionSchema.safeParse(cuerpo);
-  if (!parsed.success) return Response.json({ error: 'Solicitud inválida.' }, { status: 400 });
+  const sesion = await exigirSesion(req, { escritura: true });
+  if (!sesion.ok) return sesion.respuesta;
+  const cuerpo = await leerJson(req);
+  if (!cuerpo.ok) return cuerpo.respuesta;
+  const parsed = peticionSchema.safeParse(cuerpo.valor);
+  if (!parsed.success)
+    return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
+  const { id: usuarioId, nombre, email } = sesion.usuario;
   try {
     const catalogo = await cargarCatalogo();
-    const servicio = new ServicioAltaCatalogo(abrirBaseDatos(), catalogo, crearLLM());
-    if (parsed.data.tipo === 'mensaje')
-      return Response.json(await servicio.mensaje(parsed.data.id, parsed.data.mensaje));
-    if (parsed.data.tipo === 'cancelar') {
-      servicio.cancelar(parsed.data.id);
-      return Response.json({ cancelado: true });
+    const peticion = parsed.data;
+    if (peticion.tipo === 'listar_manuales')
+      return Response.json({ productos: catalogo.listarManuales() }, { headers: sinCache });
+    if (peticion.tipo === 'editar')
+      return Response.json(
+        { producto: catalogo.editarManual(peticion.codigo, peticion.cambios) },
+        { headers: sinCache },
+      );
+    if (peticion.tipo === 'eliminar') {
+      catalogo.eliminarManual(peticion.codigo);
+      return Response.json({ eliminado: peticion.codigo }, { headers: sinCache });
     }
-    return Response.json({ producto: servicio.confirmar(parsed.data.id) });
-  } catch (error) {
-    if (error instanceof ErrorMigracionRequerida)
-      return Response.json({ error: error.message }, { status: 503 });
-    if (error instanceof ErrorIA)
-      return Response.json({ error: error.message, codigo: error.codigo }, { status: error.status });
-    if (error instanceof ErrorUsuarioCatalogo)
-      return Response.json({ error: error.message }, { status: 400 });
-    if (error instanceof ErrorCatalogo)
-      return Response.json({ error: error.message }, { status: 503 });
+    const servicio = new ServicioAltaCatalogo(abrirBaseDatos(), catalogo, crearLLM());
+    if (peticion.tipo === 'mensaje')
+      return Response.json(await servicio.mensaje(peticion.id, peticion.mensaje, usuarioId), {
+        headers: sinCache,
+      });
+    if (peticion.tipo === 'cancelar') {
+      servicio.cancelar(peticion.id, usuarioId);
+      return Response.json({ cancelado: true }, { headers: sinCache });
+    }
     return Response.json(
-      { error: 'No se pudo completar el alta. El catálogo se conserva sin cambios.' },
+      { producto: servicio.confirmar(peticion.id, usuarioId, nombre || email) },
+      { headers: sinCache },
+    );
+  } catch (error) {
+    if (error instanceof ErrorMigracionRequerida || error instanceof ErrorCatalogo) {
+      registrarError('api/catalogo', error);
+      return Response.json(
+        {
+          error: 'El catálogo no está disponible. Pide a quien administra el cotizador que lo revise.',
+          codigo: 'no_configurado',
+        },
+        { status: 503 },
+      );
+    }
+    if (error instanceof ErrorIA) {
+      if (error.tecnico) registrarError('api/catalogo', `${error.codigo}: ${error.tecnico}`);
+      return Response.json({ error: error.message, codigo: error.codigo }, { status: error.status });
+    }
+    if (error instanceof ErrorUsuario)
+      return Response.json({ error: error.message, codigo: error.codigo }, { status: error.status });
+    registrarError('api/catalogo', error);
+    return Response.json(
+      {
+        error: 'No se pudo completar la operación. El catálogo se conserva sin cambios.',
+        codigo: 'error_interno',
+      },
       { status: 500 },
     );
   }

@@ -32,6 +32,8 @@ export interface SolicitudItem {
 export interface Cliente {
   nombre: string | null;
   rut: string | null;
+  /** Giro comercial, requerido en la nota de pedido. */
+  giro: string | null;
   telefono: string | null;
   direccion: string | null;
   comuna: string | null;
@@ -40,6 +42,7 @@ export interface Cliente {
 export const clienteVacio = (): Cliente => ({
   nombre: null,
   rut: null,
+  giro: null,
   telefono: null,
   direccion: null,
   comuna: null,

@@ -1,6 +1,17 @@
 import Database from 'better-sqlite3';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { crearAutenticacion, migrarEsquemaAutenticacion } from '../src/servidor/autenticacion-config';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { hostPermitido, hostsConfigurados, interpretarHost } from '../src/servidor/acceso';
+import {
+  crearAutenticacion,
+  esRutaAdminAuth,
+  MAX_FALLOS_POR_CORREO,
+  migrarEsquemaAutenticacion,
+  validarConfiguracionAutenticacion,
+} from '../src/servidor/autenticacion-config';
+import { leerJson, MAX_CUERPO_BYTES } from '../src/servidor/cuerpo';
 
 const correo = 'persona@neltume.test';
 const clave = 'clave-de-prueba-segura-123';
@@ -61,7 +72,9 @@ describe('Autenticación Better Auth', () => {
       siguiente_cotizacion: 324,
       siguiente_nota: 2,
     });
-    expect(database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'").get()).toBeTruthy();
+    expect(
+      database.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session'").get(),
+    ).toBeTruthy();
 
     const respuesta = await solicitudAuth(auth, '/sign-up/email', {
       method: 'POST',
@@ -103,7 +116,10 @@ describe('Autenticación Better Auth', () => {
     const sesiones = await context.internalAdapter.listSessions(user.id);
     expect(sesiones).toHaveLength(1);
     const almacenada = sesiones[0];
-    expect(almacenada.expiresAt.getTime() - almacenada.createdAt.getTime()).toBe(12 * 60 * 60 * 1000);
+    // createdAt y expiresAt se calculan con Date.now() distintos: se tolera ±1 s.
+    expect(
+      Math.abs(almacenada.expiresAt.getTime() - almacenada.createdAt.getTime() - 12 * 60 * 60 * 1000),
+    ).toBeLessThanOrEqual(1000);
 
     const autenticada = await solicitudAuth(auth, '/get-session', { headers: { cookie: cookies } });
     expect(autenticada.ok).toBe(true);
@@ -125,11 +141,17 @@ describe('Autenticación Better Auth', () => {
     const segundaCookie = cookieDe(segundoLogin);
     const sesionesVivas = await context.internalAdapter.listSessions(user.id);
     const segundaSesion = sesionesVivas.find((session) => session.token !== almacenada.token)!;
-    await context.internalAdapter.updateSession(segundaSesion.token, { expiresAt: new Date(Date.now() - 1000) });
+    await context.internalAdapter.updateSession(segundaSesion.token, {
+      expiresAt: new Date(Date.now() - 1000),
+    });
     const expirada = await solicitudAuth(auth, '/get-session', { headers: { cookie: segundaCookie } });
     expect(await expirada.json()).toBeNull();
 
-    await context.internalAdapter.updateUser(user.id, { banned: true, banReason: 'Desactivada', banExpires: null });
+    await context.internalAdapter.updateUser(user.id, {
+      banned: true,
+      banReason: 'Desactivada',
+      banExpires: null,
+    });
     await context.internalAdapter.deleteUserSessions(user.id);
     const cuentaDesactivada = await solicitudAuth(auth, '/sign-in/email', {
       method: 'POST',
@@ -192,5 +214,214 @@ describe('Autenticación Better Auth', () => {
       origenAlternativo,
     );
     expect(origenExterno.status).toBe(403);
+  });
+});
+
+async function crearCuenta(
+  auth: ReturnType<typeof crearAutenticacion>,
+  email: string,
+  role: 'user' | 'admin',
+) {
+  const context = await auth.$context;
+  const user = await context.internalAdapter.createUser(
+    { email, name: 'Persona de prueba', emailVerified: true, role },
+    { method: 'admin' },
+  );
+  await context.internalAdapter.linkAccount({
+    userId: user.id,
+    providerId: 'credential',
+    accountId: user.id,
+    password: await context.password.hash(clave),
+  });
+  return user;
+}
+
+const iniciar = (auth: ReturnType<typeof crearAutenticacion>, email: string, password: string, ip: string) =>
+  solicitudAuth(auth, '/sign-in/email', {
+    method: 'POST',
+    headers: { origin: origen, 'content-type': 'application/json', 'cf-connecting-ip': ip },
+    body: JSON.stringify({ email, password }),
+  });
+
+describe('Endurecimiento de autenticación', () => {
+  let database: Database.Database | undefined;
+
+  afterEach(() => {
+    database?.close();
+    database = undefined;
+    vi.unstubAllEnvs();
+  });
+
+  async function preparar() {
+    vi.stubEnv('BETTER_AUTH_SECRET', 'vitest-secret-0123456789abcdef-0123456789');
+    vi.stubEnv('BETTER_AUTH_URL', origen);
+    database = new Database(':memory:');
+    await migrarEsquemaAutenticacion(database);
+    return crearAutenticacion(database);
+  }
+
+  it('no expone las rutas del plugin admin por HTTP', async () => {
+    const auth = await preparar();
+    await crearCuenta(auth, correo, 'admin');
+    const login = await iniciar(auth, correo, clave, '203.0.113.1');
+    expect(login.ok).toBe(true);
+    const cookies = cookieDe(login);
+
+    const listar = await solicitudAuth(auth, '/admin/list-users', { headers: { cookie: cookies } });
+    expect(listar.status).toBe(404);
+    const suplantar = await solicitudAuth(auth, '/admin/impersonate-user', {
+      method: 'POST',
+      headers: { cookie: cookies, origin: origen, 'content-type': 'application/json' },
+      body: JSON.stringify({ userId: 'x' }),
+    });
+    expect(suplantar.status).toBe(404);
+
+    expect(esRutaAdminAuth('/api/auth/admin/set-user-password')).toBe(true);
+    expect(esRutaAdminAuth('/api/auth//Admin')).toBe(true);
+    expect(esRutaAdminAuth('/api/auth/get-session')).toBe(false);
+    expect(esRutaAdminAuth('/api/auth/administrar')).toBe(false);
+  });
+
+  it('bloquea un correo tras varios fallos aunque cambie la IP', async () => {
+    const auth = await preparar();
+    await crearCuenta(auth, correo, 'user');
+    for (let i = 0; i < MAX_FALLOS_POR_CORREO; i++) {
+      const fallo = await iniciar(auth, correo, 'clave-incorrecta-123456', `198.51.100.${i + 1}`);
+      expect(fallo.status).toBe(401);
+    }
+    const bloqueado = await iniciar(auth, correo, clave, '198.51.100.200');
+    expect(bloqueado.status).toBe(429);
+    const otraCuenta = await iniciar(auth, 'otra@neltume.test', 'clave-incorrecta-123456', '198.51.100.201');
+    expect(otraCuenta.status).toBe(401);
+  });
+
+  it('interpreta NELTUME_HOSTS igual para el filtro de Host y los orígenes', () => {
+    expect(interpretarHost('Cotizador.Neltume.cl')).toEqual({
+      hostname: 'cotizador.neltume.cl',
+      origen: 'https://cotizador.neltume.cl',
+    });
+    expect(interpretarHost('cotizador.neltume.cl:8443')).toEqual({
+      hostname: 'cotizador.neltume.cl',
+      origen: 'https://cotizador.neltume.cl:8443',
+    });
+    expect(interpretarHost('https://demo.neltume.cl/')).toEqual({
+      hostname: 'demo.neltume.cl',
+      origen: 'https://demo.neltume.cl',
+    });
+    expect(interpretarHost('')).toBeNull();
+    expect(interpretarHost('ftp://demo.neltume.cl')).toBeNull();
+    expect(hostsConfigurados(' a.neltume.cl , https://b.neltume.cl,, ').map((h) => h.hostname)).toEqual([
+      'a.neltume.cl',
+      'b.neltume.cl',
+    ]);
+
+    vi.stubEnv('NELTUME_HOSTS', 'https://demo.neltume.cl');
+    expect(hostPermitido('demo.neltume.cl')).toBe(true);
+    expect(hostPermitido('DEMO.neltume.cl:443')).toBe(true);
+    expect(hostPermitido('127.0.0.1:3000')).toBe(true);
+    expect(hostPermitido('evil.example')).toBe(false);
+    expect(hostPermitido(null)).toBe(false);
+  });
+
+  it('valida la configuración de producción y del secreto', () => {
+    vi.stubEnv('BETTER_AUTH_SECRET', '');
+    vi.stubEnv('NELTUME_HOSTS', 'demo.neltume.cl');
+    expect(() => validarConfiguracionAutenticacion()).toThrow(/BETTER_AUTH_SECRET/);
+
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('TEST', ''); // Vitest define TEST=true.
+    vi.stubEnv('BETTER_AUTH_SECRET', 'secreto-de-produccion-0123456789-abcdef');
+    vi.stubEnv('BETTER_AUTH_URL', 'https://demo.neltume.cl');
+    expect(() => validarConfiguracionAutenticacion()).not.toThrow();
+    vi.stubEnv('BETTER_AUTH_URL', 'https://otro.neltume.cl');
+    expect(() => validarConfiguracionAutenticacion()).toThrow(/NELTUME_HOSTS/);
+    vi.stubEnv('BETTER_AUTH_URL', 'https://demo.neltume.cl');
+    vi.stubEnv('TEST', '1');
+    expect(() => validarConfiguracionAutenticacion()).toThrow(/TEST/);
+  });
+
+  it('solo confía en orígenes loopback fuera de producción', async () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('BETTER_AUTH_SECRET', 'vitest-secret-0123456789abcdef-0123456789');
+    vi.stubEnv('BETTER_AUTH_URL', 'https://demo.neltume.cl');
+    vi.stubEnv('NELTUME_HOSTS', 'demo.neltume.cl');
+    database = new Database(':memory:');
+    await migrarEsquemaAutenticacion(database);
+    const auth = crearAutenticacion(database);
+    const respuesta = await auth.handler(
+      new Request('https://demo.neltume.cl/api/auth/sign-in/email', {
+        method: 'POST',
+        headers: { origin: 'http://127.0.0.1:3000', cookie: 'a=1', 'content-type': 'application/json' },
+        body: JSON.stringify({ email: correo, password: clave }),
+      }),
+    );
+    expect(respuesta.status).toBe(403);
+  });
+});
+
+describe('Lectura acotada del cuerpo JSON', () => {
+  const peticion = (cuerpo: string, tipo = 'application/json') =>
+    new Request('http://127.0.0.1:3000/api/x', {
+      method: 'POST',
+      headers: { 'content-type': tipo },
+      body: cuerpo,
+    });
+
+  it('rechaza tipos no JSON, cuerpos excesivos y JSON inválido', async () => {
+    const tipo = await leerJson(peticion('{}', 'text/plain'));
+    expect(!tipo.ok && tipo.respuesta.status).toBe(415);
+    const grande = await leerJson(peticion(JSON.stringify({ x: 'a'.repeat(MAX_CUERPO_BYTES) })));
+    expect(!grande.ok && grande.respuesta.status).toBe(413);
+    const invalido = await leerJson(peticion('{'));
+    expect(!invalido.ok && invalido.respuesta.status).toBe(400);
+    const valido = await leerJson(peticion('{"a":1}', 'application/json; charset=utf-8'));
+    expect(valido.ok && valido.valor).toEqual({ a: 1 });
+  });
+});
+
+describe('Roles en rutas protegidas', () => {
+  let directorio: string | undefined;
+
+  afterEach(async () => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+    if (directorio) await rm(directorio, { recursive: true, force: true });
+    directorio = undefined;
+  });
+
+  it('exige rol admin cuando la ruta lo pide', async () => {
+    directorio = await mkdtemp(join(tmpdir(), 'cotizador-roles-'));
+    vi.stubEnv('BETTER_AUTH_SECRET', 'vitest-secret-0123456789abcdef-0123456789');
+    vi.stubEnv('BETTER_AUTH_URL', origen);
+    vi.stubEnv('NELTUME_DATA_DIR', directorio);
+    vi.stubEnv('NELTUME_DB_PATH', join(directorio, 'cotizador.sqlite'));
+    const { abrirBaseDatos, cerrarBaseDatos } = await import('../src/servidor/base-datos');
+    await migrarEsquemaAutenticacion(abrirBaseDatos());
+    const { auth } = await import('../src/servidor/autenticacion');
+    const { exigirSesion } = await import('../src/servidor/acceso-autenticado');
+    try {
+      await crearCuenta(auth, correo, 'user');
+      await crearCuenta(auth, 'admin@neltume.test', 'admin');
+      const solicitud = async (email: string) => {
+        const login = await iniciar(auth, email, clave, '192.0.2.10');
+        expect(login.ok).toBe(true);
+        return new Request(`${origen}/api/ajustes`, {
+          method: 'POST',
+          headers: { host: '127.0.0.1:3000', origin: origen, cookie: cookieDe(login) },
+        });
+      };
+
+      const comun = await exigirSesion(await solicitud(correo), { escritura: true, rol: 'admin' });
+      expect(!comun.ok && comun.respuesta.status).toBe(403);
+      const lectura = await exigirSesion(await solicitud(correo));
+      expect(lectura.ok && lectura.usuario.rol).toBe('user');
+      const admin = await exigirSesion(await solicitud('admin@neltume.test'), {
+        escritura: true,
+        rol: 'admin',
+      });
+      expect(admin.ok && admin.usuario.rol).toBe('admin');
+    } finally {
+      cerrarBaseDatos();
+    }
   });
 });

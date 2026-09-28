@@ -63,7 +63,12 @@ describe('Proveedor CommandCode', () => {
     vi.stubEnv('ANTHROPIC_API_KEY', 'placeholder-unused-key');
     const fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
-    await expect(new CommandCodeLLM().interpretar(contexto)).rejects.toThrow('CMD_API_KEY');
+    // El mensaje para la persona no revela variables de entorno; el detalle técnico queda para el registro.
+    await expect(new CommandCodeLLM().interpretar(contexto)).rejects.toMatchObject({
+      codigo: 'ia_sin_clave',
+      message: expect.not.stringContaining('CMD_API_KEY'),
+      tecnico: expect.stringContaining('CMD_API_KEY'),
+    });
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

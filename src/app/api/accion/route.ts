@@ -1,56 +1,181 @@
 import { ErrorIA } from '@/asistente/errores';
 import { z } from 'zod';
-import { Servicio, ErrorUsuario } from '@/servidor/servicio';
-import { Almacen, ErrorOcupado } from '@/servidor/almacen';
+import { Servicio } from '@/servidor/servicio';
+import { Almacen } from '@/servidor/almacen';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
-import { rechazoSesion } from '@/servidor/acceso-autenticado';
+import { exigirSesion } from '@/servidor/acceso-autenticado';
+import { leerJson } from '@/servidor/cuerpo';
 import type { LLM } from '@/asistente/llm';
 import { asistenteConfigurado, crearLLM } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
+import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
+import { ErrorPrecio, REGLAS } from '@/negocio/precios';
+import { ESTADOS, type EstadoCotizacion } from '@/negocio/estado';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+const version = z.iso.datetime();
+const texto = (max: number) => z.string().max(max).nullable().optional();
+const clienteParcial = z
+  .object({
+    nombre: texto(300),
+    rut: texto(300),
+    giro: texto(300),
+    telefono: texto(300),
+    direccion: texto(300),
+    comuna: texto(300),
+    proyecto: texto(300),
+  })
+  .strict();
 const accionSchema = z.discriminatedUnion('tipo', [
-  z.object({ tipo: z.literal('nueva') }),
   z
     .object({
       tipo: z.literal('chat'),
       id: z.uuid().optional(),
+      actualizada: version.optional(),
       mensaje: z.string().trim().min(1).max(6000),
       objetivoId: z.uuid().optional(),
-      objetivoActualizada: z.iso.datetime().optional(),
+      objetivoActualizada: version.optional(),
     })
     .strict()
-    .refine((a) => Boolean(a.objetivoId) === Boolean(a.objetivoActualizada)),
-  z.object({ tipo: z.literal('quitar'), id: z.uuid(), indice: z.number().int().nonnegative() }),
-  z.object({ tipo: z.enum(['emitir', 'aprobar']), id: z.uuid() }),
+    .refine((a) => Boolean(a.objetivoId) === Boolean(a.objetivoActualizada))
+    .refine((a) => !a.id || Boolean(a.actualizada)),
+  z
+    .object({
+      tipo: z.literal('quitar'),
+      id: z.uuid(),
+      actualizada: version,
+      indice: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z.object({ tipo: z.literal('emitir'), id: z.uuid(), actualizada: version }).strict(),
+  z
+    .object({
+      tipo: z.literal('aprobar'),
+      id: z.uuid(),
+      actualizada: version,
+      confirmarVencida: z.boolean().optional(),
+      despacho: z
+        .object({ direccion: z.string().max(300).optional(), transporte: z.string().max(120).optional() })
+        .strict()
+        .optional(),
+    })
+    .strict(),
+  z.object({ tipo: z.literal('duplicar'), id: z.uuid() }).strict(),
+  z.object({ tipo: z.literal('eliminar'), id: z.uuid(), actualizada: version }).strict(),
+  z
+    .object({
+      tipo: z.literal('anular'),
+      id: z.uuid(),
+      actualizada: version,
+      motivo: z.string().max(300).optional(),
+    })
+    .strict(),
+  z
+    .object({
+      tipo: z.literal('editar'),
+      id: z.uuid(),
+      actualizada: version,
+      cliente: clienteParcial.optional(),
+      cantidades: z
+        .array(
+          z
+            .object({ indice: z.number().int().nonnegative(), cantidad: z.number().int().min(1).max(10000) })
+            .strict(),
+        )
+        .max(100)
+        .optional(),
+      descuento: z.number().min(0).max(REGLAS.descuentoMaximo).optional(),
+      flete: z.number().int().min(0).max(100_000_000).optional(),
+    })
+    .strict(),
 ]);
+const fecha = z.iso.date();
+const listadoSchema = z.object({
+  q: z.string().max(200).optional(),
+  estado: z
+    .string()
+    .transform((s) => s.split(',').filter(Boolean))
+    .pipe(z.array(z.enum(ESTADOS as [string, ...string[]])))
+    .optional(),
+  desde: fecha.optional(),
+  hasta: fecha.optional(),
+  pagina: z.coerce.number().int().min(1).max(10000).optional(),
+  porPagina: z.coerce.number().int().min(1).max(200).optional(),
+});
 const modoFijo = () => process.env.NELTUME_LLM === 'fijo' && process.env.NELTUME_TEST_MODE === '1';
-export async function GET(req: Request) {
-  const rechazo = await rechazoSesion(req);
-  if (rechazo) return rechazo;
-  try {
-    const estado = await new Almacen().leer();
+const sinCache = { 'Cache-Control': 'no-store' };
+const configurado = () => modoFijo() || asistenteConfigurado();
+
+const NO_CONFIGURADO = 'El cotizador no está listo. Pide a quien administra el cotizador que lo revise.';
+
+function responderError(e: unknown) {
+  if (e instanceof ErrorMigracionRequerida || e instanceof ErrorCatalogo) {
+    registrarError('api/accion', e);
     return Response.json(
-      { cotizaciones: estado.cotizaciones, asistenteConfigurado: modoFijo() || asistenteConfigurado() },
-      { headers: { 'Cache-Control': 'no-store' } },
+      { error: NO_CONFIGURADO, codigo: 'no_configurado' },
+      { status: 503, headers: sinCache },
     );
+  }
+  if (e instanceof ErrorIA) {
+    if (e.tecnico) registrarError('api/accion', `${e.codigo}: ${e.tecnico}`);
+    return Response.json({ error: e.message, codigo: e.codigo }, { status: e.status, headers: sinCache });
+  }
+  if (e instanceof ErrorPdf) registrarError('api/accion', e.tecnico);
+  if (e instanceof ErrorUsuario)
+    return Response.json(
+      { error: e.message, codigo: e.codigo, ...(e.detalle ? { detalle: e.detalle } : {}) },
+      { status: e.status, headers: sinCache },
+    );
+  if (e instanceof ErrorPrecio)
+    return Response.json(
+      { error: 'Los datos de la cotización no son válidos para calcular montos.', codigo: e.codigo },
+      { status: 400, headers: sinCache },
+    );
+  registrarError('api/accion', e);
+  return Response.json(
+    { error: 'No se pudo completar la operación. El estado guardado se conserva.', codigo: 'error_interno' },
+    { status: 500, headers: sinCache },
+  );
+}
+
+export async function GET(req: Request) {
+  const sesion = await exigirSesion(req);
+  if (!sesion.ok) return sesion.respuesta;
+  const url = new URL(req.url);
+  try {
+    const almacen = new Almacen();
+    const id = url.searchParams.get('id');
+    if (id !== null) {
+      if (!z.uuid().safeParse(id).success)
+        return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
+      const cotizacion = almacen.obtener(id);
+      if (!cotizacion)
+        return Response.json(
+          { error: 'No se encontró la cotización.', codigo: 'no_encontrada' },
+          { status: 404, headers: sinCache },
+        );
+      return Response.json({ cotizacion, asistenteConfigurado: configurado() }, { headers: sinCache });
+    }
+    const filtros = listadoSchema.safeParse(Object.fromEntries(url.searchParams));
+    if (!filtros.success)
+      return Response.json({ error: 'Filtros inválidos.', codigo: 'solicitud_invalida' }, { status: 400 });
+    const { estado, ...resto } = filtros.data;
+    const pagina = almacen.listar({ ...resto, estados: estado as EstadoCotizacion[] | undefined });
+    return Response.json({ ...pagina, asistenteConfigurado: configurado() }, { headers: sinCache });
   } catch (e) {
-    if (e instanceof ErrorMigracionRequerida)
-      return Response.json({ error: e.message }, { status: 503 });
-    return Response.json({ error: 'No se pudo leer el estado guardado.' }, { status: 500 });
+    return responderError(e);
   }
 }
+
 export async function POST(req: Request) {
-  const rechazo = await rechazoSesion(req, { escritura: true });
-  if (rechazo) return rechazo;
-  let cuerpo: unknown;
-  try {
-    cuerpo = await req.json();
-  } catch {
-    return Response.json({ error: 'Solicitud inválida.' }, { status: 400 });
-  }
-  const parsed = accionSchema.safeParse(cuerpo);
-  if (!parsed.success) return Response.json({ error: 'Solicitud inválida.' }, { status: 400 });
+  const sesion = await exigirSesion(req, { escritura: true });
+  if (!sesion.ok) return sesion.respuesta;
+  const cuerpo = await leerJson(req);
+  if (!cuerpo.ok) return cuerpo.respuesta;
+  const parsed = accionSchema.safeParse(cuerpo.valor);
+  if (!parsed.success)
+    return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
   try {
     const catalogo = await cargarCatalogo();
     let llm: LLM;
@@ -58,18 +183,14 @@ export async function POST(req: Request) {
       const { LLMFijo } = await import('@/asistente/fijo');
       llm = new LLMFijo();
     } else llm = crearLLM();
-    return Response.json(await new Servicio(catalogo, llm).ejecutar(parsed.data));
-  } catch (e) {
-    if (e instanceof ErrorMigracionRequerida)
-      return Response.json({ error: e.message }, { status: 503 });
-    if (e instanceof ErrorIA)
-      return Response.json({ error: e.message, codigo: e.codigo }, { status: e.status });
-    if (e instanceof ErrorUsuario) return Response.json({ error: e.message }, { status: 400 });
-    if (e instanceof ErrorOcupado) return Response.json({ error: e.message }, { status: 409 });
-    if (e instanceof ErrorCatalogo) return Response.json({ error: e.message }, { status: 503 });
+    const { nombre, email } = sesion.usuario;
     return Response.json(
-      { error: 'No se pudo completar la operación. El estado guardado se conserva.' },
-      { status: 500 },
+      await new Servicio(catalogo, llm, new Almacen(), { nombre, email }).ejecutar(parsed.data),
+      {
+        headers: sinCache,
+      },
     );
+  } catch (e) {
+    return responderError(e);
   }
 }

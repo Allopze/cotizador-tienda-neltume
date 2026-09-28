@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { interpretarChat } from './commandcode-chat';
-import { ErrorIA, errorProveedor, errorTimeout } from './errores';
+import { ErrorIA, errorProveedor, errorTimeout, MENSAJE_SIN_CONFIGURAR } from './errores';
 import { timeoutIA } from './configuracion';
 import {
   actualizarSchema,
@@ -11,11 +11,11 @@ import {
   responderSchema,
 } from './esquemas';
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
-import type { Mensaje } from '../negocio/estado';
+import type { EstadoCotizacion, Mensaje } from '../negocio/estado';
 export interface ContextoLLM {
   mensaje: string;
   modo: 'cotizacion_nueva' | 'modificacion_anterior';
-  referencia: { numero: number | null; estado: 'borrador' | 'emitida' | 'aprobada' } | null;
+  referencia: { numero: number | null; estado: EstadoCotizacion } | null;
   /** Últimos turnos, solo texto: permite responder a una pregunta previa del asistente. */
   historial: Mensaje[];
   borrador: { items: SolicitudItem[]; cliente: Cliente };
@@ -42,6 +42,7 @@ En modo modificacion_anterior, usa modificar_cotizacion y devuelve solo cambios:
 En actualizar_cotizacion, para datos nuevos no indicados usa null. Nunca adivines cantidad, madera ni medidas. "Una" significa cantidad 1.
 Convierte a metros: 80×210 es ancho 0.80 y alto 2.10; acepta coma decimal. Las medidas son de la puerta, no del vano.
 Los accesorios MARCO, PIEZAS T, ENDOLADO, GUARDAPOLVO y PILASTRA usan medida + alto (= largo); ancho null. "4" en marcos significa medida "2x4". No completes medidas o cantidades ausentes.
+Datos del cliente: nombre, rut, giro (actividad comercial de la empresa), telefono, direccion, comuna y proyecto; no los inventes.
 Usa aliasModelos y aliasMaderas del contexto para interpretar nombres alternativos y devuelve el nombre canónico. Conserva modelos o maderas desconocidos para que el sistema los valide.
 Si el mensaje completa un accesorio pendiente, actualiza ese ítem. Si aprueban una cotización con número explícito, llama aprobar_cotizacion.
 Si piden aprobar sin número, responde pidiendo el número; si el historial muestra que lo pediste y el mensaje lo entrega, llama aprobar_cotizacion. Para otras consultas usa responder, sin hablar de valores monetarios.
@@ -89,6 +90,7 @@ export function contextoSeguro(
       cliente: {
         nombre: cliente.nombre,
         rut: cliente.rut,
+        giro: cliente.giro ?? null,
         telefono: cliente.telefono,
         direccion: cliente.direccion,
         comuna: cliente.comuna,
@@ -152,11 +154,7 @@ export class CommandCodeLLM implements LLM {
 
   private async consultar(contexto: unknown, system: string, definiciones: Definiciones) {
     if (!process.env.CMD_API_KEY)
-      throw new ErrorIA(
-        'ia_sin_clave',
-        'Configura CMD_API_KEY en .env.local para conversar con el asistente.',
-        503,
-      );
+      throw new ErrorIA('ia_sin_clave', MENSAJE_SIN_CONFIGURAR, 503, 'Falta CMD_API_KEY en .env.local.');
     const model = this.modelo?.trim() || process.env.CMD_MODEL?.trim() || 'claude-sonnet-5';
     const tools = herramientas(definiciones);
     try {

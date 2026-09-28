@@ -1,8 +1,10 @@
 import Database from 'better-sqlite3';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
+import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA } from '../negocio/estado';
+import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 5;
+const VERSION_ESQUEMA = 6;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -10,6 +12,7 @@ type GlobalWithConnections = typeof globalThis & {
   [SQLITE_CLEANUP]?: boolean;
 };
 
+/** Mensaje técnico para terminal y registro; las rutas responden un texto genérico. */
 export class ErrorMigracionRequerida extends Error {
   constructor() {
     super('Hay archivos JSON anteriores. Ejecuta npm run migrar:sqlite antes de iniciar el cotizador.');
@@ -38,9 +41,7 @@ function hayJsonLegado(datos: string, revisarCatalogoPredeterminado: boolean) {
   const relativo = catalogo === directorio || catalogo.startsWith(`${directorio}/`);
   const catalogoConfigurado = revisarCatalogoPredeterminado && !!process.env.NELTUME_CATALOGO;
   const datosPredeterminados =
-    revisarCatalogoPredeterminado &&
-    !process.env.NELTUME_DATA_DIR &&
-    directorio === resolve('data');
+    revisarCatalogoPredeterminado && !process.env.NELTUME_DATA_DIR && directorio === resolve('data');
   return existsSync(catalogo) && (relativo || catalogoConfigurado || datosPredeterminados);
 }
 
@@ -50,20 +51,155 @@ function crearEsquema(db: Database.Database) {
     throw new Error(`La base SQLite usa una versión de esquema más nueva (${version}).`);
   if (version === VERSION_ESQUEMA) return;
   if (version < 4) crearEsquemaHasta4(db, version);
-  db.transaction(() => {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS ajustes (
-        clave TEXT PRIMARY KEY,
-        valor_json TEXT NOT NULL,
-        actualizada TEXT NOT NULL
-      );
-      PRAGMA user_version = ${VERSION_ESQUEMA};
-    `);
-  }).immediate();
+  if (version < 5)
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ajustes (
+          clave TEXT PRIMARY KEY,
+          valor_json TEXT NOT NULL,
+          actualizada TEXT NOT NULL
+        );
+        PRAGMA user_version = 5;
+      `);
+    }).immediate();
+  if (version < 6) migrarA6(db);
+}
+
+const COLUMNAS_COTIZACION_V4 = `id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut,
+  cliente_telefono, cliente_direccion, cliente_comuna, cliente_comuna_normalizada, cliente_proyecto,
+  cliente_proyecto_normalizado, creada, actualizada, pdf, fecha_emision, fecha_emision_ausente, origen_id,
+  origen_ausente`;
+
+/**
+ * v6: estados «reemplazada» y «anulada» (reconstruye cotizaciones para ampliar el CHECK), autoría,
+ * vigencia, descuento, flete, giro, medidas pedidas por línea, despacho y anulación de notas,
+ * dueño de las altas pendientes y texto de búsqueda. Las filas existentes quedan con null o 0.
+ */
+function migrarA6(db: Database.Database) {
+  // PRAGMA foreign_keys no tiene efecto dentro de una transacción: se desactiva antes de reconstruir.
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE cotizaciones_v6 (
+          id TEXT PRIMARY KEY,
+          orden INTEGER NOT NULL UNIQUE CHECK (orden >= 0),
+          numero INTEGER UNIQUE,
+          estado TEXT NOT NULL CHECK (estado IN ('borrador', 'emitida', 'aprobada', 'reemplazada', 'anulada')),
+          cliente_nombre TEXT,
+          cliente_nombre_normalizado TEXT NOT NULL,
+          cliente_rut TEXT,
+          cliente_telefono TEXT,
+          cliente_direccion TEXT,
+          cliente_comuna TEXT,
+          cliente_comuna_normalizada TEXT NOT NULL,
+          cliente_proyecto TEXT,
+          cliente_proyecto_normalizado TEXT NOT NULL,
+          creada TEXT NOT NULL,
+          actualizada TEXT NOT NULL,
+          pdf TEXT,
+          fecha_emision TEXT,
+          fecha_emision_ausente INTEGER NOT NULL DEFAULT 0 CHECK (fecha_emision_ausente IN (0, 1)),
+          origen_id TEXT REFERENCES cotizaciones(id) ON DELETE SET NULL,
+          origen_ausente INTEGER NOT NULL DEFAULT 0 CHECK (origen_ausente IN (0, 1)),
+          cliente_giro TEXT,
+          vence TEXT,
+          descuento REAL NOT NULL DEFAULT 0 CHECK (descuento >= 0 AND descuento <= 50),
+          flete INTEGER NOT NULL DEFAULT 0 CHECK (flete >= 0),
+          creada_por TEXT,
+          emitida_por TEXT,
+          aprobada_por TEXT,
+          anulada_por TEXT,
+          fecha_anulacion TEXT,
+          motivo_anulacion TEXT,
+          reemplazada_por INTEGER,
+          version_catalogo TEXT,
+          busqueda TEXT NOT NULL DEFAULT ''
+        );
+        INSERT INTO cotizaciones_v6 (${COLUMNAS_COTIZACION_V4})
+          SELECT ${COLUMNAS_COTIZACION_V4} FROM cotizaciones;
+        DROP TABLE cotizaciones;
+        ALTER TABLE cotizaciones_v6 RENAME TO cotizaciones;
+        CREATE INDEX idx_cotizacion_estado ON cotizaciones(estado, orden);
+        CREATE INDEX idx_cotizacion_cliente ON cotizaciones(cliente_nombre_normalizado);
+        CREATE INDEX idx_cotizacion_proyecto ON cotizaciones(cliente_proyecto_normalizado);
+        CREATE INDEX idx_cotizacion_comuna ON cotizaciones(cliente_comuna_normalizada);
+        CREATE INDEX idx_cotizacion_origen ON cotizaciones(origen_id, estado);
+        CREATE INDEX idx_cotizacion_actualizada ON cotizaciones(actualizada DESC);
+
+        ALTER TABLE cotizacion_lineas ADD COLUMN indice INTEGER;
+        ALTER TABLE cotizacion_lineas ADD COLUMN ancho_solicitado REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN alto_solicitado REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN medida_solicitada TEXT;
+        ALTER TABLE nota_lineas ADD COLUMN indice INTEGER;
+        ALTER TABLE nota_lineas ADD COLUMN ancho_solicitado REAL;
+        ALTER TABLE nota_lineas ADD COLUMN alto_solicitado REAL;
+        ALTER TABLE nota_lineas ADD COLUMN medida_solicitada TEXT;
+        ALTER TABLE cotizacion_montos ADD COLUMN subtotal INTEGER;
+        ALTER TABLE cotizacion_montos ADD COLUMN descuento_porcentaje REAL NOT NULL DEFAULT 0;
+        ALTER TABLE cotizacion_montos ADD COLUMN descuento INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE cotizacion_montos ADD COLUMN flete INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE notas_pedido ADD COLUMN despacho_direccion TEXT;
+        ALTER TABLE notas_pedido ADD COLUMN despacho_transporte TEXT;
+        ALTER TABLE notas_pedido ADD COLUMN anulada INTEGER NOT NULL DEFAULT 0 CHECK (anulada IN (0, 1));
+        ALTER TABLE productos_pendientes ADD COLUMN user_id TEXT;
+        ALTER TABLE productos_adicionales ADD COLUMN creada_por TEXT;
+        ALTER TABLE productos_adicionales ADD COLUMN actualizada TEXT;
+      `);
+      const filas = db
+        .prepare(
+          'SELECT id, numero, cliente_nombre, cliente_rut, cliente_comuna, cliente_proyecto FROM cotizaciones',
+        )
+        .all() as {
+        id: string;
+        numero: number | null;
+        cliente_nombre: string | null;
+        cliente_rut: string | null;
+        cliente_comuna: string | null;
+        cliente_proyecto: string | null;
+      }[];
+      const productos = db.prepare(`
+        SELECT modelo, madera FROM solicitudes WHERE cotizacion_id = ?
+        UNION ALL SELECT modelo, madera FROM cotizacion_lineas WHERE cotizacion_id = ?
+      `);
+      const actualizar = db.prepare('UPDATE cotizaciones SET busqueda = ? WHERE id = ?');
+      for (const f of filas) {
+        const ps = productos.all(f.id, f.id) as { modelo: string | null; madera: string | null }[];
+        actualizar.run(
+          textoBusqueda({
+            numero: f.numero,
+            cliente: {
+              nombre: f.cliente_nombre,
+              rut: f.cliente_rut,
+              comuna: f.cliente_comuna,
+              proyecto: f.cliente_proyecto,
+            },
+            productos: ps.flatMap((p) => [p.modelo, p.madera]),
+          }),
+          f.id,
+        );
+      }
+      // Originales cuya revisión ya se emitió: dejan de ser aprobables (evita dos notas de pedido).
+      db.exec(`
+        UPDATE cotizaciones AS o SET
+          estado = 'reemplazada',
+          reemplazada_por = (
+            SELECT MAX(r.numero) FROM cotizaciones r WHERE r.origen_id = o.id AND r.estado IN ('emitida', 'aprobada')
+          )
+        WHERE o.estado = 'emitida' AND EXISTS (
+          SELECT 1 FROM cotizaciones r WHERE r.origen_id = o.id AND r.estado IN ('emitida', 'aprobada')
+        );
+      `);
+      if ((db.pragma('foreign_key_check') as unknown[]).length)
+        throw new Error('La migración del esquema 6 dejó referencias inconsistentes.');
+      db.pragma('user_version = 6');
+    }).immediate();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 function crearEsquemaHasta4(db: Database.Database, version: number) {
-
   if (version === 1) {
     db.transaction(() => {
       db.exec(`
@@ -153,7 +289,7 @@ function crearEsquemaHasta4(db: Database.Database, version: number) {
         siguiente_nota INTEGER NOT NULL CHECK (siguiente_nota > 0)
       );
       INSERT OR IGNORE INTO correlativos (id, siguiente_cotizacion, siguiente_nota)
-      VALUES (1, 323, 1);
+      VALUES (1, ${CORRELATIVO_COTIZACION}, ${CORRELATIVO_NOTA});
 
       CREATE TABLE IF NOT EXISTS catalogo_meta (
         id INTEGER PRIMARY KEY CHECK (id = 1),

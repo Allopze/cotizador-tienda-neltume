@@ -1,13 +1,15 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
+import { ErrorSolicitud, MENSAJES, pedirJSON } from '../solicitud';
 
-export function LoginForm() {
+export function LoginForm({ sesionExpirada = false }: { sesionExpirada?: boolean }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const clave = useRef<HTMLInputElement>(null);
 
   async function ingresar(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -15,21 +17,27 @@ export function LoginForm() {
     setOcupado(true);
     setError('');
     try {
-      const response = await fetch('/api/auth/sign-in/email', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), password, callbackURL: '/' }),
+      await pedirJSON('/api/auth/sign-in/email', {
+        json: { email: email.trim(), password, callbackURL: '/' },
       });
-      if (!response.ok) {
-        setError('No se pudo iniciar sesión. Revisa tus datos o espera un momento antes de volver a intentar.');
-        setPassword('');
-        return;
-      }
+      // El cotizador restaura el borrador guardado en sessionStorage.
       window.location.replace('/');
-    } catch {
-      setError('No se pudo conectar con el cotizador. Intenta nuevamente.');
-    } finally {
+    } catch (e) {
+      const status = e instanceof ErrorSolicitud ? e.status : 0;
+      // Sesión creada aunque la respuesta no traiga JSON: se continúa igual.
+      if (status >= 200 && status < 300) return window.location.replace('/');
+      setError(
+        status === 0
+          ? MENSAJES.red
+          : status >= 500
+            ? MENSAJES.servidor(status)
+            : 'No se pudo iniciar sesión. Revisa tus datos o espera un momento antes de volver a intentar.',
+      );
+      setPassword('');
       setOcupado(false);
+      // Tras un error el foco vuelve a la contraseña (ya vaciada) para reintentar.
+      requestAnimationFrame(() => clave.current?.focus());
+      return;
     }
   }
 
@@ -48,6 +56,11 @@ export function LoginForm() {
         <p className="eyebrow">ESPACIO INTERNO · COTIZACIONES</p>
         <h1 id="login-title">Iniciar sesión</h1>
         <p className="login-intro">Ingresa con tu cuenta para continuar al cotizador.</p>
+        {sesionExpirada && (
+          <p className="login-aviso" role="status">
+            Tu sesión expiró. Vuelve a ingresar; tu borrador se conservó.
+          </p>
+        )}
         <form onSubmit={ingresar} className="login-form">
           <label htmlFor="correo">Correo electrónico</label>
           <input
@@ -64,24 +77,33 @@ export function LoginForm() {
           />
           <label htmlFor="clave">Contraseña</label>
           <input
+            ref={clave}
             id="clave"
             name="password"
             type="password"
             autoComplete="current-password"
             required
             maxLength={128}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'login-error' : undefined}
             value={password}
             onChange={(event) => setPassword(event.target.value)}
             disabled={ocupado}
           />
-          {error && <p className="login-error" role="alert">{error}</p>}
-          <button className="button primary login-submit" type="submit" disabled={ocupado || !email || !password}>
+          {error && (
+            <p className="login-error" id="login-error" role="alert">
+              {error}
+            </p>
+          )}
+          <button className="button primary login-submit" type="submit" disabled={ocupado}>
             {ocupado ? 'Ingresando…' : 'Ingresar'}
           </button>
         </form>
         <p className="login-help">Si no tienes acceso, solicita una cuenta a la persona responsable.</p>
       </section>
-      <footer className="login-footer">NELTUME <span>/ Hecho en madera.</span></footer>
+      <footer className="login-footer">
+        NELTUME <span>/ Hecho en madera.</span>
+      </footer>
     </main>
   );
 }

@@ -9,6 +9,7 @@ import { cotizar } from '../src/negocio/precios';
 import { Almacen } from '../src/servidor/almacen';
 import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
 import { migrarJsonASqlite } from '../src/servidor/migracion-sqlite';
+import { completarEstadoLegado } from '../src/servidor/persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 
 const directorios: string[] = [];
@@ -44,14 +45,15 @@ const catalogoFixture = (): Catalogo => ({
   productos: [producto()],
 });
 
+/** Estado JSON con el formato anterior al esquema 6 (sin giro, vigencia, autoría, descuento ni flete). */
 function estadoFixture(): Estado {
   const p = producto();
   const montos = cotizar([{ producto: p, cantidad: 3 }]);
   const notaMontos = cotizar([{ producto: p, cantidad: 3 }], { ajuste: 0, iva: 0.19 });
-  const emitida: Cotizacion = {
+  const emitida = {
     id: 'cotizacion-emitida',
     numero: 323,
-    estado: 'aprobada',
+    estado: 'aprobada' as const,
     cliente: { ...clienteVacio(), nombre: 'María José', comuna: 'Temuco', proyecto: 'Casa Norte' },
     solicitudes: [{ modelo: 'MOLCO', madera: 'pino', ancho: 80, alto: 2, medida: null, cantidad: 3 }],
     montos,
@@ -71,10 +73,10 @@ function estadoFixture(): Estado {
       fecha: '2026-01-03T00:00:00.000Z',
     },
   };
-  const revision: Cotizacion = {
+  const revision = {
     id: 'revision-emitida',
     numero: null,
-    estado: 'borrador',
+    estado: 'borrador' as const,
     cliente: emitida.cliente,
     solicitudes: [{ ...emitida.solicitudes[0], cantidad: 8 }],
     montos: cotizar([{ producto: { ...p, precioNeto: 119 }, cantidad: 8 }]),
@@ -87,7 +89,12 @@ function estadoFixture(): Estado {
     origen: 323,
     nota: null,
   };
-  return { ...estadoInicial(), siguienteCotizacion: 324, siguienteNota: 2, cotizaciones: [emitida, revision] };
+  return {
+    ...estadoInicial(),
+    siguienteCotizacion: 324,
+    siguienteNota: 2,
+    cotizaciones: [emitida, revision] as unknown as Cotizacion[],
+  };
 }
 
 describe('Persistencia SQLite', () => {
@@ -109,7 +116,7 @@ describe('Persistencia SQLite', () => {
       directorioRespaldo: backup,
     });
     expect(resultado.yaMigrada).toBe(false);
-    expect(await new Almacen(dir, rutaDb).leer()).toEqual(estado);
+    expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
     const db = abrirBaseDatos(rutaDb);
     expect(new RepositorioCatalogoSqlite(db).todos()).toEqual(catalogo.productos);
     expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
@@ -130,7 +137,7 @@ describe('Persistencia SQLite', () => {
       directorioRespaldo: backup,
     });
     expect(repetida.yaMigrada).toBe(true);
-    expect(await new Almacen(dir, rutaDb).leer()).toEqual(estado);
+    expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
   });
 
   it('si un JSON es inválido no publica una base parcial ni retira los archivos originales', async () => {

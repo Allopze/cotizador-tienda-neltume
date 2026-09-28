@@ -6,9 +6,13 @@ import { LoginForm } from './login-form';
 
 export const dynamic = 'force-dynamic';
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   validarConfiguracionAutenticacion();
   const session = await auth.api.getSession({ headers: await headers() });
   if (session) redirect('/');
-  return <LoginForm />;
+  return <LoginForm sesionExpirada={(await searchParams).motivo === 'sesion'} />;
 }

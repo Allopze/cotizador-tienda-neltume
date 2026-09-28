@@ -1,5 +1,12 @@
 import type { Producto } from '../catalogo/tipos';
-export const REGLAS = { ajuste: 0.25, iva: 0.19 };
+/**
+ * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
+ * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × unitario.
+ * 2. subtotal = suma de líneas; descuento = round(subtotal × porcentaje / 100).
+ * 3. neto = subtotal − descuento + flete (el flete ya es neto entero); IVA = round(neto × iva).
+ * La nota de pedido usa ajuste 0, sin descuento ni flete.
+ */
+export const REGLAS = { ajuste: 0.25, iva: 0.19, vigenciaDiasHabiles: 10, descuentoMaximo: 50 };
 export class ErrorPrecio extends Error {
   constructor(
     public codigo:
@@ -8,55 +15,112 @@ export class ErrorPrecio extends Error {
       | 'precio_invalido'
       | 'ajuste_invalido'
       | 'iva_invalido'
+      | 'descuento_invalido'
+      | 'flete_invalido'
       | 'desbordamiento',
   ) {
     super(codigo);
     this.name = 'ErrorPrecio';
   }
 }
-export interface ItemPrecio {
+/** Medidas pedidas por la persona (en metros), que la fábrica necesita aunque el producto sea un rango. */
+export interface MedidasSolicitadas {
+  indice?: number | null;
+  anchoSolicitado?: number | null;
+  altoSolicitado?: number | null;
+  medidaSolicitada?: string | null;
+}
+export interface ItemPrecio extends MedidasSolicitadas {
   producto: Producto;
   cantidad: number;
-  ajuste?: number;
 }
 export interface Linea {
   producto: Producto;
   cantidad: number;
   precioUnitario: number;
   total: number;
+  /** Índice de la solicitud que originó la línea; null en registros anteriores. */
+  indice: number | null;
+  anchoSolicitado: number | null;
+  altoSolicitado: number | null;
+  medidaSolicitada: string | null;
 }
 export interface Montos {
   lineas: Linea[];
+  /** Suma de líneas antes de descuento y flete. */
+  subtotal: number;
+  descuentoPorcentaje: number;
+  descuento: number;
+  flete: number;
+  /** Base imponible: subtotal − descuento + flete. */
   neto: number;
   iva: number;
   total: number;
 }
-export const montosVacios = (): Montos => ({ lineas: [], neto: 0, iva: 0, total: 0 });
-export function cotizar(items: ItemPrecio[], reglas = REGLAS): Montos {
+export interface Extras {
+  descuento?: number;
+  flete?: number;
+}
+export const montosVacios = (): Montos => ({
+  lineas: [],
+  subtotal: 0,
+  descuentoPorcentaje: 0,
+  descuento: 0,
+  flete: 0,
+  neto: 0,
+  iva: 0,
+  total: 0,
+});
+export const descuentoValido = (d: number) =>
+  Number.isFinite(d) && d >= 0 && d <= REGLAS.descuentoMaximo && Math.round(d * 100) === d * 100;
+export const fleteValido = (f: number) => Number.isSafeInteger(f) && f >= 0 && f <= 100_000_000;
+export function cotizar(
+  items: ItemPrecio[],
+  reglas: { ajuste: number; iva: number } = REGLAS,
+  extras: Extras = {},
+): Montos {
   if (!items.length) throw new ErrorPrecio('sin_items');
-  const validarAjuste = (a: number) => {
-    if (!Number.isFinite(a) || a < -0.5 || a > 1) throw new ErrorPrecio('ajuste_invalido');
-  };
-  validarAjuste(reglas.ajuste);
+  if (!Number.isFinite(reglas.ajuste) || reglas.ajuste < -0.5 || reglas.ajuste > 1)
+    throw new ErrorPrecio('ajuste_invalido');
   if (!Number.isFinite(reglas.iva) || reglas.iva < 0 || reglas.iva > 1) throw new ErrorPrecio('iva_invalido');
-  const lineas = items.map(({ producto, cantidad, ajuste }) => {
+  const descuentoPorcentaje = extras.descuento ?? 0,
+    flete = extras.flete ?? 0;
+  if (!descuentoValido(descuentoPorcentaje)) throw new ErrorPrecio('descuento_invalido');
+  if (!fleteValido(flete)) throw new ErrorPrecio('flete_invalido');
+  const lineas = items.map((item): Linea => {
+    const { producto, cantidad } = item;
     if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 10000)
       throw new ErrorPrecio('cantidad_invalida');
     if (!Number.isFinite(producto.precioNeto) || producto.precioNeto <= 0)
       throw new ErrorPrecio('precio_invalido');
-    const a = ajuste ?? reglas.ajuste;
-    validarAjuste(a);
-    const precioUnitario = Math.round(producto.precioNeto * (1 + a));
-    return { producto, cantidad, precioUnitario, total: cantidad * precioUnitario };
+    const precioUnitario = Math.round(producto.precioNeto * (1 + reglas.ajuste));
+    return {
+      producto,
+      cantidad,
+      precioUnitario,
+      total: cantidad * precioUnitario,
+      indice: item.indice ?? null,
+      anchoSolicitado: item.anchoSolicitado ?? null,
+      altoSolicitado: item.altoSolicitado ?? null,
+      medidaSolicitada: item.medidaSolicitada ?? null,
+    };
   });
-  const neto = lineas.reduce((sum, l) => sum + l.total, 0),
+  const subtotal = lineas.reduce((sum, l) => sum + l.total, 0),
+    descuento = Math.round((subtotal * descuentoPorcentaje) / 100),
+    neto = subtotal - descuento + flete,
     iva = Math.round(neto * reglas.iva),
     total = neto + iva;
-  if (![neto, iva, total, ...lineas.flatMap((l) => [l.total, l.precioUnitario])].every(Number.isSafeInteger))
+  if (
+    ![subtotal, descuento, neto, iva, total, ...lineas.flatMap((l) => [l.total, l.precioUnitario])].every(
+      Number.isSafeInteger,
+    )
+  )
     throw new ErrorPrecio('desbordamiento');
-  return { lineas, neto, iva, total };
+  return { lineas, subtotal, descuentoPorcentaje, descuento, flete, neto, iva, total };
 }
 export const pesos = (n: number) =>
   '$' + new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(n);
 export const porcentajeIva = (iva = REGLAS.iva) =>
   `${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(iva * 100)} %`;
+export const porcentaje = (n: number) =>
+  `${new Intl.NumberFormat('es-CL', { maximumFractionDigits: 2 }).format(n)} %`;

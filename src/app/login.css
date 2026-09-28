@@ -1,5 +1,18 @@
-.account-controls {
+.account {
   margin-left: auto;
+  position: relative;
+  min-width: 0;
+}
+.account-toggle {
+  display: none;
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+.account-controls {
   display: flex;
   align-items: center;
   gap: 11px;
@@ -9,16 +22,17 @@
   max-width: 220px;
   overflow: hidden;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .logout-button {
+  min-height: 36px;
   border: 1px solid var(--line);
-  padding: 8px 11px;
+  padding: 7px 12px;
   background: transparent;
   color: var(--ink);
-  font-size: 10px;
+  font-size: var(--fs-xs);
   white-space: nowrap;
 }
 .logout-button:hover:not(:disabled) {
@@ -30,9 +44,7 @@
   grid-template-rows: 1fr auto;
   justify-items: center;
   padding: 36px 20px 22px;
-  background:
-    radial-gradient(ellipse at 50% 0%, rgb(230 233 220 / 64%), transparent 52%),
-    var(--paper);
+  background: radial-gradient(ellipse at 50% 0%, rgb(230 233 220 / 64%), transparent 52%), var(--paper);
 }
 .login-card {
   width: min(100%, 420px);
@@ -52,19 +64,25 @@
 .login-card > .eyebrow {
   margin-bottom: 10px;
   text-align: center;
-  font-size: 8px;
-  letter-spacing: 1.5px;
+  letter-spacing: 1.2px;
 }
 .login-card h1 {
   text-align: center;
-  font-size: 31px;
+  font-size: 1.9375rem;
 }
 .login-intro {
   margin: 10px auto 27px;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.7;
+  font-size: var(--fs-md);
+  line-height: 1.6;
   text-align: center;
+}
+.login-aviso {
+  margin: -12px 0 20px;
+  padding: 10px 12px;
+  background: #edeadf;
+  font-size: var(--fs-sm);
+  line-height: 1.55;
 }
 .login-form {
   display: grid;
@@ -72,8 +90,8 @@
 }
 .login-form label {
   margin-top: 7px;
-  color: #545f55;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
   font-weight: 600;
 }
 .login-form input {
@@ -84,10 +102,11 @@
   padding: 0 12px;
   background: #fff;
   color: var(--ink);
-  font: 13px Arial, sans-serif;
+  font:
+    var(--fs-md) Arial,
+    sans-serif;
 }
 .login-form input:focus-visible {
-  outline: 2px solid #ac7549;
   outline-offset: 2px;
 }
 .login-submit {
@@ -97,17 +116,17 @@
 }
 .login-error {
   margin-top: 4px;
-  color: #963c32;
-  font-size: 11px;
-  line-height: 1.6;
+  color: var(--danger);
+  font-size: var(--fs-md);
+  line-height: 1.55;
 }
 .login-help {
   margin-top: 25px;
   border-top: 1px solid #edf0e8;
   padding-top: 16px;
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.7;
+  font-size: var(--fs-xs);
+  line-height: 1.6;
   text-align: center;
 }
 .login-footer {
@@ -115,7 +134,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--green);
-  font-size: 9px;
+  font-size: var(--fs-xs);
   letter-spacing: 1px;
 }
 .login-footer span {
@@ -127,22 +146,48 @@
     max-width: 140px;
   }
 }
+/* Cabecera móvil: asistente, correo y salida en un menú compacto. */
+@media (max-width: 480px) {
+  .account-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .account-controls {
+    display: none;
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 8px);
+    right: 0;
+    width: min(270px, calc(100vw - 32px));
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--line);
+    background: #fff;
+    box-shadow: 0 12px 34px rgb(38 58 48 / 14%);
+  }
+  .account.abierto .account-controls {
+    display: flex;
+  }
+  .account-email {
+    max-width: none;
+    padding: 2px 2px 6px;
+    border-bottom: 1px solid var(--line-soft);
+  }
+  .account-controls .ia-settings-button,
+  .account-controls .logout-button {
+    min-height: 44px;
+    justify-content: flex-start;
+    font-size: var(--fs-sm);
+  }
+}
 @media (max-width: 520px) {
   .login-page {
     padding: 16px 15px 18px;
   }
   .login-card {
     padding: 32px 24px 27px;
-  }
-  .account-controls {
-    gap: 6px;
-  }
-  .account-email {
-    max-width: 105px;
-    font-size: 9px;
-  }
-  .logout-button {
-    padding: 7px 8px;
-    font-size: 9px;
   }
 }

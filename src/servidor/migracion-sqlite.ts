@@ -14,7 +14,11 @@ import {
   rutaCatalogoLegado,
   rutaEstadoLegado,
 } from './base-datos';
-import { catalogoPersistidoSchema, estadoPersistidoSchema } from './persistencia-esquemas';
+import {
+  catalogoPersistidoSchema,
+  completarEstadoLegado,
+  estadoPersistidoSchema,
+} from './persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from './repositorio-catalogo';
 
 const MIGRACION_ID = 'json-v1';
@@ -76,7 +80,7 @@ async function leerEstado(ruta: string) {
   } catch {
     throw new Error(`El JSON del estado no es válido: ${ruta}`);
   }
-  const parsed = estadoPersistidoSchema.safeParse(entrada);
+  const parsed = estadoPersistidoSchema.safeParse(completarEstadoLegado(entrada));
   if (!parsed.success) throw new Error(`El estado no cumple el esquema esperado: ${ruta}`);
   const estado = parsed.data as Estado;
   verificarEstado(estado);
@@ -114,15 +118,15 @@ async function verificarMigracionExistente(
   const db = abrirBaseDatos(rutaDb, { permitirJsonLegado: true, cachear: false });
   try {
     const marcador = db.prepare('SELECT * FROM migraciones_datos WHERE id = ?').get(MIGRACION_ID) as
-      | { sha256_catalogo: string; sha256_estado: string }
-      | undefined;
-    if (!marcador) throw new Error(`Ya existe ${rutaDb} y no contiene una migración JSON reconocida; no se modificó.`);
+      { sha256_catalogo: string; sha256_estado: string } | undefined;
+    if (!marcador)
+      throw new Error(`Ya existe ${rutaDb} y no contiene una migración JSON reconocida; no se modificó.`);
     const integrity = db.pragma('integrity_check', { simple: true });
     const foreignKeys = db.pragma('foreign_key_check') as unknown[];
     if (integrity !== 'ok' || foreignKeys.length)
       throw new Error('La base SQLite migrada no supera la comprobación de integridad.');
-    const catalogo = await existe(origenes.catalogo) ? await leerCatalogo(origenes.catalogo) : null;
-    const estado = await existe(origenes.estado) ? await leerEstado(origenes.estado) : null;
+    const catalogo = (await existe(origenes.catalogo)) ? await leerCatalogo(origenes.catalogo) : null;
+    const estado = (await existe(origenes.estado)) ? await leerEstado(origenes.estado) : null;
     if (catalogo && sha256(catalogo.bytes) !== marcador.sha256_catalogo)
       throw new Error('El JSON del catálogo cambió después de migrarse; se conservaron ambos archivos.');
     if (estado && sha256(estado.bytes!) !== marcador.sha256_estado)
@@ -179,10 +183,11 @@ async function migrarConBloqueo(
   origenes: { catalogo: string; estado: string },
   directorioRespaldo?: string,
 ) {
-  if (await existe(rutaDb))
-    return verificarMigracionExistente(rutaDb, origenes, directorioRespaldo);
+  if (await existe(rutaDb)) return verificarMigracionExistente(rutaDb, origenes, directorioRespaldo);
   if (!(await existe(origenes.catalogo)))
-    throw new Error(`No se encontró ${origenes.catalogo}. Ejecuta npm run importar si es una instalación nueva.`);
+    throw new Error(
+      `No se encontró ${origenes.catalogo}. Ejecuta npm run importar si es una instalación nueva.`,
+    );
 
   const [{ catalogo, bytes: bytesCatalogo }, { estado, bytes: bytesEstado }] = await Promise.all([
     leerCatalogo(origenes.catalogo),
@@ -198,10 +203,14 @@ async function migrarConBloqueo(
     db.transaction(() => {
       guardarCatalogo(db!, catalogo);
       guardarEstadoCompleto(db!, estado);
-      db!.prepare(`
+      db!
+        .prepare(
+          `
         INSERT INTO migraciones_datos (id, fecha, sha256_catalogo, sha256_estado, cantidad_cotizaciones)
         VALUES (?, ?, ?, ?, ?)
-      `).run(MIGRACION_ID, new Date().toISOString(), shaCatalogo, shaEstado, estado.cotizaciones.length);
+      `,
+        )
+        .run(MIGRACION_ID, new Date().toISOString(), shaCatalogo, shaEstado, estado.cotizaciones.length);
     }).immediate();
 
     const repo = new RepositorioCatalogoSqlite(db);

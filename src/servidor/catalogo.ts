@@ -9,7 +9,9 @@ export async function cargarCatalogo(): Promise<RepositorioCatalogoSqlite> {
     const metadata = catalogo.metadata;
     const cantidad = (
       db
-        .prepare('SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n')
+        .prepare(
+          'SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n',
+        )
         .get() as { n: number }
     ).n;
     if (!metadata || !cantidad || metadata.cantidadProductos !== cantidad)
@@ -17,8 +19,9 @@ export async function cargarCatalogo(): Promise<RepositorioCatalogoSqlite> {
     return catalogo;
   } catch (e) {
     if (e instanceof ErrorMigracionRequerida) throw e;
+    // Mensaje técnico para el registro del servidor; las rutas responden un texto genérico.
     throw new ErrorCatalogo(
-      'Falta el catálogo o la base está dañada. Revisa la importación con npm run importar.',
+      `Falta el catálogo o la base está dañada (${e instanceof Error ? e.message : 'error'}). Revisa la importación con npm run importar.`,
     );
   }
 }

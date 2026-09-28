@@ -1,0 +1,52 @@
+// Formas de las respuestas de la API usadas por la interfaz (copiadas de src/servidor: no se importa
+// código de servidor en el cliente). Ver contrato-api del backend v6.
+import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
+import type { Producto } from '@/catalogo/tipos';
+import type { Cliente } from '@/catalogo/tipos';
+import type { OpcionCotizacion } from '@/servidor/referencias';
+
+export interface ItemCambio {
+  indice: number;
+  descripcion: string;
+}
+export interface CambiosCotizacion {
+  agregados: ItemCambio[];
+  quitados: ItemCambio[];
+  modificados: { antes: ItemCambio; despues: ItemCambio }[];
+  cliente: (keyof Cliente)[];
+}
+export interface Resultado {
+  cotizacion: Cotizacion;
+  archivo?: string;
+  seleccion?: OpcionCotizacion[];
+  confirmar?: { id: string; numero: number; actualizada: string; vence: string | null; vencida: boolean };
+  avisos?: string[];
+  cambios?: CambiosCotizacion;
+  eliminada?: true;
+}
+export interface Listado {
+  cotizaciones: ResumenCotizacion[];
+  total: number;
+  pagina: number;
+  porPagina: number;
+  asistenteConfigurado: boolean;
+}
+export interface Detalle {
+  cotizacion: Cotizacion;
+  asistenteConfigurado: boolean;
+}
+export type ProductoManual = Producto & {
+  creada: string;
+  creadaPor: string | null;
+  actualizada: string | null;
+};
+export interface CambiosEdicion {
+  cliente?: Partial<Record<keyof Cliente, string | null>>;
+  cantidades?: { indice: number; cantidad: number }[];
+  descuento?: number;
+  flete?: number;
+}
+export interface Despacho {
+  direccion?: string;
+  transporte?: string;
+}

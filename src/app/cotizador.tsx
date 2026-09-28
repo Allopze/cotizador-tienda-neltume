@@ -1,204 +1,759 @@
 'use client';
-import { useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
-import Link from 'next/link';
-import type { Cotizacion } from '@/negocio/estado';
+import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
+import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
-import { CotizacionPanel } from './cotizacion-panel';
-import { Historial } from './historial';
+import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
+import { Historial, useHistorial } from './historial';
 import { AltaProducto } from './alta-producto';
 import { ConfiguracionIA, type EstadoAjustes } from './configuracion-ia';
-import { nombreModeloActivo } from '@/asistente/ajustes';
 import { LogoutButton } from './logout-button';
-import { fetchAutenticado } from './solicitud';
+import { Avisos, useAvisos } from './avisos';
+import { useConfirmacion } from './dialogo';
+import { useAnulacion, useAprobacion } from './dialogos-cotizacion';
+import type { CambiosEdicion, Detalle, Listado, Resultado } from './contrato';
+import {
+  SIN_CLIENTE,
+  comportamientoScroll,
+  copiarTexto,
+  enterEnvia,
+  fechaCorta,
+  numeroCotizacion,
+  resumenCambios,
+  resumenTexto,
+  vencida,
+} from './formato';
+import {
+  ErrorCancelado,
+  ErrorSolicitud,
+  alExpirarSesion,
+  esSilencioso,
+  guardarBorrador,
+  leerBorrador,
+  mensajeDe,
+  pedirArchivo,
+  pedirJSON,
+} from './solicitud';
+
 const ejemplo = 'Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco';
+const LIMITE = 6000,
+  AVISO_LIMITE = 5000;
+const SIN_ASISTENTE = 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.';
+interface Seleccion {
+  mensaje: string;
+  contextoId: string | null;
+  opciones: OpcionCotizacion[];
+}
+/** Nota local (no guardada) al final de la conversación: cancelaciones y resumen de cambios. */
+interface NotaLocal {
+  id: string | null;
+  texto: string;
+  tipo?: 'cambios';
+}
+
 export function Cotizador({ email }: { email: string }) {
-  const [lista, setLista] = useState<Cotizacion[]>([]),
-    [actual, setActual] = useState<Cotizacion | null>(null);
+  const [actual, setActual] = useState<Cotizacion | null>(null);
   const [mensaje, setMensaje] = useState(''),
-    [ocupado, setOcupado] = useState(false),
-    [error, setError] = useState('');
+    [enCurso, setEnCurso] = useState<Operacion | null>(null),
+    [guardando, setGuardando] = useState<string | null>(null),
+    [descargando, setDescargando] = useState<string | null>(null),
+    [abriendo, setAbriendo] = useState<string | null>(null);
   const [altaProducto, setAltaProducto] = useState(false);
   const [configuracion, setConfiguracion] = useState(false),
-    [estadoIA, setEstadoIA] = useState<EstadoAjustes | null>(null);
-  const [seleccion, setSeleccion] = useState<{
-    mensaje: string;
-    contextoId: string | null;
-    opciones: OpcionCotizacion[];
-  } | null>(null);
-  const [cargando, setCargando] = useState(true),
-    [configurado, setConfigurado] = useState(true),
-    [archivo, setArchivo] = useState<string | null>(null);
-  const fin = useRef<HTMLDivElement>(null),
-    input = useRef<HTMLTextAreaElement>(null);
+    [estadoIA, setEstadoIA] = useState<EstadoAjustes | null>(null),
+    [errorAjustes, setErrorAjustes] = useState('');
+  const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
+  const [notaLocal, setNotaLocal] = useState<NotaLocal | null>(null);
+  const [anuncio, setAnuncio] = useState('');
+  const [restaurando, setRestaurando] = useState(true),
+    [configurado, setConfigurado] = useState(true);
+  const [menuCuenta, setMenuCuenta] = useState(false);
+  const [enfocar, setEnfocar] = useState(0);
+  const { avisos, avisar, cerrar: cerrarAviso, limpiar } = useAvisos();
+  const [confirmar, confirmacion] = useConfirmacion();
+  const [pedirAprobacion, dialogoAprobacion] = useAprobacion();
+  const [pedirAnulacion, dialogoAnulacion] = useAnulacion();
+  const mensajes = useRef<HTMLDivElement>(null),
+    input = useRef<HTMLTextAreaElement>(null),
+    workspace = useRef<HTMLElement>(null),
+    titulo = useRef<HTMLHeadingElement>(null),
+    toggleCuenta = useRef<HTMLButtonElement>(null),
+    cuenta = useRef<HTMLDivElement>(null);
+  const abortar = useRef<AbortController | null>(null);
+  const ocupado = enCurso !== null;
+  const ocupadoRef = useRef(false);
+  const volverAlCompositor = useRef(false);
   useEffect(() => {
-    fetchAutenticado('/api/accion')
-      .then((r) => r.json())
-      .then((d) => {
-        if (d.error) throw new Error(d.error);
-        setLista(d.cotizaciones);
-        setActual(d.cotizaciones.at(-1) ?? null);
-        setConfigurado(d.asistenteConfigurado);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setCargando(false));
-    fetchAutenticado('/api/ajustes')
-      .then((r) => r.json())
-      .then((d) => {
-        if (!d.error) setEstadoIA(d);
-      })
-      .catch(() => {});
-  }, []);
-  useEffect(() => {
-    fin.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [actual?.historial.length, ocupado, seleccion?.opciones.length]);
-  async function peticion(body: Record<string, unknown>) {
-    const r = await fetchAutenticado('/api/accion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+    ocupadoRef.current = ocupado;
+  }, [ocupado]);
+
+  const alListar = useCallback((d: Listado) => setConfigurado(d.asistenteConfigurado), []);
+  const historial = useHistorial(alListar);
+  const { recargar: recargarLista } = historial;
+  const cargando = historial.cargando || restaurando;
+
+  /** Detalle completo de una cotización (el listado solo trae resúmenes). */
+  const leerDetalle = useCallback(async (id: string, signal?: AbortSignal) => {
+    const d = await pedirJSON<Detalle>(`/api/accion?id=${encodeURIComponent(id)}`, {
+      signal,
+      cache: 'no-store',
     });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error ?? 'No se pudo completar la operación.');
-    return data as {
-      cotizacion: Cotizacion;
-      archivo?: string;
-      confirmar?: { id: string; numero: number };
-      seleccion?: OpcionCotizacion[];
-    };
-  }
-  function confirmarAprobacion(numero: number) {
-    return window.confirm(
-      `¿Aprobar la cotización N° ${numero}?\n\nSe generará la nota de pedido para fábrica y la cotización quedará bloqueada. Esta acción no se puede deshacer.`,
+    setConfigurado(d.asistenteConfigurado);
+    return d.cotizacion;
+  }, []);
+  /** Relee la cotización abierta; sin `forzar` no la toca durante una operación. */
+  const recargarActual = useCallback(
+    async (id: string, forzar = false) => {
+      const q = await leerDetalle(id);
+      if (forzar || !ocupadoRef.current) setActual((prev) => (prev?.id === id ? q : prev));
+      return q;
+    },
+    [leerDetalle],
+  );
+
+  const leerAjustes = (signal?: AbortSignal) =>
+    pedirJSON<EstadoAjustes>('/api/ajustes', { signal, cache: 'no-store' }).then(
+      (d) => {
+        setEstadoIA(d);
+        setErrorAjustes('');
+      },
+      (e) => {
+        if (!esSilencioso(e)) setErrorAjustes(mensajeDe(e));
+      },
     );
-  }
-  function recibir(q: Cotizacion) {
-    setActual(q);
-    setLista((prev) => [...prev.filter((c) => c.id !== q.id), q]);
-  }
-  function nuevaCotizacion() {
-    // El borrador se crea recién con el primer mensaje: evita acumular cotizaciones vacías.
-    setActual(null);
-    setArchivo(null);
-    setError('');
-    setSeleccion(null);
-    setMensaje('');
-    input.current?.focus();
-  }
-  async function accion(tipo: 'emitir' | 'aprobar' | 'quitar', indice?: number, id = actual?.id) {
-    if (tipo === 'aprobar' && actual?.estado === 'emitida' && id === actual.id && actual.numero !== null)
-      if (!confirmarAprobacion(actual.numero)) return;
-    setOcupado(true);
-    setError('');
-    setArchivo(null);
+
+  // Carga inicial: parte en «Nueva cotización» (no abre la última de otra persona) y restaura el
+  // borrador de esta pestaña con su cotización. El listado lo carga useHistorial.
+  useEffect(() => {
+    const control = new AbortController();
+    const b = leerBorrador();
+    const fin = () => {
+      if (!control.signal.aborted) setRestaurando(false);
+    };
+    Promise.resolve()
+      .then(async () => {
+        if (!b) return;
+        setMensaje(b.texto);
+        if (b.id) setActual(await leerDetalle(b.id, control.signal));
+      })
+      .catch((e) => {
+        if (!esSilencioso(e) && b?.id)
+          avisar('info', 'No se pudo reabrir la cotización del borrador guardado.');
+      })
+      .finally(fin);
+    void leerAjustes(control.signal);
+    return () => control.abort();
+  }, [leerDetalle, avisar]);
+
+  // Al volver a la pestaña se relee el listado y la cotización abierta: la otra persona pudo cambiarlos.
+  const idAbierta = useRef<string | null>(null);
+  useEffect(() => {
+    idAbierta.current = actual?.id ?? null;
+  });
+  useEffect(() => {
+    let ultimo = Date.now();
+    const alVolver = () => {
+      if (document.visibilityState !== 'visible' || Date.now() - ultimo < 5000) return;
+      ultimo = Date.now();
+      recargarLista().catch(() => {});
+      if (idAbierta.current && !ocupadoRef.current) recargarActual(idAbierta.current).catch(() => {});
+    };
+    window.addEventListener('focus', alVolver);
+    document.addEventListener('visibilitychange', alVolver);
+    return () => {
+      window.removeEventListener('focus', alVolver);
+      document.removeEventListener('visibilitychange', alVolver);
+    };
+  }, [recargarLista, recargarActual]);
+
+  // Borrador persistente del compositor (por pestaña).
+  const actualId = actual?.id ?? null;
+  useEffect(() => {
+    if (!cargando) guardarBorrador({ texto: mensaje, id: actualId });
+  }, [mensaje, actualId, cargando]);
+
+  // Sesión vencida: aviso no destructivo; el borrador y la cotización abierta quedan guardados.
+  const estadoSesion = useRef({ mensaje, actualId });
+  useEffect(() => {
+    estadoSesion.current = { mensaje, actualId };
+  });
+  useEffect(
+    () =>
+      alExpirarSesion(() => {
+        guardarBorrador({ texto: estadoSesion.current.mensaje, id: estadoSesion.current.actualId }, true);
+        avisar('error', 'Tu sesión expiró. Vuelve a ingresar; tu borrador se conservó.', {
+          clave: 'sesion',
+          accion: {
+            etiqueta: 'Volver a ingresar',
+            fn: () => window.location.replace('/login?motivo=sesion'),
+          },
+        });
+      }),
+    [avisar],
+  );
+
+  // Solo se desplaza el contenedor de mensajes (no la ventana) cuando llega algo nuevo.
+  const largoHistorial = actual?.historial.length ?? 0;
+  useEffect(() => {
+    const el = mensajes.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: comportamientoScroll() });
+  }, [actualId, largoHistorial, seleccion, notaLocal]);
+
+  // Al abrir desde el historial: llevar la vista al área de trabajo y el foco al título.
+  useEffect(() => {
+    if (!enfocar) return;
+    workspace.current?.scrollIntoView({ behavior: comportamientoScroll(), block: 'start' });
+    titulo.current?.focus({ preventScroll: true });
+  }, [enfocar]);
+
+  // Devolver el foco al compositor cuando termina el chat (ya habilitado).
+  useEffect(() => {
+    if (!ocupado && volverAlCompositor.current) {
+      volverAlCompositor.current = false;
+      input.current?.focus();
+    }
+  }, [ocupado]);
+
+  const peticion = (body: Record<string, unknown>, signal?: AbortSignal) =>
+    pedirJSON<Resultado>('/api/accion', { json: body, signal });
+
+  /** Abre una cotización por id (detalle completo) y lleva la vista a ella. */
+  async function abrirPorId(id: string, enfocarTitulo = true) {
+    setAbriendo(id);
     try {
-      const d = await peticion({ tipo, id, ...(indice !== undefined ? { indice } : {}) });
-      recibir(d.cotizacion);
-      if (d.archivo) descargar(d.archivo);
-    } catch (e) {
-      setError((e as Error).message);
+      const q = await leerDetalle(id);
+      setActual(q);
+      setSeleccion(null);
+      setNotaLocal(null);
+      if (enfocarTitulo) setEnfocar((n) => n + 1);
+      return q;
     } finally {
-      setOcupado(false);
+      setAbriendo(null);
     }
   }
-  function descargar(nombre: string) {
-    setArchivo(nombre);
-    const a = document.createElement('a');
-    a.href = `/api/documento/${nombre}`;
-    a.download = nombre;
-    a.click();
+
+  function fallo(e: unknown, q: Cotizacion | null = actual) {
+    if (e instanceof ErrorCancelado) {
+      avisar(
+        'info',
+        'Se canceló la espera; si el asistente alcanzó a responder, verás el cambio al actualizar.',
+        {
+          clave: 'operacion',
+          accion: {
+            etiqueta: 'Actualizar',
+            fn: () => {
+              recargarLista().catch(() => {});
+              if (q) recargarActual(q.id, true).catch((x) => fallo(x, null));
+            },
+          },
+        },
+      );
+      return;
+    }
+    if (esSilencioso(e)) return;
+    const codigo = e instanceof ErrorSolicitud ? e.codigo : undefined;
+    // Revisión ya abierta de esta emitida: se abre esa en vez de fallar.
+    if (codigo === 'revision_abierta' && e instanceof ErrorSolicitud && typeof e.detalle?.id === 'string') {
+      avisar('info', `${mensajeDe(e)} Se abrió la revisión en curso.`, { clave: 'operacion' });
+      abrirPorId(e.detalle.id).catch((x) => fallo(x, null));
+      return;
+    }
+    if (codigo === 'version_obsoleta') {
+      avisar('error', `${mensajeDe(e)} Se cargó la versión actual: revísala y vuelve a intentarlo.`, {
+        clave: 'operacion',
+      });
+    } else avisar('error', mensajeDe(e), { clave: 'operacion' });
+    // Conflictos (409): otra persona o pestaña cambió algo; se trae la versión vigente.
+    if (e instanceof ErrorSolicitud && e.status === 409) {
+      recargarLista().catch(() => {});
+      if (q) recargarActual(q.id, true).catch(() => {});
+    }
   }
+
+  /** Aplica un resultado: cotización nueva (puede ser otra: revisión o duplicado), avisos y cambios. */
+  function recibir(d: Resultado, opciones: { anunciar?: boolean; previa?: Cotizacion | null } = {}) {
+    const q = d.cotizacion,
+      previa = opciones.previa ?? actual;
+    if (d.eliminada) {
+      setActual(null);
+      setNotaLocal(null);
+    } else setActual(q);
+    for (const a of d.avisos ?? []) avisar('info', a);
+    if (
+      previa &&
+      !d.eliminada &&
+      previa.id !== q.id &&
+      previa.estado === 'emitida' &&
+      q.origen === previa.numero
+    )
+      avisar('info', `Se abrió la revisión de la N° ${previa.numero}; el PDF emitido se conserva.`, {
+        clave: 'revision',
+      });
+    const cambios = resumenCambios(d.cambios);
+    setNotaLocal(cambios ? { id: q.id, texto: `Cambios aplicados: ${cambios}.`, tipo: 'cambios' } : null);
+    const ultimo = q.historial.at(-1);
+    if (opciones.anunciar && ultimo?.rol === 'asistente')
+      setAnuncio(cambios ? `${ultimo.texto} ${cambios}` : ultimo.texto);
+    recargarLista().catch(() => {});
+    if (d.archivo) void descargar(d.archivo);
+  }
+
+  function nuevaCotizacion() {
+    if (ocupado) return;
+    // El borrador se crea recién con el primer mensaje: evita acumular cotizaciones vacías.
+    // El texto escrito se conserva: no se pierde lo que alguien alcanzó a redactar.
+    setActual(null);
+    setSeleccion(null);
+    setNotaLocal(null);
+    limpiar('operacion');
+    input.current?.focus();
+  }
+
+  async function descargar(archivo: string) {
+    setDescargando(archivo);
+    try {
+      const blob = await pedirArchivo(`/api/documento/${encodeURIComponent(archivo)}`);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = archivo;
+      document.body.append(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+      avisar('exito', `Documento listo: se descargó ${archivo}.`, { clave: 'descarga' });
+    } catch (e) {
+      fallo(e);
+    } finally {
+      setDescargando(null);
+    }
+  }
+
+  /** Ejecuta una acción sobre la cotización abierta con su versión (`actualizada`). */
+  async function ejecutar(op: Operacion, cuerpo: Record<string, unknown>, q = actual) {
+    if (!q) return false;
+    setEnCurso(op);
+    limpiar('operacion');
+    try {
+      recibir(await peticion({ ...cuerpo, id: q.id }), { previa: q });
+      return true;
+    } catch (e) {
+      fallo(e, q);
+      return false;
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
+  const versionDe = (q: Cotizacion) => ({ actualizada: q.actualizada });
+
+  /** Aprobar con despacho; si el servidor avisa que venció, se confirma y se reintenta. */
+  async function aprobar(q: {
+    id: string;
+    numero: number | null;
+    actualizada: string;
+    vence: string | null;
+    vencida: boolean;
+    direccion: string | null;
+  }) {
+    const datos = await pedirAprobacion({
+      numero: q.numero,
+      direccion: q.direccion,
+      vence: q.vence,
+      vencida: q.vencida,
+    });
+    if (!datos) return false;
+    setEnCurso('aprobar');
+    limpiar('operacion');
+    const cuerpo = {
+      tipo: 'aprobar',
+      id: q.id,
+      actualizada: q.actualizada,
+      ...(Object.keys(datos.despacho).length ? { despacho: datos.despacho } : {}),
+      ...(datos.confirmarVencida ? { confirmarVencida: true } : {}),
+    };
+    try {
+      try {
+        recibir(await peticion(cuerpo));
+      } catch (e) {
+        if (!(e instanceof ErrorSolicitud && e.codigo === 'cotizacion_vencida')) throw e;
+        const vence = typeof e.detalle?.vence === 'string' ? e.detalle.vence : null;
+        const ok = await confirmar({
+          titulo: 'La cotización está vencida',
+          mensaje: (
+            <p>
+              {mensajeDe(e)}
+              {vence ? ` Venció el ${fechaCorta(vence)}.` : ''} ¿Aprobarla de todos modos con los valores
+              emitidos?
+            </p>
+          ),
+          aceptar: 'Aprobar de todos modos',
+        });
+        if (!ok) return false;
+        recibir(await peticion({ ...cuerpo, confirmarVencida: true }));
+      }
+      return true;
+    } catch (e) {
+      fallo(e);
+      return false;
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
+  const EDITAR_EMITIDA = (
+    <>
+      <p>
+        Esta cotización ya fue emitida. El cambio se guardará en una revisión en borrador (se crea o se
+        reutiliza la que ya existe).
+      </p>
+      <p>El PDF emitido se conserva sin cambios.</p>
+    </>
+  );
+
+  const acciones: AccionesPanel = {
+    async emitir() {
+      const q = actual;
+      if (!q || ocupado) return;
+      const ok = await confirmar({
+        titulo: 'Emitir la cotización',
+        mensaje: (
+          <>
+            <p>Se asignará el siguiente número correlativo y la cotización quedará emitida.</p>
+            <p>El número no se reutiliza: si luego hay cambios, se creará una revisión con otro número.</p>
+          </>
+        ),
+        aceptar: 'Emitir y generar PDF',
+      });
+      if (ok) await ejecutar('emitir', { tipo: 'emitir', ...versionDe(q) }, q);
+    },
+    async aprobar() {
+      const q = actual;
+      if (!q || ocupado) return;
+      await aprobar({ ...q, vencida: vencida(q), direccion: q.cliente.direccion });
+    },
+    async quitar(indice) {
+      const q = actual;
+      if (!q || ocupado) return;
+      const ok = await confirmar({
+        titulo: 'Quitar ítem',
+        mensaje: (
+          <>
+            <p>¿Quitar «{descripcionItem(q, indice)}» de la cotización?</p>
+            {q.estado === 'emitida' && <p>Se creará un nuevo borrador; el PDF emitido se conserva.</p>}
+          </>
+        ),
+        aceptar: 'Quitar ítem',
+      });
+      if (ok) await ejecutar('quitar', { tipo: 'quitar', indice, ...versionDe(q) }, q);
+    },
+    async duplicar() {
+      if (actual) await duplicar(actual.id, actual.numero);
+    },
+    async eliminar() {
+      const q = actual;
+      if (!q || ocupado) return;
+      const ok = await confirmar({
+        titulo: 'Eliminar borrador',
+        mensaje: (
+          <p>
+            ¿Eliminar este borrador{q.cliente.nombre ? ` de ${q.cliente.nombre}` : ''}? Se borran su
+            conversación y sus ítems; no se puede deshacer.
+          </p>
+        ),
+        aceptar: 'Eliminar borrador',
+      });
+      if (ok && (await ejecutar('eliminar', { tipo: 'eliminar', ...versionDe(q) }, q)))
+        avisar('exito', 'Borrador eliminado.', { clave: 'operacion' });
+    },
+    async anular() {
+      const q = actual;
+      if (!q || ocupado) return;
+      const datos = await pedirAnulacion(q.numero, q.estado === 'aprobada');
+      if (!datos) return;
+      if (
+        await ejecutar(
+          'anular',
+          { tipo: 'anular', ...versionDe(q), ...(datos.motivo ? { motivo: datos.motivo } : {}) },
+          q,
+        )
+      )
+        avisar('exito', `Cotización ${numeroCotizacion(q.numero)} anulada.`, { clave: 'operacion' });
+    },
+    async editar(cambios: CambiosEdicion, campo: string) {
+      const q = actual;
+      if (!q || ocupado) return false;
+      if (q.estado === 'emitida') {
+        const ok = await confirmar({
+          titulo: 'Editar una cotización emitida',
+          mensaje: EDITAR_EMITIDA,
+          aceptar: 'Guardar en la revisión',
+        });
+        if (!ok) return false;
+      }
+      setGuardando(campo);
+      try {
+        return await ejecutar('editar', { tipo: 'editar', ...versionDe(q), ...cambios }, q);
+      } finally {
+        setGuardando(null);
+      }
+    },
+    descargar: (archivo) => void descargar(archivo),
+    copiar: () => void copiar(),
+  };
+
+  async function duplicar(id: string, numero: number | null) {
+    if (ocupado) return;
+    setEnCurso('duplicar');
+    limpiar('operacion');
+    try {
+      const d = await peticion({ tipo: 'duplicar', id });
+      recibir(d, { previa: null });
+      setSeleccion(null);
+      setEnfocar((n) => n + 1);
+      avisar(
+        'exito',
+        `Se creó un borrador nuevo a partir de ${numero ? `la N° ${numero}` : 'la cotización'}.`,
+        {
+          clave: 'operacion',
+        },
+      );
+    } catch (e) {
+      fallo(e, null);
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
+  async function aprobarDesdeChat(c: NonNullable<Resultado['confirmar']>, conversacion: Cotizacion) {
+    if (c.id !== conversacion.id) {
+      const texto = `Abriendo cotización N° ${c.numero}`;
+      avisar('info', `${texto}.`, { clave: 'operacion' });
+      setAnuncio(texto);
+    }
+    const ok = await aprobar({
+      id: c.id,
+      numero: c.numero,
+      actualizada: c.actualizada,
+      vence: c.vence,
+      vencida: c.vencida,
+      direccion: c.id === conversacion.id ? conversacion.cliente.direccion : null,
+    });
+    if (!ok) {
+      setNotaLocal({ id: conversacion.id, texto: 'Aprobación cancelada.' });
+      setAnuncio('Aprobación cancelada.');
+    }
+  }
+
+  async function responder(d: Resultado, previa: Cotizacion | null) {
+    recibir(d, { anunciar: true, previa });
+    if (d.confirmar) await aprobarDesdeChat(d.confirmar, d.cotizacion);
+  }
+
   async function enviar(e: FormEvent) {
     e.preventDefault();
-    if (!mensaje.trim() || ocupado) return;
-    setOcupado(true);
-    setError('');
-    setArchivo(null);
     const texto = mensaje;
+    if (!texto.trim() || ocupado || bloqueada || !configurado || seleccion) return;
+    const control = new AbortController();
+    abortar.current = control;
+    setEnCurso('chat');
+    setNotaLocal(null);
+    limpiar('operacion');
+    const previa = actual;
     try {
-      const d = await peticion({
-        tipo: 'chat',
-        ...(actual ? { id: actual.id } : {}),
-        mensaje: texto,
-      });
+      const d = await peticion(
+        {
+          tipo: 'chat',
+          ...(previa ? { id: previa.id, actualizada: previa.actualizada } : {}),
+          mensaje: texto,
+        },
+        control.signal,
+      );
       setMensaje('');
       if (d.seleccion) {
-        setSeleccion({ mensaje: texto, contextoId: actual?.id ?? null, opciones: d.seleccion });
+        setSeleccion({ mensaje: texto, contextoId: previa?.id ?? null, opciones: d.seleccion });
+        setAnuncio('Encontré varias cotizaciones que podrían ser. Elige cuál quieres modificar.');
         return;
       }
       setSeleccion(null);
-      recibir(d.cotizacion);
-      if (d.archivo) descargar(d.archivo);
-      if (d.confirmar && confirmarAprobacion(d.confirmar.numero)) {
-        const aprobada = await peticion({ tipo: 'aprobar', id: d.confirmar.id });
-        recibir(aprobada.cotizacion);
-        if (aprobada.archivo) descargar(aprobada.archivo);
-      }
+      await responder(d, previa);
     } catch (e) {
-      setError((e as Error).message);
+      fallo(e, previa);
     } finally {
-      setOcupado(false);
-      input.current?.focus();
+      abortar.current = null;
+      volverAlCompositor.current = true;
+      setEnCurso(null);
     }
   }
+
   async function elegirReferencia(opcion: OpcionCotizacion) {
     if (!seleccion || ocupado) return;
     const pendiente = seleccion;
-    setOcupado(true);
-    setError('');
-    setArchivo(null);
+    const previa = actual;
+    const control = new AbortController();
+    abortar.current = control;
+    setEnCurso('chat');
+    limpiar('operacion');
     setSeleccion(null);
     try {
-      const d = await peticion({
-        tipo: 'chat',
-        ...(pendiente.contextoId ? { id: pendiente.contextoId } : {}),
-        objetivoId: opcion.id,
-        objetivoActualizada: opcion.actualizada,
-        mensaje: pendiente.mensaje,
-      });
+      const d = await peticion(
+        {
+          tipo: 'chat',
+          ...(pendiente.contextoId && previa?.id === pendiente.contextoId
+            ? { id: previa.id, actualizada: previa.actualizada }
+            : {}),
+          objetivoId: opcion.id,
+          objetivoActualizada: opcion.actualizada,
+          mensaje: pendiente.mensaje,
+        },
+        control.signal,
+      );
       if (d.seleccion) {
         setSeleccion({ ...pendiente, opciones: d.seleccion });
         return;
       }
-      recibir(d.cotizacion);
-      if (d.archivo) descargar(d.archivo);
+      await responder(d, previa);
     } catch (e) {
-      setError((e as Error).message);
+      // La elección no se aplicó: se vuelve a ofrecer y el mensaje queda disponible para reenviar.
+      setSeleccion(pendiente);
+      setMensaje(pendiente.mensaje);
+      fallo(e, previa);
     } finally {
-      setOcupado(false);
-      input.current?.focus();
+      abortar.current = null;
+      volverAlCompositor.current = true;
+      setEnCurso(null);
     }
   }
-  const bloqueada = actual?.estado === 'aprobada';
+
+  function descartarSeleccion() {
+    if (!seleccion || ocupado) return;
+    // «Ninguna de estas»: el pedido se trata como una cotización nueva; el texto vuelve al compositor.
+    setMensaje(seleccion.mensaje);
+    setSeleccion(null);
+    setActual(null);
+    setNotaLocal(null);
+    requestAnimationFrame(() => input.current?.focus());
+  }
+
+  function abrir(id: string) {
+    if (ocupado) {
+      avisar('info', 'Espera a que termine la operación en curso (o cancélala) para abrir otra cotización.', {
+        clave: 'ocupado',
+      });
+      return;
+    }
+    limpiar('operacion');
+    abrirPorId(id).catch((e) => fallo(e, null));
+  }
+
+  async function copiar() {
+    if (!actual) return;
+    const ok = await copiarTexto(resumenTexto(actual));
+    if (ok) avisar('exito', 'Resumen copiado al portapapeles.', { clave: 'copiar' });
+    else
+      avisar('error', 'No se pudo copiar. Selecciona el detalle y cópialo manualmente.', { clave: 'copiar' });
+  }
+
+  // Atajos: Ctrl/⌘+K busca en el historial; Alt+N empieza una cotización nueva.
+  const atajos = useRef({ nuevaCotizacion });
+  useEffect(() => {
+    atajos.current = { nuevaCotizacion };
+  });
+  useEffect(() => {
+    const alTeclear = (e: KeyboardEvent) => {
+      if (document.querySelector('dialog[open]')) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        const buscar = document.getElementById('buscar-cotizaciones');
+        if (!buscar) return;
+        e.preventDefault();
+        buscar.scrollIntoView({ behavior: comportamientoScroll(), block: 'center' });
+        buscar.focus({ preventScroll: true });
+      } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyN') {
+        e.preventDefault();
+        atajos.current.nuevaCotizacion();
+      }
+    };
+    document.addEventListener('keydown', alTeclear);
+    return () => document.removeEventListener('keydown', alTeclear);
+  }, []);
+
+  // Menú de cuenta (móvil): se cierra con Escape o al tocar fuera.
+  useEffect(() => {
+    if (!menuCuenta) return;
+    const fuera = (e: PointerEvent) => {
+      if (!cuenta.current?.contains(e.target as Node)) setMenuCuenta(false);
+    };
+    const escape = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      setMenuCuenta(false);
+      toggleCuenta.current?.focus();
+    };
+    document.addEventListener('pointerdown', fuera);
+    document.addEventListener('keydown', escape);
+    return () => {
+      document.removeEventListener('pointerdown', fuera);
+      document.removeEventListener('keydown', escape);
+    };
+  }, [menuCuenta]);
+
+  // Aprobadas, reemplazadas y anuladas no admiten cambios (ni por chat).
+  const bloqueada = !!actual && !esEditable(actual);
+  const composerDeshabilitado = ocupado || bloqueada || cargando || !!seleccion || !configurado;
+  const ayudaCompositor = [!configurado && 'aviso-asistente', mensaje.length >= AVISO_LIMITE && 'contador']
+    .filter(Boolean)
+    .join(' ');
   return (
     <div className="app-shell">
       <header className="masthead">
-        <Link href="/" aria-label="Neltume, inicio">
+        <button
+          type="button"
+          className="logo-button"
+          onClick={nuevaCotizacion}
+          disabled={ocupado}
+          aria-label="Neltume, inicio: empezar una cotización"
+        >
           <Image
             src="/logo-neltume.svg"
-            alt="Neltume"
+            alt=""
             className="logo"
             width={143}
             height={70}
             priority
             unoptimized
           />
-        </Link>
-        <div className="header-label">
-          PUERTAS DE MADERA <span>/</span> COTIZACIONES
-        </div>
-        <button
-          type="button"
-          className="ia-settings-button"
-          onClick={() => setConfiguracion(true)}
-          disabled={!estadoIA || ocupado}
-          aria-label="Configurar modelo de IA"
-        >
-          <span aria-hidden>⚙</span> {estadoIA ? nombreModeloActivo(estadoIA.ajustes) : 'Asistente'}
         </button>
-        <div className="account-controls">
-          <span className="account-email" title={email}>{email}</span>
-          <LogoutButton />
+        <div className="header-label">
+          PUERTAS DE MADERA <span aria-hidden>/</span> COTIZACIONES
+        </div>
+        <div ref={cuenta} className={`account ${menuCuenta ? 'abierto' : ''}`}>
+          <button
+            ref={toggleCuenta}
+            type="button"
+            className="account-toggle"
+            aria-expanded={menuCuenta}
+            aria-controls="menu-cuenta"
+            onClick={() => setMenuCuenta((v) => !v)}
+          >
+            Cuenta <span aria-hidden>▾</span>
+          </button>
+          <div id="menu-cuenta" className="account-controls">
+            <span className="account-email" title={email}>
+              {email}
+            </span>
+            <button
+              type="button"
+              className="ia-settings-button"
+              onClick={() => {
+                setMenuCuenta(false);
+                setConfiguracion(true);
+                if (!estadoIA) void leerAjustes();
+              }}
+            >
+              <span aria-hidden>⚙</span> Asistente
+            </button>
+            <LogoutButton />
+          </div>
         </div>
       </header>
       <div className="page-heading">
@@ -209,28 +764,39 @@ export function Cotizador({ email }: { email: string }) {
         </div>
         <div className="heading-actions">
           <button
+            type="button"
             className="button secondary"
             onClick={() => setAltaProducto(true)}
-            disabled={ocupado || cargando || !configurado}
-            title={!configurado ? 'Configura el modelo de IA para usar el asistente.' : undefined}
+            disabled={cargando}
+            aria-describedby={!configurado ? 'aviso-asistente' : undefined}
           >
             <span aria-hidden>＋</span> Agregar producto
           </button>
-          <button className="button secondary" onClick={nuevaCotizacion} disabled={ocupado || cargando}>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={nuevaCotizacion}
+            disabled={ocupado || cargando}
+            aria-keyshortcuts="Alt+N"
+          >
             <span aria-hidden>＋</span> Nueva cotización
           </button>
+          <p className="atajos">
+            Atajos: <kbd>Alt</kbd>+<kbd>N</kbd> nueva cotización · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>{' '}
+            buscar
+          </p>
         </div>
       </div>
-      <main className="workspace">
+      <main className="workspace" ref={workspace}>
         <section className="chat-panel" aria-label="Asistente de cotizaciones">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">01 / CONVERSACIÓN</p>
               <h2>Cuéntame el pedido</h2>
             </div>
-            <span className="live-dot" title="Asistente interno" />
+            <span className="live-dot" aria-hidden />
           </div>
-          <div className="messages" aria-live="polite" aria-busy={ocupado}>
+          <div className="messages" ref={mensajes} data-testid="conversacion" aria-busy={enCurso === 'chat'}>
             <div className="welcome">
               <span className="speaker">NELTUME</span>
               <p>Empecemos con una puerta.</p>
@@ -240,12 +806,13 @@ export function Cotizador({ email }: { email: string }) {
               </div>
               {!actual?.historial.length && (
                 <button
+                  type="button"
                   className="example"
                   onClick={() => {
                     setMensaje(ejemplo);
                     input.current?.focus();
                   }}
-                  disabled={ocupado}
+                  disabled={composerDeshabilitado}
                 >
                   <span>POR EJEMPLO</span>“3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco”
                   <b aria-hidden>↗</b>
@@ -258,6 +825,12 @@ export function Cotizador({ email }: { email: string }) {
                 <p>{m.texto}</p>
               </div>
             ))}
+            {notaLocal && notaLocal.id === actualId && (
+              <div className={`message asistente local ${notaLocal.tipo ?? ''}`}>
+                <span className="speaker">NELTUME</span>
+                <p>{notaLocal.texto}</p>
+              </div>
+            )}
             {seleccion && (
               <>
                 <div className="message usuario">
@@ -273,47 +846,63 @@ export function Cotizador({ email }: { email: string }) {
                   <p>Encontré varias cotizaciones que podrían ser. Elige cuál quieres modificar:</p>
                   <div className="reference-options">
                     {seleccion.opciones.map((opcion) => {
-                      const numero = opcion.numero ? `N° ${opcion.numero}` : 'Borrador';
-                      const fecha = new Date(opcion.fecha).toLocaleDateString('es-CL', {
-                        timeZone: 'America/Santiago',
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      });
+                      const numero = numeroCotizacion(opcion.numero);
+                      const fecha = fechaCorta(opcion.fecha);
+                      const total = historial.items.find((c) => c.id === opcion.id)?.total;
+                      const cliente = opcion.cliente || SIN_CLIENTE;
+                      const detalle = [fecha, opcion.proyecto, opcion.comuna, opcion.detalle].filter(Boolean);
                       return (
                         <button
                           type="button"
                           key={opcion.id}
                           disabled={ocupado}
                           onClick={() => elegirReferencia(opcion)}
-                          aria-label={`Elegir cotización ${numero} de ${opcion.cliente}`}
+                          aria-label={[
+                            `Elegir cotización ${numero} de ${cliente}`,
+                            etiquetaEstado[opcion.estado].toLowerCase(),
+                            total !== undefined && `total ${pesos(total)}`,
+                            ...detalle,
+                          ]
+                            .filter(Boolean)
+                            .join(', ')}
                         >
-                          <strong>
-                            {numero} · {opcion.cliente}
-                          </strong>
-                          <small>
-                            {[fecha, opcion.proyecto, opcion.comuna, opcion.detalle]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </small>
+                          <span className="reference-top">
+                            <strong>
+                              {numero} · {cliente}
+                            </strong>
+                            <span className={`status ${opcion.estado}`}>{etiquetaEstado[opcion.estado]}</span>
+                            {total !== undefined && <span className="reference-total">{pesos(total)}</span>}
+                          </span>
+                          <small>{detalle.join(' · ')}</small>
                         </button>
                       );
                     })}
+                    <button
+                      type="button"
+                      className="reference-ninguna"
+                      disabled={ocupado}
+                      onClick={descartarSeleccion}
+                    >
+                      Ninguna de estas · es una cotización nueva
+                    </button>
                   </div>
                 </div>
               </>
             )}
-            {ocupado && (
-              <div className="thinking" role="status">
-                Preparando los detalles<span> · · ·</span>
+            {enCurso === 'chat' && (
+              <div className="thinking">
+                Preparando los detalles<span aria-hidden> · · ·</span>
               </div>
             )}
-            <div ref={fin} />
           </div>
+          {/* Región viva separada: anuncia solo la última respuesta del asistente. */}
+          <p className="sr-only" aria-live="polite" aria-atomic="true">
+            {enCurso === 'chat' ? 'Preparando los detalles…' : anuncio}
+          </p>
           {!configurado && (
-            <div className="notice">
-              Para usar el chat, configura la clave de CommandCode en <code>.env.local</code>.
-            </div>
+            <p className="notice" id="aviso-asistente">
+              {SIN_ASISTENTE}
+            </p>
           )}
           <form onSubmit={enviar} className="composer">
             <label className="sr-only" htmlFor="mensaje">
@@ -325,62 +914,67 @@ export function Cotizador({ email }: { email: string }) {
               value={mensaje}
               onChange={(e) => setMensaje(e.target.value)}
               placeholder={
-                bloqueada
-                  ? 'Cotización aprobada. Crea una nueva para continuar.'
-                  : 'Escribe el pedido o agrega un detalle…'
+                !configurado
+                  ? 'El chat no está disponible por ahora.'
+                  : bloqueada
+                    ? `Cotización ${etiquetaEstado[actual!.estado].toLowerCase()}: no admite cambios. Duplícala o crea una nueva.`
+                    : seleccion
+                      ? 'Elige una de las cotizaciones de arriba.'
+                      : 'Escribe el pedido o agrega un detalle…'
               }
-              disabled={ocupado || bloqueada || cargando || !!seleccion}
+              disabled={composerDeshabilitado}
               rows={3}
-              maxLength={6000}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  e.currentTarget.form?.requestSubmit();
-                }
-              }}
+              maxLength={LIMITE}
+              aria-describedby={ayudaCompositor || undefined}
+              onKeyDown={enterEnvia}
             />
             <div className="composer-bottom">
-              <span>Enter para enviar · ⇧ Enter para nueva línea</span>
-              <button
-                type="submit"
-                aria-label="Enviar mensaje"
-                disabled={!mensaje.trim() || ocupado || bloqueada || cargando || !!seleccion}
-              >
-                Enviar <span aria-hidden>↗</span>
-              </button>
+              <span className="solo-escritorio">Enter para enviar · ⇧ Enter para nueva línea</span>
+              <span className="solo-tactil">Usa «Enviar» para mandar el mensaje</span>
+              {mensaje.length >= AVISO_LIMITE && (
+                <span id="contador" className={`contador ${mensaje.length >= LIMITE ? 'limite' : ''}`}>
+                  {mensaje.length.toLocaleString('es-CL')} / {LIMITE.toLocaleString('es-CL')} caracteres
+                </span>
+              )}
+              <span className="composer-botones">
+                {enCurso === 'chat' && (
+                  <button type="button" className="cancelar" onClick={() => abortar.current?.abort()}>
+                    Cancelar
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  aria-label="Enviar mensaje"
+                  disabled={!mensaje.trim() || composerDeshabilitado}
+                >
+                  Enviar <span aria-hidden>↗</span>
+                </button>
+              </span>
             </div>
           </form>
-          <p className="chat-footnote">Puertas sólidas y accesorios · Medidas de la puerta</p>
+          <p className="chat-footnote">
+            Cotiza puertas sólidas y accesorios. Las medidas se indican como ancho × alto de la puerta.
+          </p>
         </section>
-        <CotizacionPanel actual={actual} ocupado={ocupado} accion={accion} />
+        <CotizacionPanel
+          actual={actual}
+          enCurso={enCurso}
+          guardando={guardando}
+          descargando={descargando}
+          acciones={acciones}
+          tituloRef={titulo}
+        />
       </main>
-      {error && (
-        <div role="alert" className="error-banner">
-          {error}
-          <button aria-label="Cerrar aviso" onClick={() => setError('')}>
-            ×
-          </button>
-        </div>
-      )}
-      {archivo && (
-        <div className="download-banner" role="status">
-          Documento listo.{' '}
-          <a href={`/api/documento/${archivo}`} download>
-            Descargar {archivo}
-          </a>
-        </div>
-      )}
       <Historial
-        lista={lista}
-        actualId={actual?.id ?? null}
-        cargando={cargando}
-        ocupado={ocupado}
-        abrir={(q) => {
-          setActual(q);
-          setSeleccion(null);
-          setArchivo(null);
-          setError('');
+        historial={historial}
+        actualId={actualId}
+        abriendo={abriendo}
+        abrir={abrir}
+        duplicar={(id) => {
+          const r = historial.items.find((x) => x.id === id);
+          void duplicar(id, r?.numero ?? null);
         }}
+        ocupado={ocupado}
       />
       <footer className="site-footer">
         <span>
@@ -388,16 +982,30 @@ export function Cotizador({ email }: { email: string }) {
         </span>
         <span>Asistente de cotizaciones · Uso interno</span>
       </footer>
-      <AltaProducto abierta={altaProducto} cerrar={() => setAltaProducto(false)} />
+      <Avisos avisos={avisos} cerrar={cerrarAviso} />
+      <AltaProducto
+        abierta={altaProducto}
+        asistente={configurado}
+        cerrar={() => setAltaProducto(false)}
+        avisar={avisar}
+      />
       <ConfiguracionIA
         abierta={configuracion}
         estado={estadoIA}
+        errorCarga={errorAjustes}
+        reintentar={() => {
+          setErrorAjustes('');
+          void leerAjustes();
+        }}
         cerrar={() => setConfiguracion(false)}
         guardado={(d) => {
           setEstadoIA(d);
           setConfigurado(d.asistenteConfigurado);
         }}
       />
+      {confirmacion}
+      {dialogoAprobacion}
+      {dialogoAnulacion}
     </div>
   );
 }

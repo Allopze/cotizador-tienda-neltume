@@ -23,7 +23,8 @@ export class LLMFijo implements LLM {
       medida: null,
       cantidad: 3,
     };
-    if (/se aprobó la 323/i.test(c.mensaje)) return { name: 'aprobar_cotizacion', input: { numero: 323 } };
+    const aprobada = c.mensaje.match(/se aprob[oó] la (\d+)/i);
+    if (aprobada) return { name: 'aprobar_cotizacion', input: { numero: Number(aprobada[1]) } };
     if (/agrega marcos/i.test(c.mensaje))
       items.push({
         modelo: 'MARCO',

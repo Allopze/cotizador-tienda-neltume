@@ -1,171 +1,308 @@
-import { useMemo, useState } from 'react';
-import { etiquetaEstado, type Cotizacion } from '@/negocio/estado';
+'use client';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { etiquetaEstado, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
-type Filtro = 'todas' | Cotizacion['estado'];
+import type { Listado } from './contrato';
+import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, plural } from './formato';
+import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
+
+type Filtro = 'todas' | EstadoCotizacion;
 const FILTROS: [Filtro, string][] = [
   ['todas', 'Todas'],
   ['borrador', 'Borradores'],
   ['emitida', 'Emitidas'],
   ['aprobada', 'Aprobadas'],
+  ['reemplazada', 'Reemplazadas'],
+  ['anulada', 'Anuladas'],
 ];
-interface Props {
-  lista: Cotizacion[];
-  actualId: string | null;
-  cargando: boolean;
-  ocupado: boolean;
-  abrir: (q: Cotizacion) => void;
+const POR_PAGINA = 30;
+const ESPERA_BUSQUEDA = 300;
+export interface Filtros {
+  q: string;
+  estado: Filtro;
+  desde: string;
+  hasta: string;
 }
-const zona = { timeZone: 'America/Santiago' } as const;
-const fecha = (iso: string) =>
-  new Date(iso).toLocaleDateString('es-CL', { ...zona, day: 'numeric', month: 'short', year: 'numeric' });
-const mes = (iso: string) => {
-  const s = new Date(iso).toLocaleDateString('es-CL', { ...zona, month: 'long', year: 'numeric' });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-};
-const sinTildes = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
-// Fecha que mejor describe el documento: aprobación, emisión o última edición del borrador.
-const fechaReferencia = (q: Cotizacion) => q.nota?.fecha ?? q.fechaEmision ?? q.actualizada;
-export function Historial({ lista, actualId, cargando, ocupado, abrir }: Props) {
-  const [busqueda, setBusqueda] = useState(''),
-    [filtro, setFiltro] = useState<Filtro>('todas');
-  // Los borradores sin ítems son ruido (conversaciones sin pedido); se muestran solo si están abiertos.
-  const visibles = useMemo(
-    () => lista.filter((q) => q.estado !== 'borrador' || q.solicitudes.length || q.id === actualId),
-    [lista, actualId],
-  );
-  const conteos = useMemo(() => {
-    const c: Record<Filtro, number> = { todas: visibles.length, borrador: 0, emitida: 0, aprobada: 0 };
-    for (const q of visibles) c[q.estado]++;
-    return c;
-  }, [visibles]);
-  const grupos = useMemo(() => {
-    const termino = sinTildes(busqueda.trim()).replace(/^n[°º]?\s*/, '');
-    const filtradas = visibles
-      .filter((q) => filtro === 'todas' || q.estado === filtro)
-      .filter(
-        (q) =>
-          !termino ||
-          sinTildes(
-            [
-              q.numero,
-              q.nota?.numero && `nota ${q.nota.numero}`,
-              q.cliente.nombre,
-              q.cliente.comuna,
-              q.cliente.proyecto,
-              q.cliente.rut,
-            ]
-              .filter(Boolean)
-              .join(' '),
-          ).includes(termino),
-      )
-      .sort((a, b) => fechaReferencia(b).localeCompare(fechaReferencia(a)));
-    const porMes = new Map<string, Cotizacion[]>();
-    for (const q of filtradas) {
-      const k = mes(fechaReferencia(q));
-      porMes.set(k, [...(porMes.get(k) ?? []), q]);
+const SIN_FILTROS: Filtros = { q: '', estado: 'todas', desde: '', hasta: '' };
+// «N° 323», «nº323», «nro. 323» o «n 323» buscan el número; «Nuñez» queda intacto.
+const limpiarTermino = (s: string) => s.trim().replace(/^(?:n[°º]|nro\.?(?=\s*\d)|n(?=\s*\d))\s*/i, '');
+
+/** Listado paginado del servidor con búsqueda diferida; la cotizadora lo recarga tras cada acción. */
+export function useHistorial(alListar: (d: Listado) => void) {
+  const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS);
+  const [items, setItems] = useState<ResumenCotizacion[]>([]);
+  const [total, setTotal] = useState(0);
+  const [pagina, setPagina] = useState(1);
+  const [cargando, setCargando] = useState(true),
+    [buscando, setBuscando] = useState(false),
+    [error, setError] = useState('');
+  const control = useRef<AbortController | null>(null);
+  const vigentes = useRef({ filtros, cargados: 0, alListar });
+  useEffect(() => {
+    vigentes.current.filtros = filtros;
+    vigentes.current.alListar = alListar;
+  });
+
+  const cargar = useCallback(async (f: Filtros, pag: number, agregar: boolean, porPagina = POR_PAGINA) => {
+    control.current?.abort();
+    const c = new AbortController();
+    control.current = c;
+    const params = new URLSearchParams({ pagina: String(pag), porPagina: String(porPagina) });
+    const q = limpiarTermino(f.q);
+    if (q) params.set('q', q);
+    if (f.estado !== 'todas') params.set('estado', f.estado);
+    if (f.desde) params.set('desde', f.desde);
+    if (f.hasta) params.set('hasta', f.hasta);
+    setBuscando(true);
+    try {
+      const d = await pedirJSON<Listado>(`/api/accion?${params}`, { signal: c.signal, cache: 'no-store' });
+      setItems((prev) => {
+        const nuevos = agregar
+          ? [...prev, ...d.cotizaciones.filter((x) => !prev.some((p) => p.id === x.id))]
+          : d.cotizaciones;
+        vigentes.current.cargados = nuevos.length;
+        return nuevos;
+      });
+      setTotal(d.total);
+      setPagina(agregar ? pag : Math.max(1, Math.ceil(porPagina / POR_PAGINA)));
+      setError('');
+      vigentes.current.alListar(d);
+    } catch (e) {
+      if (!esSilencioso(e)) setError(mensajeDe(e));
+      throw e;
+    } finally {
+      if (control.current === c) {
+        setBuscando(false);
+        setCargando(false);
+      }
     }
-    return [...porMes];
-  }, [visibles, filtro, busqueda]);
-  const total = grupos.reduce((n, [, qs]) => n + qs.length, 0);
+  }, []);
+
+  // Búsqueda y filtros en el servidor, diferidos mientras se escribe.
+  const primera = useRef(true);
+  useEffect(() => {
+    const t = setTimeout(
+      () => cargar(filtros, 1, false).catch(() => {}),
+      primera.current ? 0 : ESPERA_BUSQUEDA,
+    );
+    primera.current = false;
+    return () => clearTimeout(t);
+  }, [filtros, cargar]);
+  useEffect(() => () => control.current?.abort(), []);
+
+  /** Relee lo ya cargado (hasta 200 filas) con los filtros vigentes. */
+  const recargar = useCallback(
+    () =>
+      cargar(
+        vigentes.current.filtros,
+        1,
+        false,
+        Math.min(200, Math.max(POR_PAGINA, Math.ceil(vigentes.current.cargados / POR_PAGINA) * POR_PAGINA)),
+      ),
+    [cargar],
+  );
+  const cargarMas = useCallback(
+    () => cargar(vigentes.current.filtros, pagina + 1, true).catch(() => {}),
+    [cargar, pagina],
+  );
+  return { filtros, setFiltros, items, total, cargando, buscando, error, recargar, cargarMas };
+}
+export type EstadoHistorial = ReturnType<typeof useHistorial>;
+
+// Fecha que mejor describe el documento: aprobación, emisión o última edición del borrador.
+const fechaReferencia = (q: ResumenCotizacion) => q.nota?.fecha ?? q.fechaEmision ?? q.actualizada;
+const hayFiltros = (f: Filtros) => !!(f.q.trim() || f.estado !== 'todas' || f.desde || f.hasta);
+
+interface Props {
+  historial: EstadoHistorial;
+  actualId: string | null;
+  abriendo: string | null;
+  abrir: (id: string) => void;
+  duplicar: (id: string) => void;
+  ocupado: boolean;
+}
+export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocupado }: Props) {
+  const { filtros, setFiltros, items, total, cargando, buscando, error, recargar, cargarMas } = historial;
+  const cambiar = (c: Partial<Filtros>) => setFiltros((f) => ({ ...f, ...c }));
+  // El servidor ordena por última actualización: los grupos por mes siguen ese orden.
+  const grupos: [string, ResumenCotizacion[]][] = [];
+  for (const q of items) {
+    const k = mesAnio(q.actualizada);
+    const g = grupos.at(-1);
+    if (g?.[0] === k) g[1].push(q);
+    else grupos.push([k, [q]]);
+  }
+  const filtrado = hayFiltros(filtros);
   return (
-    <section className="history" aria-labelledby="historial-titulo">
+    <section className="history" aria-labelledby="historial-titulo" aria-busy={buscando}>
       <div className="history-heading">
         <h2 id="historial-titulo">Cotizaciones anteriores</h2>
-        <span>
-          {total === visibles.length ? `${visibles.length} registros` : `${total} de ${visibles.length}`}
+        <span aria-live="polite">
+          {cargando ? '' : filtrado ? plural(total, 'resultado') : plural(total, 'registro')}
         </span>
       </div>
+      <div className="history-tools">
+        <label className="history-search">
+          <span className="sr-only">Buscar cotizaciones</span>
+          <input
+            id="buscar-cotizaciones"
+            type="search"
+            aria-keyshortcuts="Control+K Meta+K"
+            value={filtros.q}
+            onChange={(e) => cambiar({ q: e.target.value })}
+            placeholder="Buscar por N°, cliente, RUT, comuna, proyecto o producto"
+            maxLength={200}
+          />
+        </label>
+        <div className="history-fechas">
+          <label>
+            <span>Desde</span>
+            <input
+              type="date"
+              value={filtros.desde}
+              max={filtros.hasta || undefined}
+              onChange={(e) => cambiar({ desde: e.target.value })}
+            />
+          </label>
+          <label>
+            <span>Hasta</span>
+            <input
+              type="date"
+              value={filtros.hasta}
+              min={filtros.desde || undefined}
+              onChange={(e) => cambiar({ hasta: e.target.value })}
+            />
+          </label>
+        </div>
+        <div className="history-filters" role="group" aria-label="Filtrar por estado">
+          {FILTROS.map(([f, etiqueta]) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={filtros.estado === f}
+              onClick={() => cambiar({ estado: f })}
+            >
+              {etiqueta}
+            </button>
+          ))}
+        </div>
+      </div>
+      {error && (
+        <p className="history-empty catalog-error" role="alert">
+          {error}{' '}
+          <button type="button" className="link" onClick={() => recargar().catch(() => {})}>
+            Reintentar
+          </button>
+        </p>
+      )}
       {cargando ? (
-        <p>Cargando cotizaciones…</p>
-      ) : !visibles.length ? (
-        <p className="muted">Aquí encontrarás las cotizaciones que vayas preparando.</p>
+        <p className="history-empty muted">Cargando cotizaciones…</p>
+      ) : !items.length ? (
+        filtrado ? (
+          <p className="muted history-empty">
+            Sin resultados.{' '}
+            <button type="button" className="link" onClick={() => setFiltros(SIN_FILTROS)}>
+              Limpiar filtros
+            </button>
+          </p>
+        ) : (
+          !error && (
+            <p className="muted history-empty">Aquí encontrarás las cotizaciones que vayas preparando.</p>
+          )
+        )
       ) : (
         <>
-          <div className="history-tools">
-            <label className="history-search">
-              <span className="sr-only">Buscar cotizaciones</span>
-              <input
-                type="search"
-                value={busqueda}
-                onChange={(e) => setBusqueda(e.target.value)}
-                placeholder="Buscar por N°, cliente, comuna o proyecto"
-              />
-            </label>
-            <div className="history-filters" role="group" aria-label="Filtrar por estado">
-              {FILTROS.map(([f, etiqueta]) => (
-                <button
-                  key={f}
-                  type="button"
-                  aria-pressed={filtro === f}
-                  onClick={() => setFiltro(f)}
-                  disabled={!conteos[f] && f !== 'todas'}
-                >
-                  {etiqueta} <span>{conteos[f]}</span>
-                </button>
-              ))}
+          {grupos.map(([titulo, qs]) => (
+            <div key={titulo} className="history-group">
+              <h3>{titulo}</h3>
+              <ul className="history-list">
+                {qs.map((q) => (
+                  <Fila
+                    key={q.id}
+                    q={q}
+                    actual={actualId === q.id}
+                    abriendo={abriendo === q.id}
+                    abrir={abrir}
+                    duplicar={duplicar}
+                    ocupado={ocupado}
+                  />
+                ))}
+              </ul>
             </div>
-          </div>
-          {!total ? (
-            <p className="muted history-empty">
-              Sin resultados.{' '}
-              <button
-                type="button"
-                className="link"
-                onClick={() => {
-                  setBusqueda('');
-                  setFiltro('todas');
-                }}
-              >
-                Limpiar filtros
+          ))}
+          {items.length < total && (
+            <div className="history-mas">
+              <button type="button" className="button secondary" onClick={cargarMas} disabled={buscando}>
+                {buscando ? 'Cargando…' : `Cargar más (${items.length} de ${total})`}
               </button>
-            </p>
-          ) : (
-            grupos.map(([titulo, qs]) => (
-              <div key={titulo} className="history-group">
-                <h3>{titulo}</h3>
-                <ul className="history-list">
-                  {qs.map((q) => (
-                    <li key={q.id}>
-                      <button
-                        type="button"
-                        disabled={ocupado}
-                        aria-current={actualId === q.id ? 'true' : undefined}
-                        onClick={() => abrir(q)}
-                      >
-                        <span className="history-number">
-                          {q.numero ? `N° ${q.numero}` : <span className="muted">Sin número</span>}
-                          {q.origen ? <small>Revisión de N° {q.origen}</small> : null}
-                        </span>
-                        <span className="history-client">
-                          {q.cliente.nombre || 'Cliente sin nombre'}
-                          <small>
-                            {[q.cliente.comuna || 'Sin comuna', q.cliente.proyecto]
-                              .filter(Boolean)
-                              .join(' · ')}
-                          </small>
-                        </span>
-                        <span className="history-meta">
-                          {fecha(fechaReferencia(q))}
-                          <small>
-                            {q.solicitudes.length} {q.solicitudes.length === 1 ? 'ítem' : 'ítems'}
-                            {q.incompletos.length
-                              ? ` · ${q.incompletos.length} ${q.incompletos.length === 1 ? 'pendiente' : 'pendientes'}`
-                              : ''}
-                            {q.nota ? ` · Nota N° ${q.nota.numero}` : ''}
-                          </small>
-                        </span>
-                        <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
-                        <strong>{pesos(q.montos.total)}</strong>
-                        <span aria-hidden>↗</span>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
+            </div>
           )}
         </>
       )}
     </section>
+  );
+}
+
+function Fila({
+  q,
+  actual,
+  abriendo,
+  abrir,
+  duplicar,
+  ocupado,
+}: {
+  q: ResumenCotizacion;
+  actual: boolean;
+  abriendo: boolean;
+  abrir: (id: string) => void;
+  duplicar: (id: string) => void;
+  ocupado: boolean;
+}) {
+  const autor = q.anuladaPor ?? q.aprobadaPor ?? q.emitidaPor ?? q.creadaPor;
+  const vencida = q.vencida && q.estado === 'emitida';
+  return (
+    <li>
+      <button
+        type="button"
+        className="history-fila"
+        aria-current={actual ? 'true' : undefined}
+        onClick={() => abrir(q.id)}
+      >
+        <span className="history-number">
+          {q.numero ? `N° ${q.numero}` : <span className="muted">{SIN_NUMERO}</span>}
+          {q.origen ? <small>Revisión de N° {q.origen}</small> : null}
+          {q.reemplazadaPor ? <small>Reemplazada por N° {q.reemplazadaPor}</small> : null}
+        </span>
+        <span className="history-client">
+          {q.cliente.nombre || SIN_CLIENTE}
+          <small>{[q.cliente.comuna || 'Sin comuna', q.cliente.proyecto].filter(Boolean).join(' · ')}</small>
+          {q.productos && <small className="history-productos">{q.productos}</small>}
+        </span>
+        <span className="history-meta">
+          {abriendo ? 'Abriendo…' : fechaCorta(fechaReferencia(q))}
+          <small>
+            {plural(q.items, 'ítem')}
+            {q.pendientes ? ` · ${plural(q.pendientes, 'pendiente')}` : ''}
+            {q.nota ? ` · Nota N° ${q.nota.numero}${q.nota.anulada ? ' (anulada)' : ''}` : ''}
+          </small>
+          {autor && <small>por {autor}</small>}
+        </span>
+        <span className="history-estado">
+          <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
+          {vencida && <span className="status vencida">Vencida</span>}
+        </span>
+        <strong>{pesos(q.total)}</strong>
+        <span aria-hidden>↗</span>
+      </button>
+      <button
+        type="button"
+        className="history-duplicar"
+        onClick={() => duplicar(q.id)}
+        disabled={ocupado}
+        aria-label={`Duplicar cotización ${q.numero ? `N° ${q.numero}` : SIN_NUMERO} de ${q.cliente.nombre || SIN_CLIENTE}`}
+      >
+        Duplicar
+      </button>
+    </li>
   );
 }

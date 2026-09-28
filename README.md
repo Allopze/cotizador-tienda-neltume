@@ -27,8 +27,8 @@ Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium
 | Variable           | Uso                                                                                                                                                                                                                         |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `CMD_API_KEY`      | Clave propia de CommandCode, únicamente en `.env.local`.                                                                                                                                                                    |
-| `BETTER_AUTH_SECRET` | Secreto aleatorio de al menos 32 caracteres para sesiones; obligatorio en producción. |
-| `BETTER_AUTH_URL` | Origen del cotizador; en producción debe ser HTTPS y coincidir con el hostname permitido. |
+| `BETTER_AUTH_SECRET` | Secreto aleatorio de al menos 32 caracteres para sesiones; obligatorio en producción y siempre que `NELTUME_HOSTS` esté definido (sin él, la instancia expuesta no arranca). |
+| `BETTER_AUTH_URL` | Origen del cotizador; en producción debe ser HTTPS y su hostname debe figurar en `NELTUME_HOSTS` (se valida al atender la primera solicitud). |
 | `CMD_MODEL`        | Modelo inicial de CommandCode mientras no se guarde otro desde **Configuración**; predeterminado `claude-sonnet-5`. Claude usa `/messages`; Laguna y los otros modelos de chat usan `/chat/completions`. El modelo debe admitir herramientas y estar habilitado en tu cuenta. |
 | `CMD_TIMEOUT_MS`   | Plazo por solicitud de IA en milisegundos; predeterminado 60000, configurable entre 1000 y 120000. Sin reintentos automáticos.                                                                                              |
 | `CHROMIUM_PATH`    | Ruta opcional a Chrome/Chromium.                                                                                                                                                                                            |
@@ -37,7 +37,7 @@ Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium
 | `NELTUME_DB_PATH`  | Ruta opcional del archivo SQLite; predeterminado `NELTUME_DATA_DIR/cotizador.sqlite`.                                                                                                                                       |
 | `NELTUME_CATALOGO_CONFIG` | Ruta opcional del archivo de maderas, códigos, alias y familias; predeterminado `config/catalogo.json`.                                                                                                           |
 | `NELTUME_CATALOGO` | Ruta del JSON de catálogo anterior, usada solo por `npm run migrar:sqlite`; predeterminado `data/catalogo.json`.                                                                                                            |
-| `NELTUME_HOSTS`    | Hostnames adicionales permitidos, separados por coma (p. ej. el de Cloudflare Access). Siempre se aceptan `127.0.0.1`, `localhost` y `[::1]`; cualquier otro Host recibe 403 (defensa contra DNS rebinding).                |
+| `NELTUME_HOSTS`    | Hosts adicionales permitidos, separados por coma (p. ej. el de Cloudflare Access); acepta `host`, `host:puerto` o `https://host`. Siempre se aceptan `127.0.0.1`, `localhost` y `[::1]`; cualquier otro Host recibe 403 en páginas y APIs (defensa contra DNS rebinding). |
 
 ### Modelo de IA desde la interfaz
 
@@ -45,7 +45,7 @@ El botón con el nombre del modelo, arriba a la derecha, abre **Configuración d
 
 CommandCode es el único proveedor. Se conserva `@anthropic-ai/sdk` como cliente para modelos Claude; los otros modelos usan Chat Completions. Ambos apuntan exclusivamente a CommandCode; no se llama directamente a Anthropic ni se usan su clave, token o URL de entorno. La selección del modelo no cambia el proveedor.
 
-El ajuste y el IVA se configuran en `REGLAS`, en `src/negocio/precios.ts`: +25 % e IVA 19 %. La tasa mostrada en pantalla y en los PDF se deriva de `REGLAS`. La nota de pedido usa ajuste cero, manteniendo el mismo redondeo por unidad.
+El ajuste, el IVA, la vigencia y el descuento máximo se configuran en `REGLAS`, en `src/negocio/precios.ts`: +25 %, IVA 19 %, 10 días hábiles y 50 %. La tasa mostrada en pantalla y en los PDF se deriva de `REGLAS`. Redondeo, siempre a pesos enteros: unitario = round(neto × 1,25); línea = cantidad × unitario; descuento = round(subtotal × %); neto = subtotal − descuento + flete; IVA = round(neto × 0,19). La nota de pedido usa ajuste cero, sin descuento ni flete, manteniendo el mismo redondeo por unidad.
 
 ## Guion de cinco minutos
 
@@ -58,7 +58,26 @@ El ajuste y el IVA se configuran en `REGLAS`, en `src/negocio/precios.ts`: +25 %
 
 Los datos del cliente son opcionales. Los ítems incompletos no suman y deben completarse o quitarse antes de emitir. Una cotización emitida puede descargarse siempre; modificarla crea un nuevo borrador (solo si hay cambios reales), conserva el PDF original y asigna un nuevo número cuando se emite. Una aprobada no admite cambios.
 
-Aprobar es irreversible: solo se puede aprobar una cotización ya emitida, y tanto el botón como la aprobación pedida por chat exigen confirmación explícita. «Nueva cotización» limpia la pantalla; el borrador se guarda recién con el primer mensaje.
+Aprobar es irreversible: solo se puede aprobar una cotización ya emitida, y tanto el botón como la aprobación pedida por chat exigen confirmación explícita. «Nueva cotización» limpia la pantalla; el borrador se guarda recién cuando la IA responde al primer mensaje (si la IA falla, no queda un borrador vacío).
+
+### Ciclo de vida de una cotización
+
+| Estado | Significado | Acciones |
+| --- | --- | --- |
+| `borrador` | Sin número, editable. | chat, `editar`, `quitar`, `emitir`, `duplicar`, `eliminar` |
+| `emitida` | Tiene número y PDF; vence 10 días hábiles (lunes a viernes, sin feriados) después de emitirse. | chat o `editar` crean/reutilizan su revisión; `aprobar`, `anular`, `duplicar` |
+| `aprobada` | Tiene nota de pedido. | `anular` (la nota queda marcada como anulada), `duplicar` |
+| `reemplazada` | Se emitió una revisión suya o se aprobó otra de la misma serie; no es aprobable ni editable. | `duplicar` |
+| `anulada` | Definitiva; conserva números y PDF. | `duplicar` |
+
+- Toda acción que modifica una cotización existente envía su `actualizada`; si no coincide, responde 409 y no cambia nada. Los mensajes del chat sobre una emitida se guardan en el historial sin cambiar su versión.
+- Una emitida tiene a lo más una revisión abierta: los cambios siguientes se aplican sobre esa revisión. Emitir la revisión deja la original como `reemplazada`; aprobar una cotización deja `reemplazada` a las demás emitidas de su serie y bloquea emitir borradores de esa serie. Así nunca hay dos notas de pedido para un mismo pedido.
+- Al emitir, los montos se recalculan con el catálogo vigente; si cambió algún precio, se emite igual con los precios actuales y la respuesta incluye `avisos`. Se guarda la versión del catálogo usada.
+- Aprobar una cotización vencida exige confirmarlo explícitamente. La aprobación acepta dirección de despacho y medio de transporte, que se imprimen en la nota junto al giro del cliente.
+- Descuento (0–50 %) y flete (neto) se editan por cotización y solo afectan a la cotización, nunca a la nota. Las líneas guardan el ancho, alto y escuadría pedidos, que se imprimen en ambos PDF.
+- Se registra quién creó, emitió, aprobó y anuló cada cotización (nombre de la cuenta). El RUT se normaliza a «12.345.678-5» si su dígito verificador es válido; si no, se conserva con un aviso.
+
+El contrato completo de `/api/accion` y `/api/catalogo` está descrito en los tipos de `src/servidor/servicio.ts`, `src/negocio/estado.ts` y en los esquemas Zod de cada ruta. El listado (`GET /api/accion`) devuelve páginas de resúmenes con búsqueda por N°, cliente, RUT, comuna, proyecto, modelo y madera; `GET /api/accion?id=` devuelve la cotización completa.
 
 ## Separación de responsabilidades
 
@@ -71,12 +90,17 @@ Aprobar es irreversible: solo se puede aprobar una cotización ya emitida, y tan
 - `src/servidor/alta-catalogo.ts`: conversación de alta de producto, extracción de atributos, validación del precio explícito y confirmación transaccional.
 - `src/app/api/catalogo/route.ts`: endpoint interno para proponer y confirmar productos nuevos.
 - `src/asistente/preguntas.ts`: preguntas determinísticas a partir de los rechazos, sin segunda llamada al modelo.
+- `src/negocio/vigencia.ts` y `src/negocio/cliente.ts`: días hábiles y vencimiento; saneamiento del cliente y RUT.
+- `src/servidor/almacen.ts`: unidad de trabajo por cotización, reserva de correlativos (`UPDATE … RETURNING`), listado y búsqueda.
+- `src/servidor/errores.ts`: errores con estado HTTP y `codigo` estable (400, 404, 409, 503).
 - `src/servidor/`: flujo, persistencia, plantillas HTML y PDF A4 con Playwright.
 - `src/servidor/autenticacion.ts`: sesiones y verificación de acceso con Better Auth sobre la misma base SQLite.
 - `scripts/usuarios.ts`: alta, desactivación, activación y restablecimiento de cuentas desde terminal.
 - `src/app/`: pantalla y [Route Handlers de Next.js](https://nextjs.org/docs/app/api-reference/file-conventions/route).
 
-En una cotización nueva, el LLM extrae la lista completa de solicitudes y los datos del cliente; al modificar una anterior devuelve solo los cambios pedidos. El servidor puede resolver una referencia por número, nombre, proyecto o comuna con búsqueda local insensible a tildes. Si encuentra varias, muestra opciones sin modificarlas. En el flujo de cotización, los montos siempre se calculan en el servidor y no se envían al LLM. En el alta de producto, la IA extrae solo atributos; el servidor interpreta el precio neto desde el texto original y exige confirmación. La consulta a la IA se hace fuera del bloqueo del estado: si la cotización cambió mientras tanto, la respuesta no se aplica y se pide reenviar el mensaje. Una salida inválida no modifica las solicitudes, el cliente ni los montos y responde «No entendí, ¿puedes reformularlo?».
+En una cotización nueva, el LLM extrae la lista completa de solicitudes y los datos del cliente; al modificar una anterior devuelve solo los cambios pedidos. El servidor puede resolver una referencia por número, nombre, proyecto o comuna con búsqueda local insensible a tildes. Si encuentra varias, muestra opciones sin modificarlas. En el flujo de cotización, los montos siempre se calculan en el servidor y no se envían al LLM. En el alta de producto, la IA extrae solo atributos; el servidor interpreta el precio neto desde el texto original y exige confirmación. La consulta a la IA se hace fuera del bloqueo del estado: si la cotización cambió mientras tanto, la respuesta no se aplica y se pide reenviar el mensaje. Una salida inválida no modifica las solicitudes, el cliente ni los montos y responde «No entendí, ¿puedes reformularlo?». Una cantidad no entera o fuera de 1–10.000 queda pendiente con un aviso. Los cambios reales se detectan comparando los ítems resueltos (código, cantidad y medidas pedidas) y el cliente normalizado, no el texto del modelo; la respuesta incluye `cambios` (ítems agregados, quitados y modificados) para mostrar la diferencia.
+
+Referencias: solo cuentan «cotización 450», «cotización N° 450», «nro de cotización 450» o «la 450» fuera de una dirección; un «#450» o «N° 450» suelto (p. ej. «Los Carrera #450») no es una referencia. Entre varias coincidencias por nombre se prefiere la conversación abierta. Medidas: hasta 10 se interpretan en metros, hasta 300 en centímetros y hasta 3000 en milímetros; fuera de 0,3–3 m el asistente pregunta. Si dos productos manuales cubren el mismo ancho, pregunta cuál en vez de elegir.
 
 ## Archivos y persistencia
 
@@ -101,11 +125,11 @@ No hay un panel de administración: el catálogo se mantiene con la planilla y `
 
 Ejemplo de entrada para una madera: `{ "nombre": "ROBLE", "codigo": "RB", "alias": ["ROBLE AMERICANO"] }`. Configuración y catálogo aplicados quedan en la base SQLite; el JSON es la fuente editable para la próxima importación. El cambio de esquema añade esta configuración de forma compatible al abrir una base existente.
 
-En la aplicación también puedes pulsar **Agregar producto** y describirlo en lenguaje natural. Indica familia, modelo, madera, medidas y precio neto unitario; la IA pregunta los datos que falten. El precio debe aparecer explícitamente en el texto. El servidor genera un código, presenta una vista previa y guarda el producto solo después de tu confirmación. Estos productos permanecen en SQLite y sobreviven a futuras importaciones de Excel; si la planilla contiene el mismo código o combinación de atributos, se rechaza la importación completa.
+En la aplicación también puedes pulsar **Agregar producto** y describirlo en lenguaje natural. Indica familia, modelo, madera, medidas y precio neto unitario; la IA pregunta los datos que falten. El precio debe aparecer explícitamente en el texto. El servidor genera un código, presenta una vista previa y guarda el producto solo después de tu confirmación. El precio acepta «45.990», «45,990» (miles), «45,99», «1.5 mil», «3 mil quinientos» y «1,2 millones»; «+ IVA» o «neto» se toman como neto, y «IVA incluido», «con IVA» o «bruto» se convierten a neto dividiendo por 1,19 con un aviso en la vista previa. Si el precio está a más de 3 veces (o menos de un tercio) de la mediana del mismo modelo o familia, la vista previa lo advierte. Se rechaza un rango de ancho que se cruce con otro del mismo modelo, madera y alto. Cada propuesta pendiente pertenece a la cuenta que la inició. Los productos agregados así se pueden listar, editar (precio, descripción, tipo) y eliminar desde `/api/catalogo`; los importados solo cambian con la planilla. Un borrador que usaba un producto eliminado queda con ese ítem pendiente. Estos productos permanecen en SQLite y sobreviven a futuras importaciones de Excel; si la planilla contiene el mismo código o combinación de atributos, se rechaza la importación completa.
 
 Para actualizar una instalación que todavía tiene `catalogo.json` o `estado.json`, detén el servidor y ejecuta `npm run migrar:sqlite`. El comando valida una base temporal, conserva los JSON en un respaldo fechado y no sobrescribe una base SQLite existente que no haya sido migrada. No inicializa una base vacía ignorando JSON anteriores. En una instalación nueva, `npm run importar -- datos-privados/COTIZADOR_2026.xlsx` carga catálogo y configuración directamente en SQLite.
 
-Los cambios se confirman con transacciones SQLite; el bloqueo en `data/.estado.lock` se mantiene para coordinar operaciones que generan PDFs. El correlativo se confirma antes de generar cada documento: un fallo puede dejar un salto, nunca reutilizar un número. Las notas y cotizaciones conservan sus snapshots de precios aunque el catálogo cambie. Para respaldar una operación real, detén el servidor y copia juntos `data/cotizador.sqlite`, `data/pdf/` y `config/catalogo.json`. No borres la base para reiniciar los correlativos.
+Los cambios se confirman con transacciones SQLite y cada operación lee y escribe solo las cotizaciones que toca; las lecturas de varias tablas se hacen dentro de una transacción. El bloqueo en `data/.estado.lock` serializa las escrituras. El correlativo se reserva (`UPDATE … RETURNING`) antes de generar cada documento; el PDF se genera fuera del bloqueo, con un plazo total de 30 s, y al terminar se vuelve a tomar el bloqueo para confirmar solo si la cotización no cambió. Un fallo puede dejar un salto, nunca reutilizar un número, y un PDF existente nunca se sobrescribe (`data/pdf` con permisos 0700 y archivos 0600). Una fila dañada se omite del listado y se registra en el servidor sin afectar a las demás. El esquema 6 (estados «reemplazada» y «anulada», autoría, vigencia, descuento, flete, giro, medidas pedidas y despacho) se aplica solo al abrir una base anterior; las filas existentes quedan con valores nulos o cero y las originales cuya revisión ya se había emitido pasan a «reemplazada». Las notas y cotizaciones conservan sus snapshots de precios aunque el catálogo cambie. Para respaldar una operación real, detén el servidor y copia juntos `data/cotizador.sqlite`, `data/pdf/` y `config/catalogo.json`. No borres la base para reiniciar los correlativos.
 
 ## Errores confirmados y supuestos
 
@@ -144,4 +168,6 @@ El E2E recorre los cinco pasos secuencialmente, con respuestas fijas del adaptad
 
 ## Prueba remota con acceso restringido
 
-No hay túnel configurado. Sigue la [guía oficial de aplicaciones protegidas con Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/). Para una demostración remota, crea en Cloudflare Zero Trust una aplicación **Access** para el hostname, con una política Allow limitada a los correos autorizados. Después configura un Cloudflare Tunnel cuyo servicio sea `http://127.0.0.1:3000`, asociado a ese hostname; configura `NELTUME_HOSTS` con el hostname y `BETTER_AUTH_URL` con su origen `https://`. La aplicación exige además una cuenta local. No uses un Quick Tunnel público ni expongas el puerto directamente.
+No hay túnel configurado. Sigue la [guía oficial de aplicaciones protegidas con Access](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/). Para una demostración remota, crea en Cloudflare Zero Trust una aplicación **Access** para el hostname, con una política Allow limitada a los correos autorizados. Después configura un Cloudflare Tunnel cuyo servicio sea `http://127.0.0.1:3000`, asociado a ese hostname; configura `NELTUME_HOSTS` con el hostname, `BETTER_AUTH_URL` con su origen `https://` y un `BETTER_AUTH_SECRET` propio. El túnel debe apuntar a la versión de producción (`npm run build && npm start`), nunca a `npm run dev`: el modo desarrollo confía en orígenes loopback adicionales, muestra errores detallados y no exige las validaciones de producción. La aplicación exige además una cuenta local. No uses un Quick Tunnel público ni expongas el puerto directamente.
+
+Medidas de seguridad activas: las cuentas se gestionan solo con `npm run usuarios` (las rutas `/api/auth/admin/*` responden 404); solo una cuenta con `--admin` puede cambiar el modelo de IA; el inicio de sesión se limita a 5 intentos por IP (se lee `cf-connecting-ip` o `x-forwarded-for`) y a 10 fallos por correo cada 15 minutos; todas las respuestas incluyen `X-Frame-Options: DENY`, `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy: same-origin` y, en producción, HSTS. Los PDF se descargan por defecto; `?ver=1` los abre en el navegador.

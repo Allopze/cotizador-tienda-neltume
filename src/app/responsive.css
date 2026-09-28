@@ -3,7 +3,7 @@
     min-height: 700px;
   }
   .messages {
-    max-height: 465px;
+    max-height: 500px;
   }
 }
 @media (max-width: 1100px) {
@@ -19,15 +19,9 @@
   .quote-panel {
     padding: 20px;
   }
-  .quote-actions {
-    flex-direction: column;
-  }
   .conditions {
     flex-direction: column;
     gap: 6px;
-  }
-  .composer-bottom > span {
-    font-size: 7px;
   }
 }
 @media (max-width: 800px) {
@@ -39,7 +33,8 @@
     width: 112px;
     height: 60px;
   }
-  .header-label {
+  .header-label,
+  .atajos {
     display: none;
   }
   .page-heading {
@@ -47,18 +42,14 @@
     gap: 15px;
   }
   .page-heading h1 {
-    font-size: 30px;
+    font-size: 1.875rem;
   }
   .page-heading .button {
-    font-size: 10px;
-    padding: 10px;
+    padding: 10px 12px;
   }
   .heading-actions {
     flex-direction: column;
     gap: 6px;
-  }
-  .intro {
-    font-size: 11px;
   }
   .workspace {
     grid-template-columns: 1fr;
@@ -69,18 +60,15 @@
   }
   .messages {
     min-height: 220px;
-    max-height: 340px;
+    max-height: 380px;
   }
   .quote-panel {
     padding: 23px;
   }
-  .quote-actions {
-    flex-direction: row;
-  }
   .conditions {
     flex-direction: row;
   }
-  .history-list button {
+  .history-list .history-fila {
     grid-template-columns: 82px minmax(0, 1fr) auto;
     gap: 6px 10px;
   }
@@ -88,38 +76,29 @@
     grid-column: 2;
     grid-row: 2;
   }
-  .history-list button > strong {
+  .history-list .history-fila > strong {
     grid-column: 3;
     grid-row: 2;
   }
-  .history-list button > span:last-child {
+  .history-list .history-fila > span:last-child {
     display: none;
   }
   .history-search {
     max-width: none;
   }
   .site-footer {
-    font-size: 7px;
     gap: 18px;
   }
   .page-heading .eyebrow {
-    font-size: 7px;
-    letter-spacing: 1.3px;
+    letter-spacing: 1.1px;
   }
 }
 @media (max-width: 450px) {
   .app-shell {
     padding: 0 16px;
   }
-  .page-heading {
-    align-items: flex-start;
-  }
   .page-heading h1 {
-    font-size: 26px;
-  }
-  .page-heading .button {
-    max-width: 105px;
-    gap: 5px;
+    font-size: 1.625rem;
   }
   .page-heading {
     flex-direction: column;
@@ -131,21 +110,18 @@
   }
   .heading-actions .button {
     flex: 1;
-    max-width: none;
     gap: 5px;
+    padding: 10px 8px;
   }
   .intro {
-    max-width: 215px;
+    max-width: 240px;
     line-height: 1.6;
-  }
-  .quote-actions {
-    flex-direction: column;
   }
   .conditions {
     flex-direction: column;
   }
   .grand-total strong {
-    font-size: 23px;
+    font-size: 1.4375rem;
   }
   .totals {
     width: 100%;
@@ -154,8 +130,82 @@
   .chat-panel {
     padding: 19px;
   }
-  .download-banner {
+  .quote-actions .primary {
+    width: 100%;
+  }
+  .site-footer {
     flex-direction: column;
-    gap: 5px;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .avisos {
+    right: 16px;
+    bottom: 16px;
+  }
+}
+/* Pantallas táctiles: textos de entrada ≥16px (sin zoom en iOS) y blancos de 44px. */
+@media (pointer: coarse) {
+  .composer textarea,
+  .catalog-composer textarea,
+  .history-search input,
+  .ia-field input,
+  .login-form input {
+    font-size: 1rem;
+  }
+  .solo-tactil {
+    display: inline;
+  }
+  .solo-escritorio {
+    display: none;
+  }
+  .remove,
+  .aviso-cerrar {
+    width: 44px;
+    height: 44px;
+  }
+  .history-filters button,
+  .button.small,
+  .ia-settings-button,
+  .logout-button,
+  .account-toggle,
+  .composer-bottom button,
+  .catalog-composer button {
+    min-height: 44px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (max-width: 800px) {
+  .history-fechas {
+    width: 100%;
+  }
+  .history-fechas label {
+    flex: 1;
+  }
+  .history-list li {
+    grid-template-columns: 1fr;
+  }
+  .history-duplicar {
+    justify-self: end;
+    margin: 0 12px 12px;
+  }
+}
+@media (pointer: coarse) {
+  .campo-editar,
+  .campo-guardar,
+  .campo-cancelar,
+  .history-duplicar {
+    min-height: 44px;
+  }
+  .campo input,
+  .history-fechas input,
+  .ia-field textarea {
+    font-size: 1rem;
   }
 }

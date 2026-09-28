@@ -2,48 +2,58 @@ import type Database from 'better-sqlite3';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
-import { z } from 'zod';
-import { normalizar } from '../catalogo/resolver';
-import type { Cliente, Producto, SolicitudItem } from '../catalogo/tipos';
-import type { Cotizacion, Estado, Mensaje } from '../negocio/estado';
+import type { Producto, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
-import type { Montos } from '../negocio/precios';
+import type { Cotizacion, Estado, EstadoCotizacion, Mensaje, ResumenCotizacion } from '../negocio/estado';
+import type { Linea, Montos } from '../negocio/precios';
+import { calcularVence, estaVencida, inicioDiaSantiago } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
-import { estadoPersistidoSchema } from './persistencia-esquemas';
+import { normalizarTexto, textoBusqueda } from './busqueda';
+import { ErrorConflicto, ErrorUsuario, registrarError } from './errores';
+import { cotizacionSchema, estadoPersistidoSchema } from './persistencia-esquemas';
 
 export { directorioDatos };
 
-export class ErrorOcupado extends Error {
+export class ErrorOcupado extends ErrorConflicto {
   constructor() {
     super(
       'Otra operación está en curso. Espera unos segundos y vuelve a intentar; tu borrador está guardado.',
+      'ocupado',
     );
     this.name = 'ErrorOcupado';
   }
 }
 
-const filaProductoSchema = z.object({
-  codigo: z.string(),
-  modelo: z.string(),
-  familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']),
-  tipo: z.string().nullable(),
-  madera: z.string().min(1),
-  medida: z.string(),
-  ancho_min: z.number().nullable(),
-  ancho_max: z.number().nullable(),
-  largo: z.number(),
-  precio_neto: z.number(),
-  descripcion: z.string(),
-  fila_origen: z.number().int(),
-});
-type FilaProducto = z.infer<typeof filaProductoSchema>;
+/** Datos mínimos para resolver referencias por número, cliente, proyecto o comuna. */
+export interface CandidataReferencia {
+  id: string;
+  actualizada: string;
+  numero: number | null;
+  estado: EstadoCotizacion;
+  fechaEmision?: string | null;
+  cliente: { nombre: string | null; proyecto: string | null; comuna: string | null };
+  solicitudes: Pick<SolicitudItem, 'modelo' | 'cantidad'>[];
+  nota?: { fecha: string } | null;
+}
+
+export interface FiltrosListado {
+  q?: string;
+  estados?: EstadoCotizacion[];
+  /** YYYY-MM-DD inclusive, sobre la fecha de emisión o, si no hay, la de creación (hora de Chile). */
+  desde?: string;
+  hasta?: string;
+  pagina?: number;
+  porPagina?: number;
+}
 
 type FilaCotizacion = {
   id: string;
+  orden: number;
   numero: number | null;
-  estado: Cotizacion['estado'];
+  estado: EstadoCotizacion;
   cliente_nombre: string | null;
   cliente_rut: string | null;
+  cliente_giro: string | null;
   cliente_telefono: string | null;
   cliente_direccion: string | null;
   cliente_comuna: string | null;
@@ -56,153 +66,267 @@ type FilaCotizacion = {
   origen_id: string | null;
   origen_ausente: number;
   origen_numero: number | null;
+  vence: string | null;
+  descuento: number;
+  flete: number;
+  creada_por: string | null;
+  emitida_por: string | null;
+  aprobada_por: string | null;
+  anulada_por: string | null;
+  fecha_anulacion: string | null;
+  motivo_anulacion: string | null;
+  reemplazada_por: number | null;
+  version_catalogo: string | null;
 };
 
-type FilaLinea = FilaProducto & {
+type FilaLinea = {
+  cotizacion_id: string;
+  codigo: string;
+  modelo: string;
+  familia: Producto['familia'];
+  tipo: string | null;
+  madera: string;
+  medida: string;
+  ancho_min: number | null;
+  ancho_max: number | null;
+  largo: number;
+  precio_neto: number;
+  descripcion: string;
+  fila_origen: number;
   cantidad: number;
   precio_unitario: number;
   total: number;
+  indice: number | null;
+  ancho_solicitado: number | null;
+  alto_solicitado: number | null;
+  medida_solicitada: string | null;
 };
 
-const productoDesdeFila = (p: FilaProducto): Producto => ({
-  codigo: p.codigo,
-  modelo: p.modelo,
-  familia: p.familia,
-  tipo: p.tipo,
-  madera: p.madera,
-  medida: p.medida,
-  anchoMin: p.ancho_min,
-  anchoMax: p.ancho_max,
-  largo: p.largo,
-  precioNeto: p.precio_neto,
-  descripcion: p.descripcion,
-  filaOrigen: p.fila_origen,
+type FilaMontos = {
+  cotizacion_id: string;
+  neto: number;
+  iva: number;
+  total: number;
+  subtotal: number | null;
+  descuento_porcentaje: number;
+  descuento: number;
+  flete: number;
+};
+
+type FilaNota = {
+  cotizacion_id: string;
+  numero: number;
+  pdf: string;
+  fecha: string;
+  neto: number;
+  iva: number;
+  total: number;
+  despacho_direccion: string | null;
+  despacho_transporte: string | null;
+  anulada: number;
+};
+
+const lineaDesdeFila = (l: FilaLinea): Linea => ({
+  producto: {
+    codigo: l.codigo,
+    modelo: l.modelo,
+    familia: l.familia,
+    tipo: l.tipo,
+    madera: l.madera,
+    medida: l.medida,
+    anchoMin: l.ancho_min,
+    anchoMax: l.ancho_max,
+    largo: l.largo,
+    precioNeto: l.precio_neto,
+    descripcion: l.descripcion,
+    filaOrigen: l.fila_origen,
+  },
+  cantidad: l.cantidad,
+  precioUnitario: l.precio_unitario,
+  total: l.total,
+  indice: l.indice,
+  anchoSolicitado: l.ancho_solicitado,
+  altoSolicitado: l.alto_solicitado,
+  medidaSolicitada: l.medida_solicitada,
 });
 
-function lineaDesdeFila(l: FilaLinea) {
-  return {
-    producto: productoDesdeFila(l),
-    cantidad: l.cantidad,
-    precioUnitario: l.precio_unitario,
-    total: l.total,
-  };
+function agrupar<T extends { cotizacion_id: string }>(filas: T[]) {
+  const mapa = new Map<string, T[]>();
+  for (const fila of filas) {
+    const lista = mapa.get(fila.cotizacion_id);
+    if (lista) lista.push(fila);
+    else mapa.set(fila.cotizacion_id, [fila]);
+  }
+  return mapa;
 }
 
-function filasProductos(db: Database.Database, tabla: 'cotizacion_lineas' | 'nota_lineas', id: string) {
-  return db
-    .prepare(`
-      SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, largo,
-             precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total
-      FROM ${tabla} WHERE cotizacion_id = ? ORDER BY orden
-    `)
-    .all(id)
-    .map((fila) => filaProductoSchema.extend({
-      cantidad: z.number().int(),
-      precio_unitario: z.number().int(),
-      total: z.number().int(),
-    }).parse(fila) as FilaLinea)
-    .map(lineaDesdeFila);
-}
+const cantidadValida = (n: unknown) => Number.isInteger(n) && (n as number) >= 1 && (n as number) <= 10000;
 
-export function leerEstadoDeBase(db: Database.Database): Estado {
-  const correlativos = db
-    .prepare('SELECT siguiente_cotizacion, siguiente_nota FROM correlativos WHERE id = 1')
-    .get() as { siguiente_cotizacion: number; siguiente_nota: number } | undefined;
-  if (!correlativos) throw new Error('Faltan los correlativos en la base SQLite.');
-  const filas = db
-    .prepare(`
-      SELECT c.*, origen.numero AS origen_numero
-      FROM cotizaciones AS c
-      LEFT JOIN cotizaciones AS origen ON origen.id = c.origen_id
-      ORDER BY c.orden
-    `)
-    .all() as FilaCotizacion[];
-  const solicitudes = db.prepare(`
-    SELECT modelo, madera, ancho, alto, medida, cantidad FROM solicitudes
-    WHERE cotizacion_id = ? ORDER BY orden
-  `);
-  const incompletos = db.prepare(`
-    SELECT indice, rechazo_json, pregunta FROM incompletos
-    WHERE cotizacion_id = ? ORDER BY indice
-  `);
-  const historial = db.prepare(`
-    SELECT rol, texto FROM historial WHERE cotizacion_id = ? ORDER BY orden
-  `);
-  const montos = db.prepare('SELECT neto, iva, total FROM cotizacion_montos WHERE cotizacion_id = ?');
-  const nota = db.prepare(`
-    SELECT numero, pdf, fecha, neto, iva, total FROM notas_pedido WHERE cotizacion_id = ?
-  `);
+/**
+ * Carga cotizaciones completas con una consulta por tabla (sin N+1) dentro de una transacción de
+ * lectura, para obtener una foto consistente. Una fila dañada se registra y se omite: nunca bloquea
+ * el resto. Cantidades no enteras guardadas por versiones anteriores se reparan como pendientes.
+ */
+function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
+  return db.transaction(() => {
+    const filtro = ids ? 'WHERE cotizacion_id IN (SELECT value FROM json_each(?))' : '';
+    const param = ids ? [JSON.stringify(ids)] : [];
+    const filas = db
+      .prepare(
+        `
+        SELECT c.*, origen.numero AS origen_numero
+        FROM cotizaciones AS c
+        LEFT JOIN cotizaciones AS origen ON origen.id = c.origen_id
+        ${ids ? 'WHERE c.id IN (SELECT value FROM json_each(?))' : ''}
+        ORDER BY c.orden
+      `,
+      )
+      .all(...param) as FilaCotizacion[];
+    if (!filas.length) return [];
+    const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
+      agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
+    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string }>(`
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad FROM solicitudes $FILTRO
+      ORDER BY cotizacion_id, orden`);
+    const incompletos = hijos<{
+      cotizacion_id: string;
+      indice: number;
+      rechazo_json: string;
+      pregunta: string;
+    }>(`
+      SELECT cotizacion_id, indice, rechazo_json, pregunta FROM incompletos $FILTRO ORDER BY cotizacion_id, indice`);
+    const historial = hijos<Mensaje & { cotizacion_id: string }>(`
+      SELECT cotizacion_id, rol, texto FROM historial $FILTRO ORDER BY cotizacion_id, orden`);
+    const montos = hijos<FilaMontos>(`SELECT * FROM cotizacion_montos $FILTRO`);
+    const lineas = hijos<FilaLinea>(`SELECT * FROM cotizacion_lineas $FILTRO ORDER BY cotizacion_id, orden`);
+    const notas = hijos<FilaNota>(`SELECT * FROM notas_pedido $FILTRO`);
+    const lineasNota = hijos<FilaLinea>(`SELECT * FROM nota_lineas $FILTRO ORDER BY cotizacion_id, orden`);
 
-  const cotizaciones: Cotizacion[] = filas.map((f) => {
-    const m = montos.get(f.id) as { neto: number; iva: number; total: number } | undefined;
-    if (!m) throw new Error(`Faltan los montos guardados de la cotización ${f.id}.`);
-    const q: Cotizacion = {
-      id: f.id,
-      numero: f.numero,
-      estado: f.estado,
-      cliente: {
-        nombre: f.cliente_nombre,
-        rut: f.cliente_rut,
-        telefono: f.cliente_telefono,
-        direccion: f.cliente_direccion,
-        comuna: f.cliente_comuna,
-        proyecto: f.cliente_proyecto,
-      } satisfies Cliente,
-      solicitudes: solicitudes.all(f.id) as SolicitudItem[],
-      montos: {
-        lineas: filasProductos(db, 'cotizacion_lineas', f.id),
-        neto: m.neto,
-        iva: m.iva,
-        total: m.total,
-      },
-      incompletos: incompletos.all(f.id).map((i) => {
-        const row = i as { indice: number; rechazo_json: string; pregunta: string };
-        return { indice: row.indice, rechazo: JSON.parse(row.rechazo_json) as Rechazo, pregunta: row.pregunta };
-      }),
-      historial: historial.all(f.id) as Mensaje[],
-      creada: f.creada,
-      actualizada: f.actualizada,
-      pdf: f.pdf,
-      nota: null,
-    };
-    if (!f.fecha_emision_ausente) q.fechaEmision = f.fecha_emision;
-    if (!f.origen_ausente) q.origen = f.origen_id ? f.origen_numero : null;
-    const n = nota.get(f.id) as
-      | { numero: number; pdf: string; fecha: string; neto: number; iva: number; total: number }
-      | undefined;
-    if (n) {
-      q.nota = {
-        numero: n.numero,
-        pdf: n.pdf,
-        fecha: n.fecha,
-        montos: {
-          lineas: filasProductos(db, 'nota_lineas', f.id),
-          neto: n.neto,
-          iva: n.iva,
-          total: n.total,
-        },
-      };
+    const resultado: Cotizacion[] = [];
+    for (const f of filas) {
+      try {
+        const m = montos.get(f.id)?.[0];
+        if (!m) throw new Error('faltan los montos guardados');
+        const reparadas = (solicitudes.get(f.id) ?? []).map((fila): SolicitudItem => {
+          const s = {
+            modelo: fila.modelo,
+            madera: fila.madera,
+            ancho: fila.ancho,
+            alto: fila.alto,
+            medida: fila.medida,
+            cantidad: fila.cantidad,
+          };
+          if (s.cantidad === null || cantidadValida(s.cantidad)) return s;
+          registrarError('almacen', `Cantidad inválida ${s.cantidad} reparada como pendiente en ${f.id}.`);
+          return { ...s, cantidad: null };
+        });
+        const q: Cotizacion = {
+          id: f.id,
+          numero: f.numero,
+          estado: f.estado,
+          cliente: {
+            nombre: f.cliente_nombre,
+            rut: f.cliente_rut,
+            giro: f.cliente_giro,
+            telefono: f.cliente_telefono,
+            direccion: f.cliente_direccion,
+            comuna: f.cliente_comuna,
+            proyecto: f.cliente_proyecto,
+          },
+          solicitudes: reparadas,
+          montos: {
+            lineas: (lineas.get(f.id) ?? []).map(lineaDesdeFila),
+            subtotal: m.subtotal ?? m.neto,
+            descuentoPorcentaje: m.descuento_porcentaje,
+            descuento: m.descuento,
+            flete: m.flete,
+            neto: m.neto,
+            iva: m.iva,
+            total: m.total,
+          },
+          incompletos: (incompletos.get(f.id) ?? []).map((i) => ({
+            indice: i.indice,
+            rechazo: JSON.parse(i.rechazo_json) as Rechazo,
+            pregunta: i.pregunta,
+          })),
+          historial: (historial.get(f.id) ?? []).map((h) => ({ rol: h.rol, texto: h.texto })),
+          creada: f.creada,
+          actualizada: f.actualizada,
+          pdf: f.pdf,
+          vence: f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision) : null),
+          descuento: f.descuento,
+          flete: f.flete,
+          creadaPor: f.creada_por,
+          emitidaPor: f.emitida_por,
+          aprobadaPor: f.aprobada_por,
+          anuladaPor: f.anulada_por,
+          fechaAnulacion: f.fecha_anulacion,
+          motivoAnulacion: f.motivo_anulacion,
+          reemplazadaPor: f.reemplazada_por,
+          versionCatalogo: f.version_catalogo,
+          nota: null,
+        };
+        if (!f.fecha_emision_ausente) q.fechaEmision = f.fecha_emision;
+        if (!f.origen_ausente) q.origen = f.origen_id ? f.origen_numero : null;
+        const n = notas.get(f.id)?.[0];
+        if (n) {
+          const ls = (lineasNota.get(f.id) ?? []).map(lineaDesdeFila);
+          const subtotal = ls.reduce((s, l) => s + l.total, 0);
+          q.nota = {
+            numero: n.numero,
+            pdf: n.pdf,
+            fecha: n.fecha,
+            montos: {
+              lineas: ls,
+              subtotal,
+              descuentoPorcentaje: 0,
+              descuento: 0,
+              flete: 0,
+              neto: n.neto,
+              iva: n.iva,
+              total: n.total,
+            },
+            despacho: { direccion: n.despacho_direccion, transporte: n.despacho_transporte },
+            anulada: !!n.anulada,
+          };
+        }
+        const valida = cotizacionSchema.safeParse(q);
+        if (!valida.success) throw new Error(valida.error.issues.map((i) => i.path.join('.')).join(', '));
+        resultado.push(q);
+      } catch (error) {
+        registrarError(
+          'almacen',
+          `Cotización ${f.id} omitida por datos inválidos: ${(error as Error).message}`,
+        );
+      }
     }
-    return q;
-  });
-  const resultado = estadoPersistidoSchema.safeParse({
-    siguienteCotizacion: correlativos.siguiente_cotizacion,
-    siguienteNota: correlativos.siguiente_nota,
-    cotizaciones,
-  });
-  if (!resultado.success) throw new Error('La base SQLite contiene una cotización inválida.');
-  return resultado.data as Estado;
+    return resultado;
+  })();
 }
 
-function insertarLineas(db: Database.Database, tabla: 'cotizacion_lineas' | 'nota_lineas', id: string, montos: Montos) {
+/** null si no existe; si existe pero no pasa la validación, error explícito (solo esa cotización). */
+function cargarUna(db: Database.Database, id: string): Cotizacion | null {
+  const q = cargar(db, [id])[0];
+  if (q) return q;
+  if (db.prepare('SELECT 1 FROM cotizaciones WHERE id = ?').get(id)) throw new ErrorCotizacionDanada();
+  return null;
+}
+
+function insertarLineas(
+  db: Database.Database,
+  tabla: 'cotizacion_lineas' | 'nota_lineas',
+  id: string,
+  montos: Montos,
+) {
   const insertar = db.prepare(`
     INSERT INTO ${tabla} (
       cotizacion_id, orden, codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
-      largo, precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total
+      largo, precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total,
+      indice, ancho_solicitado, alto_solicitado, medida_solicitada
     ) VALUES (
       @cotizacion_id, @orden, @codigo, @modelo, @familia, @tipo, @madera, @medida,
       @ancho_min, @ancho_max, @largo, @precio_neto, @descripcion, @fila_origen,
-      @cantidad, @precio_unitario, @total
+      @cantidad, @precio_unitario, @total, @indice, @ancho_solicitado, @alto_solicitado, @medida_solicitada
     )
   `);
   montos.lineas.forEach((l, orden) =>
@@ -224,35 +348,57 @@ function insertarLineas(db: Database.Database, tabla: 'cotizacion_lineas' | 'not
       cantidad: l.cantidad,
       precio_unitario: l.precioUnitario,
       total: l.total,
+      indice: l.indice,
+      ancho_solicitado: l.anchoSolicitado,
+      alto_solicitado: l.altoSolicitado,
+      medida_solicitada: l.medidaSolicitada,
     }),
   );
 }
 
-function persistirCotizacion(db: Database.Database, estado: Estado, q: Cotizacion, orden: number) {
+/** Escribe una cotización y reemplaza sus filas hijas. Valida antes de tocar la base. */
+function persistirCotizacion(db: Database.Database, q: Cotizacion) {
+  const valida = cotizacionSchema.safeParse(q);
+  if (!valida.success)
+    throw new Error(
+      `La cotización ${q.id} no cumple el esquema (${valida.error.issues.map((i) => i.path.join('.')).join(', ')}); no se guardó.`,
+    );
   const origenAusente = !Object.hasOwn(q, 'origen');
   const fechaAusente = !Object.hasOwn(q, 'fechaEmision');
-  const origen = q.origen == null ? null : estado.cotizaciones.find((c) => c.numero === q.origen);
+  const origen =
+    q.origen == null
+      ? undefined
+      : (db.prepare('SELECT id FROM cotizaciones WHERE numero = ?').get(q.origen) as
+          { id: string } | undefined);
   if (q.origen != null && !origen)
-    throw new Error(`La cotización de origen ${q.origen} no existe en el estado guardado.`);
+    throw new Error(`La cotización de origen ${q.origen} no existe en la base.`);
+  const existente = db.prepare('SELECT orden FROM cotizaciones WHERE id = ?').get(q.id) as
+    { orden: number } | undefined;
+  const orden =
+    existente?.orden ??
+    (db.prepare('SELECT COALESCE(MAX(orden) + 1, 0) AS n FROM cotizaciones').get() as { n: number }).n;
 
-  db.prepare(`
+  db.prepare(
+    `
     INSERT INTO cotizaciones (
-      id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut,
+      id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut, cliente_giro,
       cliente_telefono, cliente_direccion, cliente_comuna, cliente_comuna_normalizada,
       cliente_proyecto, cliente_proyecto_normalizado, creada, actualizada, pdf, fecha_emision,
-      fecha_emision_ausente, origen_id, origen_ausente
+      fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, flete, creada_por, emitida_por,
+      aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda
     ) VALUES (
-      @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut,
+      @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
       @cliente_telefono, @cliente_direccion, @cliente_comuna, @cliente_comuna_normalizada,
       @cliente_proyecto, @cliente_proyecto_normalizado, @creada, @actualizada, @pdf, @fecha_emision,
-      @fecha_emision_ausente, @origen_id, @origen_ausente
+      @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @flete, @creada_por, @emitida_por,
+      @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda
     ) ON CONFLICT(id) DO UPDATE SET
-      orden = excluded.orden,
       numero = excluded.numero,
       estado = excluded.estado,
       cliente_nombre = excluded.cliente_nombre,
       cliente_nombre_normalizado = excluded.cliente_nombre_normalizado,
       cliente_rut = excluded.cliente_rut,
+      cliente_giro = excluded.cliente_giro,
       cliente_telefono = excluded.cliente_telefono,
       cliente_direccion = excluded.cliente_direccion,
       cliente_comuna = excluded.cliente_comuna,
@@ -265,8 +411,21 @@ function persistirCotizacion(db: Database.Database, estado: Estado, q: Cotizacio
       fecha_emision = excluded.fecha_emision,
       fecha_emision_ausente = excluded.fecha_emision_ausente,
       origen_id = excluded.origen_id,
-      origen_ausente = excluded.origen_ausente
-  `).run({
+      origen_ausente = excluded.origen_ausente,
+      vence = excluded.vence,
+      descuento = excluded.descuento,
+      flete = excluded.flete,
+      creada_por = excluded.creada_por,
+      emitida_por = excluded.emitida_por,
+      aprobada_por = excluded.aprobada_por,
+      anulada_por = excluded.anulada_por,
+      fecha_anulacion = excluded.fecha_anulacion,
+      motivo_anulacion = excluded.motivo_anulacion,
+      reemplazada_por = excluded.reemplazada_por,
+      version_catalogo = excluded.version_catalogo,
+      busqueda = excluded.busqueda
+  `,
+  ).run({
     id: q.id,
     orden,
     numero: q.numero,
@@ -274,6 +433,7 @@ function persistirCotizacion(db: Database.Database, estado: Estado, q: Cotizacio
     cliente_nombre: q.cliente.nombre,
     cliente_nombre_normalizado: normalizarTexto(q.cliente.nombre),
     cliente_rut: q.cliente.rut,
+    cliente_giro: q.cliente.giro,
     cliente_telefono: q.cliente.telefono,
     cliente_direccion: q.cliente.direccion,
     cliente_comuna: q.cliente.comuna,
@@ -287,89 +447,252 @@ function persistirCotizacion(db: Database.Database, estado: Estado, q: Cotizacio
     fecha_emision_ausente: Number(fechaAusente),
     origen_id: origen?.id ?? null,
     origen_ausente: Number(origenAusente),
+    vence: q.vence,
+    descuento: q.descuento,
+    flete: q.flete,
+    creada_por: q.creadaPor,
+    emitida_por: q.emitidaPor,
+    aprobada_por: q.aprobadaPor,
+    anulada_por: q.anuladaPor,
+    fecha_anulacion: q.fechaAnulacion,
+    motivo_anulacion: q.motivoAnulacion,
+    reemplazada_por: q.reemplazadaPor,
+    version_catalogo: q.versionCatalogo,
+    busqueda: textoBusqueda({
+      numero: q.numero,
+      cliente: q.cliente,
+      productos: [
+        ...q.solicitudes.flatMap((s) => [s.modelo, s.madera]),
+        ...q.montos.lineas.flatMap((l) => [l.producto.modelo, l.producto.madera]),
+      ],
+    }),
   });
 
-  const borrar = (tabla: string) => db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
-  borrar('solicitudes');
-  borrar('incompletos');
-  borrar('historial');
-  borrar('cotizacion_montos');
-  borrar('cotizacion_lineas');
-  borrar('notas_pedido');
-  borrar('nota_lineas');
+  for (const tabla of [
+    'solicitudes',
+    'incompletos',
+    'historial',
+    'cotizacion_montos',
+    'cotizacion_lineas',
+    'notas_pedido',
+    'nota_lineas',
+  ])
+    db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
     INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad)
     VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad)
   `);
-  q.solicitudes.forEach((s, i) => insSolicitud.run({ cotizacion_id: q.id, orden: i, ...s }));
-  const insIncompleto = db.prepare(`
-    INSERT INTO incompletos (cotizacion_id, indice, rechazo_json, pregunta) VALUES (?, ?, ?, ?)
-  `);
-  q.incompletos.forEach((i) =>
-    insIncompleto.run(q.id, i.indice, JSON.stringify(i.rechazo), i.pregunta),
+  q.solicitudes.forEach((s, i) =>
+    insSolicitud.run({
+      cotizacion_id: q.id,
+      orden: i,
+      modelo: s.modelo,
+      madera: s.madera,
+      ancho: s.ancho,
+      alto: s.alto,
+      medida: s.medida,
+      cantidad: s.cantidad,
+    }),
   );
-  const insMensaje = db.prepare(`
-    INSERT INTO historial (cotizacion_id, orden, rol, texto) VALUES (?, ?, ?, ?)
-  `);
+  const insIncompleto = db.prepare(
+    'INSERT INTO incompletos (cotizacion_id, indice, rechazo_json, pregunta) VALUES (?, ?, ?, ?)',
+  );
+  q.incompletos.forEach((i) => insIncompleto.run(q.id, i.indice, JSON.stringify(i.rechazo), i.pregunta));
+  const insMensaje = db.prepare(
+    'INSERT INTO historial (cotizacion_id, orden, rol, texto) VALUES (?, ?, ?, ?)',
+  );
   q.historial.forEach((m, i) => insMensaje.run(q.id, i, m.rol, m.texto));
-  db.prepare('INSERT INTO cotizacion_montos (cotizacion_id, neto, iva, total) VALUES (?, ?, ?, ?)').run(
+  db.prepare(
+    `
+    INSERT INTO cotizacion_montos (cotizacion_id, neto, iva, total, subtotal, descuento_porcentaje, descuento, flete)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+  ).run(
     q.id,
     q.montos.neto,
     q.montos.iva,
     q.montos.total,
+    q.montos.subtotal,
+    q.montos.descuentoPorcentaje,
+    q.montos.descuento,
+    q.montos.flete,
   );
   insertarLineas(db, 'cotizacion_lineas', q.id, q.montos);
   if (q.nota) {
-    db.prepare(`
-      INSERT INTO notas_pedido (cotizacion_id, numero, pdf, fecha, neto, iva, total)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `).run(q.id, q.nota.numero, q.nota.pdf, q.nota.fecha, q.nota.montos.neto, q.nota.montos.iva, q.nota.montos.total);
+    db.prepare(
+      `
+      INSERT INTO notas_pedido (
+        cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte, anulada
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+    ).run(
+      q.id,
+      q.nota.numero,
+      q.nota.pdf,
+      q.nota.fecha,
+      q.nota.montos.neto,
+      q.nota.montos.iva,
+      q.nota.montos.total,
+      q.nota.despacho.direccion,
+      q.nota.despacho.transporte,
+      Number(q.nota.anulada),
+    );
     insertarLineas(db, 'nota_lineas', q.id, q.nota.montos);
   }
 }
 
-function normalizarTexto(texto: string | null) {
-  return (texto ?? '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim()
-    .replace(/\s+/g, ' ');
-}
-
-function guardarDiferencias(db: Database.Database, estado: Estado, anterior: Estado | null) {
-  db.transaction(() => {
-    db.prepare(`
-      UPDATE correlativos SET siguiente_cotizacion = ?, siguiente_nota = ? WHERE id = 1
-    `).run(estado.siguienteCotizacion, estado.siguienteNota);
-    const previas = new Map((anterior?.cotizaciones ?? []).map((q) => [q.id, JSON.stringify(q)]));
-    const actuales = new Set(estado.cotizaciones.map((q) => q.id));
-    for (const [id] of previas) if (!actuales.has(id)) db.prepare('DELETE FROM cotizaciones WHERE id = ?').run(id);
-    const ordenActual = db.prepare('SELECT orden FROM cotizaciones WHERE id = ?');
-    const siguienteOrden = db.prepare('SELECT COALESCE(MAX(orden) + 1, 0) AS n FROM cotizaciones');
-    estado.cotizaciones.forEach((q, indice) => {
-      if (previas.get(q.id) !== JSON.stringify(q)) {
-        const existente = ordenActual.get(q.id) as { orden: number } | undefined;
-        const orden = existente?.orden ?? (siguienteOrden.get() as { n: number }).n ?? indice;
-        persistirCotizacion(db, estado, q, orden);
-      }
-    });
-  }).immediate();
-}
-
+/** Solo para la migración desde JSON: reemplaza todas las cotizaciones y los correlativos. */
 export function guardarEstadoCompleto(db: Database.Database, estado: Estado) {
   const parsed = estadoPersistidoSchema.safeParse(estado);
   if (!parsed.success) throw new Error('El estado JSON no tiene una estructura válida.');
   db.transaction(() => {
     db.prepare('DELETE FROM cotizaciones').run();
-    db.prepare(`
-      UPDATE correlativos SET siguiente_cotizacion = ?, siguiente_nota = ? WHERE id = 1
-    `).run(estado.siguienteCotizacion, estado.siguienteNota);
-    estado.cotizaciones.forEach((q, orden) => persistirCotizacion(db, estado, q, orden));
+    db.prepare('UPDATE correlativos SET siguiente_cotizacion = ?, siguiente_nota = ? WHERE id = 1').run(
+      estado.siguienteCotizacion,
+      estado.siguienteNota,
+    );
+    for (const q of estado.cotizaciones) persistirCotizacion(db, q);
   }).immediate();
 }
+
+function correlativos(db: Database.Database) {
+  const fila = db
+    .prepare('SELECT siguiente_cotizacion, siguiente_nota FROM correlativos WHERE id = 1')
+    .get() as { siguiente_cotizacion: number; siguiente_nota: number } | undefined;
+  if (!fila) throw new Error('Faltan los correlativos en la base SQLite.');
+  return { siguienteCotizacion: fila.siguiente_cotizacion, siguienteNota: fila.siguiente_nota };
+}
+
+/** Lectura completa: la usan la migración y las pruebas. La aplicación lee por cotización. */
+export function leerEstadoDeBase(db: Database.Database): Estado {
+  return db.transaction(() => ({ ...correlativos(db), cotizaciones: cargar(db, null) }))();
+}
+
+/**
+ * Unidad de trabajo dentro del bloqueo: carga solo las cotizaciones que usa la operación y las
+ * escribe juntas al confirmar, en una transacción SQLite. Los correlativos se reservan al instante
+ * (UPDATE … RETURNING) para que un fallo posterior deje un salto, nunca un número reutilizado.
+ */
+export class Unidad {
+  private cache = new Map<string, Cotizacion>();
+  private sucias = new Set<string>();
+  private eliminadas = new Set<string>();
+  constructor(private db: Database.Database) {}
+
+  obtener(id: string): Cotizacion | null {
+    if (this.eliminadas.has(id)) return null;
+    const enCache = this.cache.get(id);
+    if (enCache) return enCache;
+    const q = cargarUna(this.db, id);
+    if (q) this.cache.set(id, q);
+    return q;
+  }
+
+  porNumero(numero: number): Cotizacion | null {
+    for (const q of this.cache.values()) if (q.numero === numero) return q;
+    const fila = this.db.prepare('SELECT id FROM cotizaciones WHERE numero = ?').get(numero) as
+      { id: string } | undefined;
+    return fila ? this.obtener(fila.id) : null;
+  }
+
+  /** Borrador de revisión abierto para una emitida; a lo más se mantiene uno por original. */
+  revisionAbierta(original: Cotizacion): Cotizacion | null {
+    if (original.numero === null) return null;
+    for (const q of this.cache.values())
+      if (q.estado === 'borrador' && q.origen === original.numero && !this.eliminadas.has(q.id)) return q;
+    const fila = this.db
+      .prepare(
+        `
+        SELECT id FROM cotizaciones WHERE origen_id = ? AND estado = 'borrador' AND numero IS NULL
+        ORDER BY orden DESC LIMIT 1
+      `,
+      )
+      .get(original.id) as { id: string } | undefined;
+    return fila ? this.obtener(fila.id) : null;
+  }
+
+  /** Todas las cotizaciones de la misma serie (original y revisiones encadenadas por origen). */
+  serie(id: string): Cotizacion[] {
+    const ids = this.db
+      .prepare(
+        `
+        WITH RECURSIVE
+          arriba(id, origen_id) AS (
+            SELECT id, origen_id FROM cotizaciones WHERE id = ?
+            UNION SELECT c.id, c.origen_id FROM cotizaciones c JOIN arriba a ON c.id = a.origen_id
+          ),
+          abajo(id) AS (
+            SELECT id FROM arriba WHERE origen_id IS NULL
+            UNION SELECT c.id FROM cotizaciones c JOIN abajo b ON c.origen_id = b.id
+          )
+        SELECT id FROM abajo
+      `,
+      )
+      .all(id) as { id: string }[];
+    const miembros = new Map<string, Cotizacion>();
+    for (const i of [id, ...ids.map((f) => f.id)]) {
+      const q = this.obtener(i);
+      if (q) miembros.set(q.id, q);
+    }
+    // Revisiones creadas en esta unidad y todavía no escritas.
+    const numeros = new Set([...miembros.values()].map((q) => q.numero).filter((n) => n !== null));
+    for (const q of this.cache.values()) if (q.origen != null && numeros.has(q.origen)) miembros.set(q.id, q);
+    return [...miembros.values()];
+  }
+
+  guardar(q: Cotizacion) {
+    this.eliminadas.delete(q.id);
+    this.cache.set(q.id, q);
+    this.sucias.add(q.id);
+  }
+
+  eliminar(id: string) {
+    this.cache.delete(id);
+    this.sucias.delete(id);
+    this.eliminadas.add(id);
+  }
+
+  private reservar(columna: 'siguiente_cotizacion' | 'siguiente_nota') {
+    return this.db
+      .transaction(
+        () =>
+          (
+            this.db
+              .prepare(
+                `UPDATE correlativos SET ${columna} = ${columna} + 1 WHERE id = 1 RETURNING ${columna} - 1 AS n`,
+              )
+              .get() as { n: number }
+          ).n,
+      )
+      .immediate();
+  }
+
+  reservarCotizacion() {
+    return this.reservar('siguiente_cotizacion');
+  }
+
+  reservarNota() {
+    return this.reservar('siguiente_nota');
+  }
+
+  confirmar() {
+    if (!this.sucias.size && !this.eliminadas.size) return;
+    this.db
+      .transaction(() => {
+        for (const id of this.eliminadas) this.db.prepare('DELETE FROM cotizaciones WHERE id = ?').run(id);
+        // Primero las que ya existen o tienen número: una revisión nueva referencia a su original.
+        const pendientes = [...this.sucias].map((id) => this.cache.get(id)!);
+        pendientes.sort((a, b) => Number(a.origen != null) - Number(b.origen != null));
+        for (const q of pendientes) persistirCotizacion(this.db, q);
+      })
+      .immediate();
+    this.sucias.clear();
+    this.eliminadas.clear();
+  }
+}
+
+const mapaEstados = new Set<EstadoCotizacion>(['borrador', 'emitida', 'aprobada', 'reemplazada', 'anulada']);
 
 export class Almacen {
   public readonly directorio: string;
@@ -377,24 +700,214 @@ export class Almacen {
 
   constructor(directorio?: string, rutaDb?: string) {
     this.directorio = resolve(directorio ?? directorioDatos());
-    this.rutaDb = resolve(rutaDb ?? (directorio ? join(this.directorio, 'cotizador.sqlite') : rutaBaseDatos()));
+    this.rutaDb = resolve(
+      rutaDb ?? (directorio ? join(this.directorio, 'cotizador.sqlite') : rutaBaseDatos()),
+    );
+  }
+
+  private get db() {
+    return abrirBaseDatos(this.rutaDb);
   }
 
   async leer(): Promise<Estado> {
-    try {
-      return leerEstadoDeBase(abrirBaseDatos(this.rutaDb));
-    } catch (e) {
-      if (e instanceof Error) throw e;
-      throw new Error('No se pudo leer la base SQLite. El archivo y sus contadores se conservaron.');
+    return leerEstadoDeBase(this.db);
+  }
+
+  correlativos() {
+    return correlativos(this.db);
+  }
+
+  obtener(id: string): Cotizacion | null {
+    return cargarUna(this.db, id);
+  }
+
+  revisionAbierta(original: Cotizacion): Cotizacion | null {
+    return new Unidad(this.db).revisionAbierta(original);
+  }
+
+  /** Datos livianos de todas las cotizaciones para resolver referencias: dos consultas. */
+  candidatas(): CandidataReferencia[] {
+    const db = this.db;
+    return db.transaction(() => {
+      const filas = db
+        .prepare(
+          `
+          SELECT c.id, c.numero, c.estado, c.actualizada, c.fecha_emision, c.cliente_nombre,
+                 c.cliente_proyecto, c.cliente_comuna, n.fecha AS nota_fecha
+          FROM cotizaciones c LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id
+          ORDER BY c.orden
+        `,
+        )
+        .all() as {
+        id: string;
+        numero: number | null;
+        estado: EstadoCotizacion;
+        actualizada: string;
+        fecha_emision: string | null;
+        cliente_nombre: string | null;
+        cliente_proyecto: string | null;
+        cliente_comuna: string | null;
+        nota_fecha: string | null;
+      }[];
+      const solicitudes = agrupar(
+        db
+          .prepare('SELECT cotizacion_id, modelo, cantidad FROM solicitudes ORDER BY cotizacion_id, orden')
+          .all() as {
+          cotizacion_id: string;
+          modelo: string | null;
+          cantidad: number | null;
+        }[],
+      );
+      return filas.map((f) => ({
+        id: f.id,
+        actualizada: f.actualizada,
+        numero: f.numero,
+        estado: f.estado,
+        fechaEmision: f.fecha_emision,
+        cliente: { nombre: f.cliente_nombre, proyecto: f.cliente_proyecto, comuna: f.cliente_comuna },
+        solicitudes: (solicitudes.get(f.id) ?? []).map((s) => ({ modelo: s.modelo, cantidad: s.cantidad })),
+        nota: f.nota_fecha ? { fecha: f.nota_fecha } : null,
+      }));
+    })();
+  }
+
+  /** Página de resúmenes sin historial, con búsqueda y filtros; más recientes primero. */
+  listar(filtros: FiltrosListado = {}): {
+    cotizaciones: ResumenCotizacion[];
+    total: number;
+    pagina: number;
+    porPagina: number;
+  } {
+    const db = this.db;
+    const porPagina = Math.min(Math.max(Math.trunc(filtros.porPagina ?? 50), 1), 200);
+    const pagina = Math.max(Math.trunc(filtros.pagina ?? 1), 1);
+    const condiciones: string[] = [];
+    const params: unknown[] = [];
+    for (const termino of normalizarTexto(filtros.q ?? '')
+      .split(' ')
+      .filter(Boolean)
+      .slice(0, 8)) {
+      condiciones.push("c.busqueda LIKE ? ESCAPE '\\'");
+      params.push(`%${termino.replace(/[\\%_]/g, (c) => `\\${c}`)}%`);
     }
+    const estados = (filtros.estados ?? []).filter((e) => mapaEstados.has(e));
+    if (estados.length) {
+      condiciones.push(`c.estado IN (${estados.map(() => '?').join(', ')})`);
+      params.push(...estados);
+    }
+    if (filtros.desde) {
+      condiciones.push('COALESCE(c.fecha_emision, c.creada) >= ?');
+      params.push(inicioDiaSantiago(filtros.desde));
+    }
+    if (filtros.hasta) {
+      condiciones.push('COALESCE(c.fecha_emision, c.creada) < ?');
+      params.push(inicioDiaSantiago(sumarDiasCalendario(filtros.hasta, 1)));
+    }
+    const donde = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
+    return db.transaction(() => {
+      const total = (
+        db.prepare(`SELECT COUNT(*) AS n FROM cotizaciones c ${donde}`).get(...params) as { n: number }
+      ).n;
+      const filas = db
+        .prepare(
+          `
+          SELECT c.*, o.numero AS origen_numero, m.neto, m.iva, m.total, m.subtotal,
+                 m.descuento AS descuento_monto, m.flete AS flete_monto,
+                 n.numero AS nota_numero, n.pdf AS nota_pdf, n.fecha AS nota_fecha, n.anulada AS nota_anulada,
+                 (SELECT COUNT(*) FROM solicitudes s WHERE s.cotizacion_id = c.id) AS items,
+                 (SELECT COUNT(*) FROM incompletos i WHERE i.cotizacion_id = c.id) AS pendientes
+          FROM cotizaciones c
+          LEFT JOIN cotizaciones o ON o.id = c.origen_id
+          LEFT JOIN cotizacion_montos m ON m.cotizacion_id = c.id
+          LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id
+          ${donde}
+          ORDER BY c.actualizada DESC, c.orden DESC
+          LIMIT ? OFFSET ?
+        `,
+        )
+        .all(...params, porPagina, (pagina - 1) * porPagina) as (FilaCotizacion & {
+        neto: number | null;
+        iva: number | null;
+        total: number | null;
+        subtotal: number | null;
+        descuento_monto: number | null;
+        flete_monto: number | null;
+        nota_numero: number | null;
+        nota_pdf: string | null;
+        nota_fecha: string | null;
+        nota_anulada: number | null;
+        items: number;
+        pendientes: number;
+      })[];
+      const productos = agrupar(
+        db
+          .prepare(
+            `
+            SELECT cotizacion_id, modelo, madera, cantidad FROM solicitudes
+            WHERE cotizacion_id IN (SELECT value FROM json_each(?)) ORDER BY cotizacion_id, orden
+          `,
+          )
+          .all(JSON.stringify(filas.map((f) => f.id))) as {
+          cotizacion_id: string;
+          modelo: string | null;
+          madera: string | null;
+          cantidad: number | null;
+        }[],
+      );
+      const cotizaciones = filas.map((f): ResumenCotizacion => {
+        const vence = f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision) : null);
+        return {
+          id: f.id,
+          numero: f.numero,
+          estado: f.estado,
+          cliente: {
+            nombre: f.cliente_nombre,
+            rut: f.cliente_rut,
+            giro: f.cliente_giro,
+            telefono: f.cliente_telefono,
+            direccion: f.cliente_direccion,
+            comuna: f.cliente_comuna,
+            proyecto: f.cliente_proyecto,
+          },
+          subtotal: f.subtotal ?? f.neto ?? 0,
+          descuento: f.descuento,
+          descuentoMonto: f.descuento_monto ?? 0,
+          flete: f.flete,
+          neto: f.neto ?? 0,
+          iva: f.iva ?? 0,
+          total: f.total ?? 0,
+          items: f.items,
+          pendientes: f.pendientes,
+          productos: (productos.get(f.id) ?? [])
+            .map(
+              (p) =>
+                `${p.cantidad ?? '—'} × ${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}`,
+            )
+            .join(', '),
+          creada: f.creada,
+          actualizada: f.actualizada,
+          fechaEmision: f.fecha_emision,
+          vence,
+          vencida: f.estado === 'emitida' && estaVencida(vence),
+          origen: f.origen_id ? f.origen_numero : null,
+          reemplazadaPor: f.reemplazada_por,
+          pdf: f.pdf,
+          creadaPor: f.creada_por,
+          emitidaPor: f.emitida_por,
+          aprobadaPor: f.aprobada_por,
+          anuladaPor: f.anulada_por,
+          fechaAnulacion: f.fecha_anulacion,
+          nota:
+            f.nota_numero === null
+              ? null
+              : { numero: f.nota_numero, pdf: f.nota_pdf!, fecha: f.nota_fecha!, anulada: !!f.nota_anulada },
+        };
+      });
+      return { cotizaciones, total, pagina, porPagina };
+    })();
   }
 
-  async guardar(estado: Estado) {
-    const db = abrirBaseDatos(this.rutaDb);
-    guardarDiferencias(db, estado, null);
-  }
-
-  async transaccion<T>(fn: (estado: Estado, guardar: () => Promise<void>) => Promise<T>): Promise<T> {
+  async transaccion<T>(fn: (unidad: Unidad) => Promise<T> | T): Promise<T> {
     await mkdir(this.directorio, { recursive: true, mode: 0o700 });
     let release: () => Promise<void>;
     try {
@@ -403,32 +916,41 @@ export class Almacen {
         lockfilePath: join(this.directorio, '.estado.lock'),
         stale: 30000,
         retries: { retries: 60, minTimeout: 100, maxTimeout: 500 },
+        // Si el bloqueo se pierde (reloj, disco lento) se registra: lanzar aquí derribaría el proceso.
+        onCompromised: (error) => registrarError('almacen', `Bloqueo comprometido: ${error.message}`),
       });
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ELOCKED') throw new ErrorOcupado();
       throw e;
     }
     try {
-      const estado = await this.leer();
-      let anterior = structuredClone(estado);
-      const guardar = async () => {
-        guardarDiferencias(abrirBaseDatos(this.rutaDb), estado, anterior);
-        anterior = structuredClone(estado);
-      };
-      const resultado = await fn(estado, guardar);
-      await guardar();
+      const unidad = new Unidad(this.db);
+      const resultado = await fn(unidad);
+      unidad.confirmar();
       return resultado;
     } finally {
-      await release();
+      await release().catch((error: Error) =>
+        registrarError('almacen', `No se liberó el bloqueo: ${error.message}`),
+      );
     }
   }
 }
 
-export async function validarBase(ruta = rutaBaseDatos()) {
-  const db = abrirBaseDatos(ruta);
-  const integrity = db.pragma('integrity_check', { simple: true });
-  const foreignKeys = db.pragma('foreign_key_check') as unknown[];
-  return { integrity, foreignKeys };
+function sumarDiasCalendario(fecha: string, dias: number) {
+  const d = new Date(`${fecha}T12:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/** La cotización guardada no pasa la validación: se informa sin tumbar el resto del listado. */
+export class ErrorCotizacionDanada extends ErrorUsuario {
+  constructor() {
+    super(
+      'La cotización guardada tiene datos dañados y no se puede abrir. Pide a quien administra el cotizador que la revise.',
+      'estado_invalido',
+      500,
+    );
+  }
 }
 
 export function cerrarAlmacen(ruta?: string) {

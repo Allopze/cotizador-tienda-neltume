@@ -1,58 +1,139 @@
-import { etiquetaEstado, type Cotizacion } from '@/negocio/estado';
-import { pesos, porcentajeIva } from '@/negocio/precios';
+'use client';
+import type { RefObject } from 'react';
+import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
+import { pesos } from '@/negocio/precios';
+import { CampoEditable } from './campo-editable';
+import type { CambiosEdicion } from './contrato';
+import {
+  ETIQUETA_CAMPO,
+  SIN_CLIENTE,
+  autoria,
+  fechaLarga,
+  medidaPedida,
+  numeroCotizacion,
+  plural,
+  validez,
+  vencida,
+} from './formato';
+import { Documento, Totales } from './panel-totales';
+
+export type Operacion =
+  'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'duplicar' | 'eliminar' | 'anular';
+export interface AccionesPanel {
+  emitir: () => void;
+  aprobar: () => void;
+  quitar: (indice: number) => void;
+  duplicar: () => void;
+  eliminar: () => void;
+  anular: () => void;
+  /** Guarda cambios directos; `campo` identifica qué control muestra «Guardando…». */
+  editar: (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
+  descargar: (archivo: string) => void;
+  copiar: () => void;
+}
 interface Props {
   actual: Cotizacion | null;
-  ocupado: boolean;
-  accion: (tipo: 'emitir' | 'aprobar' | 'quitar', indice?: number) => Promise<void>;
+  enCurso: Operacion | null;
+  guardando: string | null;
+  descargando: string | null;
+  acciones: AccionesPanel;
+  tituloRef: RefObject<HTMLHeadingElement | null>;
 }
-export function CotizacionPanel({ actual, ocupado, accion }: Props) {
-  const bloqueada = actual?.estado === 'aprobada';
-  const listo = !!actual?.montos.lineas.length && !actual.incompletos.length;
-  const emitida = !!actual?.pdf;
+/** Línea valorizada que corresponde al ítem i (los incompletos no tienen línea). */
+export function lineaDe(q: Cotizacion, i: number) {
+  const pendiente = q.incompletos.find((p) => p.indice === i);
+  if (pendiente) return { pendiente, linea: null };
+  const porIndice = q.montos.lineas.find((l) => l.indice === i);
+  if (porIndice) return { pendiente, linea: porIndice };
+  const index = i - q.incompletos.filter((p) => p.indice < i).length;
+  return { pendiente, linea: q.montos.lineas[index] ?? null };
+}
+export const descripcionItem = (q: Cotizacion, i: number) =>
+  lineaDe(q, i).linea?.producto.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir';
+
+const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'proyecto', 'telefono', 'direccion'] as const;
+
+function notaEstado(q: Cotizacion | null) {
+  if (!q) return 'Revisa antes de compartir; tú decides cuándo emitirla.';
+  switch (q.estado) {
+    case 'anulada':
+      return [
+        `Anulada${q.anuladaPor ? ` por ${q.anuladaPor}` : ''}${q.fechaAnulacion ? ` el ${fechaLarga(q.fechaAnulacion)}` : ''}.`,
+        q.motivoAnulacion && `Motivo: ${q.motivoAnulacion}.`,
+        'Puedes duplicarla para preparar una nueva.',
+      ]
+        .filter(Boolean)
+        .join(' ');
+    case 'reemplazada':
+      return `${q.reemplazadaPor ? `Reemplazada por la revisión N° ${q.reemplazadaPor}.` : 'Reemplazada por otra cotización de la misma serie.'} Ya no se puede aprobar ni editar.`;
+    case 'aprobada':
+      return q.nota?.anulada
+        ? 'Cotización aprobada; su nota de pedido fue anulada.'
+        : 'Cotización aprobada y bloqueada para edición.';
+    case 'emitida':
+      return `${q.fechaEmision ? `Emitida el ${fechaLarga(q.fechaEmision)}. ` : ''}Si haces cambios, se creará una revisión en borrador y se conservará este PDF.`;
+    default:
+      return q.origen
+        ? `Revisión de la cotización N° ${q.origen}. Revisa antes de compartir; tú decides cuándo emitirla.`
+        : 'Revisa antes de compartir; tú decides cuándo emitirla.';
+  }
+}
+
+export function CotizacionPanel({ actual, enCurso, guardando, descargando, acciones, tituloRef }: Props) {
+  const ocupado = enCurso !== null;
+  const editable = !!actual && esEditable(actual) && !ocupado;
+  const conItems = !!actual?.montos.lineas.length;
+  const listo = conItems && !actual.incompletos.length;
+  const estado = actual?.estado ?? 'borrador';
+  const esVencida = vencida(actual);
+  const ayudaEmitir = !actual?.solicitudes.length
+    ? 'Agrega al menos un producto para generar el PDF.'
+    : actual.incompletos.length
+      ? 'Completa o quita los ítems pendientes para generar el PDF.'
+      : 'Se asignará un número correlativo y quedará emitida.';
+  const quien = actual ? autoria(actual) : '';
   return (
     <section className="quote-panel" aria-label="Cotización en curso">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">02 / COTIZACIÓN</p>
-          <h2>{actual?.numero ? `N° ${actual.numero}` : 'Borrador'}</h2>
+          <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
+            {actual ? numeroCotizacion(actual.numero) : 'Nueva cotización'}
+          </h2>
+          {quien && <p className="autoria">{quien}</p>}
         </div>
-        <span className={`status ${actual?.estado ?? 'borrador'}`}>
-          {etiquetaEstado[actual?.estado ?? 'borrador']}
+        <span className="estado-badges">
+          <span className={`status ${estado}`}>{etiquetaEstado[estado]}</span>
+          {esVencida && <span className="status vencida">Vencida</span>}
         </span>
       </div>
+      {actual?.estado === 'emitida' && editable && (
+        <p className="panel-aviso" id="aviso-revision">
+          Esta cotización ya fue emitida: al editarla se crea (o se reutiliza) una revisión en borrador.
+        </p>
+      )}
       <div className="client">
-        <div>
-          <span>CLIENTE</span>
-          <strong>{actual?.cliente.nombre || 'Sin nombre aún'}</strong>
-        </div>
-        <div>
-          <span>CIUDAD / COMUNA</span>
-          <strong>{actual?.cliente.comuna || '—'}</strong>
-        </div>
-        <div>
-          <span>PROYECTO</span>
-          <strong>{actual?.cliente.proyecto || '—'}</strong>
-        </div>
-        <div>
-          <span>CONTACTO</span>
-          <strong>{actual?.cliente.telefono || '—'}</strong>
-        </div>
-        {actual?.cliente.rut && (
-          <div>
-            <span>RUT</span>
-            <strong>{actual.cliente.rut}</strong>
-          </div>
-        )}
-        {actual?.cliente.direccion && (
-          <div>
-            <span>DIRECCIÓN</span>
-            <strong>{actual.cliente.direccion}</strong>
-          </div>
-        )}
+        {CAMPOS_CLIENTE.map((campo) => {
+          const valor = actual?.cliente[campo] ?? '';
+          if (!editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
+            return null;
+          return (
+            <CampoEditable
+              key={`${actual?.id}-${actual?.actualizada}-${campo}`}
+              etiqueta={ETIQUETA_CAMPO[campo]}
+              valor={valor}
+              mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
+              editable={editable}
+              guardando={guardando === `cliente.${campo}`}
+              maxLength={300}
+              guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
+            />
+          );
+        })}
       </div>
       <div className="items-top">
         <span>Detalle del pedido</span>
-        <span>{actual?.solicitudes.length ?? 0} ítems</span>
+        <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
       </div>
       {actual?.solicitudes.length ? (
         <div className="table-wrap">
@@ -70,25 +151,54 @@ export function CotizacionPanel({ actual, ocupado, accion }: Props) {
             </thead>
             <tbody>
               {actual.solicitudes.map((s, i) => {
-                const pendiente = actual.incompletos.find((p) => p.indice === i);
-                const index = i - actual.incompletos.filter((p) => p.indice < i).length;
-                const linea = pendiente ? null : actual.montos.lineas[index];
+                const { pendiente, linea } = lineaDe(actual, i);
+                const medida = linea && medidaPedida(linea);
+                const descripcion = descripcionItem(actual, i);
                 return (
                   <tr key={i} className={pendiente ? 'pending' : ''}>
                     <td>
-                      <strong>{linea?.producto.descripcion || s.modelo || 'Producto por definir'}</strong>
+                      <strong>{descripcion}</strong>
                       <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
+                      {medida && <small>{medida}</small>}
                       {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
                     </td>
-                    <td>{s.cantidad ?? '—'}</td>
+                    <td className="celda-cantidad">
+                      <CampoEditable
+                        key={`${actual.actualizada}-${i}`}
+                        etiqueta={`Cantidad de ${descripcion}`}
+                        etiquetaOculta
+                        valor={s.cantidad === null ? '' : String(s.cantidad)}
+                        mostrar={s.cantidad ?? '—'}
+                        editable={editable}
+                        guardando={guardando === `cantidad.${i}`}
+                        tipo="number"
+                        min={1}
+                        max={10000}
+                        paso={1}
+                        validar={(v) => {
+                          const n = Number(v);
+                          return Number.isInteger(n) && n >= 1 && n <= 10000
+                            ? null
+                            : 'La cantidad debe ser un número entero entre 1 y 10.000.';
+                        }}
+                        guardar={(v) =>
+                          acciones.editar(
+                            { cantidades: [{ indice: i, cantidad: Number(v) }] },
+                            `cantidad.${i}`,
+                          )
+                        }
+                      />
+                    </td>
                     <td>{linea ? pesos(linea.precioUnitario) : '—'}</td>
                     <td>{linea ? pesos(linea.total) : '—'}</td>
                     <td>
                       <button
+                        type="button"
                         className="remove"
-                        onClick={() => accion('quitar', i)}
-                        disabled={ocupado || bloqueada}
-                        aria-label={`Quitar ítem ${i + 1}`}
+                        onClick={() => acciones.quitar(i)}
+                        disabled={!editable}
+                        aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
+                        aria-describedby={actual && !esEditable(actual) ? 'nota-revision' : undefined}
                       >
                         ×
                       </button>
@@ -112,47 +222,124 @@ export function CotizacionPanel({ actual, ocupado, accion }: Props) {
           </p>
         </div>
       )}
-      <div className="totals">
-        <div>
-          <span>Neto</span>
-          <span data-testid="neto">{pesos(actual?.montos.neto ?? 0)}</span>
+      <Totales
+        actual={actual}
+        editable={editable && conItems}
+        guardando={guardando}
+        editar={acciones.editar}
+      />
+      {/* Acciones que cambian el estado, separadas de las descargas. */}
+      {estado === 'borrador' && (
+        <div className="quote-actions">
+          <button
+            type="button"
+            className="button primary"
+            disabled={!listo || ocupado}
+            aria-describedby="ayuda-emitir"
+            onClick={acciones.emitir}
+          >
+            {enCurso === 'emitir' ? 'Generando PDF…' : 'Generar PDF'}
+          </button>
+          <p className="ayuda" id="ayuda-emitir">
+            {ayudaEmitir}
+          </p>
         </div>
-        <div>
-          <span>
-            IVA <small>{porcentajeIva()}</small>
-          </span>
-          <span>{pesos(actual?.montos.iva ?? 0)}</span>
+      )}
+      {estado === 'emitida' && (
+        <div className="quote-actions">
+          <button
+            type="button"
+            className="button primary"
+            disabled={ocupado}
+            aria-describedby="ayuda-aprobar"
+            onClick={acciones.aprobar}
+          >
+            {enCurso === 'aprobar' ? 'Aprobando…' : 'Aprobar y generar nota de pedido'}
+          </button>
+          <p className="ayuda" id="ayuda-aprobar">
+            {esVencida
+              ? 'La vigencia terminó: se pedirá confirmar antes de aprobar.'
+              : 'Genera la nota de pedido para fábrica y bloquea la cotización.'}
+          </p>
         </div>
-        <div className="grand-total">
-          <span>Total</span>
-          <strong data-testid="total">{pesos(actual?.montos.total ?? 0)}</strong>
+      )}
+      {actual && (
+        <div className="quote-more">
+          <button
+            type="button"
+            className="button secondary small"
+            onClick={acciones.duplicar}
+            disabled={ocupado}
+          >
+            {enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar'}
+          </button>
+          {estado === 'borrador' && actual.numero === null && (
+            <button
+              type="button"
+              className="button secondary small peligro"
+              onClick={acciones.eliminar}
+              disabled={ocupado}
+            >
+              {enCurso === 'eliminar' ? 'Eliminando…' : 'Eliminar borrador'}
+            </button>
+          )}
+          {(estado === 'emitida' || estado === 'aprobada') && (
+            <button
+              type="button"
+              className="button secondary small peligro"
+              onClick={acciones.anular}
+              disabled={ocupado}
+            >
+              {enCurso === 'anular' ? 'Anulando…' : 'Anular'}
+            </button>
+          )}
         </div>
-      </div>
-      <div className="quote-actions">
-        <button className="button primary" disabled={!listo || ocupado} onClick={() => accion('emitir')}>
-          {actual?.pdf ? 'Descargar cotización' : 'Generar PDF'} <span aria-hidden>↓</span>
-        </button>
-        <button
-          className="button secondary"
-          disabled={!emitida || ocupado}
-          title={emitida ? undefined : 'Genera y revisa el PDF antes de aprobar.'}
-          onClick={() => accion('aprobar')}
-        >
-          {bloqueada ? 'Descargar nota de pedido' : 'Aprobar y generar nota de pedido'}
-        </button>
-      </div>
-      <p className="review-note">
-        {bloqueada
-          ? 'Cotización aprobada y bloqueada para edición.'
-          : actual?.estado === 'emitida'
-            ? `${actual.fechaEmision ? `Emitida el ${new Date(actual.fechaEmision).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })}. ` : ''}Si haces cambios, se creará un nuevo borrador y se conservará este PDF.`
-            : actual?.origen
-              ? `Revisión de la cotización N° ${actual.origen}. Revisa antes de compartir; tú decides cuándo emitirla.`
-              : 'Revisa antes de compartir. Tú decides cuándo enviarla.'}
+      )}
+      {actual && (actual.pdf || actual.nota || conItems) && (
+        <div className="quote-docs">
+          {actual.pdf && (
+            <Documento
+              nombre={`Cotización ${numeroCotizacion(actual.numero)}`}
+              archivo={actual.pdf}
+              descargando={descargando}
+              descargar={acciones.descargar}
+            />
+          )}
+          {actual.nota && (
+            <Documento
+              nombre={`Nota de pedido N° ${actual.nota.numero}`}
+              archivo={actual.nota.pdf}
+              descargando={descargando}
+              descargar={acciones.descargar}
+              etiqueta="Descargar nota de pedido"
+              anulado={actual.nota.anulada}
+            />
+          )}
+          {actual.nota && (actual.nota.despacho.direccion || actual.nota.despacho.transporte) && (
+            <p className="doc-despacho">
+              Despacho:{' '}
+              {[actual.nota.despacho.direccion, actual.nota.despacho.transporte].filter(Boolean).join(' · ')}
+            </p>
+          )}
+          {conItems && (
+            <div>
+              <span className="doc-nombre muted">Resumen en texto para correo o WhatsApp</span>
+              <button type="button" className="button secondary small" onClick={acciones.copiar}>
+                Copiar resumen
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+      <p className="review-note" id="nota-revision">
+        {notaEstado(actual)}
       </p>
       <div className="conditions">
         <span>Valores puestos en fábrica.</span>
-        <span>Despacho por confirmar · Validez: 10 días hábiles</span>
+        <span className={esVencida ? 'vencida-texto' : undefined}>
+          Despacho por confirmar · {validez(actual)}
+          {esVencida ? ' (vencida)' : ''}
+        </span>
       </div>
     </section>
   );

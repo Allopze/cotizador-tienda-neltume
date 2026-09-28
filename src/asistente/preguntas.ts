@@ -25,6 +25,10 @@ export function pregunta(r: Rechazo, modelo: string | null) {
       return `${nombre} no viene en ${bonito(r.valor)}. Maderas disponibles: ${r.disponibles.map(bonito).join(', ')}.`;
     case 'cantidad_invalida':
       return `La cantidad de ${nombre} debe ser un entero entre 1 y 10.000. ¿Cuántas unidades necesitas?`;
+    case 'medida_implausible':
+      return `No entendí la medida ${String(r.valor).replace('.', ',')} de ${r.campo === 'alto' ? 'alto o largo' : 'ancho'} para ${nombre}. Indícala en metros (por ejemplo 0,80) o centímetros (80); admito ${r.disponibles.join(', ')}.`;
+    case 'producto_ambiguo':
+      return `Hay más de un producto de ${nombre} que coincide con esas medidas: ${r.disponibles.join('; ')}. ¿Cuál necesitas?`;
     case 'medida_no_disponible':
       return `${nombre} no viene en ${String(r.valor).replace('.', ',')}${r.campo === 'medida' ? '' : ' m'} de ${r.campo === 'alto' ? 'alto o largo' : r.campo}. Opciones disponibles: ${opciones(r.disponibles)}.`;
   }

@@ -5,27 +5,38 @@ import { atributosProductoSchema } from '../asistente/esquemas';
 import type { LLM, ContextoAltaProducto } from '../asistente/llm';
 import { descripcion } from '../catalogo/importar';
 import type { Familia, Producto } from '../catalogo/tipos';
+import { normalizarMedida } from '../catalogo/resolver';
+import { REGLAS } from '../negocio/precios';
+import { ErrorUsuarioCatalogo } from './errores';
 import { RepositorioCatalogoSqlite } from './repositorio-catalogo';
 
-const borradorSchema = atributosProductoSchema.extend({ precioNeto: z.number().positive().nullable() }).strict();
-const productoSchema = z.object({
-  codigo: z.string().min(1),
-  modelo: z.string().min(1),
-  familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']),
-  tipo: z.string().nullable(),
-  madera: z.string().min(1),
-  medida: z.string().min(1),
-  anchoMin: z.number().nullable(),
-  anchoMax: z.number().nullable(),
-  largo: z.number().positive(),
-  precioNeto: z.number().positive(),
-  descripcion: z.string().min(1),
-  filaOrigen: z.number().int(),
-}).strict();
-const mensajesSchema = z.array(z.object({ rol: z.enum(['usuario', 'asistente']), texto: z.string() }).strict());
-const respuestaSchema = z.object({ name: z.literal('proponer_producto'), input: atributosProductoSchema }).strict();
+const borradorSchema = atributosProductoSchema
+  .extend({ precioNeto: z.number().positive().nullable(), avisoPrecio: z.string().nullable().optional() })
+  .strict();
+const productoSchema = z
+  .object({
+    codigo: z.string().min(1),
+    modelo: z.string().min(1),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']),
+    tipo: z.string().nullable(),
+    madera: z.string().min(1),
+    medida: z.string().min(1),
+    anchoMin: z.number().nullable(),
+    anchoMax: z.number().nullable(),
+    largo: z.number().positive(),
+    precioNeto: z.number().positive(),
+    descripcion: z.string().min(1),
+    filaOrigen: z.number().int(),
+  })
+  .strict();
+const mensajesSchema = z.array(
+  z.object({ rol: z.enum(['usuario', 'asistente']), texto: z.string() }).strict(),
+);
+const respuestaSchema = z
+  .object({ name: z.literal('proponer_producto'), input: atributosProductoSchema })
+  .strict();
 type AtributosProducto = z.infer<typeof atributosProductoSchema>;
-type BorradorProducto = AtributosProducto & { precioNeto: number | null };
+type BorradorProducto = AtributosProducto & { precioNeto: number | null; avisoPrecio?: string | null };
 type MensajeAlta = { rol: 'usuario' | 'asistente'; texto: string };
 type FilaPendiente = {
   id: string;
@@ -35,6 +46,7 @@ type FilaPendiente = {
   mensajes_json: string;
   propuesta_json: string | null;
   expira: string;
+  user_id: string | null;
 };
 
 const BORRADOR_VACIO: BorradorProducto = {
@@ -59,7 +71,8 @@ function leerJson<T>(valor: string, esquema: z.ZodType<T>): T {
     throw new ErrorUsuarioCatalogo('La propuesta guardada ya no es válida. Inicia otra vez el alta.');
   }
   const parsed = esquema.safeParse(json);
-  if (!parsed.success) throw new ErrorUsuarioCatalogo('La propuesta guardada ya no es válida. Inicia otra vez el alta.');
+  if (!parsed.success)
+    throw new ErrorUsuarioCatalogo('La propuesta guardada ya no es válida. Inicia otra vez el alta.');
   return parsed.data;
 }
 
@@ -72,55 +85,169 @@ function normalizarNombre(valor: string) {
     .replace(/[\u0300-\u036f]/g, '');
 }
 
-/** Solo toma montos vinculados a una expresión de precio o al signo monetario. */
-export function extraerPrecioNeto(texto: string): number | null {
-  const patrones = [
-    /\bprecio(?:\s+(?:unitario(?:\s+neto)?|neto(?:\s+unitario)?))?\b(?:\s+(?:es|de|a|por))?\s*:?\s*\$?\s*([\d][\d., ]*)(?:\s*(mil|k))?(?=\s|$|[,;.!])/i,
-    /\bneto(?:\s+unitario)?\b(?:\s+(?:es|de|a|por))?\s*:?\s*\$?\s*([\d][\d., ]*)(?:\s*(mil|k))?(?=\s|$|[,;.!])/i,
-    /\$\s*([\d][\d., ]*)(?:\s*(mil|k))?(?=\s|$|[,;.!])/i,
-    /\b(?:cuesta|vale|sale)\s+\$?([\d][\d., ]*)(?:\s*(mil|k))?(?=\s|$|[,;.!])/i,
-  ];
-  for (const patron of patrones) {
-    const match = texto.match(patron);
-    if (!match) continue;
-    let cifra = match[1].replace(/\s/g, '').replace(/[.,]+$/, '');
-    if (cifra.includes('.') && cifra.includes(',')) cifra = cifra.replace(/\./g, '').replace(',', '.');
-    else if (cifra.includes(',')) cifra = cifra.replace(',', '.');
-    else if (cifra.includes('.')) cifra = cifra.replace(/\./g, '');
-    const base = Number(cifra);
-    const precio = match[2] ? base * 1000 : base;
-    // La palabra precio/neto o verbos como «vale» también marcan montos pequeños sin $.
-    const tieneMarcadorClaro =
-      match[0].includes('$') ||
-      !!match[2] ||
-      /\b(?:precio|neto|cuesta|vale|sale)\b/i.test(match[0]);
-    if (
-      Number.isFinite(precio) &&
-      precio > 0 &&
-      precio <= 100_000_000 &&
-      (precio >= 1000 || tieneMarcadorClaro)
-    )
-      return precio;
+const PALABRAS: Record<string, number> = {
+  un: 1,
+  uno: 1,
+  una: 1,
+  dos: 2,
+  tres: 3,
+  cuatro: 4,
+  cinco: 5,
+  seis: 6,
+  siete: 7,
+  ocho: 8,
+  nueve: 9,
+  diez: 10,
+  once: 11,
+  doce: 12,
+  trece: 13,
+  catorce: 14,
+  quince: 15,
+  veinte: 20,
+  treinta: 30,
+  cuarenta: 40,
+  cincuenta: 50,
+  sesenta: 60,
+  setenta: 70,
+  ochenta: 80,
+  noventa: 90,
+  cien: 100,
+  ciento: 100,
+  doscientos: 200,
+  trescientos: 300,
+  cuatrocientos: 400,
+  quinientos: 500,
+  seiscientos: 600,
+  setecientos: 700,
+  ochocientos: 800,
+  novecientos: 900,
+};
+const sinTildes = (s: string) =>
+  s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+/**
+ * Cifra con separadores chilenos: el punto separa miles y la coma decimales, pero una coma seguida de
+ * exactamente tres dígitos (sin otro separador) también es de miles: «45,990» = 45990, «45,99» = 45,99.
+ * Si aparecen ambos, el último es el decimal. «1.5» es decimal (no hay grupo de tres).
+ */
+export function interpretarCifra(cifra: string): number {
+  const c = cifra.replace(/\s/g, '');
+  const miles = (grupos: string[]) => grupos.slice(1).every((g) => g.length === 3);
+  if (c.includes('.') && c.includes(',')) {
+    const decimal = c.lastIndexOf('.') > c.lastIndexOf(',') ? '.' : ',';
+    const otro = decimal === '.' ? ',' : '.';
+    return Number(c.split(otro).join('').replace(decimal, '.'));
   }
-  return null;
+  for (const sep of [',', '.']) {
+    if (!c.includes(sep)) continue;
+    const grupos = c.split(sep);
+    if (miles(grupos)) return Number(grupos.join(''));
+    return grupos.length === 2 ? Number(grupos.join('.')) : NaN;
+  }
+  return Number(c);
 }
+
+const MARCADOR =
+  /\bprecio(?:\s+(?:unitario|neto|bruto))*|\bneto(?:\s+unitario)?|\bvalor(?:\s+(?:unitario|neto|bruto))*|\b(?:cuesta|vale|sale)\b|\$/gi;
+const TOKEN = /\s*(\d{1,3}(?: \d{3})+(?![\d.,])|\d+(?:[.,]\d+)*|[a-zñ]+)/y;
+const BRUTO =
+  /^[\s,.;:-]*(?:\(?\s*(?:con\s+iva|iva\s+incl\w*|incluye\s+(?:el\s+)?iva|incluido\s+(?:el\s+)?iva|c\/\s*iva|bruto)\b)/i;
+const NETO_EXPLICITO = /^[\s,.;:-]*(?:\(?\s*(?:\+\s*iva|mas\s+iva|sin\s+iva|neto|s\/\s*iva)\b)/i;
+
+export interface PrecioIndicado {
+  /** Precio neto unitario (convertido desde bruto si corresponde), con cuatro decimales como el catálogo. */
+  neto: number;
+  /** Monto tal como lo escribió la persona. */
+  indicado: number;
+  bruto: boolean;
+  inicio: number;
+  fin: number;
+}
+
+function montoDesde(t: string, desde: number): { valor: number; fin: number } | null {
+  TOKEN.lastIndex = desde;
+  let total = 0,
+    actual = 0,
+    fin = desde,
+    numerico = false,
+    m: RegExpExecArray | null;
+  while ((m = TOKEN.exec(t))) {
+    const tok = m[1];
+    if (/^\d/.test(tok)) {
+      // Dos cifras seguidas sin «mil» entre ellas no forman un solo monto.
+      if (actual) break;
+      actual += interpretarCifra(tok);
+      numerico = true;
+    } else if (tok === 'mil' || tok === 'k') {
+      if (!numerico && !actual) actual = 1;
+      total += actual * 1000;
+      actual = 0;
+    } else if (tok === 'millon' || tok === 'millones') {
+      total = (total + (actual || 1)) * 1_000_000;
+      actual = 0;
+    } else if (tok === 'y' && actual) {
+      continue;
+    } else if (tok in PALABRAS) {
+      actual += PALABRAS[tok];
+      numerico = true;
+    } else break;
+    fin = TOKEN.lastIndex;
+  }
+  if (!numerico) return null;
+  // «precio 2x4»: una cifra pegada a letras no es un monto.
+  if (/^[a-z0-9]/.test(t.slice(fin))) return null;
+  return { valor: total + actual, fin };
+}
+
+/**
+ * Busca montos vinculados a una expresión de precio o al signo $. «+ IVA», «más IVA» o «neto» se
+ * toman como neto; «IVA incluido», «con IVA» o «bruto» se convierten a neto dividiendo por 1 + IVA.
+ */
+export function buscarPrecios(texto: string): PrecioIndicado[] {
+  const t = sinTildes(texto);
+  const precios: PrecioIndicado[] = [];
+  for (const marcador of t.matchAll(MARCADOR)) {
+    const inicio = marcador.index!;
+    const prefijo = t
+      .slice(inicio + marcador[0].length)
+      .match(/^\s*(?:(?:es|de|a|por|seria|sera|son)\s+)*[:=]?\s*\$?\s*/);
+    const monto = montoDesde(t, inicio + marcador[0].length + (prefijo?.[0].length ?? 0));
+    if (!monto || !Number.isFinite(monto.valor) || monto.valor <= 0 || monto.valor > 100_000_000) continue;
+    if (precios.some((p) => inicio < p.fin)) continue;
+    const despues = t.slice(monto.fin, monto.fin + 30);
+    const bruto = /\bbruto\b/.test(marcador[0]) || (BRUTO.test(despues) && !NETO_EXPLICITO.test(despues));
+    const neto = bruto ? Math.round((monto.valor / (1 + REGLAS.iva)) * 10000) / 10000 : monto.valor;
+    const extra = (bruto ? despues.match(BRUTO) : despues.match(NETO_EXPLICITO))?.[0].length ?? 0;
+    precios.push({ neto, indicado: monto.valor, bruto, inicio, fin: monto.fin + extra });
+  }
+  return precios;
+}
+
+/** Precio neto unitario del primer monto explícito del texto, o null. */
+export function extraerPrecioNeto(texto: string): number | null {
+  return buscarPrecios(texto)[0]?.neto ?? null;
+}
+
+const formatoPrecio = (n: number) =>
+  '$' + new Intl.NumberFormat('es-CL', { maximumFractionDigits: 4 }).format(n);
 
 function ocultarPrecios(texto: string) {
-  let seguro = texto.replace(/\$\s*[\d][\d., ]*(?:\s*(?:mil|k))?/gi, '[precio indicado]');
-  const patrones = [
-    /\bprecio(?:\s+(?:unitario(?:\s+neto)?|neto(?:\s+unitario)?))?\b(?:\s+(?:es|de|a|por))?\s*:?\s*[\d][\d., ]*(?:\s*(?:mil|k))?/gi,
-    /\bneto(?:\s+unitario)?\b(?:\s+(?:es|de|a|por))?\s*:?\s*[\d][\d., ]*(?:\s*(?:mil|k))?/gi,
-    /\b(?:cuesta|vale|sale)\s+[\d][\d., ]*(?:\s*(?:mil|k))?/gi,
-  ];
-  for (const patron of patrones) {
-    seguro = seguro.replace(patron, (coincidencia) =>
-      extraerPrecioNeto(coincidencia) === null ? coincidencia : '[precio indicado]',
-    );
-  }
-  return seguro;
+  let seguro = texto;
+  for (const p of buscarPrecios(texto).reverse())
+    seguro = `${seguro.slice(0, p.inicio)}[precio indicado]${seguro.slice(p.fin)}`;
+  return seguro.replace(/\$\s*[\d][\d., ]*(?:\s*(?:mil|k))?/gi, '[precio indicado]');
 }
 
-export class ErrorUsuarioCatalogo extends Error {}
+const mediana = (valores: number[]) => {
+  const v = [...valores].sort((a, b) => a - b);
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+export { ErrorUsuarioCatalogo };
 
 export class ServicioAltaCatalogo {
   constructor(
@@ -133,23 +260,28 @@ export class ServicioAltaCatalogo {
     this.db.prepare('DELETE FROM productos_pendientes WHERE expira <= ?').run(new Date().toISOString());
   }
 
-  private nuevo(): FilaPendiente {
+  private nuevo(usuarioId: string): FilaPendiente {
     const versionCatalogo = this.catalogo.version;
     if (!versionCatalogo) throw new ErrorUsuarioCatalogo('Carga un catálogo antes de agregar productos.');
     const id = randomUUID();
     const expira = new Date(Date.now() + TTL_MS).toISOString();
     this.db
-      .prepare(`
+      .prepare(
+        `
         INSERT INTO productos_pendientes (
-          id, version, version_catalogo, borrador_json, mensajes_json, propuesta_json, actualizada, expira
-        ) VALUES (?, 0, ?, ?, '[]', NULL, ?, ?)
-      `)
-      .run(id, versionCatalogo, JSON.stringify(BORRADOR_VACIO), new Date().toISOString(), expira);
-    return this.leerPendiente(id)!;
+          id, version, version_catalogo, borrador_json, mensajes_json, propuesta_json, actualizada, expira, user_id
+        ) VALUES (?, 0, ?, ?, '[]', NULL, ?, ?, ?)
+      `,
+      )
+      .run(id, versionCatalogo, JSON.stringify(BORRADOR_VACIO), new Date().toISOString(), expira, usuarioId);
+    return this.leerPendiente(id, usuarioId)!;
   }
 
-  private leerPendiente(id: string) {
-    return this.db.prepare('SELECT * FROM productos_pendientes WHERE id = ?').get(id) as FilaPendiente | undefined;
+  /** Cada propuesta pertenece a quien la inició: otra cuenta la ve como inexistente. */
+  private leerPendiente(id: string, usuarioId: string) {
+    return this.db
+      .prepare('SELECT * FROM productos_pendientes WHERE id = ? AND user_id = ?')
+      .get(id, usuarioId) as FilaPendiente | undefined;
   }
 
   private guardar(
@@ -159,7 +291,8 @@ export class ServicioAltaCatalogo {
     propuesta: Producto | null,
   ) {
     const actualizado = this.db
-      .prepare(`
+      .prepare(
+        `
         UPDATE productos_pendientes SET
           version = version + 1,
           borrador_json = ?,
@@ -168,7 +301,8 @@ export class ServicioAltaCatalogo {
           actualizada = ?,
           expira = ?
         WHERE id = ? AND version = ?
-      `)
+      `,
+      )
       .run(
         JSON.stringify(borrador),
         JSON.stringify(mensajes.slice(-LIMITE_HISTORIAL)),
@@ -179,7 +313,9 @@ export class ServicioAltaCatalogo {
         fila.version,
       );
     if (!actualizado.changes)
-      throw new ErrorUsuarioCatalogo('Esta conversación cambió en otra solicitud. Vuelve a enviar el último mensaje.');
+      throw new ErrorUsuarioCatalogo(
+        'Esta conversación cambió en otra solicitud. Vuelve a enviar el último mensaje.',
+      );
   }
 
   private falta(borrador: BorradorProducto) {
@@ -203,13 +339,16 @@ export class ServicioAltaCatalogo {
     if (borrador.familia === 'PUERTA') {
       if (
         borrador.anchoMin !== null &&
-        (borrador.anchoMin <= 0 || borrador.anchoMin > 4 ||
-          borrador.anchoMax === null || borrador.anchoMax < borrador.anchoMin || borrador.anchoMax > 4)
+        (borrador.anchoMin <= 0 ||
+          borrador.anchoMin > 4 ||
+          borrador.anchoMax === null ||
+          borrador.anchoMax < borrador.anchoMin ||
+          borrador.anchoMax > 4)
       )
         return 'El rango de ancho no es válido. Indica, por ejemplo, de 0,80 a 0,85 m.';
     } else if (borrador.familia && borrador.medida) {
-      const medida = borrador.medida.replace(/[×*]/g, 'X').replace(/\s/g, '').replace(/\./g, ',');
-      if (!/^\d+(?:,\d+)?X\d+(?:,\d+)?$/i.test(medida))
+      const medida = normalizarMedida(borrador.medida);
+      if (!/^\d+(?:,\d+)?X\d+(?:,\d+)?$/.test(medida))
         return 'La medida debe tener formato de escuadría, por ejemplo 2x4 o 6x4,5.';
     }
     if (borrador.largo !== null && (borrador.largo <= 0 || borrador.largo > 10))
@@ -228,7 +367,7 @@ export class ServicioAltaCatalogo {
     const medida =
       familia === 'PUERTA'
         ? `${borrador.anchoMin!.toFixed(2).replace('.', ',')} A ${borrador.anchoMax!.toFixed(2).replace('.', ',')}`
-        : borrador.medida!.replace(/[×*]/g, 'X').replace(/\s/g, '').replace(/\./g, ',').toUpperCase();
+        : normalizarMedida(borrador.medida!);
     const producto: Producto = {
       codigo: `IA-${randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase()}`,
       modelo,
@@ -247,9 +386,9 @@ export class ServicioAltaCatalogo {
     return producto;
   }
 
-  async mensaje(id: string | undefined, texto: string) {
+  async mensaje(id: string | undefined, texto: string, usuarioId: string) {
     this.limpiarExpirados();
-    const fila = id ? this.leerPendiente(id) : this.nuevo();
+    const fila = id ? this.leerPendiente(id, usuarioId) : this.nuevo(usuarioId);
     if (!fila) throw new ErrorUsuarioCatalogo('La conversación de alta expiró. Inicia otra vez.');
     if (fila.expira <= new Date().toISOString()) {
       this.db.prepare('DELETE FROM productos_pendientes WHERE id = ?').run(fila.id);
@@ -263,11 +402,18 @@ export class ServicioAltaCatalogo {
     const borradorPrevio = leerJson(fila.borrador_json, borradorSchema);
     const historialPrevio = leerJson(fila.mensajes_json, mensajesSchema);
     const historial = [...historialPrevio, { rol: 'usuario' as const, texto }];
-    const precioMensaje = extraerPrecioNeto(texto);
-    const precioNeto = precioMensaje ?? borradorPrevio.precioNeto;
+    const precioMensaje = buscarPrecios(texto)[0];
+    const precioNeto = precioMensaje?.neto ?? borradorPrevio.precioNeto;
+    const avisoPrecio = precioMensaje
+      ? precioMensaje.bruto
+        ? `Convertí el precio con IVA ${formatoPrecio(precioMensaje.indicado)} a neto ${formatoPrecio(precioMensaje.neto)} (dividido por ${1 + REGLAS.iva}).`
+        : null
+      : (borradorPrevio.avisoPrecio ?? null);
     const contexto: ContextoAltaProducto = {
       mensaje: ocultarPrecios(texto),
-      historial: historial.slice(-12).map((mensaje) => ({ ...mensaje, texto: ocultarPrecios(mensaje.texto) })),
+      historial: historial
+        .slice(-12)
+        .map((mensaje) => ({ ...mensaje, texto: ocultarPrecios(mensaje.texto) })),
       borrador: {
         modelo: borradorPrevio.modelo,
         familia: borradorPrevio.familia,
@@ -283,7 +429,7 @@ export class ServicioAltaCatalogo {
     };
     const salida = await this.llm.interpretarProducto(contexto);
     const parsed = respuestaSchema.safeParse(salida);
-    let borrador: BorradorProducto = { ...borradorPrevio, precioNeto };
+    let borrador: BorradorProducto = { ...borradorPrevio, precioNeto, avisoPrecio };
     if (parsed.success) {
       const entrada = parsed.data.input;
       borrador = {
@@ -296,13 +442,17 @@ export class ServicioAltaCatalogo {
         anchoMax: entrada.anchoMax ?? borrador.anchoMax,
         largo: entrada.largo ?? borrador.largo,
         precioNeto,
+        avisoPrecio,
       };
     }
 
     let propuesta: Producto | null = null;
+    let superpuesto: Producto | null;
     let respuesta: string;
+    const avisos: string[] = [];
     if (!parsed.success) {
-      respuesta = 'No pude identificar todos los datos. Describe el producto y agrega el precio neto unitario explícitamente.';
+      respuesta =
+        'No pude identificar todos los datos. Describe el producto y agrega el precio neto unitario explícitamente.';
     } else {
       const invalido = this.validar(borrador);
       if (invalido) respuesta = invalido;
@@ -320,12 +470,25 @@ export class ServicioAltaCatalogo {
           } else if (duplicado) {
             propuesta = null;
             respuesta = `Ya existe un producto con esos atributos (código ${duplicado.codigo}). No agregué otro.`;
+          } else if ((superpuesto = this.catalogo.rangoSuperpuesto(propuesta))) {
+            propuesta = null;
+            respuesta = `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) del mismo modelo, madera y alto. Indica un rango que no se cruce.`;
           } else {
             respuesta = 'Revisa la propuesta y confirma si quieres agregarla al catálogo.';
+            const referencia = this.catalogo.preciosReferencia(propuesta.modelo, propuesta.familia);
+            if (referencia.length) {
+              const m = mediana(referencia);
+              if (propuesta.precioNeto > m * 3 || propuesta.precioNeto < m / 3)
+                avisos.push(
+                  `El precio ${formatoPrecio(propuesta.precioNeto)} está muy lejos de la mediana ${formatoPrecio(Math.round(m))} de ${this.catalogo.familiaExistente(propuesta.modelo) ? propuesta.modelo : `la familia ${propuesta.familia}`}. Revisa que sea neto y unitario.`,
+                );
+            }
           }
         }
       }
     }
+    if (propuesta && borrador.avisoPrecio) avisos.unshift(borrador.avisoPrecio);
+    if (avisos.length) respuesta = [...avisos, respuesta].join('\n\n');
     historial.push({ rol: 'asistente', texto: respuesta });
     this.guardar(fila, borrador, historial, propuesta);
     return {
@@ -333,23 +496,25 @@ export class ServicioAltaCatalogo {
       mensajes: historial.slice(-LIMITE_HISTORIAL),
       pregunta: respuesta,
       propuesta,
+      avisos,
     };
   }
 
-  confirmar(id: string) {
-    const fila = this.leerPendiente(id);
+  confirmar(id: string, usuarioId: string, autor: string | null = null) {
+    const fila = this.leerPendiente(id, usuarioId);
     if (!fila) throw new ErrorUsuarioCatalogo('La propuesta expiró o ya fue confirmada.');
     if (fila.expira <= new Date().toISOString()) {
       this.db.prepare('DELETE FROM productos_pendientes WHERE id = ?').run(id);
       throw new ErrorUsuarioCatalogo('La propuesta expiró. Inicia otra vez el alta.');
     }
-    if (!fila.propuesta_json) throw new ErrorUsuarioCatalogo('Completa los datos y revisa la propuesta antes de guardarla.');
+    if (!fila.propuesta_json)
+      throw new ErrorUsuarioCatalogo('Completa los datos y revisa la propuesta antes de guardarla.');
     const producto = leerJson(fila.propuesta_json, productoSchema);
-    this.catalogo.agregarProductoManual(producto, fila.version_catalogo, id);
+    this.catalogo.agregarProductoManual(producto, fila.version_catalogo, id, autor);
     return producto;
   }
 
-  cancelar(id: string) {
-    this.db.prepare('DELETE FROM productos_pendientes WHERE id = ?').run(id);
+  cancelar(id: string, usuarioId: string) {
+    this.db.prepare('DELETE FROM productos_pendientes WHERE id = ? AND user_id = ?').run(id, usuarioId);
   }
 }
