@@ -162,211 +162,213 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           );
         })}
       </div>
-      <div className="items-top">
-        <span>Detalle del pedido</span>
-        <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
-      </div>
-      {actual?.solicitudes.length ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">PRODUCTO / CÓDIGO</th>
-                <th scope="col">CANT.</th>
-                <th scope="col">UNITARIO</th>
-                <th scope="col">TOTAL</th>
-                {conQuitar && (
-                  <th>
-                    <span className="sr-only">Acciones</span>
-                  </th>
-                )}
-              </tr>
-            </thead>
-            <tbody>
-              {actual.solicitudes.map((s, i) => {
-                const { pendiente, linea } = lineaDe(actual, i);
-                const medida = linea && medidaPedida(linea);
-                const descripcion = descripcionItem(actual, i);
-                return (
-                  <tr key={i} className={pendiente ? 'pending' : ''}>
-                    <td>
-                      <strong>{descripcion}</strong>
-                      <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
-                      {medida && <small>{medida}</small>}
-                      {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
-                    </td>
-                    <td className="celda-cantidad">
-                      <CampoEditable
-                        key={`${actual.actualizada}-${i}`}
-                        etiqueta={`Cantidad de ${descripcion}`}
-                        etiquetaOculta
-                        discreto
-                        valor={s.cantidad === null ? '' : String(s.cantidad)}
-                        mostrar={s.cantidad ?? '—'}
-                        editable={editable}
-                        guardando={guardando === `cantidad.${i}`}
-                        tipo="number"
-                        min={1}
-                        max={10000}
-                        paso={1}
-                        validar={(v) => {
-                          const n = Number(v);
-                          return Number.isInteger(n) && n >= 1 && n <= 10000
-                            ? null
-                            : 'La cantidad debe ser un número entero entre 1 y 10.000.';
-                        }}
-                        guardar={(v) =>
-                          acciones.editar(
-                            { cantidades: [{ indice: i, cantidad: Number(v) }] },
-                            `cantidad.${i}`,
-                          )
-                        }
-                      />
-                    </td>
-                    <td className="celda-monto" data-etiqueta="Unitario">
-                      {linea ? pesos(linea.precioUnitario) : '—'}
-                    </td>
-                    <td className="celda-monto celda-total" data-etiqueta="Total">
-                      {linea ? pesos(linea.total) : '—'}
-                    </td>
-                    {conQuitar && (
-                      <td className="celda-acciones">
-                        <button
-                          type="button"
-                          className="remove"
-                          onClick={() => acciones.quitar(i)}
-                          disabled={!editable}
-                          aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
-                        >
-                          ×
-                        </button>
+      {/* Zona central: la única que se desplaza cuando el pedido es largo; cabecera, cliente, acciones
+          y totales quedan siempre a la vista. */}
+      <div className="quote-cuerpo">
+        <div className="items-top">
+          <span>Detalle del pedido</span>
+          <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
+        </div>
+        {actual?.solicitudes.length ? (
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">PRODUCTO / CÓDIGO</th>
+                  <th scope="col">CANT.</th>
+                  <th scope="col">UNITARIO</th>
+                  <th scope="col">TOTAL</th>
+                  {conQuitar && (
+                    <th>
+                      <span className="sr-only">Acciones</span>
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {actual.solicitudes.map((s, i) => {
+                  const { pendiente, linea } = lineaDe(actual, i);
+                  const medida = linea && medidaPedida(linea);
+                  const descripcion = descripcionItem(actual, i);
+                  return (
+                    <tr key={i} className={pendiente ? 'pending' : ''}>
+                      <td>
+                        <strong>{descripcion}</strong>
+                        <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
+                        {medida && <small>{medida}</small>}
+                        {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
                       </td>
-                    )}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-quote">
-          <div className="door-icon" aria-hidden>
-            <span />
+                      <td className="celda-cantidad">
+                        <CampoEditable
+                          key={`${actual.actualizada}-${i}`}
+                          etiqueta={`Cantidad de ${descripcion}`}
+                          etiquetaOculta
+                          discreto
+                          valor={s.cantidad === null ? '' : String(s.cantidad)}
+                          mostrar={s.cantidad ?? '—'}
+                          editable={editable}
+                          guardando={guardando === `cantidad.${i}`}
+                          tipo="number"
+                          min={1}
+                          max={10000}
+                          paso={1}
+                          validar={(v) => {
+                            const n = Number(v);
+                            return Number.isInteger(n) && n >= 1 && n <= 10000
+                              ? null
+                              : 'La cantidad debe ser un número entero entre 1 y 10.000.';
+                          }}
+                          guardar={(v) =>
+                            acciones.editar(
+                              { cantidades: [{ indice: i, cantidad: Number(v) }] },
+                              `cantidad.${i}`,
+                            )
+                          }
+                        />
+                      </td>
+                      <td className="celda-monto" data-etiqueta="Unitario">
+                        {linea ? pesos(linea.precioUnitario) : '—'}
+                      </td>
+                      <td className="celda-monto celda-total" data-etiqueta="Total">
+                        {linea ? pesos(linea.total) : '—'}
+                      </td>
+                      {conQuitar && (
+                        <td className="celda-acciones">
+                          <button
+                            type="button"
+                            className="remove"
+                            onClick={() => acciones.quitar(i)}
+                            disabled={!editable}
+                            aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
+                          >
+                            ×
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-          <h3>El próximo proyecto empieza aquí.</h3>
-          <p>
-            Tu pedido aparecerá con sus medidas,
-            <br />
-            cantidades y valores, listo para revisar.
-          </p>
-        </div>
-      )}
-      <Totales
-        actual={actual}
-        editable={editable && conItems}
-        guardando={guardando}
-        editar={acciones.editar}
-      />
-      {/* Acciones que cambian el estado, separadas de las descargas. */}
-      {estado === 'borrador' && (
-        <div className="quote-actions">
-          <button
-            type="button"
-            className="button primary"
-            disabled={!listo || ocupado}
-            aria-describedby="ayuda-emitir"
-            onClick={acciones.emitir}
-          >
-            {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
-          </button>
-          <p className="ayuda" id="ayuda-emitir">
-            {ayudaEmitir}
-          </p>
-        </div>
-      )}
-      {estado === 'emitida' && (
-        <div className="quote-actions">
-          <button
-            type="button"
-            className="button primary"
-            disabled={ocupado}
-            aria-describedby="ayuda-aprobar"
-            onClick={acciones.aprobar}
-          >
-            {enCurso === 'aprobar' ? 'Aprobando…' : 'Aprobar y generar nota de pedido'}
-          </button>
-          <p className="ayuda" id="ayuda-aprobar">
-            {esVencida
-              ? 'La vigencia terminó: se pedirá confirmar antes de aprobar.'
-              : 'Genera la nota de pedido para fábrica y bloquea la cotización.'}
-          </p>
-        </div>
-      )}
-      {actual && (
-        <div className="quote-more">
-          <button
-            type="button"
-            className="button secondary small"
-            onClick={acciones.duplicar}
-            disabled={ocupado}
-          >
-            {enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar'}
-          </button>
-          {estado === 'borrador' && actual.numero === null && (
-            <button
-              type="button"
-              className="button secondary small peligro"
-              onClick={acciones.eliminar}
-              disabled={ocupado}
-            >
-              {enCurso === 'eliminar' ? 'Eliminando…' : 'Eliminar borrador'}
-            </button>
-          )}
-          {(estado === 'emitida' || estado === 'aprobada') && (
-            <button
-              type="button"
-              className="button secondary small peligro"
-              onClick={acciones.anular}
-              disabled={ocupado}
-            >
-              {enCurso === 'anular' ? 'Anulando…' : 'Anular'}
-            </button>
-          )}
-        </div>
-      )}
-      {actual && (actual.pdf || actual.nota || conItems) && (
-        <div className="quote-docs">
-          {actual.pdf && (
-            <Documento
-              nombre={`Cotización ${numeroCotizacion(actual.numero)}`}
-              archivo={actual.pdf}
-              descargando={descargando}
-              descargar={acciones.descargar}
-            />
-          )}
-          {actual.nota && (
-            <Documento
-              nombre={`Nota de pedido N° ${actual.nota.numero}`}
-              archivo={actual.nota.pdf}
-              descargando={descargando}
-              descargar={acciones.descargar}
-              etiqueta="Descargar nota de pedido"
-              anulado={actual.nota.anulada}
-            />
-          )}
-          {conItems && (
-            <div>
-              <span className="doc-nombre muted">Resumen en texto para correo o WhatsApp</span>
-              <button type="button" className="button secondary small" onClick={acciones.copiar}>
-                Copiar resumen
+        ) : null}
+        {actual && <Actividad id={actual.id} version={actual.actualizada} />}
+      </div>
+      <div className="quote-pie">
+        <div className="quote-pie-acciones">
+          {/* Acciones que cambian el estado, separadas de las descargas. */}
+          {estado === 'borrador' && (
+            <div className="quote-actions">
+              <button
+                type="button"
+                className="button primary"
+                disabled={!listo || ocupado}
+                aria-describedby="ayuda-emitir"
+                onClick={acciones.emitir}
+              >
+                {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
               </button>
+              <p className="ayuda" id="ayuda-emitir">
+                {ayudaEmitir}
+              </p>
             </div>
           )}
+          {estado === 'emitida' && (
+            <div className="quote-actions">
+              <button
+                type="button"
+                className="button primary"
+                disabled={ocupado}
+                aria-describedby="ayuda-aprobar"
+                onClick={acciones.aprobar}
+              >
+                {enCurso === 'aprobar' ? 'Aprobando…' : 'Aprobar y generar nota de pedido'}
+              </button>
+              <p className="ayuda" id="ayuda-aprobar">
+                {esVencida
+                  ? 'La vigencia terminó: se pedirá confirmar antes de aprobar.'
+                  : 'Genera la nota de pedido para fábrica y bloquea la cotización.'}
+              </p>
+            </div>
+          )}
+          {actual && (
+            <div className="quote-more">
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={acciones.duplicar}
+                disabled={ocupado}
+              >
+                {enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar'}
+              </button>
+              {conItems && (
+                <button
+                  type="button"
+                  className="button secondary small"
+                  onClick={acciones.copiar}
+                  title="Resumen en texto para pegar en un correo o WhatsApp"
+                >
+                  Copiar resumen
+                </button>
+              )}
+              {estado === 'borrador' && actual.numero === null && (
+                <button
+                  type="button"
+                  className="button secondary small peligro"
+                  onClick={acciones.eliminar}
+                  disabled={ocupado}
+                >
+                  {enCurso === 'eliminar' ? 'Eliminando…' : 'Eliminar borrador'}
+                </button>
+              )}
+              {(estado === 'emitida' || estado === 'aprobada') && (
+                <button
+                  type="button"
+                  className="button secondary small peligro"
+                  onClick={acciones.anular}
+                  disabled={ocupado}
+                >
+                  {enCurso === 'anular' ? 'Anulando…' : 'Anular'}
+                </button>
+              )}
+            </div>
+          )}
+          {actual && (actual.pdf || actual.nota) && (
+            <div className="quote-docs">
+              {actual.pdf && (
+                <Documento
+                  nombre={`Cotización ${numeroCotizacion(actual.numero)}`}
+                  archivo={actual.pdf}
+                  descargando={descargando}
+                  descargar={acciones.descargar}
+                />
+              )}
+              {actual.nota && (
+                <Documento
+                  nombre={`Nota de pedido N° ${actual.nota.numero}`}
+                  archivo={actual.nota.pdf}
+                  descargando={descargando}
+                  descargar={acciones.descargar}
+                  etiqueta="Descargar nota de pedido"
+                  anulado={actual.nota.anulada}
+                />
+              )}
+            </div>
+          )}
+          {/* En un borrador nuevo la nota solo repetía la ayuda del botón: se muestra cuando informa algo. */}
+          {actual && (estado !== 'borrador' || actual.origen) && (
+            <p className="review-note" id="nota-revision">
+              {notaEstado(actual)}
+            </p>
+          )}
         </div>
-      )}
-      <p className="review-note" id="nota-revision">
-        {notaEstado(actual)}
-      </p>
+        <Totales
+          actual={actual}
+          editable={editable && conItems}
+          guardando={guardando}
+          editar={acciones.editar}
+        />
+      </div>
       <div className="conditions">
         <span>Valores puestos en fábrica.</span>
         <span className={esVencida ? 'vencida-texto' : undefined}>
@@ -374,7 +376,6 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           {esVencida ? ' (vencida)' : ''}
         </span>
       </div>
-      {actual && <Actividad id={actual.id} version={actual.actualizada} />}
     </section>
   );
 }

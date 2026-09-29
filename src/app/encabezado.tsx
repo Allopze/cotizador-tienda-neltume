@@ -2,16 +2,13 @@
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import type { TipoAviso } from './avisos';
-import { CambiarClave } from './cambiar-clave';
 import { LogoutButton } from './logout-button';
 
 interface Props {
   email: string;
   nombre: string;
   /** Pantalla actual: marca el enlace activo y el texto de la cabecera. */
-  pantalla: 'cotizar' | 'historial' | 'configuracion';
-  avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
+  pantalla: (typeof PANTALLAS)[number][0];
   /** En el cotizador el logo empieza una cotización nueva; en las demás pantallas vuelve al inicio. */
   alLogo?: () => void;
   logoDeshabilitado?: boolean;
@@ -20,13 +17,13 @@ interface Props {
 const PANTALLAS = [
   ['cotizar', '/', 'Cotizar'],
   ['historial', '/historial', 'Historial'],
-  ['configuracion', '/configuracion', 'Catálogo y ajustes'],
+  ['catalogo', '/catalogo', 'Catálogo'],
+  ['ajustes', '/ajustes', 'Ajustes'],
 ] as const;
 
 /** Cabecera común: logo, pantalla actual y menú de cuenta (compacto en móvil). */
-export function Encabezado({ email, nombre, pantalla, avisar, alLogo, logoDeshabilitado }: Props) {
+export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado }: Props) {
   const [menuCuenta, setMenuCuenta] = useState(false);
-  const [cambiarClave, setCambiarClave] = useState(false);
   const toggleCuenta = useRef<HTMLButtonElement>(null),
     cuenta = useRef<HTMLDivElement>(null);
 
@@ -65,13 +62,14 @@ export function Encabezado({ email, nombre, pantalla, avisar, alLogo, logoDeshab
           {logo}
         </button>
       ) : (
-        <Link href="/" className="logo-button" aria-label="Neltume, volver a cotizaciones">
+        <Link href="/" scroll={false} className="logo-button" aria-label="Neltume, volver a cotizaciones">
           {logo}
         </Link>
       )}
+      {/* scroll={false}: cada pantalla restaura su propio scroll (useScrollRecordado). */}
       <nav className="header-nav" aria-label="Pantallas">
         {PANTALLAS.map(([id, href, texto]) => (
-          <Link key={id} href={href} aria-current={pantalla === id ? 'page' : undefined}>
+          <Link key={id} href={href} scroll={false} aria-current={pantalla === id ? 'page' : undefined}>
             {texto}
           </Link>
         ))}
@@ -97,20 +95,10 @@ export function Encabezado({ email, nombre, pantalla, avisar, alLogo, logoDeshab
               email
             )}
           </span>
-          <button
-            type="button"
-            className="ia-settings-button"
-            onClick={() => {
-              setMenuCuenta(false);
-              setCambiarClave(true);
-            }}
-          >
-            Cambiar contraseña
-          </button>
+          {/* Cambiar la contraseña vive en «Ajustes». */}
           <LogoutButton />
         </div>
       </div>
-      <CambiarClave abierta={cambiarClave} cerrar={() => setCambiarClave(false)} avisar={avisar} />
     </header>
   );
 }

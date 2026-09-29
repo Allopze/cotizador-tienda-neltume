@@ -6,6 +6,7 @@ import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
 import { Encabezado } from './encabezado';
+import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
 import { EncabezadoPagina } from './encabezado-pagina';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
@@ -104,6 +105,9 @@ export function Cotizador({
   }, [ocupado]);
 
   const cargando = restaurando;
+  // Al volver desde otra pantalla, el cotizador sigue a la misma altura. Si llega una cotización pedida
+  // por URL (desde el historial), en cambio, la vista va a esa cotización.
+  useScrollRecordado('cotizar', !cargando, !abrirId);
 
   /** Detalle completo de una cotización (el listado solo trae resúmenes). */
   const leerDetalle = useCallback(
@@ -758,7 +762,10 @@ export function Cotizador({
   }
 
   // Atajos: Ctrl/⌘+K abre el historial con el buscador; Alt+N empieza una cotización nueva.
-  const irAlHistorial = () => router.push('/historial');
+  const irAlHistorial = () => {
+    antesDeNavegar();
+    router.push('/historial', { scroll: false });
+  };
   const atajos = useRef({ nuevaCotizacion, historial: irAlHistorial });
   useEffect(() => {
     atajos.current = { nuevaCotizacion, historial: irAlHistorial };
@@ -789,12 +796,12 @@ export function Cotizador({
     input.current?.focus();
   }
   return (
-    <div className="app-shell">
+    // «pantalla-completa»: en escritorio el cotizador ocupa justo el alto de la ventana (ver responsive.css).
+    <div className="app-shell pantalla-completa">
       <Encabezado
         email={email}
         nombre={nombre}
         pantalla="cotizar"
-        avisar={avisar}
         alLogo={nuevaCotizacion}
         logoDeshabilitado={ocupado}
       />
@@ -805,6 +812,7 @@ export function Cotizador({
           onClick={nuevaCotizacion}
           disabled={ocupado || cargando}
           aria-keyshortcuts="Alt+N"
+          title="Atajo: Alt+N · Ctrl/⌘+K abre el historial con el buscador"
         >
           <span aria-hidden>+</span> Nueva cotización
         </button>
@@ -981,14 +989,6 @@ export function Cotizador({
               </span>
             </div>
           </form>
-          <p className="chat-footnote">
-            Cotiza puertas sólidas y accesorios. Las medidas se indican como ancho × alto de la puerta.
-          </p>
-          {/* Los atajos viven junto al chat: en el encabezado alargaban la fila y movían el título. */}
-          <p className="atajos">
-            <kbd>Alt</kbd>+<kbd>N</kbd> nueva cotización · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd> buscar en
-            el historial
-          </p>
         </section>
         <CotizacionPanel
           actual={actual}

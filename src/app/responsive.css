@@ -33,9 +33,6 @@
     width: 112px;
     height: 60px;
   }
-  .atajos {
-    display: none;
-  }
   /* La navegación baja a su propia fila, a todo el ancho, bajo el logo y la cuenta. */
   .masthead {
     flex-wrap: wrap;
@@ -196,6 +193,141 @@
   .composer-bottom button,
   .catalog-composer button {
     min-height: 44px;
+  }
+}
+/*
+ * Cotizador a pantalla completa (escritorio y tablet): la página mide justo el alto de la ventana y no se
+ * desplaza. Solo hacen scroll por dentro la conversación y la lista de ítems; cabecera, datos del
+ * cliente, acciones y totales quedan siempre a la vista. En pantallas bajas o angostas se apila con scroll.
+ */
+@media (min-width: 801px) and (min-height: 680px) {
+  .pantalla-completa {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .pantalla-completa > .masthead,
+  .pantalla-completa > .page-heading {
+    flex: none;
+  }
+  .pantalla-completa > .workspace {
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 16px;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  .pantalla-completa > .site-footer {
+    display: none;
+  }
+  /* Conversación: cabecera y compositor fijos, mensajes con scroll propio. */
+  .pantalla-completa .chat-panel {
+    min-height: 0;
+    padding: 20px 24px 16px;
+  }
+  .pantalla-completa .panel-heading {
+    padding-bottom: 12px;
+  }
+  /* Los rótulos «01 / 02» son decorativos: aquí el alto se reserva para el pedido. */
+  .pantalla-completa .panel-heading .eyebrow {
+    display: none;
+  }
+  .pantalla-completa > .page-heading {
+    padding: 12px 0;
+    min-height: 0;
+  }
+  .pantalla-completa .messages {
+    min-height: 0;
+    max-height: none;
+  }
+  .pantalla-completa .welcome {
+    padding: 6px 0 16px;
+  }
+  .pantalla-completa .example {
+    margin-top: 16px;
+  }
+  .pantalla-completa .composer {
+    margin-top: 12px;
+  }
+  /* Cotización: cabecera y cliente arriba, ítems al medio (con scroll), acciones y totales abajo. Si la
+     ventana es tan baja que no cabe, el propio panel se desplaza: nada queda fuera de alcance. */
+  .pantalla-completa .quote-panel {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 16px 26px 14px;
+  }
+  .pantalla-completa .client {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px 18px;
+    padding: 12px 0 14px;
+  }
+  .pantalla-completa .client .campo-etiqueta {
+    margin-bottom: 3px;
+  }
+  .pantalla-completa .quote-cuerpo {
+    flex: 1;
+    /* Siempre queda lugar para al menos dos ítems. */
+    min-height: 150px;
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  .pantalla-completa .table-wrap {
+    overflow: visible;
+    min-height: 0;
+  }
+  /* Encabezado de la tabla fijo mientras se recorre un pedido largo. */
+  .pantalla-completa .quote-cuerpo thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--surface);
+  }
+  .pantalla-completa .actividad {
+    margin-top: 10px;
+  }
+  .pantalla-completa .quote-pie {
+    flex: none;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 250px;
+    gap: 0 28px;
+    align-items: start;
+    padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .pantalla-completa .quote-actions .primary {
+    min-width: 0;
+  }
+  .pantalla-completa .quote-more {
+    margin-top: 10px;
+  }
+  .pantalla-completa .quote-docs {
+    margin-top: 10px;
+    padding-top: 10px;
+    gap: 6px;
+  }
+  .pantalla-completa .review-note {
+    margin: 10px 0 0;
+    text-align: left;
+  }
+  .pantalla-completa .totals {
+    width: auto;
+    margin: 0;
+    padding: 0;
+  }
+  /* Totales compactos: las filas de detalle más bajas, el total se mantiene destacado. */
+  .pantalla-completa .totals > div {
+    margin-bottom: 2px;
+    font-size: var(--fs-sm);
+    min-height: 26px;
+    align-items: center;
+  }
+  .pantalla-completa .totals .grand-total {
+    margin-top: 6px;
+    padding-top: 8px;
+    font-size: var(--fs-md);
+  }
+  .pantalla-completa .conditions {
+    margin-top: 10px;
+    padding-top: 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {

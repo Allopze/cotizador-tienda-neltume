@@ -47,17 +47,23 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   expect(await total()).toBe(antes);
 
   // Consulta del catálogo (pantalla propia) con el precio unitario de la cotización.
-  await page.getByRole('link', { name: 'Catálogo y ajustes' }).click();
-  await expect(page).toHaveURL(/\/configuracion$/);
+  await page.getByRole('link', { name: 'Catálogo', exact: true }).click();
+  await expect(page).toHaveURL(/\/catalogo$/);
   const pantalla = page.getByRole('main');
   await expect(pantalla.getByLabel('Buscar en el catálogo')).toBeFocused();
   await pantalla.getByLabel('Buscar en el catálogo').fill('HUIL-O-3-B');
   await expect(pantalla.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
   await expect(pantalla).toContainText(pesos(Math.round(puerta.precioNeto * (1 + REGLAS.ajuste))));
-  // La sección del asistente es parte de la misma pantalla.
-  await page.getByRole('link', { name: 'Modelo del asistente' }).click();
-  await expect(page).toHaveURL(/seccion=asistente/);
-  await expect(page.getByRole('heading', { name: 'Modelo del asistente', level: 2 })).toBeVisible();
+  // El asistente tiene su propia pantalla, «Ajustes».
+  await page.getByRole('link', { name: 'Ajustes', exact: true }).click();
+  await expect(page).toHaveURL(/\/ajustes$/);
+  await expect(page.getByRole('heading', { name: 'Asistente', level: 2 })).toBeVisible();
+  // El cambio de contraseña también vive en «Ajustes» (ya no en el menú de la cabecera).
+  await expect(page.getByRole('form', { name: 'Cambiar contraseña' })).toBeVisible();
+  await expect(page.getByRole('banner').getByRole('button', { name: 'Cambiar contraseña' })).toHaveCount(0);
+  // Los enlaces antiguos a «Catálogo y ajustes» llevan a la pantalla que corresponde.
+  await page.goto('/configuracion?seccion=asistente');
+  await expect(page).toHaveURL(/\/ajustes$/);
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
   await expect(titulo).toHaveText('Nueva cotización');
 

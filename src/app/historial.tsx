@@ -5,6 +5,7 @@ import { etiquetaEstado, type EstadoCotizacion, type ResumenCotizacion } from '@
 import { pesos } from '@/negocio/precios';
 import type { Listado } from './contrato';
 import { EncabezadoPagina } from './encabezado-pagina';
+import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
 import { esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
 
@@ -42,7 +43,14 @@ function parametros(f: Filtros) {
 
 /** Listado paginado del servidor con búsqueda diferida; la cotizadora lo recarga tras cada acción. */
 export function useHistorial(alListar: (d: Listado) => void) {
-  const [filtros, setFiltros] = useState<Filtros>(SIN_FILTROS);
+  // Filtros y filas cargadas se recuerdan por pestaña: al volver al historial se ve la misma lista, del
+  // mismo largo, y el scroll restaurado cae sobre la misma fila. Montar solo en el cliente (useEsCliente).
+  const [filtros, setFiltros] = useState<Filtros>(() => ({
+    ...SIN_FILTROS,
+    ...leerSesion<Partial<Filtros>>('historial:filtros', {}),
+  }));
+  const cargadosPrevios = useRef(leerSesion<number>('historial:cargados', 0));
+  useEffect(() => guardarSesion('historial:filtros', filtros), [filtros]);
   const [items, setItems] = useState<ResumenCotizacion[]>([]);
   const [total, setTotal] = useState(0);
   const [pagina, setPagina] = useState(1);
@@ -71,6 +79,7 @@ export function useHistorial(alListar: (d: Listado) => void) {
           ? [...prev, ...d.cotizaciones.filter((x) => !prev.some((p) => p.id === x.id))]
           : d.cotizaciones;
         vigentes.current.cargados = nuevos.length;
+        guardarSesion('historial:cargados', nuevos.length);
         return nuevos;
       });
       setTotal(d.total);
@@ -90,9 +99,17 @@ export function useHistorial(alListar: (d: Listado) => void) {
 
   // Búsqueda y filtros en el servidor, diferidos mientras se escribe.
   const primera = useRef(true);
+  const cargaInicial = useRef(true);
   useEffect(() => {
     const t = setTimeout(
-      () => cargar(filtros, 1, false).catch(() => {}),
+      () => {
+        // La primera carga trae tantas filas como había al salir (hasta 200); las siguientes, una página.
+        // Se decide al arrancar la carga, no al programarla: en desarrollo el efecto se monta dos veces.
+        const previos = cargaInicial.current ? cargadosPrevios.current : 0;
+        cargaInicial.current = false;
+        const porPagina = Math.min(200, Math.max(POR_PAGINA, Math.ceil(previos / POR_PAGINA) * POR_PAGINA));
+        cargar(filtros, 1, false, porPagina).catch(() => {});
+      },
       primera.current ? 0 : ESPERA_BUSQUEDA,
     );
     primera.current = false;
@@ -300,6 +317,7 @@ function Fila({
       {/* Enlace y no botón: abre la cotización en el cotizador (también en otra pestaña). */}
       <Link
         href={`/?cotizacion=${encodeURIComponent(q.id)}`}
+        scroll={false}
         className="history-fila"
         aria-current={actual ? 'true' : undefined}
       >

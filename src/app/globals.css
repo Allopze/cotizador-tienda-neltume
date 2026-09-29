@@ -7,7 +7,7 @@
   /* Texto terciario (placeholders, metadatos): ≥5:1 sobre blanco, papel y panel. */
   --subtle: #666c61;
   --paper: #fafaf6;
-  /* Superficies: tarjeta blanca y panel lateral (chat, navegación de ajustes). */
+  /* Superficies: tarjeta blanca y panel lateral (chat, navegación del catálogo). */
   --surface: #fff;
   --panel: #f6f7f1;
   /* Tres bordes: tarjetas y divisores, divisores internos y controles (campos, selectores). */
@@ -124,7 +124,7 @@ kbd {
   margin: auto;
 }
 .masthead {
-  height: 108px;
+  height: 84px;
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--line);
@@ -137,8 +137,8 @@ kbd {
   line-height: 0;
 }
 .logo {
-  width: 143px;
-  height: 70px;
+  width: 120px;
+  height: 58px;
   object-fit: contain;
 }
 .header-nav {
@@ -161,10 +161,10 @@ kbd {
   color: var(--ink);
   border-bottom-color: var(--ink);
 }
-/* Encabezado de pantalla: misma altura y espaciado en Cotizar, Historial y Catálogo y ajustes. */
+/* Encabezado de pantalla: misma altura y espaciado en Cotizar, Historial, Catálogo y Ajustes. */
 .page-heading {
-  min-height: calc(var(--control) + 48px);
-  padding: 24px 0;
+  min-height: calc(var(--control) + 36px);
+  padding: 18px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -178,12 +178,6 @@ kbd {
   gap: 9px 14px;
 }
 .heading-meta {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-}
-.atajos {
-  margin-top: 6px;
-  text-align: center;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
@@ -250,31 +244,25 @@ h1 {
   min-height: 643px;
   scroll-margin-top: 12px;
 }
-/* Pantalla «Catálogo y ajustes». */
-.ajustes {
+/* Pantallas con navegación lateral por secciones (Catálogo). */
+.con-secciones {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
   min-height: 560px;
 }
-.ajustes-nav {
+.secciones-nav {
   padding: 26px 20px;
   border-right: 1px solid var(--line);
   background: var(--panel);
-  display: grid;
-  align-content: start;
-  gap: 22px;
 }
-.ajustes-nav .eyebrow {
-  margin-bottom: 8px;
-}
-.ajustes-nav ul {
+.secciones-nav ul {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
   gap: 2px;
 }
-.ajustes-nav a {
+.secciones-nav a {
   display: block;
   padding: 9px 10px;
   border-left: 2px solid transparent;
@@ -282,67 +270,77 @@ h1 {
   font-size: var(--fs-md);
   text-decoration: none;
 }
-.ajustes-nav a:hover,
-.ajustes-nav a[aria-current='page'] {
+.secciones-nav a:hover,
+.secciones-nav a[aria-current='page'] {
   background: var(--pale);
 }
-.ajustes-nav a[aria-current='page'] {
+.secciones-nav a[aria-current='page'] {
   border-left-color: var(--green);
   font-weight: 600;
 }
-.ajustes-contenido {
+.secciones-contenido {
   padding: 26px 30px 30px;
   min-width: 0;
 }
-.ajustes-contenido > h2 {
+.secciones-contenido > h2 {
   margin-bottom: 4px;
 }
-.ajustes-contenido .catalogo-lista {
+.secciones-contenido .catalogo-lista {
   max-height: 65vh;
 }
-.ajustes-contenido .alta-producto,
-.ajustes-contenido form {
+.secciones-contenido .alta-producto,
+.secciones-contenido form,
+.ajustes-pagina form {
   max-width: 720px;
 }
 @media (max-width: 800px) {
-  .ajustes {
+  .con-secciones {
     grid-template-columns: 1fr;
   }
   /* En móvil la navegación pasa a una fila de pestañas desplazable. */
-  .ajustes-nav {
-    display: flex;
-    gap: 4px;
+  .secciones-nav {
     padding: 4px 8px 0;
     border-right: 0;
     border-bottom: 1px solid var(--line);
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .ajustes-grupo {
-    flex: none;
-  }
-  /* Una sola fila de pestañas: los grupos solo ordenan el menú lateral de escritorio. */
-  .ajustes-nav .eyebrow {
-    display: none;
-  }
-  .ajustes-nav ul {
+  .secciones-nav ul {
     display: flex;
     gap: 4px;
   }
-  .ajustes-nav a {
+  .secciones-nav a {
     border-left: 0;
     border-bottom: 2px solid transparent;
     white-space: nowrap;
     padding: 8px 10px;
   }
-  .ajustes-nav a:hover,
-  .ajustes-nav a[aria-current='page'] {
+  .secciones-nav a:hover,
+  .secciones-nav a[aria-current='page'] {
     background: transparent;
   }
-  .ajustes-nav a[aria-current='page'] {
+  .secciones-nav a[aria-current='page'] {
     border-bottom-color: var(--green);
   }
-  .ajustes-contenido {
+  .secciones-contenido {
+    padding: 20px 16px 24px;
+  }
+}
+/* Pantalla «Ajustes»: una sola sección, en la misma tarjeta que el resto. */
+.ajustes-pagina {
+  padding: 26px 30px 30px;
+  min-height: 360px;
+}
+.ajustes-pagina h2 {
+  margin-bottom: 4px;
+}
+.ajustes-pagina section + section {
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 800px) {
+  .ajustes-pagina {
     padding: 20px 16px 24px;
   }
 }

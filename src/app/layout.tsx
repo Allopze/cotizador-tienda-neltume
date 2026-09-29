@@ -7,6 +7,9 @@ import './login.css';
 export const metadata: Metadata = {
   title: 'Neltume · Cotizaciones',
   description: 'Asistente interno de cotizaciones de puertas sólidas.',
+  icons: {
+    icon: '/logo-neltume.svg',
+  },
 };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

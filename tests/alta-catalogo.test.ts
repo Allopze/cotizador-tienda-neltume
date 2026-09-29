@@ -200,4 +200,79 @@ describe('ServicioAltaCatalogo', () => {
     expect(alta.confirmar(res.id, 'u1', 'Paula').codigo).toMatch(/^IA-/);
     expect(r.listarManuales()[0].creadaPor).toBe('Paula');
   });
+
+  it('devuelve lo interpretado para volcarlo en el formulario', async () => {
+    const r = await repo();
+    const res = await new ServicioAltaCatalogo(db, r, llm()).mensaje(
+      undefined,
+      'Molco 60 a 65, precio 95.000',
+      'u1',
+    );
+    expect(res.borrador).toMatchObject({ ...atributos, precioNeto: 95000 });
+  });
+});
+
+describe('ServicioAltaCatalogo.proponerManual', () => {
+  const datos = {
+    modelo: 'Molco',
+    familia: 'PUERTA' as const,
+    madera: 'pino oregon',
+    tipo: null,
+    medida: null,
+    anchoMin: 0.6,
+    anchoMax: 0.65,
+    largo: 2,
+    precioNeto: 95000,
+  };
+  // El alta manual no usa el asistente: el LLM de prueba falla si se lo llama.
+  const sinAsistente = () => ({
+    interpretar: vi.fn(),
+    interpretarProducto: vi.fn().mockRejectedValue(new Error('no')),
+  });
+
+  it('genera la misma propuesta revisable que el alta asistida, sin llamar al asistente', async () => {
+    const r = await repo();
+    const ia = sinAsistente();
+    const alta = new ServicioAltaCatalogo(db, r, ia);
+    const res = alta.proponerManual(undefined, datos, 'u1');
+    expect(res.propuesta).toMatchObject({ modelo: 'MOLCO', madera: 'PINO OREGON', medida: '0,60 A 0,65' });
+    expect(ia.interpretarProducto).not.toHaveBeenCalled();
+    expect(alta.confirmar(res.id, 'u1', 'Paula').codigo).toMatch(/^IA-/);
+  });
+
+  it('aplica las mismas validaciones: faltantes, duplicados y rangos superpuestos', async () => {
+    const r = await repo();
+    const alta = new ServicioAltaCatalogo(db, r, sinAsistente());
+    expect(() => alta.proponerManual(undefined, { ...datos, precioNeto: null }, 'u1')).toThrow(/precio neto/);
+    expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 0.84, anchoMax: 0.9 }, 'u1')).toThrow(
+      /superpone/,
+    );
+    expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 0.8, anchoMax: 0.85 }, 'u1')).toThrow(
+      /Ya existe/,
+    );
+  });
+
+  it('corrige a mano la propuesta del asistente en la misma conversación', async () => {
+    const r = await repo();
+    const alta = new ServicioAltaCatalogo(db, r, {
+      interpretar: vi.fn(),
+      interpretarProducto: vi.fn().mockResolvedValue({
+        name: 'proponer_producto',
+        input: {
+          modelo: 'MOLCO',
+          familia: 'PUERTA',
+          madera: 'pino oregon',
+          tipo: null,
+          medida: null,
+          anchoMin: 0.6,
+          anchoMax: 0.65,
+          largo: 2,
+        },
+      }),
+    });
+    const asistida = await alta.mensaje(undefined, 'Molco 60 a 65, precio 95.000', 'u1');
+    const manual = alta.proponerManual(asistida.id, { ...datos, precioNeto: 97000 }, 'u1');
+    expect(manual.id).toBe(asistida.id);
+    expect(alta.confirmar(manual.id, 'u1').precioNeto).toBe(97000);
+  });
 });

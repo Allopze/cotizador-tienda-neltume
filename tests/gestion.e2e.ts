@@ -83,7 +83,7 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await page.getByRole('link', { name: new RegExp(`^${numero}`) }).click();
   await expect(titulo).toHaveText(numero);
   // Ir a otra pantalla y volver conserva la cotización abierta (una recarga, en cambio, parte en blanco).
-  await page.getByRole('link', { name: 'Catálogo y ajustes' }).click();
+  await page.getByRole('link', { name: 'Catálogo', exact: true }).click();
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
   await expect(titulo).toHaveText(numero);
   await panel.getByRole('button', { name: 'Anular', exact: true }).click();

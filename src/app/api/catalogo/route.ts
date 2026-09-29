@@ -3,6 +3,7 @@ import { crearLLM } from '@/servidor/ajustes-ia';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { leerJson } from '@/servidor/cuerpo';
 import { ErrorIA } from '@/asistente/errores';
+import { atributosProductoSchema } from '@/asistente/esquemas';
 import { ErrorCatalogo, cargarCatalogo } from '@/servidor/catalogo';
 import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
 import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
@@ -20,6 +21,15 @@ const peticionSchema = z.discriminatedUnion('tipo', [
       tipo: z.literal('mensaje'),
       id: z.uuid().optional(),
       mensaje: z.string().trim().min(1).max(3000),
+    })
+    .strict(),
+  z
+    .object({
+      tipo: z.literal('manual'),
+      id: z.uuid().optional(),
+      producto: atributosProductoSchema
+        .extend({ precioNeto: z.number().positive().max(100_000_000).nullable() })
+        .strict(),
     })
     .strict(),
   z.object({ tipo: z.literal('confirmar'), id: z.uuid() }).strict(),
@@ -142,6 +152,10 @@ export async function POST(req: Request) {
     const servicio = new ServicioAltaCatalogo(abrirBaseDatos(), catalogo, crearLLM());
     if (peticion.tipo === 'mensaje')
       return Response.json(await servicio.mensaje(peticion.id, peticion.mensaje, usuarioId), {
+        headers: sinCache,
+      });
+    if (peticion.tipo === 'manual')
+      return Response.json(servicio.proponerManual(peticion.id, peticion.producto, usuarioId), {
         headers: sinCache,
       });
     if (peticion.tipo === 'cancelar') {

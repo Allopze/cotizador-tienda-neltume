@@ -428,46 +428,12 @@ export class ServicioAltaCatalogo {
     }
 
     let propuesta: Producto | null = null;
-    let superpuesto: Producto | null;
     let respuesta: string;
-    const avisos: string[] = [];
+    let avisos: string[] = [];
     if (!parsed.success) {
       respuesta =
         'No pude identificar todos los datos. Describe el producto y agrega el precio neto unitario explícitamente.';
-    } else {
-      const invalido = this.validar(borrador);
-      if (invalido) respuesta = invalido;
-      else {
-        const faltan = this.falta(borrador);
-        if (faltan.length) respuesta = `Para preparar el producto necesito ${faltan.join(', ')}.`;
-        else {
-          propuesta = this.construir(borrador);
-          const modeloPropuesto = propuesta.modelo;
-          const familiaExistente = this.catalogo.familiaExistente(propuesta.modelo);
-          const duplicado = this.catalogo.productoDuplicado(propuesta);
-          if (familiaExistente && familiaExistente !== propuesta.familia) {
-            propuesta = null;
-            respuesta = `El modelo ${modeloPropuesto} ya pertenece a otra familia. Usa un nombre de modelo distinto.`;
-          } else if (duplicado) {
-            propuesta = null;
-            respuesta = `Ya existe un producto con esos atributos (código ${duplicado.codigo}). No agregué otro.`;
-          } else if ((superpuesto = this.catalogo.rangoSuperpuesto(propuesta))) {
-            propuesta = null;
-            respuesta = `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) del mismo modelo, madera y alto. Indica un rango que no se cruce.`;
-          } else {
-            respuesta = 'Revisa la propuesta y confirma si quieres agregarla al catálogo.';
-            const referencia = this.catalogo.preciosReferencia(propuesta.modelo, propuesta.familia);
-            if (referencia.length) {
-              const m = mediana(referencia);
-              if (propuesta.precioNeto > m * 3 || propuesta.precioNeto < m / 3)
-                avisos.push(
-                  `El precio ${formatoPrecio(propuesta.precioNeto)} está muy lejos de la mediana ${formatoPrecio(Math.round(m))} de ${this.catalogo.familiaExistente(propuesta.modelo) ? propuesta.modelo : `la familia ${propuesta.familia}`}. Revisa que sea neto y unitario.`,
-                );
-            }
-          }
-        }
-      }
-    }
+    } else ({ propuesta, respuesta, avisos } = this.evaluar(borrador));
     if (propuesta && borrador.avisoPrecio) avisos.unshift(borrador.avisoPrecio);
     if (avisos.length) respuesta = [...avisos, respuesta].join('\n\n');
     historial.push({ rol: 'asistente', texto: respuesta });
@@ -478,7 +444,84 @@ export class ServicioAltaCatalogo {
       pregunta: respuesta,
       propuesta,
       avisos,
+      // Lo interpretado hasta ahora: la pantalla lo vuelca en el formulario para completarlo o corregirlo.
+      borrador: { ...borrador, avisoPrecio: undefined },
     };
+  }
+
+  /**
+   * Validaciones comunes al alta asistida y a la manual: datos completos y coherentes, modelo en su
+   * familia, sin duplicados ni rangos superpuestos, y aviso si el precio se aleja de la referencia.
+   */
+  private evaluar(borrador: BorradorProducto): {
+    propuesta: Producto | null;
+    respuesta: string;
+    avisos: string[];
+  } {
+    const avisos: string[] = [];
+    const invalido = this.validar(borrador);
+    if (invalido) return { propuesta: null, respuesta: invalido, avisos };
+    const faltan = this.falta(borrador);
+    if (faltan.length)
+      return {
+        propuesta: null,
+        respuesta: `Para preparar el producto necesito ${faltan.join(', ')}.`,
+        avisos,
+      };
+    const propuesta = this.construir(borrador);
+    const familiaExistente = this.catalogo.familiaExistente(propuesta.modelo);
+    const duplicado = this.catalogo.productoDuplicado(propuesta);
+    let superpuesto: Producto | null;
+    if (familiaExistente && familiaExistente !== propuesta.familia)
+      return {
+        propuesta: null,
+        respuesta: `El modelo ${propuesta.modelo} ya pertenece a otra familia. Usa un nombre de modelo distinto.`,
+        avisos,
+      };
+    if (duplicado)
+      return {
+        propuesta: null,
+        respuesta: `Ya existe un producto con esos atributos (código ${duplicado.codigo}). No agregué otro.`,
+        avisos,
+      };
+    if ((superpuesto = this.catalogo.rangoSuperpuesto(propuesta)))
+      return {
+        propuesta: null,
+        respuesta: `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) del mismo modelo, madera y alto. Indica un rango que no se cruce.`,
+        avisos,
+      };
+    const referencia = this.catalogo.preciosReferencia(propuesta.modelo, propuesta.familia);
+    if (referencia.length) {
+      const m = mediana(referencia);
+      if (propuesta.precioNeto > m * 3 || propuesta.precioNeto < m / 3)
+        avisos.push(
+          `El precio ${formatoPrecio(propuesta.precioNeto)} está muy lejos de la mediana ${formatoPrecio(Math.round(m))} de ${familiaExistente ? propuesta.modelo : `la familia ${propuesta.familia}`}. Revisa que sea neto y unitario.`,
+        );
+    }
+    return {
+      propuesta,
+      respuesta: 'Revisa la propuesta y confirma si quieres agregarla al catálogo.',
+      avisos,
+    };
+  }
+
+  /**
+   * Alta manual: los datos llegan de un formulario, sin pasar por el asistente. Genera la misma propuesta
+   * revisable que el alta asistida (y se confirma igual). Con `id` reemplaza la propuesta de esa
+   * conversación, p. ej. cuando se corrige a mano lo que interpretó el asistente.
+   */
+  proponerManual(id: string | undefined, datos: BorradorProducto, usuarioId: string) {
+    this.limpiarExpirados();
+    const borrador: BorradorProducto = { ...datos, avisoPrecio: null };
+    const { propuesta, respuesta, avisos } = this.evaluar(borrador);
+    if (!propuesta) throw new ErrorUsuarioCatalogo(respuesta);
+    const previa = id ? this.leerPendiente(id, usuarioId) : undefined;
+    const fila = previa && previa.expira > new Date().toISOString() ? previa : this.nuevo(usuarioId);
+    if (!this.catalogo.mismaImportacion(fila.version_catalogo))
+      throw new ErrorUsuarioCatalogo('El catálogo cambió durante el alta. Inicia una propuesta nueva.');
+    const mensajes = leerJson(fila.mensajes_json, mensajesSchema);
+    this.guardar(fila, borrador, mensajes, propuesta);
+    return { id: fila.id, propuesta, avisos };
   }
 
   confirmar(id: string, usuarioId: string, autor: string | null = null) {

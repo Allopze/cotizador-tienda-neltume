@@ -105,44 +105,6 @@
   font-size: var(--fs-xs);
   color: var(--muted);
 }
-.empty-quote {
-  padding: 31px 10px 35px;
-  text-align: center;
-  flex: 1;
-  min-height: 207px;
-}
-.empty-quote h3 {
-  font: var(--serif-3) var(--serif);
-  color: var(--muted);
-  margin-bottom: 10px;
-}
-.empty-quote p {
-  font-size: var(--fs-sm);
-  line-height: 1.7;
-  color: var(--muted);
-}
-.door-icon {
-  width: 26px;
-  height: 38px;
-  border: 1px solid var(--line-strong);
-  margin: 0 auto 19px;
-  position: relative;
-}
-.door-icon:after {
-  content: '';
-  position: absolute;
-  inset: 4px;
-  border: 1px solid var(--line-soft);
-}
-.door-icon span {
-  position: absolute;
-  right: 4px;
-  top: 20px;
-  width: 3px;
-  height: 3px;
-  background: #a8b29a;
-  z-index: 1;
-}
 .table-wrap {
   /* Contiene el .sr-only absoluto del encabezado: si no, ensancha la página en móvil. */
   position: relative;

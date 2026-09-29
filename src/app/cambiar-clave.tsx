@@ -1,6 +1,5 @@
 'use client';
 import { useRef, useState, type FormEvent } from 'react';
-import { Dialogo } from './dialogo';
 import type { TipoAviso } from './avisos';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
@@ -9,27 +8,25 @@ const MINIMO = 12,
   MAXIMO = 128;
 
 interface Props {
-  abierta: boolean;
-  cerrar: () => void;
   avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
 }
 
-/** Cambio de la contraseña propia; cierra las demás sesiones de la cuenta. */
-export function CambiarClave({ abierta, cerrar, avisar }: Props) {
-  return (
-    <Dialogo abierto={abierta} alCerrar={cerrar} titulo="Cambiar contraseña" eyebrow="CUENTA">
-      <Formulario cerrar={cerrar} avisar={avisar} />
-    </Dialogo>
-  );
-}
-
-function Formulario({ cerrar, avisar }: Omit<Props, 'abierta'>) {
+/** Cambio de la contraseña propia (sección de «Ajustes»); cierra las demás sesiones de la cuenta. */
+export function CambiarClave({ avisar }: Props) {
   const [actual, setActual] = useState(''),
     [nueva, setNueva] = useState(''),
     [repetida, setRepetida] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const primera = useRef<HTMLInputElement>(null);
+  const escrito = !!(actual || nueva || repetida);
+
+  function limpiar() {
+    setActual('');
+    setNueva('');
+    setRepetida('');
+    setError('');
+  }
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
@@ -47,7 +44,7 @@ function Formulario({ cerrar, avisar }: Omit<Props, 'abierta'>) {
       avisar('exito', 'Contraseña actualizada. Se cerraron las demás sesiones de tu cuenta.', {
         clave: 'clave',
       });
-      cerrar();
+      limpiar();
     } catch (causa) {
       if (esSilencioso(causa)) return;
       setError(
@@ -64,7 +61,10 @@ function Formulario({ cerrar, avisar }: Omit<Props, 'abierta'>) {
   }
 
   return (
-    <form onSubmit={enviar} className="dialogo-campos">
+    <form onSubmit={enviar} className="dialogo-campos" aria-label="Cambiar contraseña">
+      <p className="catalog-modal-intro">
+        Al cambiarla se cierran las demás sesiones abiertas con tu cuenta.
+      </p>
       <label className="ia-field">
         <span>Contraseña actual</span>
         <input
@@ -107,9 +107,9 @@ function Formulario({ cerrar, avisar }: Omit<Props, 'abierta'>) {
           {error}
         </p>
       )}
-      <div className="dialogo-acciones">
-        <button type="button" className="button secondary" onClick={cerrar} disabled={ocupado}>
-          Cancelar
+      <div className="ia-actions">
+        <button type="button" className="button secondary" onClick={limpiar} disabled={ocupado || !escrito}>
+          Descartar
         </button>
         <button type="submit" className="button primary" disabled={ocupado}>
           {ocupado ? 'Guardando…' : 'Cambiar contraseña'}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta } from './contrato';
 import { nombreProducto, sinMedida } from './formato';
+import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 const FAMILIAS = [
@@ -15,14 +16,21 @@ const FAMILIAS = [
 const largo = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m`;
 
 /** Consulta del catálogo: modelos, maderas y medidas disponibles con el precio unitario de la cotización. */
-export function CatalogoConsulta() {
+export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
   const buscar = useRef<HTMLInputElement>(null);
-  // Se entra al catálogo para buscar: foco en el buscador, salvo en pantallas táctiles (abriría el teclado).
+  // Se entra al catálogo para buscar: foco en el buscador sin mover la página, salvo en pantallas táctiles
+  // (abriría el teclado).
   useEffect(() => {
-    if (window.matchMedia?.('(pointer: fine)').matches) buscar.current?.focus();
-  }, []);
-  const [q, setQ] = useState('');
-  const [familia, setFamilia] = useState('');
+    if (activa && window.matchMedia?.('(pointer: fine)').matches)
+      buscar.current?.focus({ preventScroll: true });
+  }, [activa]);
+  // La búsqueda se recuerda por pestaña: al volver al catálogo sigue la misma lista.
+  const [q, setQ] = useState(() => leerSesion('catalogo:q', ''));
+  const [familia, setFamilia] = useState(() => leerSesion('catalogo:familia', ''));
+  useEffect(() => {
+    guardarSesion('catalogo:q', q);
+    guardarSesion('catalogo:familia', familia);
+  }, [q, familia]);
   const [datos, setDatos] = useState<{ total: number; productos: ProductoConsulta[] } | null>(null);
   const [error, setError] = useState('');
 

@@ -273,13 +273,6 @@ p + .pregunta-opciones {
 .solo-tactil {
   display: none;
 }
-.chat-footnote {
-  font-size: var(--fs-xs);
-  color: var(--muted);
-  text-align: center;
-  margin-top: 13px;
-  line-height: 1.5;
-}
 /* Diálogo modal reutilizable (<dialog> nativo). */
 .dialogo {
   width: min(calc(100% - 40px), 620px);
@@ -461,13 +454,64 @@ p + .pregunta-opciones {
   color: var(--muted);
   font-size: var(--fs-xs);
 }
-.catalog-composer > div > .catalog-reiniciar {
-  margin-left: auto;
-  background: transparent;
-  border: 0;
-  color: var(--warm-text);
-  text-decoration: underline;
+/* Alta de producto: asistente (opcional) y formulario en la misma pantalla. */
+.alta-bloque {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.alta-bloque > .eyebrow {
+  margin-bottom: 10px;
+}
+.alta-opcional {
   font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.alta-bloque .catalog-chat {
+  margin-bottom: 10px;
+}
+.alta-bloque .catalog-composer {
+  margin-top: 0;
+}
+.alta-campos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 14px 16px;
+}
+.alta-campo {
+  display: grid;
+  gap: 6px;
+  align-content: start;
+}
+.alta-campo > span {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.alta-campo input,
+.alta-campo select {
+  width: 100%;
+  min-height: var(--control);
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.alta-campo input::placeholder {
+  color: var(--subtle);
+}
+.alta-campo small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.alta-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 18px;
 }
 .catalog-error {
   margin-top: 11px;
