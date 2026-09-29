@@ -40,7 +40,8 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
   const entrada = useRef<HTMLTextAreaElement>(null),
-    listo = useRef<HTMLButtonElement>(null);
+    listo = useRef<HTMLButtonElement>(null),
+    buscar = useRef<HTMLInputElement>(null);
   const [confirmar, confirmacion] = useConfirmacion();
 
   // Tras guardar, el foco pasa a «Listo» para no quedar en un elemento desmontado.
@@ -130,7 +131,7 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
       cerrable={!ocupado}
       titulo="Catálogo de productos"
       eyebrow="CATÁLOGO"
-      focoInicial={asistente && pestana === 'alta' ? entrada : undefined}
+      focoInicial={pestana === 'consultar' ? buscar : asistente && pestana === 'alta' ? entrada : undefined}
     >
       <div className="pestanas" role="tablist" aria-label="Secciones del catálogo">
         <button
@@ -164,12 +165,12 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
           onClick={() => setPestana('manuales')}
           disabled={ocupado}
         >
-          Agregados manualmente
+          Agregados a mano
         </button>
       </div>
       <div id="panel-catalogo" role="tabpanel" aria-labelledby={`tab-${pestana}`}>
         {pestana === 'consultar' ? (
-          <CatalogoConsulta />
+          <CatalogoConsulta buscarRef={buscar} />
         ) : pestana === 'manuales' ? (
           <ProductosManuales avisar={avisar} />
         ) : guardado ? (
@@ -200,8 +201,9 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
             <div className="catalog-chat" aria-busy={ocupado}>
               {!mensajes.length ? (
                 <div className="catalog-chat-hint">
-                  Por ejemplo: «Agrega una puerta modelo Roble, en raulí, de 80 a 85 cm de ancho y 2,10 m de
-                  alto; precio neto $145.000».
+                  <span>POR EJEMPLO</span>
+                  «Agrega una puerta modelo Roble, en raulí, de 80 a 85 cm de ancho y 2,10 m de alto; precio
+                  neto $145.000».
                 </div>
               ) : (
                 mensajes.map((item, indice) => (

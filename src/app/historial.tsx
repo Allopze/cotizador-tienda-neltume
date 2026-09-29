@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { etiquetaEstado, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { Listado } from './contrato';
-import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, plural } from './formato';
+import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
 import { esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
 
 type Filtro = 'todas' | EstadoCotizacion;
@@ -160,9 +160,20 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
     <section className="history" aria-labelledby="historial-titulo" aria-busy={buscando}>
       <div className="history-heading">
         <h2 id="historial-titulo">Cotizaciones anteriores</h2>
-        <span aria-live="polite">
-          {cargando ? '' : filtrado ? plural(total, 'resultado') : plural(total, 'registro')}
-        </span>
+        <div className="history-heading-extra">
+          <span aria-live="polite">
+            {cargando ? '' : filtrado ? plural(total, 'resultado') : plural(total, 'registro')}
+          </span>
+          <button
+            type="button"
+            className="button secondary small"
+            onClick={exportar}
+            disabled={exportando || cargando || !total}
+            title="Descarga las cotizaciones del listado, con los filtros aplicados, para abrir en Excel"
+          >
+            {exportando ? 'Exportando…' : 'Exportar CSV'}
+          </button>
+        </div>
       </div>
       <div className="history-tools">
         <label className="history-search">
@@ -173,7 +184,8 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
             aria-keyshortcuts="Control+K Meta+K"
             value={filtros.q}
             onChange={(e) => cambiar({ q: e.target.value })}
-            placeholder="Buscar por N°, cliente, RUT, comuna, proyecto o producto"
+            placeholder="Buscar N°, cliente, RUT o producto"
+            title="Busca por número, cliente, RUT, comuna, proyecto o producto"
             maxLength={200}
           />
         </label>
@@ -197,15 +209,6 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
             />
           </label>
         </div>
-        <button
-          type="button"
-          className="button secondary small"
-          onClick={exportar}
-          disabled={exportando || cargando || !total}
-          title="Descarga las cotizaciones del listado, con los filtros aplicados, para abrir en Excel"
-        >
-          {exportando ? 'Exportando…' : 'Exportar CSV'}
-        </button>
         <div className="history-filters" role="group" aria-label="Filtrar por estado">
           {FILTROS.map(([f, etiqueta]) => (
             <button
@@ -313,7 +316,7 @@ function Fila({
         <span className="history-client">
           {q.cliente.nombre || SIN_CLIENTE}
           <small>{[q.cliente.comuna || 'Sin comuna', q.cliente.proyecto].filter(Boolean).join(' · ')}</small>
-          {q.productos && <small className="history-productos">{q.productos}</small>}
+          {q.productos && <small className="history-productos">{nombreProducto(q.productos)}</small>}
         </span>
         <span className="history-meta">
           {abriendo ? 'Abriendo…' : fechaCorta(q.fecha)}

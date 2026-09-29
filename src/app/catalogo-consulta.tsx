@@ -1,7 +1,8 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type RefObject } from 'react';
 import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta } from './contrato';
+import { nombreProducto, sinMedida } from './formato';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 const FAMILIAS = [
@@ -14,7 +15,7 @@ const FAMILIAS = [
 const largo = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m`;
 
 /** Consulta del catálogo: modelos, maderas y medidas disponibles con el precio unitario de la cotización. */
-export function CatalogoConsulta() {
+export function CatalogoConsulta({ buscarRef }: { buscarRef?: RefObject<HTMLInputElement | null> }) {
   const [q, setQ] = useState('');
   const [familia, setFamilia] = useState('');
   const [datos, setDatos] = useState<{ total: number; productos: ProductoConsulta[] } | null>(null);
@@ -46,14 +47,13 @@ export function CatalogoConsulta() {
 
   return (
     <div className="catalogo-consulta">
-      <p className="catalog-modal-intro">
-        Busca por modelo, madera, medida o código. El unitario es el valor neto que aparece en la cotización.
-      </p>
+      <p className="catalog-modal-intro">Busca por modelo, madera, medida o código.</p>
       <div className="catalogo-filtros">
         <label className="sr-only" htmlFor="catalogo-buscar">
           Buscar en el catálogo
         </label>
         <input
+          ref={buscarRef}
           id="catalogo-buscar"
           type="search"
           value={q}
@@ -91,27 +91,30 @@ export function CatalogoConsulta() {
             <table>
               <thead>
                 <tr>
-                  <th>PRODUCTO / CÓDIGO</th>
-                  <th>MEDIDA</th>
-                  <th>UNITARIO</th>
+                  <th scope="col">PRODUCTO / CÓDIGO</th>
+                  <th scope="col">MEDIDA</th>
+                  <th scope="col">UNITARIO NETO</th>
                 </tr>
               </thead>
               <tbody>
                 {datos.productos.map((p) => (
                   <tr key={p.codigo}>
                     <td>
-                      {p.descripcion}
+                      {/* En puertas la medida ya está en su columna: el nombre queda en modelo y madera. */}
+                      {p.familia === 'PUERTA'
+                        ? sinMedida(nombreProducto(p.descripcion))
+                        : nombreProducto(p.descripcion)}
                       <small>
                         {p.codigo}
                         {p.manual ? ' · agregado manualmente' : ''}
                       </small>
                     </td>
-                    <td>
+                    <td data-etiqueta="Medida">
                       {p.familia === 'PUERTA'
                         ? `${p.medida.replace(' A ', '–')} × ${largo(p.largo)}`
                         : `${p.medida} × ${largo(p.largo)}`}
                     </td>
-                    <td>{pesos(p.unitario)}</td>
+                    <td data-etiqueta="Unitario neto">{pesos(p.unitario)}</td>
                   </tr>
                 ))}
               </tbody>

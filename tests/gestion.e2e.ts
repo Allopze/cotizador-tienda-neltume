@@ -55,7 +55,7 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
 
   // Emitir para poder anular después.
   const descarga = page.waitForEvent('download');
-  await panel.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+  await panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
     .getByRole('button', { name: 'Emitir y generar PDF' })
@@ -111,7 +111,7 @@ test('si el catálogo cambia antes de emitir, muestra los montos nuevos y pide c
   await expect(total).toHaveText(pesos(antes.total));
   precio.run(puerta.precioNeto + 1000, puerta.codigo);
   try {
-    await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+    await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
     const emitir = page.getByRole('alertdialog', { name: 'Emitir la cotización' });
     await expect(emitir).toContainText(pesos(antes.total));
     await emitir.getByRole('button', { name: 'Emitir y generar PDF' }).click();

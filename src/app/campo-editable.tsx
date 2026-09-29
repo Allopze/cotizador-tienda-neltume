@@ -20,6 +20,8 @@ interface Props {
   sufijo?: string;
   /** Oculta la etiqueta visible (p. ej. dentro de una tabla). */
   etiquetaOculta?: boolean;
+  /** El valor mismo abre la edición (sin botón «Editar» aparte); vacío se lee «Agregar». */
+  discreto?: boolean;
   className?: string;
 }
 export function CampoEditable({
@@ -37,6 +39,7 @@ export function CampoEditable({
   maxLength = 300,
   sufijo,
   etiquetaOculta,
+  discreto,
   className,
 }: Props) {
   const [editando, setEditando] = useState(false);
@@ -70,6 +73,31 @@ export function CampoEditable({
     if (await guardar(v)) cerrar();
   }
 
+  if (!editando && discreto && editable)
+    return (
+      <div className={`campo campo-discreto ${className ?? ''}`}>
+        {!etiquetaOculta && <span className="campo-etiqueta">{etiqueta}</span>}
+        <button
+          ref={boton}
+          type="button"
+          className="campo-valor-boton"
+          onClick={abrir}
+          disabled={guardando}
+          aria-label={`Editar ${etiqueta.toLowerCase()}${valor ? `: ${valor}` : ''}`}
+        >
+          {guardando ? (
+            <span>Guardando…</span>
+          ) : valor ? (
+            <span>{mostrar ?? valor}</span>
+          ) : (
+            <span className="campo-vacio">Agregar</span>
+          )}
+          <span className="campo-lapiz" aria-hidden>
+            ✎
+          </span>
+        </button>
+      </div>
+    );
   if (!editando)
     return (
       <div className={`campo ${className ?? ''}`}>

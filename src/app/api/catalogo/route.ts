@@ -48,6 +48,7 @@ const consultaSchema = z.object({
   familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
 });
 const MAX_RESULTADOS = 300;
+const ORDEN_FAMILIAS: string[] = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'];
 
 /** Consulta del catálogo vigente (importado y manual) con el precio unitario que usa la cotización. */
 export async function GET(req: Request) {
@@ -67,6 +68,20 @@ export async function GET(req: Request) {
       const texto = normalizarTexto(`${p.codigo} ${p.modelo} ${p.madera} ${p.tipo ?? ''} ${p.descripcion}`);
       return terminos.every((t) => texto.includes(t));
     });
+    // Orden de lectura, no de código: modelo, madera, alto y luego ancho («CAL-O-1-B» no va tras «CAL-O-9-A»).
+    const orden = new Intl.Collator('es-CL', { numeric: true, sensitivity: 'base' });
+    const familia = (f: string) => {
+      const i = ORDEN_FAMILIAS.indexOf(f);
+      return i < 0 ? ORDEN_FAMILIAS.length : i;
+    };
+    coinciden.sort(
+      (a, b) =>
+        familia(a.familia) - familia(b.familia) ||
+        orden.compare(a.modelo, b.modelo) ||
+        orden.compare(a.madera, b.madera) ||
+        a.largo - b.largo ||
+        orden.compare(a.medida, b.medida),
+    );
     return Response.json(
       {
         total: coinciden.length,

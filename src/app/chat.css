@@ -29,6 +29,37 @@ h2 {
   overflow-y: auto;
   padding-right: 5px;
   scrollbar-width: thin;
+  /* Lo que sube al desplazarse se desvanece en vez de quedar cortado a media línea. */
+  mask-image: linear-gradient(to bottom, transparent 0, #000 18px);
+}
+.pregunta-opciones + .pregunta-opciones,
+.pregunta-opciones + p,
+p + .pregunta-opciones {
+  margin-top: 12px;
+}
+.opciones-chat {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.opciones-chat button {
+  min-height: 32px;
+  padding: 4px 11px;
+  border: 1px solid #cfd5c4;
+  background: #fff;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.opciones-chat button:hover:not(:disabled) {
+  background: #eef1e6;
+  border-color: #8b9e7c;
+}
+.opciones-resto {
+  color: var(--muted);
+  font-size: var(--fs-xs);
 }
 .speaker {
   font-size: var(--fs-xs);
@@ -335,6 +366,24 @@ h2 {
   font-size: var(--fs-md);
   line-height: 1.7;
 }
+/* Sin mensajes, la caja del chat se ve como una cita y no como un segundo campo de texto. */
+.catalog-chat:has(> .catalog-chat-hint) {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.catalog-chat > .catalog-chat-hint {
+  padding: 12px 16px;
+  border-left: 2px solid #8b9e7c;
+  color: var(--ink);
+}
+.catalog-chat-hint > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--fs-xs);
+  letter-spacing: 1.2px;
+  color: var(--muted);
+}
 .catalog-message {
   padding: 13px 0;
   border-bottom: 1px solid #edf0e8;
@@ -471,6 +520,9 @@ h2 {
   .dialogo-cuerpo {
     padding: 19px;
   }
+  .pestanas button {
+    padding: 8px 10px;
+  }
 }
 .ia-settings-button {
   display: inline-flex;
@@ -524,6 +576,27 @@ h2 {
 .ia-model-selector {
   position: relative;
 }
+.ia-model-fijo {
+  display: grid;
+  gap: 3px;
+  padding: 2px 0;
+}
+.ia-model-fijo strong {
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+.ia-model-fijo code {
+  color: var(--muted);
+  font:
+    0.72rem ui-monospace,
+    Menlo,
+    monospace;
+}
+.ia-permiso {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
 .ia-model-trigger {
   display: flex;
   width: 100%;
@@ -557,7 +630,10 @@ h2 {
 .ia-model-option-name code {
   overflow: hidden;
   color: var(--muted);
-  font: 0.72rem ui-monospace, Menlo, monospace;
+  font:
+    0.72rem ui-monospace,
+    Menlo,
+    monospace;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -582,7 +658,9 @@ h2 {
 .ia-model-popover input {
   min-height: 42px;
   padding: 0 10px;
-  font: var(--fs-sm) Arial, sans-serif;
+  font:
+    var(--fs-sm) Arial,
+    sans-serif;
 }
 .ia-model-sort-note {
   color: var(--muted);
@@ -728,8 +806,12 @@ h2 {
   gap: 4px;
   margin-top: 14px;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scrollbar-width: none;
 }
 .pestanas button {
+  flex: none;
+  white-space: nowrap;
   min-height: 40px;
   padding: 8px 14px;
   border: 0;

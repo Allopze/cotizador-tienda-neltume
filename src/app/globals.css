@@ -121,15 +121,8 @@ kbd {
   padding: 0 14px;
   color: var(--subtle);
 }
-.live-dot {
-  width: 6px;
-  height: 6px;
-  display: inline-block;
-  border-radius: 50%;
-  background: #7f9074;
-}
 .page-heading {
-  padding: 39px 0 36px;
+  padding: 24px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -156,15 +149,10 @@ kbd {
 }
 h1 {
   font:
-    2.4375rem/1.15 Georgia,
+    1.875rem/1.15 Georgia,
     'Times New Roman',
     serif;
   letter-spacing: -1px;
-}
-.intro {
-  margin-top: 12px;
-  color: var(--muted);
-  font-size: var(--fs-md);
 }
 .button {
   min-height: 44px;
@@ -227,7 +215,12 @@ h1 {
 .history h2 {
   font-size: 1.3125rem;
 }
-.history-heading > span {
+.history-heading-extra {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.history-heading-extra > span {
   font-size: var(--fs-xs);
   color: var(--muted);
 }
@@ -337,8 +330,9 @@ h1 {
   gap: 15px;
   font-size: var(--fs-md);
 }
-.history-list .history-fila:hover,
-.history-list .history-fila[aria-current='true'] {
+/* El resaltado cubre toda la fila, incluido el botón «Duplicar». */
+.history-list li:hover,
+.history-list li:has(> .history-fila[aria-current='true']) {
   background: #eff1e8;
 }
 .history-number {
@@ -463,7 +457,51 @@ button[type='submit'].button.peligro:not(:disabled) {
   border-color: var(--danger);
   color: #fff;
 }
+/* Deshabilitado se ve deshabilitado: sin el rojo que lo hace parecer disponible. */
+.button.peligro:disabled {
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bg);
+  color: var(--subtle);
+}
 /* Campo con edición en línea (panel, totales, catálogo). */
+/* Variante discreta: el valor es el botón; el lápiz aparece al pasar o enfocar. */
+.campo-valor-boton {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 28px;
+  margin: -3px -6px;
+  padding: 3px 6px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.campo-valor-boton:hover:not(:disabled) {
+  border-color: var(--line);
+  background: var(--pale);
+}
+.campo-vacio {
+  color: var(--warm-text);
+}
+.campo-lapiz {
+  color: var(--warm-text);
+  font-size: var(--fs-xs);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.campo-valor-boton:hover .campo-lapiz,
+.campo-valor-boton:focus-visible .campo-lapiz {
+  opacity: 1;
+}
+@media (hover: none) {
+  .campo-lapiz {
+    opacity: 1;
+  }
+}
 .campo-valor {
   display: flex;
   align-items: center;

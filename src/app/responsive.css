@@ -38,11 +38,11 @@
     display: none;
   }
   .page-heading {
-    padding: 27px 0;
+    padding: 18px 0;
     gap: 15px;
   }
   .page-heading h1 {
-    font-size: 1.875rem;
+    font-size: 1.625rem;
   }
   .page-heading .button {
     padding: 10px 12px;
@@ -86,11 +86,15 @@
   .history-search {
     max-width: none;
   }
+  .history-heading {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .history-heading-extra > span {
+    white-space: nowrap;
+  }
   .site-footer {
     gap: 18px;
-  }
-  .page-heading .eyebrow {
-    letter-spacing: 1.1px;
   }
 }
 @media (max-width: 450px) {
@@ -98,7 +102,7 @@
     padding: 0 16px;
   }
   .page-heading h1 {
-    font-size: 1.625rem;
+    font-size: 1.5rem;
   }
   .page-heading {
     flex-direction: column;
@@ -112,10 +116,6 @@
     flex: 1;
     gap: 5px;
     padding: 10px 8px;
-  }
-  .intro {
-    max-width: 240px;
-    line-height: 1.6;
   }
   .conditions {
     flex-direction: column;
@@ -132,6 +132,10 @@
   }
   .quote-actions .primary {
     width: 100%;
+  }
+  /* «Ver» y «Descargar» bajan juntos bajo el nombre del documento. */
+  .quote-docs .doc-nombre {
+    flex-basis: 100%;
   }
   .site-footer {
     flex-direction: column;
@@ -164,6 +168,7 @@
     height: 44px;
   }
   .history-filters button,
+  .opciones-chat button,
   .button.small,
   .ia-settings-button,
   .logout-button,
@@ -182,6 +187,17 @@
   }
 }
 @media (max-width: 800px) {
+  /* Filtros de estado en una sola línea desplazable, en vez de dos filas de botones. */
+  .history-filters {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+    padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+  .history-filters button {
+    flex: none;
+  }
   .history-fechas {
     width: 100%;
   }

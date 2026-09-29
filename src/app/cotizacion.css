@@ -55,11 +55,23 @@
 }
 .panel-aviso {
   margin: -8px 0 14px;
-  padding: 9px 12px;
+  padding: 8px 8px 8px 12px;
   background: #fbefd6;
   color: #5e4312;
   font-size: var(--fs-sm);
   line-height: 1.5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.panel-aviso p {
+  flex: 1 1 240px;
+}
+.panel-aviso .button {
+  background: #fff;
+  border-color: #e6d3a8;
 }
 .client {
   padding: 20px 0 23px;
@@ -171,8 +183,13 @@ td:first-child {
   white-space: normal;
   min-width: 170px;
 }
-td:last-child {
+/* Columna del botón «quitar»: el botón de 32px ya trae su propio aire. */
+td.celda-acciones {
   padding: 6px 0 0 4px;
+}
+th:last-child,
+td:last-child {
+  padding-right: 0;
 }
 td strong {
   font-weight: 400;
@@ -294,6 +311,66 @@ td small {
 .celda-cantidad .campo-valor {
   justify-content: flex-end;
 }
+.celda-cantidad .campo-discreto {
+  display: flex;
+  justify-content: flex-end;
+}
+.celda-monto {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+  /* Cada ítem como tarjeta: el nombre ocupa el ancho y los importes quedan siempre visibles. */
+  .table-wrap {
+    overflow-x: visible;
+    min-height: 0;
+  }
+  .table-wrap thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .table-wrap tr {
+    display: grid;
+    grid-template-columns: auto 1fr 1fr;
+    align-items: baseline;
+    gap: 8px 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid #eaede3;
+    position: relative;
+  }
+  .table-wrap td {
+    display: block;
+    padding: 0;
+    border: 0;
+  }
+  .table-wrap td:first-child {
+    grid-column: 1 / -1;
+    min-width: 0;
+    padding-right: 40px;
+  }
+  .table-wrap .celda-cantidad {
+    text-align: left;
+  }
+  .table-wrap .celda-monto::before {
+    content: attr(data-etiqueta) ' ';
+    color: var(--muted);
+    font-size: var(--fs-xs);
+  }
+  .table-wrap .celda-total {
+    font-weight: 600;
+  }
+  .table-wrap td.celda-acciones {
+    position: absolute;
+    top: 8px;
+    right: 0;
+    padding: 0;
+  }
+  .table-wrap .celda-cantidad .campo-discreto {
+    justify-content: flex-start;
+  }
+}
 .total-editable .campo {
   display: flex;
   width: 100%;
@@ -352,28 +429,120 @@ td small {
   display: grid;
   gap: 10px;
 }
+.catalogo-consulta .catalog-modal-intro {
+  margin-bottom: 0;
+}
 .catalogo-filtros {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
+.catalogo-filtros input,
+.catalogo-filtros select {
+  min-height: 44px;
+  border: 1px solid #cfd5c4;
+  background-color: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+}
 .catalogo-filtros input {
   flex: 1 1 220px;
   min-width: 0;
+  padding: 10px 12px 10px 36px;
+  /* Lupa en línea: el campo se reconoce como buscador aunque esté vacío. */
+  background: #fff
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235f665c' stroke-width='1.6'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 3.5 3.5'/%3E%3C/svg%3E")
+    no-repeat 12px center;
+}
+.catalogo-filtros input::placeholder {
+  color: var(--subtle);
+}
+.catalogo-filtros select {
+  flex: 0 1 auto;
+  padding: 0 10px;
+}
+.catalogo-filtros select:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: 2px;
 }
 .catalogo-lista {
   max-height: 50vh;
   overflow: auto;
   border: 1px solid var(--line);
+  background: #fff;
 }
 .catalogo-lista table {
   width: 100%;
   font-size: var(--fs-sm);
 }
+/* Encabezado fijo con fondo: al desplazarse no deja una franja vacía sobre las filas. */
+.catalogo-lista thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff;
+  box-shadow: inset 0 -1px 0 var(--line);
+  padding: 10px 12px;
+}
+.catalogo-lista td {
+  padding: 9px 12px;
+  vertical-align: baseline;
+}
+.catalogo-lista th:first-child,
+.catalogo-lista td:first-child {
+  padding-left: 12px;
+}
+.catalogo-lista td:first-child {
+  line-height: 1.45;
+}
+.catalogo-lista tbody tr:hover td {
+  background: #f8f9f5;
+}
 .catalogo-lista td small {
   display: block;
+  margin-top: 2px;
   color: var(--muted);
   font-size: var(--fs-xs);
+}
+.catalogo-lista td:last-child {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+  /* En pantallas estrechas cada producto es una tarjeta: nombre arriba, medida y precio abajo. */
+  .catalogo-lista thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+  }
+  .catalogo-lista tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 4px 12px;
+    padding: 10px 12px;
+    border-bottom: 1px solid #eaede3;
+  }
+  .catalogo-lista td {
+    display: block;
+    padding: 0;
+    border: 0;
+    text-align: left;
+    white-space: normal;
+  }
+  .catalogo-lista td:first-child {
+    grid-column: 1 / -1;
+    padding-left: 0;
+    min-width: 0;
+  }
+  .catalogo-lista td:nth-child(2) {
+    color: var(--muted);
+  }
+  .catalogo-lista td:last-child {
+    text-align: right;
+    font-weight: 600;
+  }
 }
 .vencida-texto {
   color: #7a5518;

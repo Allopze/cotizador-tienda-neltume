@@ -41,6 +41,43 @@ export function validez(q: Pick<Cotizacion, 'vence'> | null) {
 export const vencida = (q: Pick<Cotizacion, 'estado' | 'vence'> | null) =>
   q?.estado === 'emitida' && estaVencida(q.vence);
 
+const MINUSCULAS = new Set(['de', 'del', 'en', 'con', 'y', 'la', 'el']);
+const ACENTOS: [RegExp, string][] = [
+  [/\bOregon\b/g, 'Oregón'],
+  [/\bRauli\b/g, 'Raulí'],
+];
+/**
+ * «HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2,1 MT» → «Huilo Huilo Pino Oregón 0,80 a 0,85 m × 2,1 m».
+ * Solo para mostrar: el PDF y los códigos conservan el texto de la planilla. Lo que no viene en
+ * mayúsculas (productos agregados a mano) se deja como está.
+ */
+export function nombreProducto(s: string): string {
+  // Listas del historial («3 × HUILO…, MARCO… (sin cantidad)»): cada producto se decide por separado.
+  if (s.includes(', ')) return s.split(', ').map(nombreProducto).join(', ');
+  const base = s.replace(/\([^)]*\)/g, '');
+  if (base !== base.toUpperCase()) return s;
+  let previo = '';
+  const texto = s
+    .split(/(\s+)/)
+    .map((t, i) => {
+      if (!t.trim()) return t;
+      const numeroAntes = /\d/.test(previo);
+      const medidaAntes = numeroAntes || previo === 'MT' || previo === 'MTS';
+      previo = t;
+      if (/\d/.test(t) || !/\p{L}/u.test(t) || t !== t.toUpperCase()) return t;
+      if (t === 'MT' || t === 'MTS') return 'm';
+      if (t === 'X' && medidaAntes) return '×';
+      if (t === 'A' && numeroAntes) return 'a';
+      const bajo = t.toLocaleLowerCase('es-CL');
+      if (i > 0 && MINUSCULAS.has(bajo)) return bajo;
+      return bajo.charAt(0).toLocaleUpperCase('es-CL') + bajo.slice(1);
+    })
+    .join('');
+  return ACENTOS.reduce((acc, [re, bien]) => acc.replace(re, bien), texto);
+}
+/** «Calafquén Pino Oregón 1,00 a 1,05 m × 2 m» → «Calafquén Pino Oregón»: la medida va en su columna. */
+export const sinMedida = (s: string) => s.replace(/\s+\d[\s\S]*$/, '') || s;
+
 export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   nombre: 'Cliente',
   rut: 'RUT',
@@ -80,12 +117,12 @@ export function autoria(
 export function resumenCambios(c: CambiosCotizacion | undefined) {
   if (!c) return '';
   return [
-    ...c.agregados.map((x) => `Agregado: ${x.descripcion}`),
-    ...c.quitados.map((x) => `Quitado: ${x.descripcion}`),
+    ...c.agregados.map((x) => `Agregado: ${nombreProducto(x.descripcion)}`),
+    ...c.quitados.map((x) => `Quitado: ${nombreProducto(x.descripcion)}`),
     ...c.modificados.map((x) =>
       x.antes.descripcion === x.despues.descripcion
-        ? `Modificado: ${x.despues.descripcion}`
-        : `${x.antes.descripcion} → ${x.despues.descripcion}`,
+        ? `Modificado: ${nombreProducto(x.despues.descripcion)}`
+        : `${nombreProducto(x.antes.descripcion)} → ${nombreProducto(x.despues.descripcion)}`,
     ),
     ...(c.cliente.length
       ? [`Datos del cliente: ${c.cliente.map((k) => ETIQUETA_CAMPO[k].toLowerCase()).join(', ')}`]

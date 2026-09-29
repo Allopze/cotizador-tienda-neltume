@@ -353,7 +353,8 @@ export class Servicio {
   private describir(s: SolicitudItem) {
     const medida = (n: number | null) => (n === null ? null : decimal(metros(n) ?? n));
     const medidas = [s.medida ? normalizarMedida(s.medida) : medida(s.ancho), medida(s.alto)].filter(Boolean);
-    return `${s.cantidad ?? '—'} × ${s.modelo ?? 'producto por definir'}${s.madera ? ` ${s.madera}` : ''}${medidas.length ? ` ${medidas.join(' × ')}` : ''}`;
+    const cantidad = s.cantidad === null ? '' : `${s.cantidad} × `;
+    return `${cantidad}${s.modelo ?? 'producto por definir'}${s.madera ? ` ${s.madera}` : ''}${medidas.length ? ` ${medidas.join(' × ')}` : ''}${s.cantidad === null ? ' (sin cantidad)' : ''}`;
   }
 
   private cambios(

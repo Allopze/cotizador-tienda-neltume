@@ -92,12 +92,12 @@ function Formulario({
 
   useEffect(() => {
     const controlador = new AbortController();
-    pedirJSON<CatalogoModelos>('/api/ajustes/modelos', { signal: controlador.signal, cache: 'no-store' }).then(
-      setCatalogo,
-      (causa) => {
-        if (!esSilencioso(causa)) setErrorCatalogo(mensajeDe(causa));
-      },
-    );
+    pedirJSON<CatalogoModelos>('/api/ajustes/modelos', {
+      signal: controlador.signal,
+      cache: 'no-store',
+    }).then(setCatalogo, (causa) => {
+      if (!esSilencioso(causa)) setErrorCatalogo(mensajeDe(causa));
+    });
     return () => controlador.abort();
   }, [intentoCatalogo]);
 
@@ -131,22 +131,38 @@ function Formulario({
       <div className="ia-section">
         <div className="ia-field">
           <span id="ia-modelo-label">Modelo del asistente</span>
-          <SelectorModelo
-            refTrigger={campo}
-            modelo={borrador.commandcode.modelo}
-            modelos={catalogo?.modelos ?? []}
-            cargando={catalogo === null && !errorCatalogo}
-            error={errorCatalogo}
-            desactualizado={catalogo?.desactualizado ?? false}
-            editable={editable && !ocupado}
-            seleccionar={(modelo) => setBorrador({ commandcode: { modelo } })}
-            reintentar={() => {
-              // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
-              setCatalogo(null);
-              setErrorCatalogo('');
-              setIntentoCatalogo((actual) => actual + 1);
-            }}
-          />
+          {!editable ? (
+            // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
+            <div className="ia-model-fijo">
+              <strong>
+                {catalogo?.modelos.find((m) => m.id === borrador.commandcode.modelo)?.nombre ??
+                  borrador.commandcode.modelo}
+              </strong>
+              <code>{borrador.commandcode.modelo}</code>
+            </div>
+          ) : (
+            <SelectorModelo
+              refTrigger={campo}
+              modelo={borrador.commandcode.modelo}
+              modelos={catalogo?.modelos ?? []}
+              cargando={catalogo === null && !errorCatalogo}
+              error={errorCatalogo}
+              desactualizado={catalogo?.desactualizado ?? false}
+              editable={editable && !ocupado}
+              seleccionar={(modelo) => setBorrador({ commandcode: { modelo } })}
+              reintentar={() => {
+                // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
+                setCatalogo(null);
+                setErrorCatalogo('');
+                setIntentoCatalogo((actual) => actual + 1);
+              }}
+            />
+          )}
+          {!editable && (
+            <p id="ia-permiso" className="ia-permiso">
+              Solo quien administra el cotizador puede cambiar el modelo.
+            </p>
+          )}
         </div>
         {catalogo?.desactualizado && (
           <p className="ia-status falta" role="status">
@@ -154,7 +170,6 @@ function Formulario({
           </p>
         )}
         <p id="ia-nota" className={`ia-status ${estado.commandcodeClave ? 'ok' : 'falta'}`}>
-          {!editable ? 'Solo quien administra el cotizador puede cambiar el modelo. ' : ''}
           {estado.commandcodeClave
             ? '✓ El asistente tiene su clave de acceso configurada.'
             : 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.'}
@@ -219,8 +234,10 @@ function SelectorModelo({
     const criterio = busqueda.trim().toLocaleLowerCase('es');
     const ordenados = [...modelos].sort((a, b) => {
       if (a.gratis !== b.gratis) return a.gratis ? -1 : 1;
-      const costoA = a.precioEntrada === null || a.precioSalida === null ? null : a.precioEntrada + a.precioSalida;
-      const costoB = b.precioEntrada === null || b.precioSalida === null ? null : b.precioEntrada + b.precioSalida;
+      const costoA =
+        a.precioEntrada === null || a.precioSalida === null ? null : a.precioEntrada + a.precioSalida;
+      const costoB =
+        b.precioEntrada === null || b.precioSalida === null ? null : b.precioEntrada + b.precioSalida;
       if (costoA !== null && costoB === null) return -1;
       if (costoA === null && costoB !== null) return 1;
       if (costoA !== null && costoB !== null && costoA !== costoB) return costoA - costoB;
@@ -237,18 +254,28 @@ function SelectorModelo({
     { titulo: 'GRATIS', opciones: filtrados.filter((opcion) => opcion.gratis) },
     {
       titulo: 'ORDENADOS POR PRECIO',
-      opciones: filtrados.filter((opcion) => !opcion.gratis && opcion.precioEntrada !== null && opcion.precioSalida !== null),
+      opciones: filtrados.filter(
+        (opcion) => !opcion.gratis && opcion.precioEntrada !== null && opcion.precioSalida !== null,
+      ),
     },
     {
       titulo: 'PRECIO NO PUBLICADO',
-      opciones: filtrados.filter((opcion) => !opcion.gratis && (opcion.precioEntrada === null || opcion.precioSalida === null)),
+      opciones: filtrados.filter(
+        (opcion) => !opcion.gratis && (opcion.precioEntrada === null || opcion.precioSalida === null),
+      ),
     },
   ]
     .filter((grupo) => grupo.opciones.length > 0)
     .reduce<{ titulo: string; opciones: { opcion: ModeloCommandCode; indice: number }[] }[]>(
       (lista, grupo) => {
         const inicio = lista.reduce((n, g) => n + g.opciones.length, 0);
-        return [...lista, { titulo: grupo.titulo, opciones: grupo.opciones.map((opcion, i) => ({ opcion, indice: inicio + i })) }];
+        return [
+          ...lista,
+          {
+            titulo: grupo.titulo,
+            opciones: grupo.opciones.map((opcion, i) => ({ opcion, indice: inicio + i })),
+          },
+        ];
       },
       [],
     );
@@ -368,7 +395,12 @@ function SelectorModelo({
               </button>
             </p>
           ) : (
-            <div id="ia-modelos-lista" className="ia-model-options" role="listbox" aria-label="Modelos de CommandCode">
+            <div
+              id="ia-modelos-lista"
+              className="ia-model-options"
+              role="listbox"
+              aria-label="Modelos de CommandCode"
+            >
               {seleccionadoNoDisponible && (
                 <p className="ia-model-list-status" role="note">
                   El modelo seleccionado ya no aparece en el catálogo actual.
@@ -406,7 +438,9 @@ function SelectorModelo({
                 ))
               ) : (
                 <p className="ia-model-list-status" role="status">
-                  {modelos.length ? 'No hay modelos que coincidan con la búsqueda.' : 'CommandCode no publicó modelos compatibles.'}
+                  {modelos.length
+                    ? 'No hay modelos que coincidan con la búsqueda.'
+                    : 'CommandCode no publicó modelos compatibles.'}
                 </p>
               )}
               {desactualizado && (

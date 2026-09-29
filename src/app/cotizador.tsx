@@ -11,6 +11,7 @@ import { ConfiguracionIA, type EstadoAjustes } from './configuracion-ia';
 import { LogoutButton } from './logout-button';
 import { CambiarClave } from './cambiar-clave';
 import { Avisos, useAvisos } from './avisos';
+import { TextoMensaje } from './texto-mensaje';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAprobacion } from './dialogos-cotizacion';
 import type { CambiosEdicion, Detalle, Listado, Resultado } from './contrato';
@@ -808,6 +809,10 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
   const ayudaCompositor = [!configurado && 'aviso-asistente', mensaje.length >= AVISO_LIMITE && 'contador']
     .filter(Boolean)
     .join(' ');
+  function responderOpcion(respuesta: string) {
+    setMensaje((m) => (m.trim() ? `${m.trim()}; ${respuesta}` : respuesta));
+    input.current?.focus();
+  }
   return (
     <div className="app-shell">
       <header className="masthead">
@@ -878,11 +883,7 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
         </div>
       </header>
       <div className="page-heading">
-        <div>
-          <p className="eyebrow">DEL PEDIDO A LA FÁBRICA</p>
-          <h1>Cotizar, con claridad.</h1>
-          <p className="intro">Tú conoces el proyecto. Aquí armamos los detalles.</p>
-        </div>
+        <h1>Cotizar, con claridad.</h1>
         <div className="heading-actions">
           <button
             type="button"
@@ -914,7 +915,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
               <p className="eyebrow">01 / CONVERSACIÓN</p>
               <h2>Cuéntame el pedido</h2>
             </div>
-            <span className="live-dot" aria-hidden />
           </div>
           <div className="messages" ref={mensajes} data-testid="conversacion" aria-busy={enCurso === 'chat'}>
             <div className="welcome">
@@ -939,17 +939,18 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
                 </button>
               )}
             </div>
-            {!actual &&
-              charla.map((m, i) => (
-                <div key={`charla-${i}`} className={`message ${m.rol}`}>
-                  <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
-                  <p>{m.texto}</p>
-                </div>
-              ))}
-            {actual?.historial.map((m, i) => (
-              <div key={i} className={`message ${m.rol}`}>
+            {(actual ? actual.historial : charla).map((m, i, lista) => (
+              <div key={actual ? i : `charla-${i}`} className={`message ${m.rol}`}>
                 <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
-                <p>{m.texto}</p>
+                <TextoMensaje
+                  texto={m.texto}
+                  // Solo la última pregunta ofrece botones: las anteriores ya se respondieron.
+                  elegir={
+                    m.rol === 'asistente' && i === lista.length - 1 && !composerDeshabilitado
+                      ? responderOpcion
+                      : undefined
+                  }
+                />
               </div>
             ))}
             {notaLocal && notaLocal.id === actualId && (

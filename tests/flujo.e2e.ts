@@ -33,7 +33,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     panel = page.getByLabel('Cotización en curso');
   // Emitir consume un correlativo: la interfaz pide confirmarlo en un diálogo.
   async function emitir() {
-    await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+    await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
     await page
       .getByRole('alertdialog', { name: 'Emitir la cotización' })
       .getByRole('button', { name: 'Emitir y generar PDF' })
@@ -49,11 +49,16 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await expect(page.getByTestId('total')).toHaveText(pesos(primero.total));
   await expect(panel.getByText('Juan Pérez', { exact: true })).toBeVisible();
   await enviar('agrega marcos de oregón');
-  await expect(conversacion.getByText(/¿Qué sección o escuadría/)).toContainText('alto o largo');
-  await expect(conversacion.getByText(/¿Qué sección o escuadría/)).toContainText('cantidad');
+  await expect(conversacion.getByText(/¿Qué sección o escuadría/)).toBeVisible();
+  await expect(conversacion.getByText(/¿Qué alto o largo/)).toBeVisible();
+  await expect(conversacion.getByText(/¿Qué cantidad/)).toBeVisible();
+  // Las opciones de la última pregunta son botones que arman la respuesta en el compositor.
+  await conversacion.getByRole('button', { name: 'Responder sección o escuadría: 2X4' }).click();
+  await conversacion.getByRole('button', { name: 'Responder alto o largo: 2,1' }).click();
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveValue('sección o escuadría 2X4; alto o largo 2,1');
   await expect(page.getByText('Incompleto · no suma al total')).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(primero.total));
-  await expect(page.getByRole('button', { name: 'Generar PDF', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeDisabled();
   await enviar('3 de 2x4 de 2,1');
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
@@ -112,7 +117,7 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
     await expect(page.getByRole('button', { name: 'Enviar mensaje' })).toBeDisabled();
   };
   const emitir = async () => {
-    await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+    await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
     await page
       .getByRole('alertdialog', { name: 'Emitir la cotización' })
       .getByRole('button', { name: 'Emitir y generar PDF' })
@@ -178,7 +183,7 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
   await enviar('2 Huilo Huilo oregón 80×210 para Ana Soto, Osorno');
   await expect(page.getByLabel('Cotización en curso').getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
   const descarga = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+  await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
     .getByRole('button', { name: 'Emitir y generar PDF' })

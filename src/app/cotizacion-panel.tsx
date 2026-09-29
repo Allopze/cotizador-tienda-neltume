@@ -1,5 +1,5 @@
 'use client';
-import type { RefObject } from 'react';
+import { useState, type RefObject } from 'react';
 import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
@@ -10,6 +10,7 @@ import {
   autoria,
   fechaLarga,
   medidaPedida,
+  nombreProducto,
   numeroCotizacion,
   plural,
   validez,
@@ -50,7 +51,9 @@ export function lineaDe(q: Cotizacion, i: number) {
   return { pendiente, linea: q.montos.lineas[index] ?? null };
 }
 export const descripcionItem = (q: Cotizacion, i: number) =>
-  lineaDe(q, i).linea?.producto.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir';
+  nombreProducto(
+    lineaDe(q, i).linea?.producto.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir',
+  );
 
 const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'proyecto', 'telefono', 'direccion'] as const;
 
@@ -82,7 +85,10 @@ function notaEstado(q: Cotizacion | null) {
 
 export function CotizacionPanel({ actual, enCurso, guardando, descargando, acciones, tituloRef }: Props) {
   const ocupado = enCurso !== null;
-  const editable = !!actual && esEditable(actual) && !ocupado;
+  // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
+  const [modificando, setModificando] = useState<string | null>(null);
+  const puedeModificar = actual?.estado !== 'emitida' || modificando === actual.id;
+  const editable = !!actual && esEditable(actual) && puedeModificar && !ocupado;
   const conItems = !!actual?.montos.lineas.length;
   const listo = conItems && !actual.incompletos.length;
   const estado = actual?.estado ?? 'borrador';
@@ -91,10 +97,10 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
     ? 'Agrega al menos un producto para generar el PDF.'
     : actual.incompletos.length
       ? 'Completa o quita los ítems pendientes para generar el PDF.'
-      : 'Se asignará un número correlativo y quedará emitida.';
+      : 'Asigna el siguiente número correlativo; después, los cambios crean una revisión.';
   const quien = actual ? autoria(actual) : '';
   // Las bloqueadas no muestran el botón de quitar: no hay nada que hacer con él.
-  const conQuitar = !!actual && esEditable(actual);
+  const conQuitar = !!actual && esEditable(actual) && puedeModificar;
   const despacho = actual?.nota?.despacho;
   const condicionDespacho =
     despacho && (despacho.direccion || despacho.transporte)
@@ -117,15 +123,29 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           {esVencida && <span className="status vencida">Vencida</span>}
         </span>
       </div>
-      {actual?.estado === 'emitida' && editable && (
-        <p className="panel-aviso" id="aviso-revision">
-          Esta cotización ya fue emitida: al editarla se crea (o se reutiliza) una revisión en borrador.
-        </p>
+      {actual?.estado === 'emitida' && esEditable(actual) && (
+        <div className="panel-aviso" id="aviso-revision">
+          <p>
+            {puedeModificar
+              ? 'Modo edición: el primer cambio crea (o reutiliza) una revisión en borrador y conserva este PDF.'
+              : 'Cotización emitida. Para cambiarla se crea una revisión en borrador.'}
+          </p>
+          <button
+            type="button"
+            className="button secondary small"
+            onClick={() => setModificando(puedeModificar ? null : actual.id)}
+            disabled={ocupado}
+            aria-pressed={puedeModificar}
+          >
+            {puedeModificar ? 'Terminar' : 'Modificar'}
+          </button>
+        </div>
       )}
       <div className="client">
         {CAMPOS_CLIENTE.map((campo) => {
           const valor = actual?.cliente[campo] ?? '';
-          if (!editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
+          // Sin cotización se muestran todos: el panel no cambia de forma al crear el borrador.
+          if (actual && !editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
             return null;
           return (
             <CampoEditable
@@ -134,6 +154,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               valor={valor}
               mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
               editable={editable}
+              discreto
               guardando={guardando === `cliente.${campo}`}
               maxLength={300}
               guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
@@ -150,10 +171,10 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           <table>
             <thead>
               <tr>
-                <th>PRODUCTO / CÓDIGO</th>
-                <th>CANT.</th>
-                <th>UNITARIO</th>
-                <th>TOTAL</th>
+                <th scope="col">PRODUCTO / CÓDIGO</th>
+                <th scope="col">CANT.</th>
+                <th scope="col">UNITARIO</th>
+                <th scope="col">TOTAL</th>
                 {conQuitar && (
                   <th>
                     <span className="sr-only">Acciones</span>
@@ -179,6 +200,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         key={`${actual.actualizada}-${i}`}
                         etiqueta={`Cantidad de ${descripcion}`}
                         etiquetaOculta
+                        discreto
                         valor={s.cantidad === null ? '' : String(s.cantidad)}
                         mostrar={s.cantidad ?? '—'}
                         editable={editable}
@@ -201,10 +223,14 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         }
                       />
                     </td>
-                    <td>{linea ? pesos(linea.precioUnitario) : '—'}</td>
-                    <td>{linea ? pesos(linea.total) : '—'}</td>
+                    <td className="celda-monto" data-etiqueta="Unitario">
+                      {linea ? pesos(linea.precioUnitario) : '—'}
+                    </td>
+                    <td className="celda-monto celda-total" data-etiqueta="Total">
+                      {linea ? pesos(linea.total) : '—'}
+                    </td>
                     {conQuitar && (
-                      <td>
+                      <td className="celda-acciones">
                         <button
                           type="button"
                           className="remove"
@@ -251,7 +277,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
             aria-describedby="ayuda-emitir"
             onClick={acciones.emitir}
           >
-            {enCurso === 'emitir' ? 'Generando PDF…' : 'Generar PDF'}
+            {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
           </button>
           <p className="ayuda" id="ayuda-emitir">
             {ayudaEmitir}

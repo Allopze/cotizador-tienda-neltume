@@ -65,7 +65,7 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   );
 
   const descarga = page.waitForEvent('download');
-  await panel.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+  await panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
     .getByRole('button', { name: 'Emitir y generar PDF' })

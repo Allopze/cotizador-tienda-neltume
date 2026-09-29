@@ -982,7 +982,7 @@ export class Almacen {
           productos: (productos.get(f.id) ?? [])
             .map(
               (p) =>
-                `${p.cantidad ?? '—'} × ${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}`,
+                `${p.cantidad === null ? '' : `${p.cantidad} × `}${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}${p.cantidad === null ? ' (sin cantidad)' : ''}`,
             )
             .join(', '),
           creada: f.creada,
