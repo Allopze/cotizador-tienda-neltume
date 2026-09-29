@@ -8,6 +8,7 @@ import { EncabezadoPagina } from './encabezado-pagina';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
 import { esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
+import { Actividad } from './actividad';
 
 type Filtro = 'todas' | EstadoCotizacion;
 const FILTROS: [Filtro, string][] = [
@@ -356,6 +357,7 @@ function Fila({
       >
         {duplicando === q.id ? 'Duplicando…' : 'Duplicar'}
       </button>
+      <Actividad id={q.id} version={q.actualizada} />
     </li>
   );
 }

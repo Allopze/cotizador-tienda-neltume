@@ -4,6 +4,67 @@
   display: flex;
   flex-direction: column;
 }
+.empty-quote {
+  flex: 1;
+  min-height: 260px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 30px 24px 54px;
+}
+.empty-quote-door {
+  width: 68px;
+  height: 88px;
+  margin-bottom: 28px;
+  border: 2px solid var(--accent-line);
+  position: relative;
+}
+.empty-quote-door::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border: 1px solid var(--line-strong);
+}
+.empty-quote-door span {
+  position: absolute;
+  z-index: 1;
+  right: 12px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--green);
+}
+.empty-quote-step {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  letter-spacing: var(--tracking-label);
+  margin-bottom: 12px;
+}
+.empty-quote h3 {
+  font: var(--serif-3) / 1.3 var(--serif);
+  margin-bottom: 10px;
+}
+.empty-quote > p:last-child {
+  max-width: 340px;
+  color: var(--muted);
+  line-height: 1.65;
+}
+.empty-items {
+  padding: 22px 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.empty-items p {
+  color: var(--ink);
+  font-weight: 600;
+  margin-bottom: 4px;
+}
 .quote-panel h2:focus {
   outline: none;
 }
@@ -25,8 +86,8 @@
   color: #3c6240;
 }
 .status.emitida {
-  background: #eef0f2;
-  color: #566471;
+  background: #e2ebf3;
+  color: #2f506b;
 }
 .status.reemplazada {
   background: #efece4;
@@ -56,8 +117,8 @@
 .panel-aviso {
   margin: -8px 0 14px;
   padding: 8px 8px 8px 12px;
-  background: var(--amber-bg);
-  color: var(--amber-text);
+  background: var(--panel);
+  color: var(--muted);
   font-size: var(--fs-sm);
   line-height: 1.5;
   display: flex;
@@ -65,6 +126,10 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px 12px;
+}
+.panel-aviso.editando {
+  background: var(--amber-bg);
+  color: var(--amber-text);
 }
 .panel-aviso p {
   flex: 1 1 240px;
@@ -228,7 +293,7 @@ td small {
   min-width: 220px;
 }
 .quote-actions .ayuda {
-  flex: 1 1 200px;
+  flex: 1 1 100%;
   font-size: var(--fs-xs);
   color: var(--muted);
   line-height: 1.5;
@@ -345,11 +410,51 @@ td small {
 .total-editable .campo.editando {
   flex-wrap: wrap;
 }
-.quote-more {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+/* «Más acciones»: secundarias agrupadas, a la derecha de la acción principal. */
+.menu-acciones {
+  position: relative;
+  margin-left: auto;
+}
+.menu-acciones ul {
+  position: absolute;
+  z-index: 20;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 190px;
+  margin: 0;
+  padding: 6px 0;
+  list-style: none;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 12px 34px rgb(38 58 48 / 14%);
+}
+.menu-acciones li button {
+  display: block;
+  width: 100%;
+  min-height: var(--control-sm);
+  padding: 8px 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+}
+.menu-acciones li button:hover:not(:disabled),
+.menu-acciones li button:focus-visible {
+  background: var(--panel);
+}
+.menu-acciones li button:disabled {
+  color: var(--subtle);
+  cursor: default;
+}
+.menu-acciones li button.peligro {
+  color: var(--danger);
+}
+.menu-acciones .separador {
+  margin: 6px 0;
+  border-top: 1px solid var(--line-soft);
 }
 .actividad {
   margin-top: 16px;
@@ -357,10 +462,38 @@ td small {
   padding-top: 12px;
   font-size: var(--fs-sm);
 }
+.history-list .actividad {
+  grid-column: 1 / -1;
+  margin: 0 12px 14px;
+}
 .actividad summary {
   cursor: pointer;
   font-weight: 600;
   color: var(--ink);
+  list-style: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.actividad summary::-webkit-details-marker {
+  display: none;
+}
+.actividad summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+.actividad[open] summary::before {
+  transform: rotate(45deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .actividad summary::before {
+    transition: none;
+  }
 }
 .actividad ol {
   list-style: none;

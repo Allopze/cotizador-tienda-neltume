@@ -21,7 +21,6 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
     await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   };
 
-  await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await page
     .getByLabel('Escribe tu pedido')
     .fill('Cotiza 3 Huilo Huilo oregón de 80×210 para Juan Pérez, Temuco');
@@ -66,17 +65,21 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   const numero = (await titulo.textContent())!.trim();
 
   // Duplicar: borrador nuevo con las mismas cantidades, descuento y flete.
+  await panel.getByRole('button', { name: 'Más acciones' }).click();
   await panel.getByRole('button', { name: 'Duplicar', exact: true }).click();
   await expect(titulo).toHaveText('Sin número');
   await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));
 
   // Eliminar el duplicado (borrador sin número).
+  await panel.getByRole('button', { name: 'Más acciones' }).click();
   await panel.getByRole('button', { name: 'Eliminar borrador' }).click();
   await page
     .getByRole('alertdialog', { name: 'Eliminar borrador' })
     .getByRole('button', { name: 'Eliminar borrador' })
     .click();
-  await expect(titulo).toHaveText('Nueva cotización');
+  await expect(
+    page.getByLabel('Vista previa de la cotización').getByRole('heading', { level: 2 }),
+  ).toHaveText('Vista previa');
 
   // Anular la emitida: exige marcar la confirmación.
   await page.getByRole('link', { name: 'Historial' }).click();
@@ -86,6 +89,7 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await page.getByRole('link', { name: 'Catálogo', exact: true }).click();
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
   await expect(titulo).toHaveText(numero);
+  await panel.getByRole('button', { name: 'Más acciones' }).click();
   await panel.getByRole('button', { name: 'Anular', exact: true }).click();
   const dialogo = page.getByRole('alertdialog', { name: `Anular la cotización ${numero}` });
   await expect(dialogo.getByRole('button', { name: 'Anular cotización' })).toBeDisabled();
@@ -108,7 +112,6 @@ test('si el catálogo cambia antes de emitir, muestra los montos nuevos y pide c
   const precio = db.prepare('UPDATE productos_catalogo SET precio_neto = ? WHERE codigo = ?');
   await iniciarSesion(page);
   const total = page.getByTestId('total');
-  await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await page
     .getByLabel('Escribe tu pedido')
     .fill('Cotiza 3 Huilo Huilo oregón de 80×210 para Rosa Díaz, Valdivia');

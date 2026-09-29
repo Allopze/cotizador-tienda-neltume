@@ -192,3 +192,9 @@
   color: var(--ink);
   font-weight: 600;
 }
+/* En escritorio basta el nombre (el correo queda en el title); en el menú móvil hay espacio para ambos. */
+@media (min-width: 481px) {
+  .account-email small {
+    display: none;
+  }
+}

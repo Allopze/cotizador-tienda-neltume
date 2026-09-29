@@ -97,8 +97,9 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   expect(estado.siguienteCotizacion).toBe(324);
   expect(estado.siguienteNota).toBe(2);
   await page.reload();
-  // Al recargar se parte en una cotización nueva; la aprobada se abre desde el historial.
-  await expect(page.getByTestId('total')).toHaveText(pesos(0));
+  // Al recargar se vuelve al inicio sin una cotización creada.
+  await expect(page.getByLabel('Vista previa de la cotización')).toBeVisible();
+  await expect(page.getByTestId('total')).toHaveCount(0);
   await page.getByRole('link', { name: 'Historial' }).click();
   await page.getByRole('link', { name: /^N° 323/ }).click();
   await expect(page.getByRole('heading', { name: 'N° 323' })).toBeFocused();
@@ -131,7 +132,6 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
     return Number(nombre.match(/\d+/)![0]);
   };
   const cotizarMaria = 'Cotiza 3 Huilo Huilo oregón de 80×210 para María José, Temuco';
-  await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await enviar(cotizarMaria);
   const primeraDescarga = page.waitForEvent('download');
   await emitir();

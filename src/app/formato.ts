@@ -88,29 +88,41 @@ export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   proyecto: 'Proyecto',
 };
 
-/** «Pedido: 0,80 × 2,10 m» o «Escuadría 2X4 · 2,10 m». */
+/** «Medida pedida: 0,80 × 2,10 m» o «Escuadría 2X4 · 2,10 m». */
 export function medidaPedida(l: Linea) {
   const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (l.medidaSolicitada)
     return `Escuadría ${l.medidaSolicitada}${l.altoSolicitado ? ` · ${m(l.altoSolicitado)} m` : ''}`;
   if (l.anchoSolicitado && l.altoSolicitado)
-    return `Pedido: ${m(l.anchoSolicitado)} × ${m(l.altoSolicitado)} m`;
+    return `Medida pedida: ${m(l.anchoSolicitado)} × ${m(l.altoSolicitado)} m`;
   if (l.altoSolicitado) return `Largo pedido: ${m(l.altoSolicitado)} m`;
   return null;
 }
 
-/** «Creada por Ana · Emitida por Luis»: quién hizo cada paso. */
+/** «Creada por Ana · emitida por Luis»; si la misma persona hizo varios pasos seguidos, «Creada y emitida por Ana». */
 export function autoria(
   q: Pick<ResumenCotizacion, 'creadaPor' | 'emitidaPor' | 'aprobadaPor' | 'anuladaPor'>,
 ) {
-  return [
-    q.creadaPor && `Creada por ${q.creadaPor}`,
-    q.emitidaPor && `emitida por ${q.emitidaPor}`,
-    q.aprobadaPor && `aprobada por ${q.aprobadaPor}`,
-    q.anuladaPor && `anulada por ${q.anuladaPor}`,
-  ]
-    .filter(Boolean)
+  const pasos: [string, string | null | undefined][] = [
+    ['creada', q.creadaPor],
+    ['emitida', q.emitidaPor],
+    ['aprobada', q.aprobadaPor],
+    ['anulada', q.anuladaPor],
+  ];
+  const grupos: { quien: string; pasos: string[] }[] = [];
+  for (const [paso, quien] of pasos) {
+    if (!quien) continue;
+    const ultimo = grupos.at(-1);
+    if (ultimo?.quien === quien) ultimo.pasos.push(paso);
+    else grupos.push({ quien, pasos: [paso] });
+  }
+  const texto = grupos
+    .map(
+      (g) =>
+        `${g.pasos.slice(0, -1).join(', ')}${g.pasos.length > 1 ? ' y ' : ''}${g.pasos.at(-1)} por ${g.quien}`,
+    )
     .join(' · ');
+  return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
 /** Texto breve de lo que cambió: «Agregado: Marco · Cantidad: … → … · Datos del cliente: RUT». */

@@ -752,3 +752,7 @@ button[type='submit'].button.peligro:not(:disabled) {
   font-size: var(--fs-xs);
   white-space: normal;
 }
+/* Cotizar no tiene título visible (lo dice la pestaña activa): el panel se separa de la cabecera. */
+.masthead + .sr-only + .workspace {
+  margin-top: 18px;
+}

@@ -1,16 +1,14 @@
 'use client';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { AltaProducto } from '../alta-producto';
-import { Avisos, useAvisos } from '../avisos';
 import { CatalogoConsulta } from '../catalogo-consulta';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { useEsCliente, useScrollRecordado } from '../memoria-pantalla';
-import { ProductosManuales } from '../productos-manuales';
 import { pedirJSON } from '../solicitud';
 import { SECCIONES, type Seccion } from './secciones';
 
-/** Pantalla «Catálogo»: consultar productos, agregar uno (a mano o con el asistente) y mantener los agregados. */
+/** Pantalla «Catálogo»: consultar productos y agregar uno (a mano o con el asistente). */
 export function PantallaCatalogo({
   email,
   nombre,
@@ -39,7 +37,6 @@ export function PantallaCatalogo({
     window.history.pushState(null, '', e.currentTarget.href);
     setSeccion(s);
   };
-  const { avisos, avisar, cerrar } = useAvisos();
   // El alta asistida necesita saber si hay asistente; sin él, el formulario manual sigue disponible.
   const [asistente, setAsistente] = useState(true);
   useEffect(() => {
@@ -56,14 +53,14 @@ export function PantallaCatalogo({
   const cliente = useEsCliente();
   useScrollRecordado('catalogo', cliente);
   // Las secciones visitadas quedan montadas (ocultas): al volver a una, la búsqueda o el alta a medias
-  // siguen donde estaban. «Productos agregados» se vuelve a montar para mostrar lo recién agregado.
+  // siguen donde estaban.
   const [visitadas, setVisitadas] = useState<Seccion[]>([seccion]);
   if (!visitadas.includes(seccion)) setVisitadas([...visitadas, seccion]);
-  const montada = (s: Seccion) => cliente && (s === seccion || (s !== 'productos' && visitadas.includes(s)));
+  const montada = (s: Seccion) => cliente && (s === seccion || visitadas.includes(s));
   const actual = SECCIONES.find((s) => s.id === seccion)!;
 
   return (
-    <div className="app-shell">
+    <div className="app-shell pantalla-catalogo">
       <Encabezado email={email} nombre={nombre} pantalla="catalogo" />
       <EncabezadoPagina titulo="Catálogo" />
       <div className="con-secciones superficie">
@@ -94,7 +91,6 @@ export function PantallaCatalogo({
               <AltaProducto asistente={asistente} />
             </div>
           )}
-          {montada('productos') && <ProductosManuales avisar={avisar} />}
         </main>
       </div>
       <footer className="site-footer">
@@ -103,7 +99,6 @@ export function PantallaCatalogo({
         </span>
         <span>Asistente de cotizaciones · Uso interno</span>
       </footer>
-      <Avisos avisos={avisos} cerrar={cerrar} />
     </div>
   );
 }

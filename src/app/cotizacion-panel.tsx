@@ -16,8 +16,8 @@ import {
   validez,
   vencida,
 } from './formato';
+import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales } from './panel-totales';
-import { Actividad } from './actividad';
 
 export type Operacion =
   'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'duplicar' | 'eliminar' | 'anular';
@@ -75,7 +75,8 @@ function notaEstado(q: Cotizacion | null) {
         ? 'Cotización aprobada; su nota de pedido fue anulada.'
         : 'Cotización aprobada y bloqueada para edición.';
     case 'emitida':
-      return `${q.fechaEmision ? `Emitida el ${fechaLarga(q.fechaEmision)}. ` : ''}Si haces cambios, se creará una revisión en borrador y se conservará este PDF.`;
+      // La fecha va en la cabecera y el aviso de revisión, en la franja superior: aquí solo se repetiría.
+      return null;
     default:
       return q.origen
         ? `Revisión de la cotización N° ${q.origen}. Revisa antes de compartir; tú decides cuándo emitirla.`
@@ -87,18 +88,47 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
   const ocupado = enCurso !== null;
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
+  if (!actual)
+    return (
+      <section className="quote-panel quote-panel-empty" aria-label="Vista previa de la cotización">
+        <div className="panel-heading">
+          <div>
+            <p className="eyebrow">02 / COTIZACIÓN</p>
+            <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
+              Vista previa
+            </h2>
+          </div>
+        </div>
+        <div className="empty-quote">
+          <div className="empty-quote-door" aria-hidden="true">
+            <span />
+          </div>
+          <p className="empty-quote-step">TU PEDIDO, EN CLARO</p>
+          <h3>La cotización aparecerá aquí.</h3>
+          <p>
+            Envía el pedido para ver el cliente, los productos y los valores. Podrás corregirlos antes de
+            emitir el PDF.
+          </p>
+        </div>
+      </section>
+    );
   const puedeModificar = actual?.estado !== 'emitida' || modificando === actual.id;
   const editable = !!actual && esEditable(actual) && puedeModificar && !ocupado;
   const conItems = !!actual?.montos.lineas.length;
   const listo = conItems && !actual.incompletos.length;
-  const estado = actual?.estado ?? 'borrador';
+  const estado = actual.estado;
   const esVencida = vencida(actual);
   const ayudaEmitir = !actual?.solicitudes.length
     ? 'Agrega al menos un producto para generar el PDF.'
     : actual.incompletos.length
       ? 'Completa o quita los ítems pendientes para generar el PDF.'
-      : 'Asigna el siguiente número correlativo; después, los cambios crean una revisión.';
-  const quien = actual ? autoria(actual) : '';
+      : null; // Lista para emitir: el diálogo de confirmación explica qué pasa.
+  const quien = [
+    autoria(actual),
+    actual.fechaEmision && estado !== 'borrador' && fechaLarga(actual.fechaEmision),
+  ]
+    .filter(Boolean)
+    .join(' · ');
   // Las bloqueadas no muestran el botón de quitar: no hay nada que hacer con él.
   const conQuitar = !!actual && esEditable(actual) && puedeModificar;
   const despacho = actual?.nota?.despacho;
@@ -114,7 +144,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
         <div>
           <p className="eyebrow">02 / COTIZACIÓN</p>
           <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
-            {actual ? numeroCotizacion(actual.numero) : 'Nueva cotización'}
+            {numeroCotizacion(actual.numero)}
           </h2>
           {quien && <p className="autoria">{quien}</p>}
         </div>
@@ -124,11 +154,12 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
         </span>
       </div>
       {actual?.estado === 'emitida' && esEditable(actual) && (
-        <div className="panel-aviso" id="aviso-revision">
+        // Informativa mientras solo se mira; ámbar al entrar en modo edición, que sí tiene consecuencias.
+        <div className={`panel-aviso${puedeModificar ? ' editando' : ''}`} id="aviso-revision">
           <p>
             {puedeModificar
               ? 'Modo edición: el primer cambio crea (o reutiliza) una revisión en borrador y conserva este PDF.'
-              : 'Cotización emitida. Para cambiarla se crea una revisión en borrador.'}
+              : 'Para cambiarla se crea una revisión en borrador; este PDF se conserva.'}
           </p>
           <button
             type="button"
@@ -144,7 +175,6 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
       <div className="client">
         {CAMPOS_CLIENTE.map((campo) => {
           const valor = actual?.cliente[campo] ?? '';
-          // Sin cotización se muestran todos: el panel no cambia de forma al crear el borrador.
           if (actual && !editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
             return null;
           return (
@@ -251,93 +281,81 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               </tbody>
             </table>
           </div>
-        ) : null}
-        {actual && <Actividad id={actual.id} version={actual.actualizada} />}
+        ) : (
+          <div className="empty-items">
+            <p>Este borrador todavía no tiene productos.</p>
+            <span>Descríbelos en la conversación para completar el detalle y calcular el total.</span>
+          </div>
+        )}
       </div>
       <div className="quote-pie">
         <div className="quote-pie-acciones">
-          {/* Acciones que cambian el estado, separadas de las descargas. */}
-          {estado === 'borrador' && (
-            <div className="quote-actions">
+          {/* Una sola acción principal a la vista; el resto va en «Más acciones». */}
+          <div className="quote-actions">
+            {estado === 'borrador' && (
               <button
                 type="button"
                 className="button primary"
                 disabled={!listo || ocupado}
-                aria-describedby="ayuda-emitir"
+                aria-describedby={ayudaEmitir ? 'ayuda-emitir' : undefined}
                 onClick={acciones.emitir}
               >
                 {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
               </button>
-              <p className="ayuda" id="ayuda-emitir">
-                {ayudaEmitir}
-              </p>
-            </div>
-          )}
-          {estado === 'emitida' && (
-            <div className="quote-actions">
+            )}
+            {estado === 'emitida' && (
               <button
                 type="button"
                 className="button primary"
                 disabled={ocupado}
-                aria-describedby="ayuda-aprobar"
+                aria-describedby={esVencida ? 'ayuda-aprobar' : undefined}
                 onClick={acciones.aprobar}
               >
                 {enCurso === 'aprobar' ? 'Aprobando…' : 'Aprobar y generar nota de pedido'}
               </button>
-              <p className="ayuda" id="ayuda-aprobar">
-                {esVencida
-                  ? 'La vigencia terminó: se pedirá confirmar antes de aprobar.'
-                  : 'Genera la nota de pedido para fábrica y bloquea la cotización.'}
+            )}
+            <MenuAcciones
+              deshabilitado={ocupado}
+              opciones={[
+                {
+                  etiqueta: enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar',
+                  alElegir: acciones.duplicar,
+                },
+                ...(conItems
+                  ? [
+                      {
+                        etiqueta: 'Copiar resumen',
+                        alElegir: acciones.copiar,
+                        titulo: 'Resumen en texto para pegar en un correo o WhatsApp',
+                      },
+                    ]
+                  : []),
+                ...(estado === 'borrador' && actual.numero === null
+                  ? [{ etiqueta: 'Eliminar borrador', alElegir: acciones.eliminar, peligro: true }]
+                  : []),
+                ...(estado === 'emitida' || estado === 'aprobada'
+                  ? [{ etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }]
+                  : []),
+              ]}
+            />
+            {/* La ayuda solo aparece cuando explica por qué no se puede o qué se pedirá confirmar. */}
+            {estado === 'borrador' && ayudaEmitir && (
+              <p className="ayuda" id="ayuda-emitir">
+                {ayudaEmitir}
               </p>
-            </div>
-          )}
-          {actual && (
-            <div className="quote-more">
-              <button
-                type="button"
-                className="button secondary small"
-                onClick={acciones.duplicar}
-                disabled={ocupado}
-              >
-                {enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar'}
-              </button>
-              {conItems && (
-                <button
-                  type="button"
-                  className="button secondary small"
-                  onClick={acciones.copiar}
-                  title="Resumen en texto para pegar en un correo o WhatsApp"
-                >
-                  Copiar resumen
-                </button>
-              )}
-              {estado === 'borrador' && actual.numero === null && (
-                <button
-                  type="button"
-                  className="button secondary small peligro"
-                  onClick={acciones.eliminar}
-                  disabled={ocupado}
-                >
-                  {enCurso === 'eliminar' ? 'Eliminando…' : 'Eliminar borrador'}
-                </button>
-              )}
-              {(estado === 'emitida' || estado === 'aprobada') && (
-                <button
-                  type="button"
-                  className="button secondary small peligro"
-                  onClick={acciones.anular}
-                  disabled={ocupado}
-                >
-                  {enCurso === 'anular' ? 'Anulando…' : 'Anular'}
-                </button>
-              )}
-            </div>
-          )}
+            )}
+            {estado === 'emitida' && esVencida && (
+              <p className="ayuda" id="ayuda-aprobar">
+                La vigencia terminó: se pedirá confirmar antes de aprobar.
+              </p>
+            )}
+          </div>
           {actual && (actual.pdf || actual.nota) && (
             <div className="quote-docs">
               {actual.pdf && (
                 <Documento
-                  nombre={`Cotización ${numeroCotizacion(actual.numero)}`}
+                  nombre="PDF de la cotización"
+                  descripcion={`cotización ${numeroCotizacion(actual.numero)}`}
                   archivo={actual.pdf}
                   descargando={descargando}
                   descargar={acciones.descargar}
@@ -356,7 +374,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
             </div>
           )}
           {/* En un borrador nuevo la nota solo repetía la ayuda del botón: se muestra cuando informa algo. */}
-          {actual && (estado !== 'borrador' || actual.origen) && (
+          {actual && notaEstado(actual) && (estado !== 'borrador' || actual.origen) && (
             <p className="review-note" id="nota-revision">
               {notaEstado(actual)}
             </p>

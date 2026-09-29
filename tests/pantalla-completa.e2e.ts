@@ -20,7 +20,11 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
     await expect(page.getByRole('button', { name: 'Enviar mensaje' })).toBeDisabled();
   };
 
-  await page.getByRole('button', { name: 'Nueva cotización' }).click();
+  const vistaPrevia = page.getByLabel('Vista previa de la cotización');
+  await expect(vistaPrevia.getByRole('heading', { name: 'Vista previa' })).toBeVisible();
+  await expect(vistaPrevia.getByText('La cotización aparecerá aquí.')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Nueva cotización' })).toHaveCount(0);
+  await expect(page.getByTestId('total')).toHaveCount(0);
   await sinScrollDePagina(page);
 
   await enviar('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
@@ -59,4 +63,72 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
   }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.screenshot({ path: 'test-results/pantalla-completa-720.png' });
+});
+
+test('ajustes y alta conservan sus bloques verticales; las listas cortas no agregan scroll', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await iniciarSesion(page);
+
+  for (const [width, height] of [
+    [1440, 900],
+    [1280, 720],
+    [1024, 768],
+  ]) {
+    await page.setViewportSize({ width, height });
+    await page.goto('/ajustes');
+    await expect(page.getByRole('heading', { name: 'Asistente' })).toBeVisible();
+    const secciones = page.locator('.ajustes-pagina > section');
+    const finCuenta = await secciones.first().evaluate((elemento) => elemento.getBoundingClientRect().bottom);
+    const inicioAsistente = await secciones
+      .nth(1)
+      .evaluate((elemento) => elemento.getBoundingClientRect().top);
+    expect(inicioAsistente).toBeGreaterThan(finCuenta);
+
+    await page.goto('/historial');
+    await page.getByRole('searchbox', { name: 'Buscar cotizaciones' }).fill('sin-resultados-scroll');
+    await expect(page.locator('.heading-meta')).toHaveText('0 resultados');
+    await sinScrollDePagina(page);
+
+    await page.goto('/catalogo?seccion=agregar');
+    const alta = page.locator('.alta-producto');
+    const finDescripcion = await alta
+      .locator('.alta-bloque')
+      .first()
+      .evaluate((elemento) => elemento.getBoundingClientRect().bottom);
+    const inicioFormulario = await alta
+      .locator('.alta-formulario')
+      .evaluate((elemento) => elemento.getBoundingClientRect().top);
+    expect(inicioFormulario).toBeGreaterThan(finDescripcion);
+    await sinScrollDePagina(page);
+    await alta.getByRole('button', { name: 'Revisar propuesta' }).scrollIntoViewIfNeeded();
+    await expect(alta.getByRole('button', { name: 'Revisar propuesta' })).toBeInViewport();
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/ajustes');
+  await expect(page.getByRole('heading', { name: 'Contraseña' })).toBeVisible();
+  const estadoAsistente = page.getByText('El asistente tiene su clave de acceso configurada.');
+  await estadoAsistente.scrollIntoViewIfNeeded();
+  await expect(estadoAsistente).toBeInViewport();
+
+  await page.goto('/historial');
+  await expect(page.locator('.heading-meta')).toHaveText('0 resultados');
+  await sinScrollDePagina(page);
+
+  await page.goto('/catalogo');
+  const lista = page.locator('.catalogo-lista');
+  await expect(lista).toBeVisible();
+  await sinScrollDePagina(page);
+  expect(await lista.evaluate((elemento) => elemento.scrollHeight)).toBeGreaterThan(
+    await lista.evaluate((elemento) => elemento.clientHeight),
+  );
+
+  await page.goto('/catalogo?seccion=agregar');
+  const alta = page.locator('.alta-producto');
+  await expect(alta).toBeVisible();
+  await sinScrollDePagina(page);
+  await alta.getByRole('button', { name: 'Revisar propuesta' }).scrollIntoViewIfNeeded();
+  await expect(alta.getByRole('button', { name: 'Revisar propuesta' })).toBeInViewport();
 });

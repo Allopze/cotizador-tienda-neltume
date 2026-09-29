@@ -23,12 +23,6 @@ export function PantallaHistorial({ email, nombre }: { email: string; nombre: st
       <main className="pantalla-historial">
         {cliente ? <Listado avisar={avisar} /> : <EncabezadoPagina titulo="Historial de cotizaciones" />}
       </main>
-      <footer className="site-footer">
-        <span>
-          NELTUME <span className="muted">/ Hecho en madera.</span>
-        </span>
-        <span>Asistente de cotizaciones · Uso interno</span>
-      </footer>
       <Avisos avisos={avisos} cerrar={cerrar} />
     </div>
   );

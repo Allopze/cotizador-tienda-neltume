@@ -1,3 +1,61 @@
+/* Catálogo a pantalla completa en escritorio y tablet: la página no se desplaza; el contenido interno sí
+   puede hacerlo cuando una tabla o un formulario supera el espacio disponible. */
+@media (min-width: 801px) {
+  .pantalla-catalogo {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .pantalla-catalogo > .masthead,
+  .pantalla-catalogo > .page-heading {
+    flex: none;
+  }
+  .pantalla-catalogo > .page-heading {
+    min-height: 0;
+    padding: 12px 0;
+  }
+  .pantalla-catalogo > .con-secciones {
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 16px;
+  }
+  .pantalla-catalogo > .site-footer {
+    display: none;
+  }
+  .pantalla-catalogo .secciones-contenido {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .pantalla-catalogo .secciones-contenido > h2 {
+    flex: none;
+  }
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > * {
+    flex: 1;
+    min-height: 0;
+  }
+  .pantalla-catalogo .catalogo-consulta {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-height: 0;
+  }
+  .pantalla-catalogo .catalogo-lista {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+  }
+  .pantalla-catalogo .alta-producto {
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 @media (min-width: 1450px) {
   .workspace {
     min-height: 700px;
@@ -25,6 +83,60 @@
   }
 }
 @media (max-width: 800px) {
+  .pantalla-catalogo {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+  .pantalla-catalogo > .masthead,
+  .pantalla-catalogo > .page-heading {
+    flex: none;
+  }
+  .pantalla-catalogo > .page-heading {
+    min-height: 0;
+    padding: 12px 0;
+  }
+  .pantalla-catalogo > .con-secciones {
+    flex: 1;
+    min-height: 0;
+    margin-bottom: 12px;
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+  .pantalla-catalogo > .site-footer {
+    display: none;
+  }
+  .pantalla-catalogo .secciones-contenido {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .pantalla-catalogo .secciones-contenido > h2 {
+    flex: none;
+  }
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    flex-direction: column;
+  }
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > * {
+    flex: 1;
+    min-height: 0;
+  }
+  .pantalla-catalogo .catalogo-consulta {
+    grid-template-rows: auto auto auto minmax(0, 1fr);
+    min-height: 0;
+  }
+  .pantalla-catalogo .catalogo-lista {
+    height: 100%;
+    max-height: none;
+    min-height: 0;
+  }
+  .pantalla-catalogo .alta-producto {
+    min-height: 0;
+    overflow-y: auto;
+  }
   .masthead {
     height: 85px;
     gap: 20px;
@@ -79,6 +191,20 @@
   .quote-panel {
     padding: 23px;
   }
+  .jump-to-quote {
+    display: inline-flex;
+    align-self: flex-end;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin-top: 8px;
+    border: 0;
+    padding: 6px 0;
+    background: transparent;
+    color: var(--green);
+    font-size: var(--fs-sm);
+    font-weight: 700;
+  }
   .conditions {
     flex-direction: row;
   }
@@ -120,6 +246,8 @@
   .page-heading {
     flex-direction: column;
     align-items: flex-start;
+    min-height: 0;
+    padding: 12px 0;
   }
   .heading-actions {
     width: 100%;
@@ -142,6 +270,27 @@
   .quote-panel,
   .chat-panel {
     padding: 19px;
+  }
+  .chat-panel.inicio .panel-heading {
+    padding-bottom: 10px;
+  }
+  .chat-panel.inicio .welcome {
+    padding: 4px 0 12px;
+  }
+  .chat-panel.inicio .welcome > p {
+    margin: 8px 0 7px;
+  }
+  .chat-panel.inicio .example {
+    margin-top: 14px;
+    padding-top: 12px;
+    padding-bottom: 12px;
+  }
+  .chat-panel.inicio .composer {
+    margin-top: 12px;
+  }
+  .chat-panel.inicio .composer textarea {
+    min-height: 76px;
+    padding: 12px 15px;
   }
   .quote-actions .primary {
     width: 100%;
@@ -239,6 +388,11 @@
     min-height: 0;
     max-height: none;
   }
+  .pantalla-completa .chat-panel.inicio .messages {
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+  }
   .pantalla-completa .welcome {
     padding: 6px 0 16px;
   }
@@ -295,9 +449,6 @@
   }
   .pantalla-completa .quote-actions .primary {
     min-width: 0;
-  }
-  .pantalla-completa .quote-more {
-    margin-top: 10px;
   }
   .pantalla-completa .quote-docs {
     margin-top: 10px;

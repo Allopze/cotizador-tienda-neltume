@@ -9,6 +9,6 @@ export default async function ConfiguracionPage({
   const { seccion } = await searchParams;
   if (seccion === 'asistente') redirect('/ajustes');
   if (seccion === 'agregar') redirect('/catalogo?seccion=agregar');
-  if (seccion === 'manuales') redirect('/catalogo?seccion=productos');
+  if (seccion === 'manuales') redirect('/catalogo');
   redirect('/catalogo');
 }

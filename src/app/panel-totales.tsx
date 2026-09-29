@@ -95,8 +95,11 @@ export function Documento({
   descargar,
   etiqueta = 'Descargar cotización',
   anulado,
+  descripcion = nombre,
 }: {
   nombre: string;
+  /** Cómo se nombra el documento para lectores de pantalla («Ver cotización N° 325…»). */
+  descripcion?: string;
   archivo: string;
   descargando: string | null;
   descargar: (archivo: string) => void;
@@ -114,7 +117,7 @@ export function Documento({
         href={`/api/documento/${encodeURIComponent(archivo)}?ver=1`}
         target="_blank"
         rel="noopener"
-        aria-label={`Ver ${nombre} en una pestaña nueva`}
+        aria-label={`Ver ${descripcion} en una pestaña nueva`}
       >
         Ver <span aria-hidden>↗</span>
       </a>

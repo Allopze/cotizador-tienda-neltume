@@ -7,7 +7,6 @@ import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
 import { Encabezado } from './encabezado';
 import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
-import { EncabezadoPagina } from './encabezado-pagina';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
 import { useConfirmacion } from './dialogo';
@@ -19,6 +18,7 @@ import {
   copiarTexto,
   enterEnvia,
   fechaCorta,
+  fechaLarga,
   numeroCotizacion,
   resumenCambios,
   resumenTexto,
@@ -73,6 +73,7 @@ export function Cotizador({
   const router = useRouter();
   const [actual, setActual] = useState<Cotizacion | null>(null);
   const [mensaje, setMensaje] = useState(''),
+    [textoConservado, setTextoConservado] = useState(false),
     [enCurso, setEnCurso] = useState<Operacion | null>(null),
     [guardando, setGuardando] = useState<string | null>(null),
     [descargando, setDescargando] = useState<string | null>(null);
@@ -366,7 +367,8 @@ export function Cotizador({
   function nuevaCotizacion() {
     if (ocupado) return;
     // El borrador se crea recién con el primer mensaje: evita acumular cotizaciones vacías.
-    // El texto escrito se conserva: no se pierde lo que alguien alcanzó a redactar.
+    // El texto escrito se conserva, pero se señala que venía de otra conversación.
+    setTextoConservado(!!mensaje.trim() && (!!actual || charla.length > 0 || !!seleccion));
     setActual(null);
     setSeleccion(null);
     setNotaLocal(null);
@@ -685,6 +687,7 @@ export function Cotizador({
       );
       idPendiente.current = null;
       setMensaje('');
+      setTextoConservado(false);
       if (d.seleccion) {
         setSeleccion({ mensaje: texto, contextoId: previa?.id ?? null, opciones: d.seleccion });
         setAnuncio('Encontré varias cotizaciones que podrían ser. Elige cuál quieres modificar.');
@@ -792,9 +795,20 @@ export function Cotizador({
     .filter(Boolean)
     .join(' ');
   function responderOpcion(respuesta: string) {
+    setTextoConservado(false);
     setMensaje((m) => (m.trim() ? `${m.trim()}; ${respuesta}` : respuesta));
     input.current?.focus();
   }
+  const inicio = !actual && !charla.length && !seleccion && enCurso !== 'chat';
+  // Con conversación en curso la bienvenida solo ocupa espacio.
+  const conConversacion = !!actual?.historial.length || !!charla.length;
+  // El historial guarda lo que se respondió en su momento («genera el PDF…»); tras emitir, esta línea
+  // dice el estado real y qué pasa si se escribe un cambio.
+  const estadoChat =
+    actual?.estado === 'emitida' && esEditable(actual)
+      ? `${numeroCotizacion(actual.numero)} emitida${actual.fechaEmision ? ` el ${fechaLarga(actual.fechaEmision)}` : ''}. Si escribes un cambio, se creará una revisión en borrador y se conservará este PDF.`
+      : null;
+  const mostrarNueva = !!actual || !!charla.length || !!seleccion;
   return (
     // «pantalla-completa»: en escritorio el cotizador ocupa justo el alto de la ventana (ver responsive.css).
     <div className="app-shell pantalla-completa">
@@ -805,49 +819,55 @@ export function Cotizador({
         alLogo={nuevaCotizacion}
         logoDeshabilitado={ocupado}
       />
-      <EncabezadoPagina titulo="Cotizar">
-        <button
-          type="button"
-          className="button secondary"
-          onClick={nuevaCotizacion}
-          disabled={ocupado || cargando}
-          aria-keyshortcuts="Alt+N"
-          title="Atajo: Alt+N · Ctrl/⌘+K abre el historial con el buscador"
-        >
-          <span aria-hidden>+</span> Nueva cotización
-        </button>
-      </EncabezadoPagina>
+      {/* La pestaña activa ya dice «Cotizar»: un título visible solo lo repetiría. */}
+      <h1 className="sr-only">Cotizar</h1>
       <main className="workspace" ref={workspace}>
-        <section className="chat-panel" aria-label="Asistente de cotizaciones">
+        <section className={`chat-panel${inicio ? ' inicio' : ''}`} aria-label="Asistente de cotizaciones">
           <div className="panel-heading">
             <div>
               <p className="eyebrow">01 / CONVERSACIÓN</p>
               <h2>Cuéntame el pedido</h2>
             </div>
+            {mostrarNueva && (
+              <button
+                type="button"
+                className="button secondary small"
+                onClick={nuevaCotizacion}
+                disabled={ocupado || cargando}
+                aria-keyshortcuts="Alt+N"
+                title="Atajo: Alt+N · Ctrl/⌘+K abre el historial con el buscador"
+              >
+                <span aria-hidden>+</span> Nueva cotización
+              </button>
+            )}
           </div>
           <div className="messages" ref={mensajes} data-testid="conversacion" aria-busy={enCurso === 'chat'}>
-            <div className="welcome">
-              <span className="speaker">NELTUME</span>
-              <p>Empecemos con una puerta.</p>
-              <div>
-                Indica el modelo, la madera, las medidas y la cantidad. También puedes incluir los datos del
-                cliente.
+            {!conConversacion && (
+              <div className="welcome">
+                <span className="speaker">NELTUME</span>
+                <p>Empecemos con una puerta.</p>
+                <div>
+                  Indica el modelo, la madera, las medidas y la cantidad. También puedes incluir los datos del
+                  cliente.
+                </div>
+                {!actual?.historial.length && !charla.length && (
+                  <button
+                    type="button"
+                    className="example"
+                    onClick={() => {
+                      setMensaje(ejemplo);
+                      setTextoConservado(false);
+                      input.current?.focus();
+                    }}
+                    disabled={composerDeshabilitado}
+                  >
+                    <span>USAR ESTE EJEMPLO</span>“3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez,
+                    Temuco”
+                    <b aria-hidden>→</b>
+                  </button>
+                )}
               </div>
-              {!actual?.historial.length && !charla.length && (
-                <button
-                  type="button"
-                  className="example"
-                  onClick={() => {
-                    setMensaje(ejemplo);
-                    input.current?.focus();
-                  }}
-                  disabled={composerDeshabilitado}
-                >
-                  <span>POR EJEMPLO</span>“3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco”
-                  <b aria-hidden>→</b>
-                </button>
-              )}
-            </div>
+            )}
             {(actual ? actual.historial : charla).map((m, i, lista) => (
               <div key={actual ? i : `charla-${i}`} className={`message ${m.rol}`}>
                 <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
@@ -862,6 +882,12 @@ export function Cotizador({
                 />
               </div>
             ))}
+            {estadoChat && (
+              <div className="message asistente local estado">
+                <span className="speaker">NELTUME</span>
+                <p>{estadoChat}</p>
+              </div>
+            )}
             {notaLocal && notaLocal.id === actualId && (
               <div className={`message asistente local ${notaLocal.tipo ?? ''}`}>
                 <span className="speaker">NELTUME</span>
@@ -941,7 +967,34 @@ export function Cotizador({
               {SIN_ASISTENTE}
             </p>
           )}
+          {actual && (
+            <button
+              type="button"
+              className="jump-to-quote"
+              onClick={() => {
+                titulo.current?.scrollIntoView({ behavior: comportamientoScroll(), block: 'start' });
+                titulo.current?.focus({ preventScroll: true });
+              }}
+            >
+              Ver cotización <span aria-hidden>↓</span>
+            </button>
+          )}
           <form onSubmit={enviar} className="composer">
+            {textoConservado && (
+              <div className="composer-retained" id="texto-conservado">
+                <span>Este texto venía de la cotización anterior. Revísalo antes de enviarlo.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMensaje('');
+                    setTextoConservado(false);
+                    input.current?.focus();
+                  }}
+                >
+                  Borrar texto
+                </button>
+              </div>
+            )}
             <label className="sr-only" htmlFor="mensaje">
               Escribe tu pedido
             </label>
@@ -949,7 +1002,10 @@ export function Cotizador({
               ref={input}
               id="mensaje"
               value={mensaje}
-              onChange={(e) => setMensaje(e.target.value)}
+              onChange={(e) => {
+                setMensaje(e.target.value);
+                setTextoConservado(false);
+              }}
               placeholder={
                 !configurado
                   ? 'El chat no está disponible por ahora.'
@@ -957,12 +1013,17 @@ export function Cotizador({
                     ? `Cotización ${etiquetaEstado[actual!.estado].toLowerCase()}: no admite cambios. Duplícala o crea una nueva.`
                     : seleccion
                       ? 'Elige una de las cotizaciones de arriba.'
-                      : 'Escribe el pedido o agrega un detalle…'
+                      : estadoChat
+                        ? `Escribe un cambio: se creará una revisión de la ${numeroCotizacion(actual!.numero)}.`
+                        : 'Escribe el pedido o agrega un detalle…'
               }
               disabled={composerDeshabilitado}
               rows={3}
               maxLength={LIMITE}
-              aria-describedby={ayudaCompositor || undefined}
+              aria-describedby={
+                [ayudaCompositor, textoConservado && 'texto-conservado'].filter(Boolean).join(' ') ||
+                undefined
+              }
               onKeyDown={enterEnvia}
             />
             <div className="composer-bottom">

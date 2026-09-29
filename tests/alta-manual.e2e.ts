@@ -9,7 +9,8 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
   // Las dos vías conviven: la descripción asistida y el formulario.
   await expect(page.getByLabel('Describe el producto')).toBeVisible();
   const datos = page.getByRole('form', { name: 'DATOS DEL PRODUCTO' });
-  await datos.getByLabel('Familia').selectOption('PUERTA');
+  await datos.getByRole('button', { name: 'Familia' }).click();
+  await datos.getByRole('option', { name: 'Puerta' }).click();
   await datos.getByLabel('Modelo').fill('Roble');
   await datos.getByLabel('Madera').fill('Raulí');
   await datos.getByLabel('Ancho mínimo').fill('80');
@@ -36,10 +37,8 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
     .click();
   await expect(page.getByRole('status').filter({ hasText: 'Producto agregado' })).toBeVisible();
 
-  // Queda en el catálogo y en «Productos agregados».
+  // Queda disponible en la consulta del catálogo.
   await page.getByRole('link', { name: 'Consultar' }).click();
   await page.getByLabel('Buscar en el catálogo').fill('roble rauli');
   await expect(page.getByRole('main')).toContainText('Roble Raulí');
-  await page.getByRole('link', { name: 'Productos agregados' }).click();
-  await expect(page.getByRole('main')).toContainText(/roble/i);
 });

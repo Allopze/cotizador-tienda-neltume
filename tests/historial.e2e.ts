@@ -39,11 +39,12 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   };
 
   // Un mensaje sin pedido se responde sin guardar un borrador vacío.
-  await page.getByRole('button', { name: 'Nueva cotización' }).click();
   const antes = await total();
   await enviar('hola');
   await expect(conversacion.getByText('No entendí, ¿puedes reformularlo?')).toBeVisible();
-  await expect(titulo).toHaveText('Nueva cotización');
+  await expect(
+    page.getByLabel('Vista previa de la cotización').getByRole('heading', { level: 2 }),
+  ).toHaveText('Vista previa');
   expect(await total()).toBe(antes);
 
   // Consulta del catálogo (pantalla propia) con el precio unitario de la cotización.
@@ -65,7 +66,9 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   await page.goto('/configuracion?seccion=asistente');
   await expect(page).toHaveURL(/\/ajustes$/);
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
-  await expect(titulo).toHaveText('Nueva cotización');
+  await expect(
+    page.getByLabel('Vista previa de la cotización').getByRole('heading', { level: 2 }),
+  ).toHaveText('Vista previa');
 
   // «2.5» es 2,5 % de descuento (antes se leía como 25 %).
   await enviar('Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco');
@@ -86,13 +89,8 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   const archivo = (await descarga).suggestedFilename();
   await expect(titulo).toHaveText(/^N° \d+$/);
 
-  // Registro de actividad.
-  await panel.getByText('Actividad', { exact: true }).click();
-  const actividad = panel.locator('.actividad');
-  await expect(actividad).toContainText('Emitida');
-  await expect(actividad).toContainText('Descuento 0 % → 2,5 %');
-
   // Anulada: la descarga lleva la marca «ANULADA» y el original queda intacto.
+  await panel.getByRole('button', { name: 'Más acciones' }).click();
   await panel.getByRole('button', { name: 'Anular', exact: true }).click();
   const anular = page.getByRole('alertdialog', { name: /^Anular la cotización/ });
   await anular.getByLabel('Entiendo que la anulación no se puede deshacer.').check();
@@ -108,6 +106,11 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   // Exportación del listado (pantalla del historial).
   await page.getByRole('link', { name: 'Historial' }).click();
   await expect(page.getByRole('heading', { name: 'Historial de cotizaciones' })).toBeVisible();
+  const fila = page.locator('.history-list li').filter({ hasText: 'Juan Pérez' }).first();
+  await fila.getByText('Actividad', { exact: true }).click();
+  const actividad = fila.locator('.actividad');
+  await expect(actividad).toContainText('Emitida');
+  await expect(actividad).toContainText('Descuento 0 % → 2,5 %');
   const csv = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exportar CSV' }).click();
   const exportado = await csv;

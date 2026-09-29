@@ -37,11 +37,15 @@ test('cambiar de pantalla o de sección conserva el scroll, los filtros y lo esc
   await page.getByRole('link', { name: 'Catálogo', exact: true }).click();
   const catalogo = page.getByLabel('Buscar en el catálogo');
   await catalogo.fill('HUIL-O-3-B');
+  await expect
+    .poll(() => page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight + 1))
+    .toBe(true);
   await page.evaluate(() => window.scrollTo(0, 120));
+  await expect.poll(scrollY).toBe(0);
   await expect(page.getByRole('link', { name: 'Agregar producto' })).toBeInViewport();
   await page.getByRole('link', { name: 'Agregar producto' }).click();
   await expect(page).toHaveURL(/seccion=agregar/);
-  await expect.poll(scrollY).toBe(120);
+  await expect.poll(scrollY).toBe(0);
   await page.getByLabel('Describe el producto').fill('Puerta modelo Roble en raulí');
   await page.getByRole('link', { name: 'Consultar' }).click();
   await expect(catalogo).toHaveValue('HUIL-O-3-B');
@@ -52,7 +56,7 @@ test('cambiar de pantalla o de sección conserva el scroll, los filtros y lo esc
   await page.goBack();
   await expect(page).toHaveURL(/\/catalogo$/);
   await expect(catalogo).toBeVisible();
-  await expect.poll(scrollY).toBe(120);
+  await expect.poll(scrollY).toBe(0);
 
   // La búsqueda del catálogo también sobrevive a salir de la pantalla y volver.
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
