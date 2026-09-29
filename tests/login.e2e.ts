@@ -22,10 +22,10 @@ test('redirige a login y protege las APIs y los documentos hasta autenticar', as
 
   await page.getByLabel('Contraseña').fill(CLAVE_E2E);
   await page.getByRole('button', { name: 'Ingresar' }).click();
-  await expect(page.getByRole('heading', { name: 'Cotizar, con claridad.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cotizar', exact: true, level: 1 })).toBeVisible();
   await expect(page.getByText(USUARIO_E2E)).toBeVisible();
   await page.reload();
-  await expect(page.getByRole('heading', { name: 'Cotizar, con claridad.' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Cotizar', exact: true, level: 1 })).toBeVisible();
   await page.getByRole('button', { name: 'Cerrar sesión' }).click();
   await expect(page).toHaveURL(/\/login$/);
   await page.goto('/');

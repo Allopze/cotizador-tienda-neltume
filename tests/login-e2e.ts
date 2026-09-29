@@ -7,7 +7,7 @@ export { CLAVE_E2E, USUARIO_E2E };
 // El login tiene límite de 5 intentos cada 15 minutos por IP: la sesión se reutiliza entre pruebas
 // (se guarda dentro del directorio aislado del E2E, que preparar-e2e borra en cada corrida).
 const SESION = 'data/test-e2e/sesion-e2e.json';
-const titulo = (page: Page) => page.getByRole('heading', { name: 'Cotizar, con claridad.' });
+const titulo = (page: Page) => page.getByRole('heading', { name: 'Cotizar', exact: true, level: 1 });
 
 export async function iniciarSesion(page: Page) {
   try {

@@ -6,9 +6,20 @@ import { validarConfiguracionAutenticacion } from '@/servidor/autenticacion-conf
 
 export const dynamic = 'force-dynamic';
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
+}) {
   validarConfiguracionAutenticacion();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect('/login');
-  return <Cotizador email={session.user.email} nombre={session.user.name || session.user.email} />;
+  const { cotizacion } = await searchParams;
+  return (
+    <Cotizador
+      email={session.user.email}
+      nombre={session.user.name || session.user.email}
+      abrirId={typeof cotizacion === 'string' && cotizacion ? cotizacion : null}
+    />
+  );
 }

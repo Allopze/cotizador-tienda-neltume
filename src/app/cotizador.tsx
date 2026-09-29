@@ -1,20 +1,17 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import Image from 'next/image';
+import { useRouter } from 'next/navigation';
 import { esEditable, etiquetaEstado, type Cotizacion, type Mensaje } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
-import { Historial, useHistorial } from './historial';
-import { AltaProducto } from './alta-producto';
-import { ConfiguracionIA, type EstadoAjustes } from './configuracion-ia';
-import { LogoutButton } from './logout-button';
-import { CambiarClave } from './cambiar-clave';
+import { Encabezado } from './encabezado';
+import { EncabezadoPagina } from './encabezado-pagina';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAprobacion } from './dialogos-cotizacion';
-import type { CambiosEdicion, Detalle, Listado, Resultado } from './contrato';
+import type { CambiosEdicion, Detalle, Resultado } from './contrato';
 import {
   SIN_CLIENTE,
   comportamientoScroll,
@@ -34,10 +31,12 @@ import {
   esSilencioso,
   guardarArchivo,
   guardarBorrador,
+  leerAbierta,
   leerBorrador,
   mensajeDe,
   pedirArchivo,
   pedirJSON,
+  recordarAbierta,
 } from './solicitud';
 
 const ejemplo = 'Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco';
@@ -60,28 +59,33 @@ interface NotaLocal {
 const idNuevo = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined;
 
-export function Cotizador({ email, nombre }: { email: string; nombre: string }) {
+export function Cotizador({
+  email,
+  nombre,
+  abrirId,
+}: {
+  email: string;
+  nombre: string;
+  /** Cotización pedida por URL (`/?cotizacion=…`), p. ej. desde el historial. */
+  abrirId: string | null;
+}) {
+  const router = useRouter();
   const [actual, setActual] = useState<Cotizacion | null>(null);
   const [mensaje, setMensaje] = useState(''),
     [enCurso, setEnCurso] = useState<Operacion | null>(null),
     [guardando, setGuardando] = useState<string | null>(null),
-    [descargando, setDescargando] = useState<string | null>(null),
-    [abriendo, setAbriendo] = useState<string | null>(null);
-  const [altaProducto, setAltaProducto] = useState(false);
-  const [cambiarClave, setCambiarClave] = useState(false);
+    [descargando, setDescargando] = useState<string | null>(null);
   /** Intercambio sin borrador (preguntas, aprobaciones) mientras no hay cotización abierta. */
   const [charla, setCharla] = useState<Mensaje[]>([]);
   /** Id del borrador que creará el mensaje en curso; sobrevive a una cancelación para no duplicar. */
   const idPendiente = useRef<string | null>(null);
-  const [configuracion, setConfiguracion] = useState(false),
-    [estadoIA, setEstadoIA] = useState<EstadoAjustes | null>(null),
-    [errorAjustes, setErrorAjustes] = useState('');
   const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
+  /** Totales de las opciones en selección: se leen aparte, el asistente nunca recibe montos. */
+  const [totalesOpciones, setTotalesOpciones] = useState<Record<string, number>>({});
   const [notaLocal, setNotaLocal] = useState<NotaLocal | null>(null);
   const [anuncio, setAnuncio] = useState('');
   const [restaurando, setRestaurando] = useState(true),
     [configurado, setConfigurado] = useState(true);
-  const [menuCuenta, setMenuCuenta] = useState(false);
   const [enfocar, setEnfocar] = useState(0);
   const { avisos, avisar, cerrar: cerrarAviso, limpiar } = useAvisos();
   const [confirmar, confirmacion] = useConfirmacion();
@@ -90,9 +94,7 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
   const mensajes = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
     workspace = useRef<HTMLElement>(null),
-    titulo = useRef<HTMLHeadingElement>(null),
-    toggleCuenta = useRef<HTMLButtonElement>(null),
-    cuenta = useRef<HTMLDivElement>(null);
+    titulo = useRef<HTMLHeadingElement>(null);
   const abortar = useRef<AbortController | null>(null);
   const ocupado = enCurso !== null;
   const ocupadoRef = useRef(false);
@@ -101,10 +103,7 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     ocupadoRef.current = ocupado;
   }, [ocupado]);
 
-  const alListar = useCallback((d: Listado) => setConfigurado(d.asistenteConfigurado), [setConfigurado]);
-  const historial = useHistorial(alListar);
-  const { recargar: recargarLista } = historial;
-  const cargando = historial.cargando || restaurando;
+  const cargando = restaurando;
 
   /** Detalle completo de una cotización (el listado solo trae resúmenes). */
   const leerDetalle = useCallback(
@@ -128,39 +127,35 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     [leerDetalle],
   );
 
-  const leerAjustes = (signal?: AbortSignal) =>
-    pedirJSON<EstadoAjustes>('/api/ajustes', { signal, cache: 'no-store' }).then(
-      (d) => {
-        setEstadoIA(d);
-        setErrorAjustes('');
-      },
-      (e) => {
-        if (!esSilencioso(e)) setErrorAjustes(mensajeDe(e));
-      },
-    );
-
-  // Carga inicial: parte en «Nueva cotización» (no abre la última de otra persona) y restaura el
-  // borrador de esta pestaña con su cotización. El listado lo carga useHistorial.
+  // Carga inicial: parte en «Nueva cotización» (no abre la última de otra persona). Reabre, en este
+  // orden, la pedida por URL, el borrador de esta pestaña o la que quedó abierta al ir a otra pantalla.
   useEffect(() => {
     const control = new AbortController();
     const b = leerBorrador();
+    const id = abrirId ?? b?.id ?? leerAbierta();
     const fin = () => {
       if (!control.signal.aborted) setRestaurando(false);
     };
+    if (abrirId) window.history.replaceState(null, '', '/');
     Promise.resolve()
       .then(async () => {
-        if (!b) return;
-        setMensaje(b.texto);
-        if (b.id) setActual(await leerDetalle(b.id, control.signal));
+        if (b && (!abrirId || b.id === abrirId)) setMensaje(b.texto);
+        if (id) setActual(await leerDetalle(id, control.signal));
+        if (abrirId) setEnfocar((n) => n + 1);
       })
       .catch((e) => {
-        if (!esSilencioso(e) && b?.id)
-          avisar('info', 'No se pudo reabrir la cotización del borrador guardado.');
+        if (!esSilencioso(e) && id) avisar('info', 'No se pudo reabrir la cotización.');
       })
       .finally(fin);
-    void leerAjustes(control.signal);
+    // El listado ya no vive aquí: el estado del asistente se lee de los ajustes.
+    pedirJSON<{ asistenteConfigurado: boolean }>('/api/ajustes', {
+      signal: control.signal,
+      cache: 'no-store',
+    })
+      .then((d) => setConfigurado(d.asistenteConfigurado))
+      .catch(() => {});
     return () => control.abort();
-  }, [leerDetalle, avisar]);
+  }, [leerDetalle, avisar, abrirId]);
 
   // Al volver a la pestaña se relee el listado y la cotización abierta: la otra persona pudo cambiarlos.
   const idAbierta = useRef<string | null>(null);
@@ -172,7 +167,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     const alVolver = () => {
       if (document.visibilityState !== 'visible' || Date.now() - ultimo < 5000) return;
       ultimo = Date.now();
-      recargarLista().catch(() => {});
       if (idAbierta.current && !ocupadoRef.current) recargarActual(idAbierta.current).catch(() => {});
     };
     window.addEventListener('focus', alVolver);
@@ -181,13 +175,21 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
       window.removeEventListener('focus', alVolver);
       document.removeEventListener('visibilitychange', alVolver);
     };
-  }, [recargarLista, recargarActual]);
+  }, [recargarActual]);
 
-  // Borrador persistente del compositor (por pestaña).
+  // Borrador persistente del compositor (por pestaña) y cotización abierta al cambiar de pantalla.
   const actualId = actual?.id ?? null;
   useEffect(() => {
     if (!cargando) guardarBorrador({ texto: mensaje, id: actualId });
   }, [mensaje, actualId, cargando]);
+  useEffect(() => {
+    if (!cargando) recordarAbierta(actualId);
+  }, [actualId, cargando]);
+  useEffect(() => {
+    const salir = () => recordarAbierta(null);
+    window.addEventListener('pagehide', salir);
+    return () => window.removeEventListener('pagehide', salir);
+  }, []);
 
   // Sesión vencida: aviso no destructivo; el borrador y la cotización abierta quedan guardados.
   const estadoSesion = useRef({ mensaje, actualId });
@@ -216,6 +218,19 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     if (el) el.scrollTo({ top: el.scrollHeight, behavior: comportamientoScroll() });
   }, [actualId, largoHistorial, seleccion, notaLocal, charla]);
 
+  useEffect(() => {
+    if (!seleccion) return;
+    const control = new AbortController();
+    for (const { id } of seleccion.opciones)
+      pedirJSON<Detalle>(`/api/accion?id=${encodeURIComponent(id)}`, {
+        signal: control.signal,
+        cache: 'no-store',
+      })
+        .then((d) => setTotalesOpciones((t) => ({ ...t, [id]: d.cotizacion.montos.total })))
+        .catch(() => {});
+    return () => control.abort();
+  }, [seleccion]);
+
   // Al abrir desde el historial: llevar la vista al área de trabajo y el foco al título.
   useEffect(() => {
     if (!enfocar) return;
@@ -236,19 +251,14 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
 
   /** Abre una cotización por id (detalle completo) y lleva la vista a ella. */
   async function abrirPorId(id: string, enfocarTitulo = true) {
-    setAbriendo(id);
-    try {
-      const q = await leerDetalle(id);
-      setActual(q);
-      setSeleccion(null);
-      setNotaLocal(null);
-      setCharla([]);
-      idPendiente.current = null;
-      if (enfocarTitulo) setEnfocar((n) => n + 1);
-      return q;
-    } finally {
-      setAbriendo(null);
-    }
+    const q = await leerDetalle(id);
+    setActual(q);
+    setSeleccion(null);
+    setNotaLocal(null);
+    setCharla([]);
+    idPendiente.current = null;
+    if (enfocarTitulo) setEnfocar((n) => n + 1);
+    return q;
   }
 
   /** `pendiente`: id del borrador que iba a crear un primer mensaje cancelado. */
@@ -262,7 +272,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
           accion: {
             etiqueta: 'Actualizar',
             fn: () => {
-              recargarLista().catch(() => {});
               if (q) recargarActual(q.id, true).catch((x) => fallo(x, null));
               else if (pendiente) abrirPendiente(pendiente);
             },
@@ -294,7 +303,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     } else avisar('error', mensajeDe(e), { clave: 'operacion' });
     // Conflictos (409): otra persona o pestaña cambió algo; se trae la versión vigente.
     if (e instanceof ErrorSolicitud && e.status === 409) {
-      recargarLista().catch(() => {});
       if (q) recargarActual(q.id, true).catch(() => {});
     }
   }
@@ -348,7 +356,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     const ultimo = q.historial.at(-1);
     if (opciones.anunciar && ultimo?.rol === 'asistente')
       setAnuncio(cambios ? `${ultimo.texto} ${cambios}` : ultimo.texto);
-    recargarLista().catch(() => {});
     if (d.archivo) void descargar(d.archivo);
   }
 
@@ -742,17 +749,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     requestAnimationFrame(() => input.current?.focus());
   }
 
-  function abrir(id: string) {
-    if (ocupado) {
-      avisar('info', 'Espera a que termine la operación en curso (o cancélala) para abrir otra cotización.', {
-        clave: 'ocupado',
-      });
-      return;
-    }
-    limpiar('operacion');
-    abrirPorId(id).catch((e) => fallo(e, null));
-  }
-
   async function copiar() {
     if (!actual) return;
     const ok = await copiarTexto(resumenTexto(actual));
@@ -761,20 +757,18 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
       avisar('error', 'No se pudo copiar. Selecciona el detalle y cópialo manualmente.', { clave: 'copiar' });
   }
 
-  // Atajos: Ctrl/⌘+K busca en el historial; Alt+N empieza una cotización nueva.
-  const atajos = useRef({ nuevaCotizacion });
+  // Atajos: Ctrl/⌘+K abre el historial con el buscador; Alt+N empieza una cotización nueva.
+  const irAlHistorial = () => router.push('/historial');
+  const atajos = useRef({ nuevaCotizacion, historial: irAlHistorial });
   useEffect(() => {
-    atajos.current = { nuevaCotizacion };
+    atajos.current = { nuevaCotizacion, historial: irAlHistorial };
   });
   useEffect(() => {
     const alTeclear = (e: KeyboardEvent) => {
       if (document.querySelector('dialog[open]')) return;
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
-        const buscar = document.getElementById('buscar-cotizaciones');
-        if (!buscar) return;
         e.preventDefault();
-        buscar.scrollIntoView({ behavior: comportamientoScroll(), block: 'center' });
-        buscar.focus({ preventScroll: true });
+        atajos.current.historial();
       } else if (e.altKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyN') {
         e.preventDefault();
         atajos.current.nuevaCotizacion();
@@ -783,25 +777,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     document.addEventListener('keydown', alTeclear);
     return () => document.removeEventListener('keydown', alTeclear);
   }, []);
-
-  // Menú de cuenta (móvil): se cierra con Escape o al tocar fuera.
-  useEffect(() => {
-    if (!menuCuenta) return;
-    const fuera = (e: PointerEvent) => {
-      if (!cuenta.current?.contains(e.target as Node)) setMenuCuenta(false);
-    };
-    const escape = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return;
-      setMenuCuenta(false);
-      toggleCuenta.current?.focus();
-    };
-    document.addEventListener('pointerdown', fuera);
-    document.addEventListener('keydown', escape);
-    return () => {
-      document.removeEventListener('pointerdown', fuera);
-      document.removeEventListener('keydown', escape);
-    };
-  }, [menuCuenta]);
 
   // Aprobadas, reemplazadas y anuladas no admiten cambios (ni por chat).
   const bloqueada = !!actual && !esEditable(actual);
@@ -815,99 +790,25 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
   }
   return (
     <div className="app-shell">
-      <header className="masthead">
+      <Encabezado
+        email={email}
+        nombre={nombre}
+        pantalla="cotizar"
+        avisar={avisar}
+        alLogo={nuevaCotizacion}
+        logoDeshabilitado={ocupado}
+      />
+      <EncabezadoPagina titulo="Cotizar">
         <button
           type="button"
-          className="logo-button"
+          className="button secondary"
           onClick={nuevaCotizacion}
-          disabled={ocupado}
-          aria-label="Neltume, inicio: empezar una cotización"
+          disabled={ocupado || cargando}
+          aria-keyshortcuts="Alt+N"
         >
-          <Image
-            src="/logo-neltume.svg"
-            alt=""
-            className="logo"
-            width={143}
-            height={70}
-            priority
-            unoptimized
-          />
+          <span aria-hidden>+</span> Nueva cotización
         </button>
-        <div className="header-label">
-          PUERTAS DE MADERA <span aria-hidden>/</span> COTIZACIONES
-        </div>
-        <div ref={cuenta} className={`account ${menuCuenta ? 'abierto' : ''}`}>
-          <button
-            ref={toggleCuenta}
-            type="button"
-            className="account-toggle"
-            aria-expanded={menuCuenta}
-            aria-controls="menu-cuenta"
-            onClick={() => setMenuCuenta((v) => !v)}
-          >
-            Cuenta <span aria-hidden>▾</span>
-          </button>
-          <div id="menu-cuenta" className="account-controls">
-            <span className="account-email" title={email}>
-              {nombre && nombre !== email ? (
-                <>
-                  <strong>{nombre}</strong> <small>{email}</small>
-                </>
-              ) : (
-                email
-              )}
-            </span>
-            <button
-              type="button"
-              className="ia-settings-button"
-              onClick={() => {
-                setMenuCuenta(false);
-                setCambiarClave(true);
-              }}
-            >
-              Cambiar contraseña
-            </button>
-            <button
-              type="button"
-              className="ia-settings-button"
-              onClick={() => {
-                setMenuCuenta(false);
-                setConfiguracion(true);
-                if (!estadoIA) void leerAjustes();
-              }}
-            >
-              <span aria-hidden>⚙</span> Asistente
-            </button>
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
-      <div className="page-heading">
-        <h1>Cotizar, con claridad.</h1>
-        <div className="heading-actions">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => setAltaProducto(true)}
-            disabled={cargando}
-          >
-            Catálogo
-          </button>
-          <button
-            type="button"
-            className="button secondary"
-            onClick={nuevaCotizacion}
-            disabled={ocupado || cargando}
-            aria-keyshortcuts="Alt+N"
-          >
-            <span aria-hidden>＋</span> Nueva cotización
-          </button>
-          <p className="atajos">
-            Atajos: <kbd>Alt</kbd>+<kbd>N</kbd> nueva cotización · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd>{' '}
-            buscar
-          </p>
-        </div>
-      </div>
+      </EncabezadoPagina>
       <main className="workspace" ref={workspace}>
         <section className="chat-panel" aria-label="Asistente de cotizaciones">
           <div className="panel-heading">
@@ -935,7 +836,7 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
                   disabled={composerDeshabilitado}
                 >
                   <span>POR EJEMPLO</span>“3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco”
-                  <b aria-hidden>↗</b>
+                  <b aria-hidden>→</b>
                 </button>
               )}
             </div>
@@ -976,7 +877,7 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
                     {seleccion.opciones.map((opcion) => {
                       const numero = numeroCotizacion(opcion.numero);
                       const fecha = fechaCorta(opcion.fecha);
-                      const total = historial.items.find((c) => c.id === opcion.id)?.total;
+                      const total = totalesOpciones[opcion.id];
                       const cliente = opcion.cliente || SIN_CLIENTE;
                       const detalle = [fecha, opcion.proyecto, opcion.comuna, opcion.detalle].filter(Boolean);
                       return (
@@ -1075,13 +976,18 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
                   aria-label="Enviar mensaje"
                   disabled={!mensaje.trim() || composerDeshabilitado}
                 >
-                  Enviar <span aria-hidden>↗</span>
+                  Enviar <span aria-hidden>→</span>
                 </button>
               </span>
             </div>
           </form>
           <p className="chat-footnote">
             Cotiza puertas sólidas y accesorios. Las medidas se indican como ancho × alto de la puerta.
+          </p>
+          {/* Los atajos viven junto al chat: en el encabezado alargaban la fila y movían el título. */}
+          <p className="atajos">
+            <kbd>Alt</kbd>+<kbd>N</kbd> nueva cotización · <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>K</kbd> buscar en
+            el historial
           </p>
         </section>
         <CotizacionPanel
@@ -1093,17 +999,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
           tituloRef={titulo}
         />
       </main>
-      <Historial
-        historial={historial}
-        actualId={actualId}
-        abriendo={abriendo}
-        abrir={abrir}
-        duplicar={(id) => {
-          const r = historial.items.find((x) => x.id === id);
-          void duplicar(id, r?.numero ?? null);
-        }}
-        ocupado={ocupado}
-      />
       <footer className="site-footer">
         <span>
           NELTUME <span className="muted">/ Hecho en madera.</span>
@@ -1111,27 +1006,6 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
         <span>Asistente de cotizaciones · Uso interno</span>
       </footer>
       <Avisos avisos={avisos} cerrar={cerrarAviso} />
-      <AltaProducto
-        abierta={altaProducto}
-        asistente={configurado}
-        cerrar={() => setAltaProducto(false)}
-        avisar={avisar}
-      />
-      <CambiarClave abierta={cambiarClave} cerrar={() => setCambiarClave(false)} avisar={avisar} />
-      <ConfiguracionIA
-        abierta={configuracion}
-        estado={estadoIA}
-        errorCarga={errorAjustes}
-        reintentar={() => {
-          setErrorAjustes('');
-          void leerAjustes();
-        }}
-        cerrar={() => setConfiguracion(false)}
-        guardado={(d) => {
-          setEstadoIA(d);
-          setConfigurado(d.asistenteConfigurado);
-        }}
-      />
       {confirmacion}
       {dialogoAprobacion}
       {dialogoAnulacion}

@@ -39,8 +39,8 @@
   text-decoration-thickness: 1px;
 }
 .status.vencida {
-  background: #fbefd6;
-  color: #7a5518;
+  background: var(--amber-bg);
+  color: var(--pending);
 }
 .estado-badges {
   display: flex;
@@ -56,8 +56,8 @@
 .panel-aviso {
   margin: -8px 0 14px;
   padding: 8px 8px 8px 12px;
-  background: #fbefd6;
-  color: #5e4312;
+  background: var(--amber-bg);
+  color: var(--amber-text);
   font-size: var(--fs-sm);
   line-height: 1.5;
   display: flex;
@@ -70,8 +70,8 @@
   flex: 1 1 240px;
 }
 .panel-aviso .button {
-  background: #fff;
-  border-color: #e6d3a8;
+  background: var(--surface);
+  border-color: var(--line-strong);
 }
 .client {
   padding: 20px 0 23px;
@@ -82,7 +82,7 @@
 }
 .client .campo-etiqueta {
   font-size: var(--fs-xs);
-  letter-spacing: 1px;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--muted);
   display: block;
@@ -112,9 +112,7 @@
   min-height: 207px;
 }
 .empty-quote h3 {
-  font:
-    1.125rem Georgia,
-    serif;
+  font: var(--serif-3) var(--serif);
   color: var(--muted);
   margin-bottom: 10px;
 }
@@ -126,7 +124,7 @@
 .door-icon {
   width: 26px;
   height: 38px;
-  border: 1px solid #c6cdbb;
+  border: 1px solid var(--line-strong);
   margin: 0 auto 19px;
   position: relative;
 }
@@ -134,7 +132,7 @@
   content: '';
   position: absolute;
   inset: 4px;
-  border: 1px solid #d8dece;
+  border: 1px solid var(--line-soft);
 }
 .door-icon span {
   position: absolute;
@@ -160,7 +158,7 @@ table {
 th {
   color: var(--muted);
   font-size: var(--fs-xs);
-  letter-spacing: 0.6px;
+  letter-spacing: var(--tracking-label);
   padding: 12px 6px;
   text-align: right;
   font-weight: 400;
@@ -173,7 +171,7 @@ th:first-child {
 td {
   text-align: right;
   padding: 14px 6px;
-  border-bottom: 1px solid #eaede3;
+  border-bottom: 1px solid var(--line-soft);
   vertical-align: top;
   white-space: nowrap;
 }
@@ -183,9 +181,9 @@ td:first-child {
   white-space: normal;
   min-width: 170px;
 }
-/* Columna del botón «quitar»: el botón de 32px ya trae su propio aire. */
+/* Columna del botón «quitar»: el botón de 36px ya trae su propio aire. */
 td.celda-acciones {
-  padding: 6px 0 0 4px;
+  padding: 4px 0 0 4px;
 }
 th:last-child,
 td:last-child {
@@ -204,8 +202,8 @@ td small {
 .remove {
   display: inline-grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   padding: 0;
   font-size: 1.25rem;
   line-height: 1;
@@ -250,12 +248,10 @@ td small {
   align-items: center;
 }
 .grand-total span {
-  font:
-    1.1875rem Georgia,
-    serif;
+  font: var(--serif-3) var(--serif);
 }
 .grand-total strong {
-  font-size: 1.5625rem;
+  font-size: var(--serif-2);
   font-weight: 400;
   letter-spacing: -1px;
 }
@@ -337,7 +333,7 @@ td small {
     align-items: baseline;
     gap: 8px 12px;
     padding: 14px 0;
-    border-bottom: 1px solid #eaede3;
+    border-bottom: 1px solid var(--line-soft);
     position: relative;
   }
   .table-wrap td {
@@ -439,9 +435,9 @@ td small {
 }
 .catalogo-filtros input,
 .catalogo-filtros select {
-  min-height: 44px;
-  border: 1px solid #cfd5c4;
-  background-color: #fff;
+  min-height: var(--control);
+  border: 1px solid var(--line-strong);
+  background-color: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-md);
@@ -451,7 +447,7 @@ td small {
   min-width: 0;
   padding: 10px 12px 10px 36px;
   /* Lupa en línea: el campo se reconoce como buscador aunque esté vacío. */
-  background: #fff
+  background: var(--surface)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='none' stroke='%235f665c' stroke-width='1.6'%3E%3Ccircle cx='7' cy='7' r='5'/%3E%3Cpath d='m11 11 3.5 3.5'/%3E%3C/svg%3E")
     no-repeat 12px center;
 }
@@ -462,15 +458,11 @@ td small {
   flex: 0 1 auto;
   padding: 0 10px;
 }
-.catalogo-filtros select:focus-visible {
-  outline: 2px solid var(--warm);
-  outline-offset: 2px;
-}
 .catalogo-lista {
   max-height: 50vh;
   overflow: auto;
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
 }
 .catalogo-lista table {
   width: 100%;
@@ -481,7 +473,7 @@ td small {
   position: sticky;
   top: 0;
   z-index: 1;
-  background: #fff;
+  background: var(--surface);
   box-shadow: inset 0 -1px 0 var(--line);
   padding: 10px 12px;
 }
@@ -497,7 +489,7 @@ td small {
   line-height: 1.45;
 }
 .catalogo-lista tbody tr:hover td {
-  background: #f8f9f5;
+  background: var(--panel);
 }
 .catalogo-lista td small {
   display: block;
@@ -522,7 +514,7 @@ td small {
     grid-template-columns: 1fr auto;
     gap: 4px 12px;
     padding: 10px 12px;
-    border-bottom: 1px solid #eaede3;
+    border-bottom: 1px solid var(--line-soft);
   }
   .catalogo-lista td {
     display: block;
@@ -545,6 +537,6 @@ td small {
   }
 }
 .vencida-texto {
-  color: #7a5518;
+  color: var(--pending);
   font-weight: 600;
 }

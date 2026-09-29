@@ -7,12 +7,24 @@
   /* Texto terciario (placeholders, metadatos): ≥5:1 sobre blanco, papel y panel. */
   --subtle: #666c61;
   --paper: #fafaf6;
+  /* Superficies: tarjeta blanca y panel lateral (chat, navegación de ajustes). */
+  --surface: #fff;
+  --panel: #f6f7f1;
+  /* Tres bordes: tarjetas y divisores, divisores internos y controles (campos, selectores). */
   --line: #dedfd5;
   --line-soft: #e8ebe1;
+  --line-strong: #cfd5c4;
+  /* Acento verde para citas y ejemplos (borde izquierdo). */
+  --accent-line: #8b9e7c;
   --green: #2d4938;
+  --green-hover: #1c3325;
+  /* Un solo fondo para pasar el mouse y para lo seleccionado. */
   --pale: #eef0e8;
   --warm: #aa714d;
   --warm-text: #8a5a37;
+  /* Ámbar: fondo de avisos, texto sobre ese fondo y texto de pendientes sobre blanco. */
+  --amber-bg: #fbefd6;
+  --amber-text: #5e4312;
   --pending: #8a6420;
   --danger: #963c32;
   --disabled-bg: #e3e6dc;
@@ -20,6 +32,16 @@
   --fs-sm: 0.8125rem;
   --fs-md: 0.875rem;
   --fs-lg: 1rem;
+  /* Tres tamaños serif: título de pantalla, título de panel y subtítulo. */
+  --serif: Georgia, 'Times New Roman', serif;
+  --serif-1: 1.875rem;
+  --serif-2: 1.5625rem;
+  --serif-3: 1.1875rem;
+  /* Dos alturas de control: normal y compacto. */
+  --control: 44px;
+  --control-sm: 36px;
+  /* Espaciado único de las etiquetas en mayúsculas. */
+  --tracking-label: 1.2px;
 }
 * {
   box-sizing: border-box;
@@ -57,9 +79,16 @@ button:focus-visible,
 a:focus-visible,
 textarea:focus-visible,
 input:focus-visible,
+select:focus-visible,
 [tabindex='-1']:focus-visible {
   outline: 2px solid var(--warm);
   outline-offset: 4px;
+}
+/* Los campos llevan el anillo pegado: con 4px de aire se separaba del borde y parecía otra caja. */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 1px;
 }
 a {
   color: inherit;
@@ -76,7 +105,7 @@ kbd {
   padding: 1px 5px;
   border: 1px solid var(--line);
   border-bottom-width: 2px;
-  background: #fff;
+  background: var(--surface);
 }
 .sr-only {
   position: absolute;
@@ -112,16 +141,29 @@ kbd {
   height: 70px;
   object-fit: contain;
 }
-.header-label {
+.header-nav {
+  display: flex;
+  gap: 26px;
   font-size: var(--fs-xs);
-  letter-spacing: 1.6px;
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.header-nav a {
+  padding: 6px 0;
+  border-bottom: 1px solid transparent;
   color: var(--muted);
+  text-decoration: none;
 }
-.header-label span {
-  padding: 0 14px;
-  color: var(--subtle);
+.header-nav a:hover {
+  color: var(--ink);
 }
+.header-nav a[aria-current='page'] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+/* Encabezado de pantalla: misma altura y espaciado en Cotizar, Historial y Catálogo y ajustes. */
 .page-heading {
+  min-height: calc(var(--control) + 48px);
   padding: 24px 0;
   display: flex;
   align-items: center;
@@ -131,31 +173,38 @@ kbd {
 .heading-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  gap: 9px;
+  gap: 9px 14px;
+}
+.heading-meta {
+  font-size: var(--fs-xs);
+  color: var(--muted);
 }
 .atajos {
-  flex-basis: 100%;
-  text-align: right;
+  margin-top: 6px;
+  text-align: center;
   font-size: var(--fs-xs);
   color: var(--muted);
 }
 .eyebrow {
   font-size: var(--fs-xs);
-  letter-spacing: 1.4px;
+  letter-spacing: var(--tracking-label);
   font-weight: 600;
   color: var(--muted);
   margin-bottom: 12px;
 }
 h1 {
-  font:
-    1.875rem/1.15 Georgia,
-    'Times New Roman',
-    serif;
+  font: var(--serif-1) / 1.15 var(--serif);
   letter-spacing: -1px;
 }
+/* Tarjeta blanca con borde: el área de trabajo de cada pantalla. */
+.superficie {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
 .button {
-  min-height: 44px;
+  min-height: var(--control);
   border: 1px solid var(--line);
   padding: 11px 19px;
   font-size: var(--fs-sm);
@@ -179,7 +228,7 @@ h1 {
   border-color: var(--green);
 }
 .button.primary:hover:not(:disabled) {
-  background: #1c3325;
+  background: var(--green-hover);
 }
 .button:disabled,
 .button.primary:disabled {
@@ -188,7 +237,7 @@ h1 {
   color: var(--muted);
 }
 .button.small {
-  min-height: 36px;
+  min-height: var(--control-sm);
   padding: 7px 12px;
   font-size: var(--fs-xs);
   gap: 6px;
@@ -197,39 +246,112 @@ h1 {
   display: grid;
   grid-template-columns: minmax(330px, 0.86fr) minmax(520px, 1.3fr);
   border: 1px solid var(--line);
-  background: #fff;
+  background: var(--surface);
   min-height: 643px;
   scroll-margin-top: 12px;
 }
+/* Pantalla «Catálogo y ajustes». */
+.ajustes {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 560px;
+}
+.ajustes-nav {
+  padding: 26px 20px;
+  border-right: 1px solid var(--line);
+  background: var(--panel);
+  display: grid;
+  align-content: start;
+  gap: 22px;
+}
+.ajustes-nav .eyebrow {
+  margin-bottom: 8px;
+}
+.ajustes-nav ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.ajustes-nav a {
+  display: block;
+  padding: 9px 10px;
+  border-left: 2px solid transparent;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  text-decoration: none;
+}
+.ajustes-nav a:hover,
+.ajustes-nav a[aria-current='page'] {
+  background: var(--pale);
+}
+.ajustes-nav a[aria-current='page'] {
+  border-left-color: var(--green);
+  font-weight: 600;
+}
+.ajustes-contenido {
+  padding: 26px 30px 30px;
+  min-width: 0;
+}
+.ajustes-contenido > h2 {
+  margin-bottom: 4px;
+}
+.ajustes-contenido .catalogo-lista {
+  max-height: 65vh;
+}
+.ajustes-contenido .alta-producto,
+.ajustes-contenido form {
+  max-width: 720px;
+}
+@media (max-width: 800px) {
+  .ajustes {
+    grid-template-columns: 1fr;
+  }
+  /* En móvil la navegación pasa a una fila de pestañas desplazable. */
+  .ajustes-nav {
+    display: flex;
+    gap: 4px;
+    padding: 4px 8px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .ajustes-grupo {
+    flex: none;
+  }
+  /* Una sola fila de pestañas: los grupos solo ordenan el menú lateral de escritorio. */
+  .ajustes-nav .eyebrow {
+    display: none;
+  }
+  .ajustes-nav ul {
+    display: flex;
+    gap: 4px;
+  }
+  .ajustes-nav a {
+    border-left: 0;
+    border-bottom: 2px solid transparent;
+    white-space: nowrap;
+    padding: 8px 10px;
+  }
+  .ajustes-nav a:hover,
+  .ajustes-nav a[aria-current='page'] {
+    background: transparent;
+  }
+  .ajustes-nav a[aria-current='page'] {
+    border-bottom-color: var(--green);
+  }
+  .ajustes-contenido {
+    padding: 20px 16px 24px;
+  }
+}
+/* Pantalla «Historial»: herramientas y listado dentro de la tarjeta. */
 .history {
-  padding-top: 36px;
-}
-.history-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 18px;
-  margin-bottom: 17px;
-}
-.history h2 {
-  font-size: 1.3125rem;
-}
-.history-heading-extra {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-.history-heading-extra > span {
-  font-size: var(--fs-xs);
-  color: var(--muted);
+  padding: 20px 24px 4px;
 }
 .muted {
   color: var(--muted);
-}
-.history > p {
-  font-size: var(--fs-sm);
-  padding-bottom: 15px;
 }
 .history-tools {
   display: flex;
@@ -237,7 +359,8 @@ h1 {
   align-items: center;
   justify-content: space-between;
   gap: 12px 20px;
-  margin-bottom: 8px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--line);
 }
 .history-search {
   flex: 1 1 260px;
@@ -245,59 +368,56 @@ h1 {
 }
 .history-search input {
   width: 100%;
-  min-height: 44px;
+  min-height: var(--control);
   font: inherit;
   font-size: var(--fs-md);
   color: var(--ink);
-  background: #fff;
-  border: 1px solid var(--line);
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
   padding: 10px 12px;
 }
 .history-search input::placeholder {
   color: var(--subtle);
-}
-.history-search input:focus-visible {
-  outline-offset: 2px;
 }
 .history-filters {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
+/* Filtros con el mismo tamaño y peso que los botones compactos. */
 .history-filters button {
-  min-height: 36px;
-  font-size: var(--fs-sm);
+  min-height: var(--control-sm);
+  font-size: var(--fs-xs);
+  font-weight: 600;
   color: var(--ink);
   background: transparent;
   border: 1px solid var(--line);
   padding: 7px 12px;
 }
-.history-filters button span {
-  color: var(--muted);
-  margin-left: 4px;
+.history-filters button:hover:not(:disabled) {
+  background: var(--pale);
 }
 .history-filters button[aria-pressed='true'] {
   background: var(--green);
   border-color: var(--green);
   color: #fff;
 }
-.history-filters button[aria-pressed='true'] span {
-  color: #cfd8cc;
-}
 .history-filters button:disabled {
   background: var(--disabled-bg);
   border-color: var(--disabled-bg);
   color: var(--muted);
 }
-.history-group h3 {
-  font-size: var(--fs-xs);
-  font-weight: 600;
-  letter-spacing: 1.2px;
+.history-group h2 {
+  font:
+    600 var(--fs-xs) / 1.4 Arial,
+    Helvetica,
+    sans-serif;
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
   color: var(--muted);
   padding: 22px 12px 8px;
   margin: 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--line-soft);
 }
 .history-list {
   list-style: none;
@@ -316,13 +436,22 @@ h1 {
   padding: 0;
   text-decoration: underline;
 }
+.history-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-bottom: 1px solid var(--line-soft);
+}
+.history-group:last-of-type .history-list li:last-child {
+  border-bottom: 0;
+}
 .history-list .history-fila {
+  text-decoration: none;
   display: grid;
   grid-template-columns: 110px minmax(0, 1fr) 150px 112px 100px 14px;
   align-items: center;
   text-align: left;
   border: 0;
-  border-bottom: 1px solid var(--line);
   background: transparent;
   color: var(--ink);
   padding: 18px 12px;
@@ -330,15 +459,20 @@ h1 {
   gap: 15px;
   font-size: var(--fs-md);
 }
+.history-list .history-fila > span:last-child {
+  color: var(--muted);
+  font-size: var(--fs-lg);
+}
 /* El resaltado cubre toda la fila, incluido el botón «Duplicar». */
 .history-list li:hover,
 .history-list li:has(> .history-fila[aria-current='true']) {
-  background: #eff1e8;
+  background: var(--pale);
 }
 .history-number {
-  font:
-    1.0625rem Georgia,
-    serif;
+  font: var(--serif-3) var(--serif);
+}
+.history-number small {
+  font-family: Arial, Helvetica, sans-serif;
 }
 .history-list small {
   display: block;
@@ -359,19 +493,69 @@ h1 {
 .history-list .status {
   justify-self: start;
 }
+.history-duplicar {
+  margin-right: 12px;
+}
+.history-estado {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.history-list .history-productos {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-mas {
+  display: flex;
+  justify-content: center;
+  padding: 18px 0;
+  border-top: 1px solid var(--line-soft);
+}
+/* Fechas como un solo control de 44px con su etiqueta dentro: se alinean con el buscador. */
+.history-fechas {
+  display: flex;
+  gap: 8px;
+}
+.history-fechas label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control);
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.history-fechas label:focus-within {
+  outline: 2px solid var(--warm);
+  outline-offset: 1px;
+}
+.history-fechas input {
+  min-height: calc(var(--control) - 2px);
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.history-fechas input:focus-visible {
+  outline: 0;
+}
 .site-footer {
   border-top: 1px solid var(--line);
   display: flex;
   justify-content: space-between;
   align-items: center;
   font-size: var(--fs-xs);
-  letter-spacing: 0.6px;
   margin-top: 38px;
   padding: 24px 0 30px;
   color: var(--muted);
 }
 .site-footer > span:first-child {
-  letter-spacing: 2px;
+  letter-spacing: var(--tracking-label);
   color: var(--green);
 }
 .site-footer .muted {
@@ -408,7 +592,7 @@ h1 {
   border-color: #ecd0bd;
 }
 .aviso.info {
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
   border-color: var(--line);
 }
@@ -417,18 +601,18 @@ h1 {
   padding-top: 3px;
 }
 .aviso-accion {
-  min-height: 32px;
+  min-height: var(--control-sm);
   padding: 4px 10px;
   border: 1px solid currentColor;
   background: transparent;
   color: inherit;
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: 600;
   white-space: nowrap;
 }
 .aviso-cerrar {
-  width: 32px;
-  height: 32px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   flex: none;
   border: 0;
   background: transparent;
@@ -487,11 +671,21 @@ button[type='submit'].button.peligro:not(:disabled) {
 .campo-vacio {
   color: var(--warm-text);
 }
+/* El lápiz no ocupa ancho: así el valor queda alineado con su columna (cantidades, totales). */
+.campo-valor-boton {
+  position: relative;
+}
 .campo-lapiz {
+  position: absolute;
+  top: 50%;
+  left: 100%;
+  transform: translateY(-50%);
+  padding-left: 2px;
   color: var(--warm-text);
   font-size: var(--fs-xs);
   opacity: 0;
   transition: opacity 0.15s;
+  pointer-events: none;
 }
 .campo-valor-boton:hover .campo-lapiz,
 .campo-valor-boton:focus-visible .campo-lapiz {
@@ -511,12 +705,13 @@ button[type='submit'].button.peligro:not(:disabled) {
 .campo-editar,
 .campo-guardar,
 .campo-cancelar {
-  min-height: 28px;
-  padding: 3px 8px;
+  min-height: var(--control-sm);
+  padding: 6px 12px;
   border: 1px solid var(--line);
   background: transparent;
   color: var(--warm-text);
   font-size: var(--fs-xs);
+  font-weight: 600;
 }
 .campo-editar:hover:not(:disabled),
 .campo-cancelar:hover:not(:disabled) {
@@ -534,10 +729,10 @@ button[type='submit'].button.peligro:not(:disabled) {
 .campo input {
   min-width: 0;
   width: min(100%, 220px);
-  min-height: 34px;
+  min-height: var(--control-sm);
   padding: 4px 8px;
-  border: 1px solid #cfd5c4;
-  background: #fff;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-md);
@@ -558,59 +753,4 @@ button[type='submit'].button.peligro:not(:disabled) {
   color: var(--danger);
   font-size: var(--fs-xs);
   white-space: normal;
-}
-.history-fechas {
-  display: flex;
-  gap: 8px;
-}
-.history-fechas label {
-  display: grid;
-  gap: 2px;
-  font-size: var(--fs-xs);
-  color: var(--muted);
-}
-.history-fechas input {
-  min-height: 36px;
-  padding: 4px 8px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  font: inherit;
-  font-size: var(--fs-sm);
-}
-.history-list li {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  border-bottom: 1px solid var(--line);
-}
-.history-list .history-fila {
-  border-bottom: 0;
-}
-.history-duplicar {
-  min-height: 36px;
-  margin-right: 8px;
-  padding: 6px 10px;
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink);
-  font-size: var(--fs-xs);
-}
-.history-duplicar:hover:not(:disabled) {
-  background: var(--pale);
-}
-.history-estado {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.history-list .history-productos {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.history-mas {
-  display: flex;
-  justify-content: center;
-  padding: 18px 0;
 }

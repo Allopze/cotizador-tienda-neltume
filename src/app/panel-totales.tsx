@@ -34,6 +34,7 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
               m?.descuento ? `${pct(m.descuentoPorcentaje)} · −${pesos(m.descuento)}` : 'Sin descuento'
             }
             editable={editable}
+            discreto
             guardando={guardando === 'descuento'}
             tipo="text"
             sufijo="%"
@@ -55,6 +56,7 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
             valor={String(actual?.flete ?? 0)}
             mostrar={m?.flete ? pesos(m.flete) : 'Sin flete'}
             editable={editable}
+            discreto
             guardando={guardando === 'flete'}
             tipo="text"
             sufijo="$"

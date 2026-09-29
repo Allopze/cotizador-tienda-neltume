@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type RefObject } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta } from './contrato';
 import { nombreProducto, sinMedida } from './formato';
@@ -15,7 +15,12 @@ const FAMILIAS = [
 const largo = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m`;
 
 /** Consulta del catálogo: modelos, maderas y medidas disponibles con el precio unitario de la cotización. */
-export function CatalogoConsulta({ buscarRef }: { buscarRef?: RefObject<HTMLInputElement | null> }) {
+export function CatalogoConsulta() {
+  const buscar = useRef<HTMLInputElement>(null);
+  // Se entra al catálogo para buscar: foco en el buscador, salvo en pantallas táctiles (abriría el teclado).
+  useEffect(() => {
+    if (window.matchMedia?.('(pointer: fine)').matches) buscar.current?.focus();
+  }, []);
   const [q, setQ] = useState('');
   const [familia, setFamilia] = useState('');
   const [datos, setDatos] = useState<{ total: number; productos: ProductoConsulta[] } | null>(null);
@@ -53,7 +58,7 @@ export function CatalogoConsulta({ buscarRef }: { buscarRef?: RefObject<HTMLInpu
           Buscar en el catálogo
         </label>
         <input
-          ref={buscarRef}
+          ref={buscar}
           id="catalogo-buscar"
           type="search"
           value={q}

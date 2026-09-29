@@ -167,6 +167,25 @@ export function leerBorrador(): Borrador | null {
     return null;
   }
 }
+// Cotización abierta en el cotizador, para reabrirla al volver desde otra pantalla de la app (historial,
+// catálogo). El cotizador la borra en `pagehide`: una recarga o una pestaña nueva parten en blanco.
+const CLAVE_ABIERTA = 'neltume:abierta';
+export function recordarAbierta(id: string | null) {
+  try {
+    if (id) sessionStorage.setItem(CLAVE_ABIERTA, id);
+    else sessionStorage.removeItem(CLAVE_ABIERTA);
+  } catch {
+    // Sin almacenamiento: al volver se parte en una cotización nueva.
+  }
+}
+export function leerAbierta(): string | null {
+  try {
+    return sessionStorage.getItem(CLAVE_ABIERTA);
+  } catch {
+    return null;
+  }
+}
+
 /** `conCotizacion`: guarda también la cotización abierta aunque no haya texto (vencimiento de sesión). */
 export function guardarBorrador(b: Borrador, conCotizacion = false) {
   try {

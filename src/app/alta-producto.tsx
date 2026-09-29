@@ -2,20 +2,14 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { Producto } from '@/catalogo/tipos';
 import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
-import { CatalogoConsulta } from './catalogo-consulta';
-import { Dialogo, useConfirmacion } from './dialogo';
+import { useConfirmacion } from './dialogo';
 import { enterEnvia } from './formato';
-import { ProductosManuales } from './productos-manuales';
-import type { TipoAviso } from './avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 type Mensaje = { rol: 'usuario' | 'asistente'; texto: string };
 interface Props {
-  abierta: boolean;
   /** El alta asistida necesita el asistente; la lista de manuales no. */
   asistente: boolean;
-  cerrar: () => void;
-  avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
 }
 interface Respuesta {
   id: string;
@@ -29,8 +23,8 @@ interface Respuesta {
 const ajuste = porcentaje(REGLAS.ajuste * 100);
 const venta = (neto: number) => Math.round(neto * (1 + REGLAS.ajuste));
 
-export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
-  const [pestana, setPestana] = useState<'consultar' | 'alta' | 'manuales'>('consultar');
+/** Alta asistida de un producto manual: conversación, revisión y confirmación. */
+export function AltaProducto({ asistente }: Props) {
   const [avisosAlta, setAvisosAlta] = useState<string[]>([]);
   const [id, setId] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
@@ -40,8 +34,7 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
   const entrada = useRef<HTMLTextAreaElement>(null),
-    listo = useRef<HTMLButtonElement>(null),
-    buscar = useRef<HTMLInputElement>(null);
+    listo = useRef<HTMLButtonElement>(null);
   const [confirmar, confirmacion] = useConfirmacion();
 
   // Tras guardar, el foco pasa a «Listo» para no quedar en un elemento desmontado.
@@ -50,6 +43,21 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
   }, [guardado]);
 
   const pedir = (cuerpo: Record<string, unknown>) => pedirJSON<Respuesta>('/api/catalogo', { json: cuerpo });
+
+  // Al salir de la sección con una propuesta a medias, se descarta el borrador del servidor.
+  const pendiente = useRef<string | null>(null);
+  useEffect(() => {
+    pendiente.current = id && !guardado ? id : null;
+  }, [id, guardado]);
+  useEffect(
+    () => () => {
+      if (pendiente.current)
+        pedirJSON('/api/catalogo', { json: { tipo: 'cancelar', id: pendiente.current } }).catch(() => {
+          // El borrador puede haber expirado; no hay nada más que hacer.
+        });
+    },
+    [],
+  );
   const fallo = (causa: unknown) => {
     if (!esSilencioso(causa)) setError(mensajeDe(causa));
   };
@@ -101,7 +109,8 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
     }
   }
 
-  async function salir() {
+  /** Descarta la conversación (o cierra el resultado) y deja el formulario listo para otro producto. */
+  async function reiniciar() {
     if (ocupado) return;
     if (id && !guardado) {
       setOcupado(true);
@@ -120,179 +129,135 @@ export function AltaProducto({ abierta, asistente, cerrar, avisar }: Props) {
     setGuardado(null);
     setError('');
     setAvisosAlta([]);
-    setPestana('consultar');
-    cerrar();
+    requestAnimationFrame(() => entrada.current?.focus());
   }
 
   return (
-    <Dialogo
-      abierto={abierta}
-      alCerrar={salir}
-      cerrable={!ocupado}
-      titulo="Catálogo de productos"
-      eyebrow="CATÁLOGO"
-      focoInicial={pestana === 'consultar' ? buscar : asistente && pestana === 'alta' ? entrada : undefined}
-    >
-      <div className="pestanas" role="tablist" aria-label="Secciones del catálogo">
-        <button
-          type="button"
-          role="tab"
-          id="tab-consultar"
-          aria-selected={pestana === 'consultar'}
-          aria-controls="panel-catalogo"
-          onClick={() => setPestana('consultar')}
-          disabled={ocupado}
-        >
-          Consultar
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-alta"
-          aria-selected={pestana === 'alta'}
-          aria-controls="panel-catalogo"
-          onClick={() => setPestana('alta')}
-          disabled={ocupado}
-        >
-          Agregar producto
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-manuales"
-          aria-selected={pestana === 'manuales'}
-          aria-controls="panel-catalogo"
-          onClick={() => setPestana('manuales')}
-          disabled={ocupado}
-        >
-          Agregados a mano
-        </button>
-      </div>
-      <div id="panel-catalogo" role="tabpanel" aria-labelledby={`tab-${pestana}`}>
-        {pestana === 'consultar' ? (
-          <CatalogoConsulta buscarRef={buscar} />
-        ) : pestana === 'manuales' ? (
-          <ProductosManuales avisar={avisar} />
-        ) : guardado ? (
-          <div className="catalog-success" role="status">
-            <span className="catalog-success-mark" aria-hidden>
-              ✓
-            </span>
-            <h3>Producto agregado</h3>
-            <p>{guardado.descripcion}</p>
-            <small>Código {guardado.codigo} · Precio neto ingresado manualmente.</small>
-            <button ref={listo} type="button" className="button primary" onClick={salir}>
-              Listo
-            </button>
-          </div>
-        ) : (
-          <>
-            {!asistente && (
-              <p className="notice">
-                El alta asistida no está disponible: el asistente no está configurado. Aún puedes revisar y
-                editar los productos agregados manualmente.
-              </p>
-            )}
-            <p className="catalog-modal-intro">
-              Describe el modelo, la familia, la madera, las medidas y el precio neto unitario. El asistente
-              te preguntará lo que falte. <strong>Ingresa el precio base neto, no el de venta:</strong> las
-              cotizaciones le suman {ajuste} automáticamente, igual que a los productos de la planilla.
+    <div className="alta-producto">
+      {guardado ? (
+        <div className="catalog-success" role="status">
+          <span className="catalog-success-mark" aria-hidden>
+            ✓
+          </span>
+          <h3>Producto agregado</h3>
+          <p>{guardado.descripcion}</p>
+          <small>Código {guardado.codigo} · Precio neto ingresado manualmente.</small>
+          <button ref={listo} type="button" className="button primary" onClick={reiniciar}>
+            Agregar otro producto
+          </button>
+        </div>
+      ) : (
+        <>
+          {!asistente && (
+            <p className="notice">
+              El alta asistida no está disponible: el asistente no está configurado. Aún puedes revisar y
+              editar los productos agregados manualmente.
             </p>
-            <div className="catalog-chat" aria-busy={ocupado}>
-              {!mensajes.length ? (
-                <div className="catalog-chat-hint">
-                  <span>POR EJEMPLO</span>
-                  «Agrega una puerta modelo Roble, en raulí, de 80 a 85 cm de ancho y 2,10 m de alto; precio
-                  neto $145.000».
+          )}
+          <p className="catalog-modal-intro">
+            Describe el modelo, la familia, la madera, las medidas y el precio neto unitario. El asistente te
+            preguntará lo que falte. <strong>Ingresa el precio base neto, no el de venta:</strong> las
+            cotizaciones le suman {ajuste} automáticamente, igual que a los productos de la planilla.
+          </p>
+          <div className="catalog-chat" aria-busy={ocupado}>
+            {!mensajes.length ? (
+              <div className="catalog-chat-hint">
+                <span>POR EJEMPLO</span>
+                «Agrega una puerta modelo Roble, en raulí, de 80 a 85 cm de ancho y 2,10 m de alto; precio
+                neto $145.000».
+              </div>
+            ) : (
+              mensajes.map((item, indice) => (
+                <div key={indice} className={`catalog-message ${item.rol}`}>
+                  <span className="speaker">{item.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
+                  <p>{item.texto}</p>
                 </div>
-              ) : (
-                mensajes.map((item, indice) => (
-                  <div key={indice} className={`catalog-message ${item.rol}`}>
-                    <span className="speaker">{item.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
-                    <p>{item.texto}</p>
-                  </div>
-                ))
+              ))
+            )}
+            {ocupado && <div className="thinking">Preparando la propuesta…</div>}
+          </div>
+          <p className="sr-only" aria-live="polite">
+            {ocupado
+              ? 'Preparando la propuesta…'
+              : mensajes.at(-1)?.rol === 'asistente'
+                ? mensajes.at(-1)?.texto
+                : ''}
+          </p>
+
+          {propuesta && (
+            <div className="catalog-preview">
+              <p className="eyebrow">REVISIÓN ANTES DE GUARDAR</p>
+              <h3>{propuesta.descripcion}</h3>
+              <dl>
+                <div>
+                  <dt>Código interno asignado</dt>
+                  <dd>{propuesta.codigo}</dd>
+                </div>
+                <div>
+                  <dt>Familia</dt>
+                  <dd>{propuesta.familia}</dd>
+                </div>
+                <div>
+                  <dt>Precio neto unitario</dt>
+                  <dd>{pesos(propuesta.precioNeto)}</dd>
+                </div>
+                <div>
+                  <dt>Unitario en cotizaciones (+{ajuste})</dt>
+                  <dd>{pesos(venta(propuesta.precioNeto))}</dd>
+                </div>
+              </dl>
+              {avisosAlta.length > 0 && (
+                <ul className="catalog-avisos">
+                  {avisosAlta.map((a) => (
+                    <li key={a}>{a}</li>
+                  ))}
+                </ul>
               )}
-              {ocupado && <div className="thinking">Preparando la propuesta…</div>}
-            </div>
-            <p className="sr-only" aria-live="polite">
-              {ocupado
-                ? 'Preparando la propuesta…'
-                : mensajes.at(-1)?.rol === 'asistente'
-                  ? mensajes.at(-1)?.texto
-                  : ''}
-            </p>
-
-            {propuesta && (
-              <div className="catalog-preview">
-                <p className="eyebrow">REVISIÓN ANTES DE GUARDAR</p>
-                <h3>{propuesta.descripcion}</h3>
-                <dl>
-                  <div>
-                    <dt>Código interno asignado</dt>
-                    <dd>{propuesta.codigo}</dd>
-                  </div>
-                  <div>
-                    <dt>Familia</dt>
-                    <dd>{propuesta.familia}</dd>
-                  </div>
-                  <div>
-                    <dt>Precio neto unitario</dt>
-                    <dd>{pesos(propuesta.precioNeto)}</dd>
-                  </div>
-                  <div>
-                    <dt>Unitario en cotizaciones (+{ajuste})</dt>
-                    <dd>{pesos(venta(propuesta.precioNeto))}</dd>
-                  </div>
-                </dl>
-                {avisosAlta.length > 0 && (
-                  <ul className="catalog-avisos">
-                    {avisosAlta.map((a) => (
-                      <li key={a}>{a}</li>
-                    ))}
-                  </ul>
-                )}
-                <p className="catalog-price-note">
-                  Confirma que el precio neto y los atributos sean correctos.
-                </p>
-                <button type="button" className="button primary" onClick={guardar} disabled={ocupado}>
-                  Confirmar y guardar
-                </button>
-              </div>
-            )}
-
-            {error && (
-              <p className="catalog-error" role="alert">
-                {error}
+              <p className="catalog-price-note">
+                Confirma que el precio neto y los atributos sean correctos.
               </p>
-            )}
-            <form className="catalog-composer" onSubmit={enviar}>
-              <label className="sr-only" htmlFor="mensaje-catalogo">
-                Describe el producto
-              </label>
-              <textarea
-                id="mensaje-catalogo"
-                ref={entrada}
-                value={mensaje}
-                onChange={(evento) => setMensaje(evento.target.value)}
-                placeholder="Describe o completa los datos…"
-                rows={3}
-                maxLength={3000}
-                disabled={ocupado || !asistente}
-                aria-describedby="ayuda-catalogo"
-                onKeyDown={enterEnvia}
-              />
-              <div>
-                <span id="ayuda-catalogo">Debe incluir un precio neto explícito.</span>
-                <button type="submit" disabled={!mensaje.trim() || ocupado}>
-                  Enviar <span aria-hidden>↗</span>
+              <button type="button" className="button primary" onClick={guardar} disabled={ocupado}>
+                Confirmar y guardar
+              </button>
+            </div>
+          )}
+
+          {error && (
+            <p className="catalog-error" role="alert">
+              {error}
+            </p>
+          )}
+          <form className="catalog-composer" onSubmit={enviar}>
+            <label className="sr-only" htmlFor="mensaje-catalogo">
+              Describe el producto
+            </label>
+            <textarea
+              id="mensaje-catalogo"
+              ref={entrada}
+              value={mensaje}
+              onChange={(evento) => setMensaje(evento.target.value)}
+              placeholder="Describe o completa los datos…"
+              rows={3}
+              maxLength={3000}
+              disabled={ocupado || !asistente}
+              aria-describedby="ayuda-catalogo"
+              onKeyDown={enterEnvia}
+            />
+            <div>
+              <span id="ayuda-catalogo">Debe incluir un precio neto explícito.</span>
+              {mensajes.length > 0 && (
+                <button type="button" className="catalog-reiniciar" onClick={reiniciar} disabled={ocupado}>
+                  Empezar de nuevo
                 </button>
-              </div>
-            </form>
-          </>
-        )}
-      </div>
+              )}
+              <button type="submit" disabled={!mensaje.trim() || ocupado}>
+                Enviar <span aria-hidden>→</span>
+              </button>
+            </div>
+          </form>
+        </>
+      )}
       {confirmacion}
-    </Dialogo>
+    </div>
   );
 }

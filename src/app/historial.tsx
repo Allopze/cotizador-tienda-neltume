@@ -1,8 +1,10 @@
 'use client';
+import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { etiquetaEstado, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { Listado } from './contrato';
+import { EncabezadoPagina } from './encabezado-pagina';
 import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
 import { esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
 
@@ -121,13 +123,13 @@ const hayFiltros = (f: Filtros) => !!(f.q.trim() || f.estado !== 'todas' || f.de
 
 interface Props {
   historial: EstadoHistorial;
+  /** Cotización abierta en el cotizador de esta pestaña: se marca en el listado. */
   actualId: string | null;
-  abriendo: string | null;
-  abrir: (id: string) => void;
   duplicar: (id: string) => void;
-  ocupado: boolean;
+  /** Id de la cotización que se está duplicando (bloquea los demás «Duplicar»). */
+  duplicando: string | null;
 }
-export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocupado }: Props) {
+export function Historial({ historial, actualId, duplicar, duplicando }: Props) {
   const { filtros, setFiltros, items, total, cargando, buscando, error, recargar, cargarMas } = historial;
   const cambiar = (c: Partial<Filtros>) => setFiltros((f) => ({ ...f, ...c }));
   // El servidor ordena por última actualización: los grupos por mes siguen ese orden.
@@ -157,156 +159,149 @@ export function Historial({ historial, actualId, abriendo, abrir, duplicar, ocup
     }
   }
   return (
-    <section className="history" aria-labelledby="historial-titulo" aria-busy={buscando}>
-      <div className="history-heading">
-        <h2 id="historial-titulo">Cotizaciones anteriores</h2>
-        <div className="history-heading-extra">
-          <span aria-live="polite">
-            {cargando ? '' : filtrado ? plural(total, 'resultado') : plural(total, 'registro')}
-          </span>
-          <button
-            type="button"
-            className="button secondary small"
-            onClick={exportar}
-            disabled={exportando || cargando || !total}
-            title="Descarga las cotizaciones del listado, con los filtros aplicados, para abrir en Excel"
-          >
-            {exportando ? 'Exportando…' : 'Exportar CSV'}
-          </button>
-        </div>
-      </div>
-      <div className="history-tools">
-        <label className="history-search">
-          <span className="sr-only">Buscar cotizaciones</span>
-          <input
-            id="buscar-cotizaciones"
-            type="search"
-            aria-keyshortcuts="Control+K Meta+K"
-            value={filtros.q}
-            onChange={(e) => cambiar({ q: e.target.value })}
-            placeholder="Buscar N°, cliente, RUT o producto"
-            title="Busca por número, cliente, RUT, comuna, proyecto o producto"
-            maxLength={200}
-          />
-        </label>
-        <div className="history-fechas">
-          <label>
-            <span>Desde</span>
+    <>
+      <EncabezadoPagina titulo="Historial de cotizaciones" id="historial-titulo">
+        <span className="heading-meta" aria-live="polite">
+          {cargando ? '' : filtrado ? plural(total, 'resultado') : plural(total, 'registro')}
+        </span>
+        <button
+          type="button"
+          className="button secondary"
+          onClick={exportar}
+          disabled={exportando || cargando || !total}
+          title="Descarga las cotizaciones del listado, con los filtros aplicados, para abrir en Excel"
+        >
+          {exportando ? 'Exportando…' : 'Exportar CSV'}
+        </button>
+      </EncabezadoPagina>
+      <section className="history superficie" aria-labelledby="historial-titulo" aria-busy={buscando}>
+        <div className="history-tools">
+          <label className="history-search">
+            <span className="sr-only">Buscar cotizaciones</span>
             <input
-              type="date"
-              value={filtros.desde}
-              max={filtros.hasta || undefined}
-              onChange={(e) => cambiar({ desde: e.target.value })}
+              id="buscar-cotizaciones"
+              type="search"
+              aria-keyshortcuts="Control+K Meta+K"
+              value={filtros.q}
+              onChange={(e) => cambiar({ q: e.target.value })}
+              placeholder="Buscar N°, cliente, RUT o producto"
+              title="Busca por número, cliente, RUT, comuna, proyecto o producto"
+              maxLength={200}
             />
           </label>
-          <label>
-            <span>Hasta</span>
-            <input
-              type="date"
-              value={filtros.hasta}
-              min={filtros.desde || undefined}
-              onChange={(e) => cambiar({ hasta: e.target.value })}
-            />
-          </label>
+          <div className="history-fechas">
+            <label>
+              <span>Desde</span>
+              <input
+                type="date"
+                value={filtros.desde}
+                max={filtros.hasta || undefined}
+                onChange={(e) => cambiar({ desde: e.target.value })}
+              />
+            </label>
+            <label>
+              <span>Hasta</span>
+              <input
+                type="date"
+                value={filtros.hasta}
+                min={filtros.desde || undefined}
+                onChange={(e) => cambiar({ hasta: e.target.value })}
+              />
+            </label>
+          </div>
+          <div className="history-filters" role="group" aria-label="Filtrar por estado">
+            {FILTROS.map(([f, etiqueta]) => (
+              <button
+                key={f}
+                type="button"
+                aria-pressed={filtros.estado === f}
+                onClick={() => cambiar({ estado: f })}
+              >
+                {etiqueta}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="history-filters" role="group" aria-label="Filtrar por estado">
-          {FILTROS.map(([f, etiqueta]) => (
-            <button
-              key={f}
-              type="button"
-              aria-pressed={filtros.estado === f}
-              onClick={() => cambiar({ estado: f })}
-            >
-              {etiqueta}
-            </button>
-          ))}
-        </div>
-      </div>
-      {errorExportar && (
-        <p className="history-empty catalog-error" role="alert">
-          {errorExportar}
-        </p>
-      )}
-      {error && (
-        <p className="history-empty catalog-error" role="alert">
-          {error}{' '}
-          <button type="button" className="link" onClick={() => recargar().catch(() => {})}>
-            Reintentar
-          </button>
-        </p>
-      )}
-      {cargando ? (
-        <p className="history-empty muted">Cargando cotizaciones…</p>
-      ) : !items.length ? (
-        filtrado ? (
-          <p className="muted history-empty">
-            Sin resultados.{' '}
-            <button type="button" className="link" onClick={() => setFiltros(SIN_FILTROS)}>
-              Limpiar filtros
+        {errorExportar && (
+          <p className="history-empty catalog-error" role="alert">
+            {errorExportar}
+          </p>
+        )}
+        {error && (
+          <p className="history-empty catalog-error" role="alert">
+            {error}{' '}
+            <button type="button" className="link" onClick={() => recargar().catch(() => {})}>
+              Reintentar
             </button>
           </p>
-        ) : (
-          !error && (
-            <p className="muted history-empty">Aquí encontrarás las cotizaciones que vayas preparando.</p>
-          )
-        )
-      ) : (
-        <>
-          {grupos.map(([titulo, qs]) => (
-            <div key={titulo} className="history-group">
-              <h3>{titulo}</h3>
-              <ul className="history-list">
-                {qs.map((q) => (
-                  <Fila
-                    key={q.id}
-                    q={q}
-                    actual={actualId === q.id}
-                    abriendo={abriendo === q.id}
-                    abrir={abrir}
-                    duplicar={duplicar}
-                    ocupado={ocupado}
-                  />
-                ))}
-              </ul>
-            </div>
-          ))}
-          {items.length < total && (
-            <div className="history-mas">
-              <button type="button" className="button secondary" onClick={cargarMas} disabled={buscando}>
-                {buscando ? 'Cargando…' : `Cargar más (${items.length} de ${total})`}
+        )}
+        {cargando ? (
+          <p className="history-empty muted">Cargando cotizaciones…</p>
+        ) : !items.length ? (
+          filtrado ? (
+            <p className="muted history-empty">
+              Sin resultados.{' '}
+              <button type="button" className="link" onClick={() => setFiltros(SIN_FILTROS)}>
+                Limpiar filtros
               </button>
-            </div>
-          )}
-        </>
-      )}
-    </section>
+            </p>
+          ) : (
+            !error && (
+              <p className="muted history-empty">Aquí encontrarás las cotizaciones que vayas preparando.</p>
+            )
+          )
+        ) : (
+          <>
+            {grupos.map(([titulo, qs]) => (
+              <div key={titulo} className="history-group">
+                <h2>{titulo}</h2>
+                <ul className="history-list">
+                  {qs.map((q) => (
+                    <Fila
+                      key={q.id}
+                      q={q}
+                      actual={actualId === q.id}
+                      duplicar={duplicar}
+                      duplicando={duplicando}
+                    />
+                  ))}
+                </ul>
+              </div>
+            ))}
+            {items.length < total && (
+              <div className="history-mas">
+                <button type="button" className="button secondary" onClick={cargarMas} disabled={buscando}>
+                  {buscando ? 'Cargando…' : `Cargar más (${items.length} de ${total})`}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+      </section>
+    </>
   );
 }
 
 function Fila({
   q,
   actual,
-  abriendo,
-  abrir,
   duplicar,
-  ocupado,
+  duplicando,
 }: {
   q: ResumenCotizacion;
   actual: boolean;
-  abriendo: boolean;
-  abrir: (id: string) => void;
   duplicar: (id: string) => void;
-  ocupado: boolean;
+  duplicando: string | null;
 }) {
   const autor = q.anuladaPor ?? q.aprobadaPor ?? q.emitidaPor ?? q.creadaPor;
   const vencida = q.vencida && q.estado === 'emitida';
   return (
     <li>
-      <button
-        type="button"
+      {/* Enlace y no botón: abre la cotización en el cotizador (también en otra pestaña). */}
+      <Link
+        href={`/?cotizacion=${encodeURIComponent(q.id)}`}
         className="history-fila"
         aria-current={actual ? 'true' : undefined}
-        onClick={() => abrir(q.id)}
       >
         <span className="history-number">
           {q.numero ? `N° ${q.numero}` : <span className="muted">{SIN_NUMERO}</span>}
@@ -319,7 +314,7 @@ function Fila({
           {q.productos && <small className="history-productos">{nombreProducto(q.productos)}</small>}
         </span>
         <span className="history-meta">
-          {abriendo ? 'Abriendo…' : fechaCorta(q.fecha)}
+          {fechaCorta(q.fecha)}
           <small>
             {plural(q.items, 'ítem')}
             {q.pendientes ? ` · ${plural(q.pendientes, 'pendiente')}` : ''}
@@ -332,16 +327,16 @@ function Fila({
           {vencida && <span className="status vencida">Vencida</span>}
         </span>
         <strong>{pesos(q.total)}</strong>
-        <span aria-hidden>↗</span>
-      </button>
+        <span aria-hidden>›</span>
+      </Link>
       <button
         type="button"
-        className="history-duplicar"
+        className="button secondary small history-duplicar"
         onClick={() => duplicar(q.id)}
-        disabled={ocupado}
+        disabled={duplicando !== null}
         aria-label={`Duplicar cotización ${q.numero ? `N° ${q.numero}` : SIN_NUMERO} de ${q.cliente.nombre || SIN_CLIENTE}`}
       >
-        Duplicar
+        {duplicando === q.id ? 'Duplicando…' : 'Duplicar'}
       </button>
     </li>
   );

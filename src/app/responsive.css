@@ -33,9 +33,30 @@
     width: 112px;
     height: 60px;
   }
-  .header-label,
   .atajos {
     display: none;
+  }
+  /* La navegación baja a su propia fila, a todo el ancho, bajo el logo y la cuenta. */
+  .masthead {
+    flex-wrap: wrap;
+    height: auto;
+    padding-top: 12px;
+    row-gap: 4px;
+  }
+  .header-nav {
+    order: 3;
+    width: 100%;
+    gap: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .header-nav a {
+    flex: none;
+    padding: 12px 14px 10px;
+    border-bottom-width: 2px;
+  }
+  .header-nav a:first-child {
+    padding-left: 0;
   }
   .page-heading {
     padding: 18px 0;
@@ -46,10 +67,6 @@
   }
   .page-heading .button {
     padding: 10px 12px;
-  }
-  .heading-actions {
-    flex-direction: column;
-    gap: 6px;
   }
   .workspace {
     grid-template-columns: 1fr;
@@ -86,11 +103,10 @@
   .history-search {
     max-width: none;
   }
-  .history-heading {
-    flex-wrap: wrap;
-    gap: 10px;
+  .history {
+    padding: 16px 16px 4px;
   }
-  .history-heading-extra > span {
+  .heading-meta {
     white-space: nowrap;
   }
   .site-footer {
@@ -145,6 +161,10 @@
   .avisos {
     right: 16px;
     bottom: 16px;
+  }
+  /* Una fecha por fila: lado a lado el selector nativo cortaba «dd/mm/aaaa». */
+  .history-fechas {
+    flex-direction: column;
   }
 }
 /* Pantallas táctiles: textos de entrada ≥16px (sin zoom en iOS) y blancos de 44px. */
@@ -202,14 +222,19 @@
     width: 100%;
   }
   .history-fechas label {
-    flex: 1;
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .history-fechas input {
+    width: 100%;
+    min-width: 0;
   }
   .history-list li {
     grid-template-columns: 1fr;
   }
   .history-duplicar {
     justify-self: end;
-    margin: 0 12px 12px;
+    margin: 0 12px 14px;
   }
 }
 @media (pointer: coarse) {

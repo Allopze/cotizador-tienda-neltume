@@ -99,7 +99,8 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await page.reload();
   // Al recargar se parte en una cotización nueva; la aprobada se abre desde el historial.
   await expect(page.getByTestId('total')).toHaveText(pesos(0));
-  await page.getByRole('button', { name: /^N° 323/ }).click();
+  await page.getByRole('link', { name: 'Historial' }).click();
+  await page.getByRole('link', { name: /^N° 323/ }).click();
   await expect(page.getByRole('heading', { name: 'N° 323' })).toBeFocused();
   await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));

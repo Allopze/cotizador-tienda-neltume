@@ -46,13 +46,20 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   await expect(titulo).toHaveText('Nueva cotización');
   expect(await total()).toBe(antes);
 
-  // Consulta del catálogo con el precio unitario de la cotización.
-  await page.getByRole('button', { name: 'Catálogo', exact: true }).click();
-  const dialogo = page.getByRole('dialog', { name: 'Catálogo de productos' });
-  await dialogo.getByLabel('Buscar en el catálogo').fill('HUIL-O-3-B');
-  await expect(dialogo.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
-  await expect(dialogo).toContainText(pesos(Math.round(puerta.precioNeto * (1 + REGLAS.ajuste))));
-  await dialogo.getByRole('button', { name: 'Cerrar' }).click();
+  // Consulta del catálogo (pantalla propia) con el precio unitario de la cotización.
+  await page.getByRole('link', { name: 'Catálogo y ajustes' }).click();
+  await expect(page).toHaveURL(/\/configuracion$/);
+  const pantalla = page.getByRole('main');
+  await expect(pantalla.getByLabel('Buscar en el catálogo')).toBeFocused();
+  await pantalla.getByLabel('Buscar en el catálogo').fill('HUIL-O-3-B');
+  await expect(pantalla.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
+  await expect(pantalla).toContainText(pesos(Math.round(puerta.precioNeto * (1 + REGLAS.ajuste))));
+  // La sección del asistente es parte de la misma pantalla.
+  await page.getByRole('link', { name: 'Modelo del asistente' }).click();
+  await expect(page).toHaveURL(/seccion=asistente/);
+  await expect(page.getByRole('heading', { name: 'Modelo del asistente', level: 2 })).toBeVisible();
+  await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
+  await expect(titulo).toHaveText('Nueva cotización');
 
   // «2.5» es 2,5 % de descuento (antes se leía como 25 %).
   await enviar('Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco');
@@ -92,7 +99,9 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   expect(await textoPdf(`data/test-e2e/pdf/${nombreAnulada}`)).toContain('ANULADA');
   expect(await textoPdf(`data/test-e2e/pdf/${archivo}`)).not.toContain('ANULADA');
 
-  // Exportación del listado.
+  // Exportación del listado (pantalla del historial).
+  await page.getByRole('link', { name: 'Historial' }).click();
+  await expect(page.getByRole('heading', { name: 'Historial de cotizaciones' })).toBeVisible();
   const csv = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Exportar CSV' }).click();
   const exportado = await csv;

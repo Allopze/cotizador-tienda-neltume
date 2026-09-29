@@ -10,7 +10,7 @@ import {
 } from 'react';
 import type { AjustesIA } from '@/asistente/ajustes';
 import type { ModeloCommandCode } from '@/asistente/modelos-commandcode';
-import { Dialogo } from './dialogo';
+import type { TipoAviso } from './avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 export interface EstadoAjustes {
@@ -25,63 +25,39 @@ interface CatalogoModelos {
   desactualizado: boolean;
 }
 interface Props {
-  abierta: boolean;
   estado: EstadoAjustes | null;
-  /** Error al leer la configuración; el diálogo ofrece reintentar. */
+  /** Error al leer la configuración; la sección ofrece reintentar. */
   errorCarga: string;
   reintentar: () => void;
-  cerrar: () => void;
   guardado: (estado: EstadoAjustes) => void;
+  avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
 }
 
-export function ConfiguracionIA({ abierta, estado, errorCarga, reintentar, cerrar, guardado }: Props) {
-  const campo = useRef<HTMLButtonElement>(null);
-  const [ocupado, setOcupado] = useState(false);
+/** Sección «Asistente» de la configuración: modelo del asistente y estado de su clave. */
+export function ConfiguracionIA({ estado, errorCarga, reintentar, guardado, avisar }: Props) {
+  if (estado) return <Formulario estado={estado} guardado={guardado} avisar={avisar} />;
+  if (errorCarga)
+    return (
+      <div className="catalog-error" role="alert">
+        {errorCarga}
+        <button type="button" className="link" onClick={reintentar}>
+          Reintentar
+        </button>
+      </div>
+    );
   return (
-    <Dialogo
-      abierto={abierta}
-      alCerrar={cerrar}
-      cerrable={!ocupado}
-      titulo="Asistente"
-      eyebrow="CONFIGURACIÓN"
-      focoInicial={campo}
-    >
-      {estado ? (
-        // Se monta con cada apertura: parte de la configuración guardada.
-        <Formulario
-          estado={estado}
-          campo={campo}
-          cerrar={cerrar}
-          guardado={guardado}
-          setOcupado={setOcupado}
-        />
-      ) : errorCarga ? (
-        <div className="catalog-error" role="alert">
-          {errorCarga}
-          <button type="button" className="link" onClick={reintentar}>
-            Reintentar
-          </button>
-        </div>
-      ) : (
-        <p className="catalog-modal-intro" role="status">
-          Cargando la configuración…
-        </p>
-      )}
-    </Dialogo>
+    <p className="catalog-modal-intro" role="status">
+      Cargando la configuración…
+    </p>
   );
 }
 
 function Formulario({
   estado,
-  campo,
-  cerrar,
   guardado,
-  setOcupado: avisarOcupado,
-}: Pick<Props, 'cerrar' | 'guardado'> & {
-  estado: EstadoAjustes;
-  campo: RefObject<HTMLButtonElement | null>;
-  setOcupado: (v: boolean) => void;
-}) {
+  avisar,
+}: Pick<Props, 'guardado' | 'avisar'> & { estado: EstadoAjustes }) {
+  const campo = useRef<HTMLButtonElement>(null);
   const [borrador, setBorrador] = useState<AjustesIA>(() => structuredClone(estado.ajustes));
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState('');
@@ -89,6 +65,7 @@ function Formulario({
   const [errorCatalogo, setErrorCatalogo] = useState('');
   const [intentoCatalogo, setIntentoCatalogo] = useState(0);
   const editable = estado.puedeEditar !== false;
+  const cambiado = borrador.commandcode.modelo !== estado.ajustes.commandcode.modelo;
 
   useEffect(() => {
     const controlador = new AbortController();
@@ -105,19 +82,17 @@ function Formulario({
     evento.preventDefault();
     if (ocupado || !editable) return;
     setOcupado(true);
-    avisarOcupado(true);
     setError('');
     try {
       const data = await pedirJSON<EstadoAjustes>('/api/ajustes', {
         json: { tipo: 'guardar', ajustes: borrador },
       });
       guardado(data);
-      cerrar();
+      avisar('exito', 'Configuración del asistente guardada.', { clave: 'ajustes' });
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
     } finally {
       setOcupado(false);
-      avisarOcupado(false);
     }
   }
 
@@ -181,16 +156,21 @@ function Formulario({
           {error}
         </p>
       )}
-      <div className="ia-actions">
-        <button type="button" className="button secondary" onClick={cerrar} disabled={ocupado}>
-          {editable ? 'Cancelar' : 'Cerrar'}
-        </button>
-        {editable && (
-          <button type="submit" className="button primary" disabled={ocupado}>
+      {editable && (
+        <div className="ia-actions">
+          <button
+            type="button"
+            className="button secondary"
+            onClick={() => setBorrador(structuredClone(estado.ajustes))}
+            disabled={ocupado || !cambiado}
+          >
+            Descartar cambios
+          </button>
+          <button type="submit" className="button primary" disabled={ocupado || !cambiado}>
             {ocupado ? 'Guardando…' : 'Guardar'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </form>
   );
 }
