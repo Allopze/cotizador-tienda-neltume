@@ -118,6 +118,8 @@ export interface UsuarioServicio {
 /** Resultado de la primera fase de emitir/aprobar: ya estaba hecho o número reservado. */
 type Preparado<T> =
   { listo: Cotizacion } | ({ listo: null; copia: Cotizacion; numero: number; version: string } & T);
+/** Emitir encontró montos distintos a los revisados: se guardaron en el borrador y se pide confirmar. */
+type PreciosCambiados = { listo: null; cambiados: { avisos: string[]; total: number; actualizada: string } };
 
 const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
@@ -598,26 +600,51 @@ export class Servicio {
 
   /** Reserva el número, genera el PDF fuera del bloqueo y confirma solo si nadie cambió la cotización. */
   private async emitir(accion: Extract<Accion, { tipo: 'emitir' }>): Promise<Resultado> {
-    const preparado = await this.almacen.transaccion((u): Preparado<{ avisos: string[] }> => {
-      const q = this.obtener(u, accion.id);
-      if (q.pdf) return { listo: q };
-      if (q.estado !== 'borrador') this.exigirEditable(q);
-      this.verificarVersion(q, accion.actualizada);
-      this.verificarSerieNoAprobada(q, u);
-      // M3: los montos se recalculan con el catálogo vigente al emitir, no con los guardados.
-      const copia = structuredClone(q);
-      this.recalcular(copia, false);
-      if (copia.incompletos.length || !copia.montos.lineas.length)
-        throw new ErrorUsuario(
-          'Completa o quita los ítems pendientes antes de generar el PDF.',
-          'incompleta',
-        );
-      const avisos = this.diferenciasPrecio(q.montos, copia.montos);
-      // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número.
-      const numero = u.reservarCotizacion();
-      return { listo: null, copia, numero, avisos, version: q.actualizada };
-    });
+    const preparado = await this.almacen.transaccion(
+      (u): Preparado<{ avisos: string[] }> | PreciosCambiados => {
+        const q = this.obtener(u, accion.id);
+        if (q.pdf) return { listo: q };
+        if (q.estado !== 'borrador') this.exigirEditable(q);
+        this.verificarVersion(q, accion.actualizada);
+        this.verificarSerieNoAprobada(q, u);
+        // M3: los montos se recalculan con el catálogo vigente al emitir, no con los guardados.
+        const copia = structuredClone(q);
+        this.recalcular(copia, false);
+        if (copia.incompletos.length || !copia.montos.lineas.length)
+          throw new ErrorUsuario(
+            'Completa o quita los ítems pendientes antes de generar el PDF.',
+            'incompleta',
+          );
+        const avisos = this.diferenciasPrecio(q.montos, copia.montos);
+        if (!avisos.length && q.montos.total !== copia.montos.total)
+          avisos.push(`El total pasó de ${pesos(q.montos.total)} a ${pesos(copia.montos.total)}.`);
+        // Nunca se emite un total distinto del que la persona revisó: se actualiza el borrador y se
+        // pide confirmar. Al reenviar con la versión nueva ya no hay diferencias y se emite.
+        if (avisos.length) {
+          q.montos = copia.montos;
+          q.incompletos = [];
+          q.actualizada = marca(q.actualizada);
+          u.guardar(q);
+          u.registrarEvento(
+            q.id,
+            'modificada',
+            this.autor,
+            `Precios del catálogo vigente: ${avisos.join(' ')}`,
+          );
+          return { listo: null, cambiados: { avisos, total: q.montos.total, actualizada: q.actualizada } };
+        }
+        // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número.
+        const numero = u.reservarCotizacion();
+        return { listo: null, copia, numero, avisos, version: q.actualizada };
+      },
+    );
     if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.pdf! };
+    if ('cambiados' in preparado)
+      throw new ErrorConflicto(
+        'Los precios del catálogo cambiaron desde que revisaste esta cotización. Revisa los montos actualizados antes de emitir.',
+        'precios_cambiaron',
+        preparado.cambiados,
+      );
     const { copia, numero, avisos, version } = preparado;
     // La vigencia cuenta días hábiles: antes se actualizan los feriados decretados (sin bloquear si no hay red).
     await prepararFeriados(this.almacen.baseDatos());
@@ -680,6 +707,12 @@ export class Servicio {
   private async aprobar(accion: Extract<Accion, { tipo: 'aprobar' }>): Promise<Resultado> {
     const preparado = await this.almacen.transaccion((u): Preparado<{ montos: Montos }> => {
       const q = this.obtener(u, accion.id);
+      // Antes que la nota: una aprobada que después se anuló no se informa como aprobada.
+      if (q.estado === 'anulada')
+        throw new ErrorConflicto(
+          `La cotización N° ${q.numero} está anulada${q.nota ? ` junto con su nota de pedido N° ${q.nota.numero}` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+          'estado_invalido',
+        );
       if (q.nota) return { listo: q };
       // Aprobar es irreversible: exige una cotización ya emitida y revisada, nunca emite de paso.
       if (q.estado === 'borrador' || !q.pdf || q.numero === null)
@@ -690,11 +723,6 @@ export class Servicio {
       if (q.estado === 'reemplazada')
         throw new ErrorConflicto(
           `La cotización N° ${q.numero} fue reemplazada${q.reemplazadaPor ? ` por la N° ${q.reemplazadaPor}` : ''} y ya no se puede aprobar. Aprueba la más reciente.`,
-          'estado_invalido',
-        );
-      if (q.estado === 'anulada')
-        throw new ErrorConflicto(
-          `La cotización N° ${q.numero} está anulada y no se puede aprobar. Duplícala para preparar una nueva.`,
           'estado_invalido',
         );
       this.verificarVersion(q, accion.actualizada);
@@ -894,6 +922,10 @@ export class Servicio {
         const numero = res.input.numero;
         const objetivo = u.porNumero(numero);
         if (!objetivo) return responder(`No existe la cotización N° ${numero}. Genera primero su PDF.`);
+        if (objetivo.estado === 'anulada')
+          return responder(
+            `La cotización N° ${numero} está anulada${objetivo.nota ? `, junto con su nota de pedido N° ${objetivo.nota.numero},` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+          );
         if (objetivo.nota)
           return responder(
             `La cotización N° ${numero} ya está aprobada con la nota de pedido N° ${objetivo.nota.numero}.`,

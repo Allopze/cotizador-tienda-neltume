@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { access } from 'node:fs/promises';
-import { importar } from '../src/catalogo/importar';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
+import { ErrorImportacion, importar } from '../src/catalogo/importar';
 import { resolverItem } from '../src/catalogo/resolver';
 import { cotizar } from '../src/negocio/precios';
 import type { SolicitudItem, Producto } from '../src/catalogo/tipos';
@@ -160,5 +163,64 @@ describe('Flujo secuencial sobre la planilla real', () => {
     expect(resolverItem(r.catalogo, { ...base, alto: 2.0051 }).ok).toBe(false);
     expect(resolverItem(r.catalogo, { ...base, modelo: 'Puñir' }).ok).toBe(true);
     expect(resolverItem(r.catalogo, { ...base, ancho: 0.850001 }).ok).toBe(false);
+  });
+});
+
+/** Copia de la planilla real con la hoja Precio modificada, en un directorio temporal. */
+async function planillaModificada(ruta: string, cambiar: (hoja: string) => string) {
+  const zip = unzipSync(await readFile(ruta));
+  const libro = strFromU8(zip['xl/workbook.xml']);
+  const relaciones = strFromU8(zip['xl/_rels/workbook.xml.rels']);
+  const id = libro.match(/<sheet[^>]*name="Precio"[^>]*r:id="([^"]+)"/)![1];
+  const destino = relaciones
+    .match(new RegExp(`<Relationship[^>]*Id="${id}"[^>]*>`))![0]
+    .match(/Target="([^"]+)"/)![1];
+  const hoja = `xl/${destino.replace(/^\/?xl\//, '')}`;
+  zip[hoja] = strToU8(cambiar(strFromU8(zip[hoja])));
+  const dir = await mkdtemp(join(tmpdir(), 'neltume-planilla-'));
+  const salida = join(dir, 'planilla.xlsx');
+  await writeFile(salida, zipSync(zip));
+  return { salida, limpiar: () => rm(dir, { recursive: true, force: true }) };
+}
+
+/** Copia la fila 500 de Precio como fila 9000, opcionalmente con otro precio neto (O) y bruto (P). */
+const duplicarFila = (precio?: number) => (hoja: string) => {
+  let fila = hoja.match(/<row r="500"[^>]*>.*?<\/row>/)![0].replace(/([" ][A-Z]*)500"/g, '$19000"');
+  if (precio !== undefined)
+    fila = fila
+      .replace(/(<c r="O9000"[^>]*>)<v>[^<]*<\/v>/, `$1<v>${precio}</v>`)
+      .replace(/(<c r="P9000"[^>]*>)(?:<f>[^<]*<\/f>)?<v>[^<]*<\/v>/, `$1<v>${precio * 1.19}</v>`);
+  return hoja.replace('</sheetData>', `${fila}</sheetData>`);
+};
+
+describe('Importación de planillas inválidas', () => {
+  const ruta = process.env.NELTUME_PLANILLA ?? 'datos-privados/COTIZADOR_2026.xlsx';
+
+  it('rechaza una planilla con la mayoría de los precios vacíos', async () => {
+    const { salida, limpiar } = await planillaModificada(ruta, (hoja) =>
+      hoja.replace(/<c r="O(\d+)"([^>]*)>(.*?)<\/c>/g, (c, fila: string, atributos: string) =>
+        Number(fila) >= 200 ? `<c r="O${fila}"${atributos.replace(/ t="[^"]*"/, '')}/>` : c,
+      ),
+    );
+    try {
+      await expect(importar(salida)).rejects.toThrow(ErrorImportacion);
+      await expect(importar(salida)).rejects.toThrow(/filas de Precio tienen datos incompletos/);
+    } finally {
+      await limpiar();
+    }
+  });
+
+  it('rechaza un producto repetido con otro precio y acepta uno repetido idéntico', async () => {
+    const conflicto = await planillaModificada(ruta, duplicarFila(200000));
+    const identico = await planillaModificada(ruta, duplicarFila());
+    try {
+      await expect(importar(conflicto.salida)).rejects.toThrow(/precios distintos.*filas 500 y 9000/);
+      const r = await importar(identico.salida);
+      expect(r.catalogo.productos).toHaveLength(8772);
+      expect(r.incidencias.filter((i) => i.accion === 'exclusion').map((i) => i.fila)).toEqual([9000]);
+    } finally {
+      await conflicto.limpiar();
+      await identico.limpiar();
+    }
   });
 });

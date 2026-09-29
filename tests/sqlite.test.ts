@@ -174,6 +174,29 @@ describe('Persistencia SQLite', () => {
     }
   });
 
+  it('una importación con muchos menos productos exige forzar y no toca el catálogo', async () => {
+    const dir = await temp();
+    const db = abrirBaseDatos(join(dir, 'cotizador.sqlite'), { cachear: false });
+    const conProductos = (n: number): Catalogo => ({
+      ...catalogoFixture(),
+      productos: Array.from({ length: n }, (_, i) =>
+        producto({ codigo: `MOL-O-3-${i}`, largo: 2 + i / 100 }),
+      ),
+    });
+    try {
+      guardarCatalogo(db, conProductos(10));
+      expect(() => guardarCatalogo(db, conProductos(8))).toThrow(/--forzar/);
+      const repo = new RepositorioCatalogoSqlite(db);
+      expect(repo.todos()).toHaveLength(10);
+      guardarCatalogo(db, conProductos(9));
+      expect(repo.todos()).toHaveLength(9);
+      guardarCatalogo(db, conProductos(3), undefined, { forzar: true });
+      expect(repo.todos()).toHaveLength(3);
+    } finally {
+      db.close();
+    }
+  });
+
   it('una importación duplicada falla de forma atómica y mantiene el catálogo previo', async () => {
     const dir = await temp();
     const rutaDb = join(dir, 'cotizador.sqlite');

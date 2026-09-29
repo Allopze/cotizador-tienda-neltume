@@ -63,10 +63,14 @@ const convertirProducto = (p: FilaProducto): Producto => ({
 const claveProducto = (producto: Pick<Producto, 'modelo' | 'madera' | 'medida' | 'largo'>) =>
   `${normalizar(producto.modelo)}|${normalizar(producto.madera)}|${normalizarMedida(producto.medida)}|${Math.round(producto.largo * 1_000_000)}`;
 
+/** Una importación que deja menos de esta fracción de los productos anteriores exige `forzar`. */
+export const MINIMO_PRODUCTOS_CONSERVADOS = 0.9;
+
 export function guardarCatalogo(
   db: Database.Database,
   catalogo: Catalogo,
   configuracion: ConfiguracionCatalogo = CONFIGURACION_CATALOGO_BASE,
+  { forzar = false }: { forzar?: boolean } = {},
 ) {
   if (!catalogo.productos.length) throw new Error('El catálogo no puede estar vacío.');
   const configuracionValidada = validarConfiguracionCatalogo(configuracion);
@@ -85,6 +89,11 @@ export function guardarCatalogo(
     const fecha = new Date(
       Math.max(Date.parse(catalogo.fecha), metaAnterior ? Date.parse(metaAnterior.fecha) + 1 : 0),
     ).toISOString();
+    const anteriores = (db.prepare('SELECT COUNT(*) AS n FROM productos_catalogo').get() as { n: number }).n;
+    if (!forzar && catalogo.productos.length < anteriores * MINIMO_PRODUCTOS_CONSERVADOS)
+      throw new Error(
+        `La planilla trae ${catalogo.productos.length} productos y el catálogo actual tiene ${anteriores}. Si la reducción es intencional, repite la importación con --forzar; el catálogo no se modificó.`,
+      );
     db.prepare('DELETE FROM productos_catalogo').run();
     catalogo.productos.forEach((p, orden) =>
       insertar.run({

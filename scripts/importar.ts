@@ -3,13 +3,19 @@ import { importar } from '../src/catalogo/importar';
 import { leerConfiguracionCatalogo } from '../src/catalogo/configuracion-archivo';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { guardarCatalogo } from '../src/servidor/repositorio-catalogo';
-const ruta = process.argv[2] ?? process.env.NELTUME_PLANILLA ?? 'datos-privados/COTIZADOR_2026.xlsx';
+const argumentos = process.argv.slice(2);
+// --forzar acepta una planilla con muchos menos productos que el catálogo actual.
+const forzar = argumentos.includes('--forzar');
+const ruta =
+  argumentos.find((a) => !a.startsWith('--')) ??
+  process.env.NELTUME_PLANILLA ??
+  'datos-privados/COTIZADOR_2026.xlsx';
 try {
   const configuracion = await leerConfiguracionCatalogo();
   const r = await importar(ruta, configuracion);
   await mkdir('data', { recursive: true });
   await mkdir('public', { recursive: true });
-  guardarCatalogo(abrirBaseDatos(), r.catalogo, configuracion);
+  guardarCatalogo(abrirBaseDatos(), r.catalogo, configuracion, { forzar });
   await writeFile('data/reporte-importacion.md', r.reporte);
   if (r.logo) await writeFile('public/logo-neltume.svg', r.logo);
   console.log(

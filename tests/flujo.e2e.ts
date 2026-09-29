@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Download } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { Almacen } from '../src/servidor/almacen';
@@ -84,7 +84,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   );
   const nota = await textoPdf('data/test-e2e/pdf/nota-pedido-1.pdf');
   expect(nota).toContain('NOTA DE PEDIDO N° 1');
-  expect(nota).toContain('Ref. cotización N° 323');
+  expect(nota).toMatch(/Ref\. cotización:?\s*N° 323/);
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
   const estado = await new Almacen('data/test-e2e').leer();
@@ -118,26 +118,35 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
       .getByRole('button', { name: 'Emitir y generar PDF' })
       .click();
   };
+  // Números leídos de cada descarga: la prueba no depende de cuántas emitió la anterior.
+  const numeroDe = async (descarga: Promise<Download>) => {
+    const nombre = (await descarga).suggestedFilename();
+    expect(nombre).toMatch(/^cotizacion-\d+\.pdf$/);
+    return Number(nombre.match(/\d+/)![0]);
+  };
   const cotizarMaria = 'Cotiza 3 Huilo Huilo oregón de 80×210 para María José, Temuco';
   await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await enviar(cotizarMaria);
   const primeraDescarga = page.waitForEvent('download');
   await emitir();
-  expect((await primeraDescarga).suggestedFilename()).toBe('cotizacion-324.pdf');
+  const original = await numeroDe(primeraDescarga);
   await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await enviar('La cotización de Maria Jose ahora debe ser de 8 puertas y no de 3');
   await expect(page.getByLabel('Cotización en curso').getByText('8', { exact: true })).toBeVisible();
-  await expect(page.getByLabel('Cotización en curso')).toContainText('Revisión de la cotización N° 324');
+  await expect(page.getByLabel('Cotización en curso')).toContainText(
+    `Revisión de la cotización N° ${original}`,
+  );
   const revisionDescarga = page.waitForEvent('download');
   await emitir();
-  expect((await revisionDescarga).suggestedFilename()).toBe('cotizacion-325.pdf');
+  expect(await numeroDe(revisionDescarga)).toBe(original + 1);
 
   await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await enviar(cotizarMaria);
   const segundaDescarga = page.waitForEvent('download');
   await emitir();
-  expect((await segundaDescarga).suggestedFilename()).toBe('cotizacion-326.pdf');
-  // La N° 324 quedó reemplazada por su revisión (8 puertas): para que haya ambigüedad se deja además
+  const segunda = await numeroDe(segundaDescarga);
+  expect(segunda).toBe(original + 2);
+  // La original quedó reemplazada por su revisión (8 puertas): para que haya ambigüedad se deja además
   // un borrador de María José con 3 puertas, sin emitir.
   await page.getByRole('button', { name: 'Nueva cotización' }).click();
   await enviar(cotizarMaria);
@@ -147,13 +156,15 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
   const seleccion = page.getByRole('group', { name: 'Seleccionar cotización anterior' });
   await expect(seleccion.getByRole('button', { name: /^Elegir cotización/ })).toHaveCount(2);
   await expect(seleccion.getByRole('button', { name: /Ninguna de estas/ })).toBeVisible();
-  await seleccion.getByRole('button', { name: 'Elegir cotización N° 326 de María José' }).click();
+  await seleccion.getByRole('button', { name: `Elegir cotización N° ${segunda} de María José` }).click();
   await expect(page.getByLabel('Cotización en curso').getByText('8', { exact: true })).toBeVisible();
 
   const estado = await new Almacen('data/test-e2e').leer();
-  expect(estado.cotizaciones.find((q) => q.numero === 324)?.solicitudes[0]?.cantidad).toBe(3);
-  expect(estado.cotizaciones.find((q) => q.numero === 326)?.solicitudes[0]?.cantidad).toBe(3);
-  expect(estado.cotizaciones.some((q) => q.origen === 326 && q.solicitudes[0]?.cantidad === 8)).toBe(true);
+  expect(estado.cotizaciones.find((q) => q.numero === original)?.solicitudes[0]?.cantidad).toBe(3);
+  expect(estado.cotizaciones.find((q) => q.numero === segunda)?.solicitudes[0]?.cantidad).toBe(3);
+  expect(estado.cotizaciones.some((q) => q.origen === segunda && q.solicitudes[0]?.cantidad === 8)).toBe(
+    true,
+  );
 });
 
 test('aprobación pedida por chat abre el diálogo de despacho y genera la nota', async ({ page }) => {

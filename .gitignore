@@ -10,6 +10,7 @@ data/estado*.json
 *.sqlite
 *.sqlite-*
 data/respaldo-migracion/
+respaldos/
 data/pdf/
 .estado.lock/
 *.tmp

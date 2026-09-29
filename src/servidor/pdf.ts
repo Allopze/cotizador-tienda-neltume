@@ -20,6 +20,19 @@ const esc = (s: unknown) =>
   );
 const decimal = (n: number) => n.toFixed(2).replace('.', ',');
 
+const UNIDAD_ESCUADRIA: Partial<Record<Linea['producto']['familia'], string>> = {
+  MARCO: 'pulg.',
+  PIEZAS_T: 'pulg.',
+  MOLDURA: 'cm',
+};
+
+/** Escuadría legible: «2X4» → «2x4 pulg.» según la familia. */
+function escuadria(medida: string, familia: Linea['producto']['familia']) {
+  if (!/^\d+(,\d+)?X\d+(,\d+)?$/i.test(medida)) return medida;
+  const unidad = UNIDAD_ESCUADRIA[familia];
+  return `${medida.toLowerCase()}${unidad ? ` ${unidad}` : ''}`;
+}
+
 /** Medida exacta pedida, que la fábrica necesita aunque el producto cubra un rango. */
 export function medidaPedida(l: Linea): string | null {
   if (l.producto.familia === 'PUERTA') {
@@ -27,7 +40,29 @@ export function medidaPedida(l: Linea): string | null {
     return `${l.anchoSolicitado === null ? '—' : decimal(l.anchoSolicitado)} × ${l.altoSolicitado === null ? '—' : decimal(l.altoSolicitado)} m`;
   }
   if (!l.medidaSolicitada && l.altoSolicitado === null) return null;
-  return `${l.medidaSolicitada ?? l.producto.medida} × ${l.altoSolicitado === null ? '—' : decimal(l.altoSolicitado)} m`;
+  const medida = escuadria(l.medidaSolicitada ?? l.producto.medida, l.producto.familia);
+  return `${medida} × ${l.altoSolicitado === null ? '—' : decimal(l.altoSolicitado)} m`;
+}
+
+const MINUSCULAS = new Set(['a', 'de', 'del', 'y', 'kit']);
+const UNIDADES: Record<string, string> = { mt: 'm', mts: 'm', cm: 'cm', pulg: 'pulg.' };
+
+/**
+ * Las descripciones de la planilla vienen en mayúsculas; en el documento se leen mejor con mayúscula
+ * inicial y unidades normalizadas. Las escritas a mano (con minúsculas) se respetan tal cual.
+ */
+export function descripcionLegible(texto: string) {
+  if (/\p{Ll}/u.test(texto)) return texto;
+  return texto
+    .toLowerCase()
+    .split(/\s+/)
+    .map((p, i) => {
+      if (p === 'x') return '×';
+      if (UNIDADES[p]) return UNIDADES[p];
+      if (/^\d/.test(p) || (i > 0 && MINUSCULAS.has(p))) return p;
+      return p.charAt(0).toUpperCase() + p.slice(1);
+    })
+    .join(' ');
 }
 
 export interface DocumentoPdf {
@@ -44,40 +79,50 @@ export interface DocumentoPdf {
   anulada?: { fecha: string | null; motivo: string | null; por: string | null } | null;
 }
 
+const fechaDocumento = (iso: string) =>
+  new Date(iso).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
+
 export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const nota = doc.tipo === 'nota';
   const { numero, montos, fecha } = doc;
   const logo = await readFile(join(process.cwd(), 'public/logo-neltume.svg'));
   const titulo = nota ? `NOTA DE PEDIDO N° ${numero}` : `COTIZACIÓN N° ${numero}`;
   const c = q.cliente;
-  const campos: [string, string | null][] = nota
+  type Campo = [string, string | null];
+  const si = (etiqueta: string, valor: string | null | undefined): Campo[] =>
+    valor ? [[etiqueta, valor]] : [];
+  // Columnas explícitas: la identidad del cliente se lee junta y, en la nota, el despacho queda aparte.
+  const columnas: [Campo[], Campo[]] = nota
     ? [
-        ['Nombre', c.nombre],
-        ['Rut', c.rut],
-        ['Giro', c.giro],
-        ['Dirección', c.direccion],
-        ['Dirección de Despacho', doc.despacho?.direccion ?? null],
-        ['Ciudad / Comuna', c.comuna],
-        ['Medio de Transporte', doc.despacho?.transporte ?? null],
-        ['Contacto Teléfono', c.telefono],
-        ...(doc.autor ? [['Aprobada por', doc.autor] as [string, string]] : []),
-        ...(q.emitidaPor ? [['Cotización emitida por', q.emitidaPor] as [string, string]] : []),
+        [
+          ['Nombre', c.nombre],
+          ['RUT', c.rut],
+          ['Giro', c.giro],
+          ['Dirección', c.direccion],
+          ['Ciudad / Comuna', c.comuna],
+          ['Teléfono', c.telefono],
+        ],
+        [
+          ['Dirección de despacho', doc.despacho?.direccion ?? null],
+          ['Medio de transporte', doc.despacho?.transporte ?? null],
+          ...si('Proyecto', c.proyecto),
+        ],
       ]
     : [
-        ['Nombre', c.nombre],
-        ['Proyecto', c.proyecto],
-        ['Ciudad / Comuna', c.comuna],
-        ...(c.rut ? [['RUT', c.rut] as [string, string]] : []),
-        ...(c.giro ? [['Giro', c.giro] as [string, string]] : []),
-        ...(c.direccion ? [['Dirección', c.direccion] as [string, string]] : []),
-        ...(c.telefono ? [['Teléfono', c.telefono] as [string, string]] : []),
-        ...(doc.autor ? [['Emitida por', doc.autor] as [string, string]] : []),
+        [['Nombre', c.nombre], ...si('RUT', c.rut), ...si('Giro', c.giro), ...si('Teléfono', c.telefono)],
+        [['Proyecto', c.proyecto], ...si('Dirección', c.direccion), ['Ciudad / Comuna', c.comuna]],
       ];
-  const referencia = nota
-    ? `<p>Ref. cotización N° ${q.numero}</p>`
-    : q.origen
-      ? `<p>Revisión de la cotización N° ${q.origen}</p>`
-      : '';
+  const encabezados = nota ? ['Cliente', 'Despacho'] : null;
+  const metadatos: Campo[] = [
+    ['Fecha', fechaDocumento(fecha)],
+    ...(nota
+      ? si('Ref. cotización', `N° ${q.numero}`)
+      : si('Revisión de la cotización', q.origen ? `N° ${q.origen}` : null)),
+    ...(nota
+      ? [...si('Aprobada por', doc.autor), ...si('Cotización emitida por', q.emitidaPor)]
+      : si('Emitida por', doc.autor)),
+  ];
+  const campo = ([k, v]: Campo) => `<div><b>${k}:</b> ${esc(v)}</div>`;
   const fila = (etiqueta: string, valor: string, clase = '') =>
     `<p${clase ? ` class="${clase}"` : ''}><span>${etiqueta}</span><b>${valor}</b></p>`;
   const totales = [
@@ -87,7 +132,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
       : []),
     ...(montos.flete ? [fila('FLETE', pesos(montos.flete))] : []),
     ...(montos.descuento || montos.flete ? [fila('NETO', pesos(montos.neto))] : []),
-    fila(`${nota ? 'TOTAL I.V.A.' : 'I.V.A.'} ${porcentajeIva()}`, pesos(montos.iva)),
+    fila(`I.V.A. ${porcentajeIva()}`, pesos(montos.iva)),
     fila('TOTAL', pesos(montos.total), 'total'),
   ].join('');
   const validez = doc.vence
@@ -103,23 +148,44 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
       .join(' · '),
   ].filter(Boolean);
   const anulacion = doc.anulada
-    ? `<div class="anulada-marca" aria-hidden="true">ANULADA</div><p class="anulada-aviso">${nota ? 'NOTA DE PEDIDO ANULADA' : 'COTIZACIÓN ANULADA'}${doc.anulada.fecha ? ` el ${new Date(doc.anulada.fecha).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })}` : ''}${doc.anulada.por ? ` por ${esc(doc.anulada.por)}` : ''}${doc.anulada.motivo ? `. Motivo: ${esc(doc.anulada.motivo)}` : ''}. No es válida${nota ? ' para fábrica' : ''}.</p>`
+    ? `<div class="anulada-marca" aria-hidden="true">ANULADA</div><p class="anulada-aviso">${nota ? 'NOTA DE PEDIDO ANULADA' : 'COTIZACIÓN ANULADA'}${doc.anulada.fecha ? ` el ${fechaDocumento(doc.anulada.fecha)}` : ''}${doc.anulada.por ? ` por ${esc(doc.anulada.por)}` : ''}${doc.anulada.motivo ? `. Motivo: ${esc(doc.anulada.motivo)}` : ''}. No es válida${nota ? ' para fábrica' : ''}.</p>`
     : '';
-  const pie = nota
-    ? '<p><b>GRACIAS</b></p>'
-    : `<p>Valores puestos en fábrica.</p><p>${montos.flete ? `Incluye flete por ${pesos(montos.flete)} neto.` : 'Flete por despacho pendiente: valor según unidades de compra.'}</p><p>${validez}</p>`;
+  const firma = (rotulo: string) => `<div class="firma"><span></span>${rotulo}</div>`;
+  const condiciones = [
+    'Valores puestos en fábrica.',
+    montos.flete
+      ? 'Incluye flete por despacho (detallado en los totales).'
+      : 'Flete por despacho pendiente: valor según unidades de compra.',
+    validez,
+    ...[
+      ['Forma de pago', empresa.condicionesPago],
+      ['Plazo de entrega', empresa.plazoEntrega],
+      ['Datos para transferencia', empresa.datosBancarios],
+    ].flatMap(([k, v]) => (v ? [`<b>${k}:</b> ${esc(v)}`] : [])),
+  ];
+  // La cotización cierra con sus condiciones y la aceptación del cliente; la nota, con lo que fábrica
+  // completa a mano: entrega comprometida, observaciones y recepción.
+  const cierre = nota
+    ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span></span></div><div class="observaciones"><b>Observaciones:</b></div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
+    : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
   const descripcion = (l: Linea) => {
     const pedida = medidaPedida(l);
-    return `${esc(l.producto.descripcion)}${pedida ? `<br><small>Medida solicitada: ${esc(pedida)}</small>` : ''}`;
+    return `${esc(descripcionLegible(l.producto.descripcion))}${pedida ? `<br><small>Medida solicitada: ${esc(pedida)}</small>` : ''}`;
   };
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
-    @page{size:A4;margin:18mm 15mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}header{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #324536;padding-bottom:22px}header img{width:145px;max-height:75px}h1{font:19px Georgia,serif;margin:0 0 10px}header>div:last-child{text-align:right}section{margin:23px 0;display:grid;grid-template-columns:1fr 1fr;gap:12px 25px}section div{min-height:15px}b{font-weight:600}table{width:100%;border-collapse:collapse;font-size:10px}thead{display:table-header-group}th{text-align:left;border-top:1px solid #324536;border-bottom:1px solid #324536;padding:10px 5px;font-size:8px}td{padding:12px 5px;border-bottom:1px solid #deded6;vertical-align:top}td small{font-size:9px;color:#4a524a}tr{break-inside:avoid}.num{text-align:right;white-space:nowrap}.codigo{white-space:nowrap;font-size:8px}.totales{width:255px;margin:24px 0 28px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6;break-inside:avoid}footer p{margin:3px 0}.empresa{text-align:left;font-size:9px;line-height:1.5;margin-top:8px;color:#4a524a}.anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}
-    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="data:image/svg+xml;base64,${logo.toString('base64')}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1><span>FECHA: ${new Date(fecha).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' })}</span>${referencia}</div></header>
-    <section>${campos.map(([k, v]) => `<div><b>${k}:</b> ${esc(v)}</div>`).join('')}</section>
-    <table><thead><tr>${nota ? '' : '<th>ITEM</th>'}<th>CÓDIGO</th><th>DESCRIPCIÓN${nota ? ' PRODUCTO' : ''}</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th></tr></thead><tbody>
-    ${montos.lineas.map((l, i) => `<tr>${nota ? '' : `<td>${i + 1}</td>`}<td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${pesos(l.precioUnitario)}</td><td class="num">${pesos(l.total)}</td></tr>`).join('')}${montos.flete ? `<tr>${nota ? '' : `<td>${montos.lineas.length + 1}</td>`}<td class="codigo">FLETE</td><td>Flete por despacho</td><td class="num">1</td><td class="num">${pesos(montos.flete)}</td><td class="num">${pesos(montos.flete)}</td></tr>` : ''}</tbody></table>
+    @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}
+    header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-bottom:2px solid #324536;padding-bottom:20px}header img{display:block;height:120px;width:auto}header>div:last-child{text-align:right}h1{font:700 20px Arial,sans-serif;letter-spacing:.03em;margin:4px 0 12px;color:#1c241e}header p{margin:4px 0 0}.empresa{font-size:10px;line-height:1.5;margin-top:10px;color:#3d443d}
+    section{margin:22px 0;display:grid;grid-template-columns:1fr 1fr;gap:0 25px}section div div{min-height:15px;margin-bottom:11px}h2{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#324536;margin:0 0 10px;padding-bottom:5px;border-bottom:1px solid #deded6}
+    table{width:100%;border-collapse:collapse;font-size:10px}thead{display:table-header-group}th{text-align:left;border-top:1px solid #324536;border-bottom:1px solid #324536;padding:10px 5px;font-size:9px}td{padding:11px 5px;border-bottom:1px solid #deded6;vertical-align:baseline}td small{font-size:9px;color:#4a524a}tr{break-inside:avoid}.num{text-align:right;white-space:nowrap}.codigo{white-space:nowrap;font-size:9px}.check{width:34px;text-align:center}.check i{display:inline-block;width:11px;height:11px;border:1px solid #324536;vertical-align:-2px}
+    .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}
+    footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6}.bloque{break-inside:avoid;margin-bottom:18px}.bloque p{margin:2px 0}.firmas{display:flex;gap:28px;margin-top:34px}.firma{flex:1;font-size:9px;color:#4a524a}.firma span{display:block;border-top:1px solid #242a24;margin-bottom:4px}.linea{display:flex;gap:8px;align-items:baseline;margin-bottom:12px}.linea span{flex:1;border-bottom:1px solid #9a9f98;height:12px}.observaciones{border:1px solid #9a9f98;min-height:64px;padding:6px 8px}.contacto{color:#4a524a}
+    .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}
+    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="data:image/svg+xml;base64,${logo.toString('base64')}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
+    <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
+    <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
+    ${montos.lineas.map((l, i) => `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${pesos(l.precioUnitario)}</td><td class="num">${pesos(l.total)}</td>${nota ? '<td class="check"><i></i></td>' : ''}</tr>`).join('')}</tbody></table>
     <div class="totales">${totales}</div>
-    <footer>${pie}<p>Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
+    <footer>${cierre}<p class="contacto">Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
 }
 
 // Un solo Chromium reutilizado entre documentos: lanzarlo cuesta más que imprimir. Se cierra tras un
@@ -185,7 +251,17 @@ export async function generarPdf(directorio: string, archivo: string, html: stri
     page.setDefaultTimeout(plazoMs);
     await page.route('**/*', (route) => route.abort());
     await page.setContent(html, { waitUntil: 'load', timeout: plazoMs });
-    await page.pdf({ path: temporal, format: 'A4', printBackground: true, preferCSSPageSize: true });
+    await page.pdf({
+      path: temporal,
+      format: 'A4',
+      printBackground: true,
+      preferCSSPageSize: true,
+      // Numeración en el margen inferior: en documentos largos cada hoja dice cuántas son.
+      displayHeaderFooter: true,
+      headerTemplate: '<span></span>',
+      footerTemplate:
+        '<div style="width:100%;padding:0 15mm;font:8px Arial,sans-serif;color:#6b716b;text-align:right">Página <span class="pageNumber"></span> de <span class="totalPages"></span></div>',
+    });
   })();
   let fallo = false;
   try {

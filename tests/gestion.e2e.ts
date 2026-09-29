@@ -92,3 +92,38 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await expect(panel.getByRole('button', { name: 'Anular', exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
 });
+
+test('si el catálogo cambia antes de emitir, muestra los montos nuevos y pide confirmar', async ({
+  page,
+}) => {
+  const db = abrirBaseDatos('data/test-e2e/cotizador.sqlite', { permitirJsonLegado: true });
+  const puerta = new RepositorioCatalogoSqlite(db).buscarPorCodigo('HUIL-O-3-B')!;
+  const antes = cotizar([{ producto: puerta, cantidad: 3 }]);
+  const despues = cotizar([{ producto: { ...puerta, precioNeto: puerta.precioNeto + 1000 }, cantidad: 3 }]);
+  const precio = db.prepare('UPDATE productos_catalogo SET precio_neto = ? WHERE codigo = ?');
+  await iniciarSesion(page);
+  const total = page.getByTestId('total');
+  await page.getByRole('button', { name: 'Nueva cotización' }).click();
+  await page
+    .getByLabel('Escribe tu pedido')
+    .fill('Cotiza 3 Huilo Huilo oregón de 80×210 para Rosa Díaz, Valdivia');
+  await page.getByRole('button', { name: 'Enviar mensaje' }).click();
+  await expect(total).toHaveText(pesos(antes.total));
+  precio.run(puerta.precioNeto + 1000, puerta.codigo);
+  try {
+    await page.getByRole('button', { name: 'Generar PDF', exact: true }).click();
+    const emitir = page.getByRole('alertdialog', { name: 'Emitir la cotización' });
+    await expect(emitir).toContainText(pesos(antes.total));
+    await emitir.getByRole('button', { name: 'Emitir y generar PDF' }).click();
+    // No se emite con un total distinto del revisado: el panel se actualiza y se pide confirmar.
+    const cambio = page.getByRole('alertdialog', { name: 'Los precios cambiaron' });
+    await expect(cambio).toContainText(pesos(despues.total));
+    await expect(total).toHaveText(pesos(despues.total));
+    const descarga = page.waitForEvent('download');
+    await cambio.getByRole('button', { name: 'Emitir con los montos actualizados' }).click();
+    expect((await descarga).suggestedFilename()).toMatch(/^cotizacion-\d+\.pdf$/);
+    await expect(total).toHaveText(pesos(despues.total));
+  } finally {
+    precio.run(puerta.precioNeto, puerta.codigo);
+  }
+});

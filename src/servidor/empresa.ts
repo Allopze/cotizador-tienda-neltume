@@ -7,6 +7,10 @@ export interface DatosEmpresa {
   telefono: string | null;
   correo: string;
   web: string | null;
+  /** Condiciones comerciales impresas en la cotización; se omiten si no están configuradas. */
+  condicionesPago: string | null;
+  plazoEntrega: string | null;
+  datosBancarios: string | null;
 }
 
 export const CORREO_PREDETERMINADO = 'Neltume.co@gmail.com';
@@ -21,5 +25,8 @@ export function datosEmpresa(): DatosEmpresa {
     telefono: leer('NELTUME_EMPRESA_TELEFONO'),
     correo: leer('NELTUME_EMPRESA_CORREO') ?? CORREO_PREDETERMINADO,
     web: leer('NELTUME_EMPRESA_WEB'),
+    condicionesPago: leer('NELTUME_CONDICIONES_PAGO'),
+    plazoEntrega: leer('NELTUME_PLAZO_ENTREGA'),
+    datosBancarios: leer('NELTUME_DATOS_BANCARIOS'),
   };
 }

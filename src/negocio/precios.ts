@@ -107,7 +107,8 @@ export function cotizar(
     };
   });
   const subtotal = lineas.reduce((sum, l) => sum + l.total, 0),
-    descuento = Math.round((subtotal * descuentoPorcentaje) / 100),
+    // En centésimas de punto: 2,3 % × 1.500 = 34,5 → 35 (en coma flotante daba 34,4999… → 34).
+    descuento = Math.round((subtotal * Math.round(descuentoPorcentaje * 100)) / 10000),
     neto = subtotal - descuento + flete,
     iva = Math.round(neto * reglas.iva),
     total = neto + iva;

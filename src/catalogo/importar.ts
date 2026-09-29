@@ -14,6 +14,19 @@ const limpio = (v: unknown) =>
     .trim()
     .toUpperCase();
 const num = (v: unknown) => Math.round(Number(v) * 10000) / 10000;
+const DATOS_INVALIDOS = 'Datos incompletos o precio neto/IVA inconsistente.';
+/** Tolerancia de filas inválidas antes de rechazar la planilla completa. */
+const MAX_FILAS_INVALIDAS = 5,
+  MAX_PROPORCION_INVALIDAS = 0.01;
+const lista = (items: string[], max = 10) =>
+  items.slice(0, max).join(', ') + (items.length > max ? ` y ${items.length - max} más` : '');
+/** La planilla no es apta para reemplazar el catálogo; no se escribe nada. */
+export class ErrorImportacion extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = 'ErrorImportacion';
+  }
+}
 export interface Incidencia {
   fila: number;
   accion: 'correccion' | 'exclusion';
@@ -126,7 +139,7 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       incidencias.push({
         fila: r,
         accion: 'exclusion',
-        detalle: 'Datos incompletos o precio neto/IVA inconsistente.',
+        detalle: DATOS_INVALIDOS,
       });
       continue;
     }
@@ -185,10 +198,17 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
     p.descripcion = descripcion(p);
     candidatos.push(p);
   }
-  const vistosC = new Set<string>(),
-    vistosA = new Set<string>();
+  const vistosC = new Map<string, Producto>(),
+    vistosA = new Map<string, Producto>();
+  const preciosEnConflicto: string[] = [];
   const productos = candidatos.filter((p) => {
-    if (vistosC.has(p.codigo) || vistosA.has(clave(p))) {
+    const previo = vistosC.get(p.codigo) ?? vistosA.get(clave(p));
+    if (previo) {
+      // Un duplicado con otro precio no se resuelve eligiendo una fila: la planilla debe corregirse.
+      if (previo.precioNeto !== p.precioNeto)
+        preciosEnConflicto.push(
+          `filas ${previo.filaOrigen} y ${p.filaOrigen} (${p.codigo}: ${previo.precioNeto} y ${p.precioNeto})`,
+        );
       incidencias.push({
         fila: p.filaOrigen,
         accion: 'exclusion',
@@ -196,10 +216,22 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       });
       return false;
     }
-    vistosC.add(p.codigo);
-    vistosA.add(clave(p));
+    vistosC.set(p.codigo, p);
+    vistosA.set(clave(p), p);
     return true;
   });
+  if (preciosEnConflicto.length)
+    throw new ErrorImportacion(
+      `La planilla repite ${preciosEnConflicto.length} producto(s) con precios distintos: ${lista(preciosEnConflicto)}. Deja una sola fila por producto.`,
+    );
+  // Una planilla dañada (columnas corridas, precios vacíos) no debe reemplazar el catálogo con lo poco
+  // que quede: se aceptan pocas filas inválidas, que igual quedan en el reporte.
+  const invalidas = incidencias.filter((i) => i.accion === 'exclusion' && i.detalle === DATOS_INVALIDOS);
+  const leidas = originales.length + invalidas.length;
+  if (invalidas.length > Math.max(MAX_FILAS_INVALIDAS, leidas * MAX_PROPORCION_INVALIDAS))
+    throw new ErrorImportacion(
+      `${invalidas.length} de ${leidas} filas de Precio tienen datos incompletos o un precio inválido (${lista(invalidas.map((i) => `fila ${i.fila}`))}). Revisa la planilla; el catálogo no se modificó.`,
+    );
   const erroresPlantilla: string[] = [];
   if (!plantilla.get('P25')?.formula && plantilla.get('P25')?.valor === 0)
     erroresPlantilla.push('P25: 0 fijo; el ítem 18 se cotiza a $0.');

@@ -41,6 +41,11 @@ describe('Motor de precios', () => {
     expect(r.neto).toBe(378 - 47 + 1000);
     expect(r.iva).toBe(Math.round(1331 * 0.19));
     expect(r.total).toBe(1331 + 253);
+    // Medio peso exacto con un porcentaje decimal: 1.500 × 2,3 % = 34,5 → 35 (no 34 por coma flotante).
+    const exacto = cotizar([{ producto: { ...producto, precioNeto: 1200 }, cantidad: 1 }], undefined, {
+      descuento: 2.3,
+    });
+    expect([exacto.subtotal, exacto.descuento]).toEqual([1500, 35]);
     for (const descuento of [-1, 50.01, 1.234, NaN])
       expect(() => cotizar([{ producto, cantidad: 1 }], undefined, { descuento })).toThrowError(
         'descuento_invalido',

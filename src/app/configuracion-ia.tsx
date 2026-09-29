@@ -92,8 +92,6 @@ function Formulario({
 
   useEffect(() => {
     const controlador = new AbortController();
-    setCatalogo(null);
-    setErrorCatalogo('');
     pedirJSON<CatalogoModelos>('/api/ajustes/modelos', { signal: controlador.signal, cache: 'no-store' }).then(
       setCatalogo,
       (causa) => {
@@ -142,7 +140,12 @@ function Formulario({
             desactualizado={catalogo?.desactualizado ?? false}
             editable={editable && !ocupado}
             seleccionar={(modelo) => setBorrador({ commandcode: { modelo } })}
-            reintentar={() => setIntentoCatalogo((actual) => actual + 1)}
+            reintentar={() => {
+              // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
+              setCatalogo(null);
+              setErrorCatalogo('');
+              setIntentoCatalogo((actual) => actual + 1);
+            }}
           />
         </div>
         {catalogo?.desactualizado && (
@@ -240,7 +243,15 @@ function SelectorModelo({
       titulo: 'PRECIO NO PUBLICADO',
       opciones: filtrados.filter((opcion) => !opcion.gratis && (opcion.precioEntrada === null || opcion.precioSalida === null)),
     },
-  ].filter((grupo) => grupo.opciones.length > 0);
+  ]
+    .filter((grupo) => grupo.opciones.length > 0)
+    .reduce<{ titulo: string; opciones: { opcion: ModeloCommandCode; indice: number }[] }[]>(
+      (lista, grupo) => {
+        const inicio = lista.reduce((n, g) => n + g.opciones.length, 0);
+        return [...lista, { titulo: grupo.titulo, opciones: grupo.opciones.map((opcion, i) => ({ opcion, indice: inicio + i })) }];
+      },
+      [],
+    );
   const seleccionadoNoDisponible = !actual && modelo.trim() !== '';
 
   useEffect(() => {
@@ -283,7 +294,6 @@ function SelectorModelo({
     }
   }
 
-  let indiceOpcion = 0;
   return (
     <div
       ref={selector}
@@ -368,8 +378,7 @@ function SelectorModelo({
                 grupos.map((grupo) => (
                   <div key={grupo.titulo} role="presentation">
                     <p className="ia-model-group-title">{grupo.titulo}</p>
-                    {grupo.opciones.map((opcion) => {
-                      const indice = indiceOpcion++;
+                    {grupo.opciones.map(({ opcion, indice }) => {
                       return (
                         <div
                           id={`ia-modelo-opcion-${indice}`}

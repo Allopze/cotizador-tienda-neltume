@@ -100,20 +100,23 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
     ocupadoRef.current = ocupado;
   }, [ocupado]);
 
-  const alListar = useCallback((d: Listado) => setConfigurado(d.asistenteConfigurado), []);
+  const alListar = useCallback((d: Listado) => setConfigurado(d.asistenteConfigurado), [setConfigurado]);
   const historial = useHistorial(alListar);
   const { recargar: recargarLista } = historial;
   const cargando = historial.cargando || restaurando;
 
   /** Detalle completo de una cotización (el listado solo trae resúmenes). */
-  const leerDetalle = useCallback(async (id: string, signal?: AbortSignal) => {
-    const d = await pedirJSON<Detalle>(`/api/accion?id=${encodeURIComponent(id)}`, {
-      signal,
-      cache: 'no-store',
-    });
-    setConfigurado(d.asistenteConfigurado);
-    return d.cotizacion;
-  }, []);
+  const leerDetalle = useCallback(
+    async (id: string, signal?: AbortSignal) => {
+      const d = await pedirJSON<Detalle>(`/api/accion?id=${encodeURIComponent(id)}`, {
+        signal,
+        cache: 'no-store',
+      });
+      setConfigurado(d.asistenteConfigurado);
+      return d.cotizacion;
+    },
+    [setConfigurado],
+  );
   /** Relee la cotización abierta; sin `forzar` no la toca durante una operación. */
   const recargarActual = useCallback(
     async (id: string, forzar = false) => {
@@ -464,13 +467,55 @@ export function Cotizador({ email, nombre }: { email: string; nombre: string }) 
         titulo: 'Emitir la cotización',
         mensaje: (
           <>
+            <p>
+              Total a emitir: <strong>{pesos(q.montos.total)}</strong> (IVA incluido).
+            </p>
             <p>Se asignará el siguiente número correlativo y la cotización quedará emitida.</p>
             <p>El número no se reutiliza: si luego hay cambios, se creará una revisión con otro número.</p>
           </>
         ),
         aceptar: 'Emitir y generar PDF',
       });
-      if (ok) await ejecutar('emitir', { tipo: 'emitir', ...versionDe(q) }, q);
+      if (!ok) return;
+      setEnCurso('emitir');
+      limpiar('operacion');
+      try {
+        try {
+          recibir(await peticion({ tipo: 'emitir', id: q.id, ...versionDe(q) }), { previa: q });
+        } catch (e) {
+          // El catálogo cambió: el servidor ya guardó los montos nuevos en el borrador y no emitió.
+          if (!(e instanceof ErrorSolicitud && e.codigo === 'precios_cambiaron')) throw e;
+          const vigente = await recargarActual(q.id, true);
+          const avisos = Array.isArray(e.detalle?.avisos) ? e.detalle.avisos.map(String) : [];
+          const reconfirmado = await confirmar({
+            titulo: 'Los precios cambiaron',
+            mensaje: (
+              <>
+                <p>{mensajeDe(e)}</p>
+                {avisos.length > 0 && (
+                  <ul>
+                    {avisos.map((a) => (
+                      <li key={a}>{a}</li>
+                    ))}
+                  </ul>
+                )}
+                <p>
+                  Nuevo total: <strong>{pesos(vigente.montos.total)}</strong> (IVA incluido).
+                </p>
+              </>
+            ),
+            aceptar: 'Emitir con los montos actualizados',
+          });
+          if (!reconfirmado) return;
+          recibir(await peticion({ tipo: 'emitir', id: vigente.id, ...versionDe(vigente) }), {
+            previa: vigente,
+          });
+        }
+      } catch (e) {
+        fallo(e, q);
+      } finally {
+        setEnCurso(null);
+      }
     },
     async aprobar() {
       const q = actual;

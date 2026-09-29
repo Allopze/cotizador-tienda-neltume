@@ -11,6 +11,7 @@
     "auth:migrar": "tsx scripts/migrar-auth.ts",
     "usuarios": "tsx scripts/usuarios.ts",
     "limpiar-borradores": "tsx scripts/limpiar-borradores.ts",
+    "respaldar": "tsx scripts/respaldar.ts",
     "feriados": "tsx scripts/feriados.ts",
     "test": "vitest run && npm run test:e2e",
     "test:unit": "vitest run",

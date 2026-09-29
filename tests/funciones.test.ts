@@ -3,6 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Servicio, type Resultado } from '../src/servidor/servicio';
+import type { ErrorUsuario } from '../src/servidor/errores';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { ErrorIA } from '../src/asistente/errores';
@@ -197,15 +198,34 @@ describe('M1, M2 y B3', () => {
 });
 
 describe('M3: emisión con precios vigentes', () => {
-  it('recalcula al emitir y avisa los precios que cambiaron', async () => {
+  it('si cambiaron los precios no emite: actualiza el borrador y pide confirmar', async () => {
     const catalogo = catalogoBase();
-    const { servicio, conPedido } = await setup(catalogo);
+    const { servicio, almacen, conPedido } = await setup(catalogo);
     const q = await conPedido();
     expect(q.montos.lineas[0].precioUnitario).toBe(126);
     catalogo.productos[0].precioNeto = 200;
-    const r = await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada });
+    const rechazo = await servicio
+      .ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })
+      .catch((e: ErrorUsuario) => e);
+    expect(rechazo).toMatchObject({ status: 409, codigo: 'precios_cambiaron' });
+    const detalle = (rechazo as ErrorUsuario).detalle!;
+    expect((detalle.avisos as string[]).join(' ')).toMatch(/\$126 a \$250/);
+    // Nada emitido ni número consumido; el borrador ya muestra los montos que se emitirán.
+    const vigente = almacen.obtener(q.id)!;
+    expect(vigente).toMatchObject({ estado: 'borrador', numero: null, pdf: null });
+    expect(vigente.montos.lineas[0].precioUnitario).toBe(250);
+    expect(vigente.montos.total).toBe(detalle.total);
+    expect(vigente.actualizada).toBe(detalle.actualizada);
+    expect(almacen.correlativos().siguienteCotizacion).toBe(CORRELATIVO_COTIZACION);
+    expect(almacen.eventos(q.id).at(-1)?.detalle).toMatch(/Precios del catálogo vigente/);
+    // La versión anterior ya no sirve; con la nueva se emite sin diferencias.
+    await expect(
+      servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada }),
+    ).rejects.toMatchObject({ codigo: 'version_obsoleta' });
+    const r = await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: vigente.actualizada });
+    expect(r.cotizacion.numero).toBe(CORRELATIVO_COTIZACION);
     expect(r.cotizacion.montos.lineas[0].precioUnitario).toBe(250);
-    expect(r.avisos?.join(' ')).toMatch(/\$126 a \$250/);
+    expect(r.avisos).toBeUndefined();
     expect(r.cotizacion.versionCatalogo).toBe('test:2026-01-01');
   });
 });
@@ -370,6 +390,28 @@ describe('Nuevas acciones', () => {
     await expect(
       servicio.ejecutar({ tipo: 'editar', id: a.id, actualizada: anulada.actualizada, descuento: 5 }),
     ).rejects.toMatchObject({ codigo: 'no_editable' });
+  });
+
+  it('una aprobada que se anuló no se vuelve a informar como aprobada', async () => {
+    const { servicio, llm, emitida, conPedido } = await setup();
+    const e = await emitida();
+    const a = (await servicio.ejecutar({ tipo: 'aprobar', id: e.id, actualizada: e.actualizada })).cotizacion;
+    const anulada = (await servicio.ejecutar({ tipo: 'anular', id: a.id, actualizada: a.actualizada }))
+      .cotizacion;
+    await expect(
+      servicio.ejecutar({ tipo: 'aprobar', id: a.id, actualizada: anulada.actualizada }),
+    ).rejects.toMatchObject({ codigo: 'estado_invalido', message: expect.stringMatching(/anulada/) });
+    const otra = await conPedido();
+    llm.interpretar.mockResolvedValueOnce({ name: 'aprobar_cotizacion', input: { numero: e.numero } });
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      id: otra.id,
+      actualizada: otra.actualizada,
+      mensaje: `se aprobó la ${e.numero}`,
+    });
+    expect(r.cotizacion.historial.at(-1)?.texto).toMatch(/está anulada.*no se puede aprobar/);
+    expect(r.archivo).toBeUndefined();
+    expect(r.confirmar).toBeUndefined();
   });
 
   it('aprobar una vencida exige confirmarVencida', async () => {

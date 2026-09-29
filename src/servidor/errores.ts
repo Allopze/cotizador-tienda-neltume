@@ -9,6 +9,7 @@ export type CodigoError =
   | 'revision_abierta'
   | 'serie_aprobada'
   | 'cotizacion_vencida'
+  | 'precios_cambiaron'
   | 'ocupado'
   | 'mensaje_procesado'
   | 'pdf_no_disponible';
