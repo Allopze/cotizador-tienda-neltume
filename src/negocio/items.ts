@@ -35,20 +35,41 @@ const cambioDeProducto = (antes: ProductoItem, despues: ProductoItem) =>
   (antes.modelo !== '' && antes.modelo !== despues.modelo) ||
   (antes.madera !== '' && antes.madera !== despues.madera);
 
-/** La descripción de documento describía el producto anterior: se descarta si cambia y el turno no trae otra. */
-export const descartaDescripcion = (antes: SolicitudItem, despues: SolicitudItem, producto: ClaveProducto) =>
-  !!antes.descripcion && despues.descripcion === antes.descripcion && cambioDeProducto(producto(antes), producto(despues));
+export interface Descartes {
+  descripcion: boolean;
+  precio: boolean;
+}
 
-export const avisoDescripcionDescartada = (numero: number) =>
-  `El ítem ${numero} cambió de modelo o madera: se descartó su descripción de documento personalizada, que describía el producto anterior.`;
+/**
+ * La descripción de documento y el precio unitario manual eran del producto anterior: si cambia el modelo o la
+ * madera se quitan de `despues`, salvo que el mismo cambio traiga otro valor. Devuelve lo descartado, o null.
+ */
+export function descartarDelProducto(antes: SolicitudItem, despues: SolicitudItem, producto: ClaveProducto): Descartes | null {
+  if (!cambioDeProducto(producto(antes), producto(despues))) return null;
+  const descartes = {
+    descripcion: !!antes.descripcion && despues.descripcion === antes.descripcion,
+    precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario,
+  };
+  if (!descartes.descripcion && !descartes.precio) return null;
+  if (descartes.descripcion) despues.descripcion = null;
+  if (descartes.precio) despues.precioUnitario = null;
+  return descartes;
+}
+
+export const avisoProductoCambiado = (numero: number, { descripcion, precio }: Descartes) =>
+  `El ítem ${numero} cambió de modelo o madera: se descartó ${[
+    descripcion && 'su descripción de documento personalizada',
+    precio && 'su precio unitario manual',
+  ]
+    .filter(Boolean)
+    .join(' y ')}${precio ? '; se usa el precio de catálogo' : ''}.`;
 
 /**
  * Devuelve los ítems que propone la IA con las ediciones manuales del ítem anterior que corresponde. La IA no ve
  * margen ni precio, y deja en null lo que no cambia. Orden de emparejamiento, cada ítem nuevo con uno anterior libre:
  * misma posición e identidad (modelo, madera y medidas); misma identidad en otra posición; misma posición con las
- * medidas cambiadas o completadas; misma posición con otro modelo o madera pero las mismas medidas (este último no
- * hereda el precio manual, que era del producto anterior). Sin pareja es un ítem nuevo y no hereda nada.
- * `descartadas` son las posiciones que perdieron su descripción.
+ * medidas cambiadas o completadas; misma posición con otro modelo o madera pero las mismas medidas (ahí la descripción
+ * y el precio manual se descartan, con aviso). Sin pareja es un ítem nuevo y no hereda nada.
  */
 export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[], producto: ClaveProducto) {
   const pp = previos.map(producto),
@@ -73,7 +94,7 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
   emparejar(true, mismaIdentidad);
   emparejar(false, (i, j) => !cambioDeProducto(pp[j], pn[i]));
   emparejar(false, (i, j) => mn[i] === mp[j]);
-  const descartadas: number[] = [];
+  const avisos: string[] = [];
   const items = nuevos.map((nuevo, i) => {
     const j = pareja.get(i);
     if (j === undefined) return nuevo;
@@ -81,16 +102,14 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
     const item: SolicitudItem = {
       ...nuevo,
       margen: previo.margen ?? null,
-      precioUnitario: cambioDeProducto(pp[j], pn[i]) ? null : (previo.precioUnitario ?? null),
+      precioUnitario: previo.precioUnitario ?? null,
       tipoMedida: nuevo.tipoMedida ?? previo.tipoMedida ?? null,
       descripcion: nuevo.descripcion ?? previo.descripcion ?? null,
       observaciones: nuevo.observaciones ?? previo.observaciones ?? null,
     };
-    if (descartaDescripcion(previo, item, producto)) {
-      item.descripcion = null;
-      descartadas.push(i);
-    }
+    const descartes = descartarDelProducto(previo, item, producto);
+    if (descartes) avisos.push(avisoProductoCambiado(i + 1, descartes));
     return item;
   });
-  return { items, descartadas };
+  return { items, avisos };
 }

@@ -23,12 +23,13 @@ import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipo
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { aCentesimas } from '../negocio/cifras';
 import {
-  avisoDescripcionDescartada,
+  avisoProductoCambiado,
   claveMedida,
-  descartaDescripcion,
+  descartarDelProducto,
   fusionarItems,
   sanearTextos,
   textoItem,
+  type Descartes,
   type ProductoItem,
 } from '../negocio/items';
 import type { Cotizacion, Despacho, Mensaje } from '../negocio/estado';
@@ -703,10 +704,8 @@ export class Servicio {
           siguiente.margen = valor ?? null;
           if (valor !== null) siguiente.precioUnitario = null;
         }
-        if (descartaDescripcion(solicitudes[cambio.indice], siguiente, (s) => this.producto(s))) {
-          siguiente.descripcion = null;
-          avisosItems.push(avisoDescripcionDescartada(cambio.indice + 1));
-        }
+        const descartes = descartarDelProducto(solicitudes[cambio.indice], siguiente, (s) => this.producto(s));
+        if (descartes) avisosItems.push(avisoProductoCambiado(cambio.indice + 1, descartes));
         solicitudes[cambio.indice] = siguiente;
       }
       const { cliente, avisos: avisosCliente } = accion.cliente
@@ -1224,7 +1223,7 @@ export class Servicio {
 
   private aplicarModificacion(base: Cotizacion, cambios: ModificacionCotizacion) {
     const items = structuredClone(base.solicitudes);
-    const descartados: SolicitudItem[] = [];
+    const descartados: [SolicitudItem, Descartes][] = [];
     const actualizar = cambios.items ?? [];
     const quitar = cambios.quitar ?? [];
     const actualizarIndices = new Set<number>();
@@ -1249,10 +1248,8 @@ export class Servicio {
         siguiente.modeloOriginal = null;
         siguiente.coincidenciaModelo = null;
       }
-      if (descartaDescripcion(items[cambio.indice], siguiente, (s) => this.producto(s))) {
-        siguiente.descripcion = null;
-        descartados.push(siguiente);
-      }
+      const descartes = descartarDelProducto(items[cambio.indice], siguiente, (s) => this.producto(s));
+      if (descartes) descartados.push([siguiente, descartes]);
       items[cambio.indice] = siguiente;
     }
     for (const indice of quitar) {
@@ -1265,7 +1262,7 @@ export class Servicio {
     return {
       items,
       cliente: { ...base.cliente, ...(cambios.cliente ?? {}) },
-      avisos: descartados.map((d) => avisoDescripcionDescartada(items.indexOf(d) + 1)),
+      avisos: descartados.map(([d, descartes]) => avisoProductoCambiado(items.indexOf(d) + 1, descartes)),
     };
   }
 
@@ -1402,14 +1399,14 @@ export class Servicio {
       if (res.name === 'actualizar_cotizacion') {
         if (modo === 'modificacion_anterior') return responder(NO_ENTENDI);
         // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q.
-        const { items, descartadas } = fusionarItems(
+        const { items, avisos: avisosFusion } = fusionarItems(
           q.solicitudes,
           res.input.items.map(sanearTextos),
           (s) => this.producto(s),
         );
         propuesta = {
           items,
-          avisos: descartadas.map((i) => avisoDescripcionDescartada(i + 1)),
+          avisos: avisosFusion,
           cliente: {
             ...res.input.cliente,
             giro: res.input.cliente.giro === undefined ? q.cliente.giro : res.input.cliente.giro,
