@@ -54,10 +54,14 @@ export function lineaDe(q: Cotizacion, i: number) {
   const index = i - q.incompletos.filter((p) => p.indice < i).length;
   return { pendiente, linea: q.montos.lineas[index] ?? null };
 }
-export const descripcionItem = (q: Cotizacion, i: number) =>
-  nombreProducto(
-    q.solicitudes[i]?.descripcion || lineaDe(q, i).linea?.producto.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir',
+export const descripcionItem = (q: Cotizacion, i: number) => {
+  const { linea } = lineaDe(q, i);
+  return nombreProducto(
+    linea?.descripcionDocumento || linea?.producto.descripcion || q.solicitudes[i]?.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir',
   );
+};
+/** Frase que el panel sugiere agregar a las puertas sin tipo de medida; la escribe la persona, no el sistema. */
+const RECTIFICAR_MEDIDA = 'Rectificar si la medida corresponde a hoja o vano.';
 
 const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'proyecto', 'telefono', 'direccion'] as const;
 
@@ -361,6 +365,20 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         )}
                         {medida && <small>{medida}</small>}
                         {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
+                        {editable && linea?.producto.familia === 'PUERTA' && (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
+                          <div className="aviso-medida" role="note">
+                            <span>{RECTIFICAR_MEDIDA}</span>
+                            {!s.observaciones?.includes(RECTIFICAR_MEDIDA) && (
+                              <button
+                                type="button"
+                                className="button secondary small"
+                                onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { observaciones: [s.observaciones, RECTIFICAR_MEDIDA].filter(Boolean).join(' ') } }] }, `item.${i}.observaciones`)}
+                              >
+                                Agregar como observación
+                              </button>
+                            )}
+                          </div>
+                        )}
                         {editable && (
                           <div className="item-editables">
                             {linea && <small className="precio-trazabilidad">Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} → margen {porcentaje((linea.margen ?? 0) * 100)} → cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}</small>}

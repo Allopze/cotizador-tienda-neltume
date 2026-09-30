@@ -6,6 +6,7 @@ import type { Cotizacion, Despacho } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { fechaChilena } from '../negocio/vigencia';
+import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { chromiumPath } from './chromium';
 import { datosEmpresa } from './empresa';
 import { abrirBaseDatos } from './base-datos';
@@ -19,7 +20,6 @@ const esc = (s: unknown) =>
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
   );
-const decimal = (n: number) => n.toFixed(2).replace('.', ',');
 
 const UNIDAD_ESCUADRIA: Partial<Record<Linea['producto']['familia'], string>> = {
   MARCO: 'pulg.',
@@ -38,11 +38,11 @@ function escuadria(medida: string, familia: Linea['producto']['familia']) {
 export function medidaPedida(l: Linea): string | null {
   if (l.producto.familia === 'PUERTA') {
     if (l.anchoSolicitado === null && l.altoSolicitado === null) return null;
-    return `${l.anchoSolicitado === null ? '—' : decimal(l.anchoSolicitado)} × ${l.altoSolicitado === null ? '—' : decimal(l.altoSolicitado)} m`;
+    return `${l.anchoSolicitado === null ? '—' : metrosTexto(l.anchoSolicitado)} × ${l.altoSolicitado === null ? '—' : metrosTexto(l.altoSolicitado)} m`;
   }
   if (!l.medidaSolicitada && l.altoSolicitado === null) return null;
   const medida = escuadria(l.medidaSolicitada ?? l.producto.medida, l.producto.familia);
-  return `${medida} × ${l.altoSolicitado === null ? '—' : decimal(l.altoSolicitado)} m`;
+  return `${medida} × ${l.altoSolicitado === null ? '—' : metrosTexto(l.altoSolicitado)} m`;
 }
 
 const MINUSCULAS = new Set(['a', 'de', 'del', 'y', 'kit']);
@@ -50,10 +50,11 @@ const UNIDADES: Record<string, string> = { mt: 'm', mts: 'm', cm: 'cm', pulg: 'p
 
 /**
  * Las descripciones de la planilla vienen en mayúsculas; en el documento se leen mejor con mayúscula
- * inicial y unidades normalizadas. Las escritas a mano (con minúsculas) se respetan tal cual.
+ * inicial y unidades normalizadas. Las escritas a mano (con minúsculas) se respetan tal cual. El nombre
+ * canónico «Huilo Huilo» no cuenta como minúsculas: el importador lo deja así dentro de una descripción en mayúsculas.
  */
 export function descripcionLegible(texto: string) {
-  if (/\p{Ll}/u.test(texto)) return texto;
+  if (/\p{Ll}/u.test(texto.replaceAll('Huilo Huilo', ''))) return texto;
   return texto
     .toLowerCase()
     .split(/\s+/)
@@ -175,15 +176,16 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const cierre = nota
     ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="observaciones"><b>Observaciones:</b>${observaciones ? `<p>${esc(observaciones)}</p>` : ''}</div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
     : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
+  // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
   const descripcion = (l: Linea) => {
     const pedida = medidaPedida(l);
-    const tipoMedida = {
-      hoja: 'Hoja',
-      vano: 'Vano',
-      no_especificado: 'No especificado',
-    }[l.tipoMedida ?? 'no_especificado'];
-    const referencia = `${l.producto.codigo}: ${l.producto.anchoMin !== null && l.producto.anchoMax !== null ? `${decimal(l.producto.anchoMin)}–${decimal(l.producto.anchoMax)} m × ` : ''}${l.producto.altoMin !== undefined && l.producto.altoMin !== null && l.producto.altoMax !== undefined && l.producto.altoMax !== null && l.producto.altoMin !== l.producto.altoMax ? `${decimal(l.producto.altoMin)}–${decimal(l.producto.altoMax)} m` : `${decimal(l.producto.largo)} m`}`;
-    return `${esc(descripcionLegible(l.producto.descripcion))}${pedida ? `<br><small>Medida solicitada: ${esc(pedida)} · tipo: ${tipoMedida}</small>` : `<br><small>Tipo de medida: ${tipoMedida}</small>`}<br><small>Referencia de catálogo: ${esc(referencia)}</small>${l.observaciones ? `<br><small>Observación: ${esc(l.observaciones)}</small>` : ''}`;
+    const tipoMedida = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano' ? ` · medida de ${l.tipoMedida}` : '';
+    const detalles = [
+      pedida && `Medida solicitada: ${pedida}${tipoMedida}`,
+      nota && `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`,
+      l.observaciones && `Observación: ${l.observaciones}`,
+    ];
+    return `${esc(descripcionLegible(l.descripcionDocumento ?? l.producto.descripcion))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}`;
   };
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
     @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}

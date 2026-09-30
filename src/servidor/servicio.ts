@@ -265,11 +265,7 @@ export class Servicio {
           previas.add(k);
         }
         validos.push({
-          producto: {
-            ...res.producto,
-            modelo: nombreCanonicoModelo(res.producto.modelo),
-            descripcion: s.descripcion?.trim() || res.producto.descripcion,
-          },
+          producto: { ...res.producto, modelo: nombreCanonicoModelo(res.producto.modelo) },
           cantidad: res.cantidad,
           indice,
           anchoSolicitado: res.anchoSolicitado,
@@ -279,6 +275,7 @@ export class Servicio {
           margen: s.margen ?? null,
           tipoMedida: s.tipoMedida ?? null,
           observaciones: s.observaciones ?? null,
+          descripcionDocumento: s.descripcion ?? null,
         });
       } else q.incompletos.push({ indice, rechazo: res.rechazo, pregunta: pregunta(res.rechazo, s.modelo) });
     }
@@ -1106,6 +1103,7 @@ export class Servicio {
           precioUnitario: null,
           tipoMedida: l.tipoMedida,
           observaciones: l.observaciones,
+          descripcionDocumento: l.descripcionDocumento,
         })),
         {
           ...(q.reglas ?? REGLAS),

@@ -6,7 +6,7 @@ import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 11;
+const VERSION_ESQUEMA = 12;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -197,6 +197,23 @@ function crearEsquema(db: Database.Database) {
         UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = REPLACE(descripcion, 'HUILO HUILO', 'Huilo Huilo') WHERE UPPER(REPLACE(REPLACE(modelo, ' ', ''), '-', '')) = 'HUILOHUILO';
         UPDATE nota_lineas SET modelo = 'Huilo Huilo', descripcion = REPLACE(descripcion, 'HUILO HUILO', 'Huilo Huilo') WHERE UPPER(REPLACE(REPLACE(modelo, ' ', ''), '-', '')) = 'HUILOHUILO';
         PRAGMA user_version = 11;
+      `);
+    }).immediate();
+  if (version < 12)
+    db.transaction(() => {
+      // v12: la descripción del documento va aparte de la del producto de catálogo. Además se deshace el
+      // REPLACE de v11 sobre las descripciones de línea (en el catálogo están en mayúsculas); solo donde el
+      // resto del texto sigue en mayúsculas, para no tocar lo que alguien escribió a mano.
+      db.exec(`
+        ALTER TABLE cotizacion_lineas ADD COLUMN descripcion_documento TEXT;
+        ALTER TABLE nota_lineas ADD COLUMN descripcion_documento TEXT;
+        UPDATE cotizacion_lineas SET descripcion = REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO')
+          WHERE modelo = 'Huilo Huilo' AND INSTR(descripcion, 'Huilo Huilo') > 0
+            AND REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO') = UPPER(descripcion);
+        UPDATE nota_lineas SET descripcion = REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO')
+          WHERE modelo = 'Huilo Huilo' AND INSTR(descripcion, 'Huilo Huilo') > 0
+            AND REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO') = UPPER(descripcion);
+        PRAGMA user_version = 12;
       `);
     }).immediate();
 }

@@ -133,6 +133,7 @@ type FilaLinea = {
   precio_cliente: number | null;
   tipo_medida: 'hoja' | 'vano' | 'no_especificado' | null;
   observaciones: string | null;
+  descripcion_documento: string | null;
 };
 
 type FilaPago = Pago & { cotizacion_id: string };
@@ -213,6 +214,7 @@ const lineaDesdeFila = (l: FilaLinea): Linea => ({
   precioCliente: l.precio_cliente ?? l.precio_unitario,
   tipoMedida: l.tipo_medida,
   observaciones: l.observaciones,
+  descripcionDocumento: l.descripcion_documento,
   total: l.total,
   indice: l.indice,
   anchoSolicitado: l.ancho_solicitado,
@@ -434,12 +436,12 @@ function insertarLineas(
       cotizacion_id, orden, codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
       largo, precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total,
       indice, ancho_solicitado, alto_solicitado, medida_solicitada, precio_unitario_personalizado,
-      precio_fabrica, margen, margen_personalizado, precio_cliente, tipo_medida, observaciones
+      precio_fabrica, margen, margen_personalizado, precio_cliente, tipo_medida, observaciones, descripcion_documento
     ) VALUES (
       @cotizacion_id, @orden, @codigo, @modelo, @familia, @tipo, @madera, @medida,
       @ancho_min, @ancho_max, @alto_min, @alto_max, @largo, @precio_neto, @descripcion, @fila_origen,
       @cantidad, @precio_unitario, @total, @indice, @ancho_solicitado, @alto_solicitado, @medida_solicitada,
-      @precio_unitario_personalizado, @precio_fabrica, @margen, @margen_personalizado, @precio_cliente, @tipo_medida, @observaciones
+      @precio_unitario_personalizado, @precio_fabrica, @margen, @margen_personalizado, @precio_cliente, @tipo_medida, @observaciones, @descripcion_documento
     )
   `);
   montos.lineas.forEach((l, orden) =>
@@ -474,6 +476,7 @@ function insertarLineas(
       precio_cliente: l.precioCliente ?? l.precioUnitario,
       tipo_medida: l.tipoMedida ?? null,
       observaciones: l.observaciones ?? null,
+      descripcion_documento: l.descripcionDocumento ?? null,
     }),
   );
 }

@@ -82,6 +82,14 @@ afterEach(async () => {
   }
 });
 
+/** Texto visible de la plantilla: sin estilos ni etiquetas, con un salto por cada <br>. */
+const textoVisible = (html: string) =>
+  html
+    .replace(/<style>[\s\S]*?<\/style>/g, '')
+    .replace(/<br>/g, '\n')
+    .replace(/<[^>]+>/g, ' ');
+const veces = (texto: string, parte: string) => texto.split(parte).length - 1;
+
 async function aislarBaseDatos() {
   const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-db-'));
   dirs.push(dir);
@@ -108,7 +116,7 @@ describe('Plantillas', () => {
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('Emitida por:</b> Paula');
     expect(html).toContain('Medida solicitada: 0,82 × 2,00 m');
-    expect(html).toContain('tipo: Vano');
+    expect(html).toContain('Medida solicitada: 0,82 × 2,00 m · medida de vano');
     expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
     expect(html).toContain('FLETE');
     expect(html).toMatch(/FLETE<\/span><b>\$15\.000/);
@@ -135,17 +143,78 @@ describe('Plantillas', () => {
     expect(html).toContain('Medio de transporte:</b> Camión');
     expect(html).toContain('Aprobada por:</b> Paulette');
     expect(html).toContain('Medida solicitada: 0,83 × 2,00 m');
-    expect(html).toContain('tipo: Hoja');
+    expect(html).toContain('Medida solicitada: 0,83 × 2,00 m · medida de hoja');
     expect(html).not.toContain('DESCUENTO');
     expect(html).toContain('Ref. cotización:</b> N° 325');
     expect(html).toContain('Recibido por fábrica');
     expect(html).not.toContain('GRACIAS');
   });
 
+  it('la cotización al cliente muestra la descripción y la medida pedida, sin datos internos ni «No especificado»', async () => {
+    await aislarBaseDatos();
+    const moldura: Producto = {
+      ...puerta,
+      codigo: 'MOLD-P-2',
+      familia: 'MOLDURA',
+      modelo: 'MEDIA CAÑA',
+      tipo: null,
+      madera: 'PINO',
+      medida: '2X2',
+      anchoMin: null,
+      anchoMax: null,
+      largo: 3,
+      descripcion: 'MEDIA CAÑA PINO 2X2 CM X 3 MT',
+    };
+    const montos = cotizar(
+      [
+        // Sin tipo de medida: la puerta no lleva observación automática.
+        { producto: puerta, cantidad: 1, anchoSolicitado: 0.835, altoSolicitado: 2 },
+        { producto: puerta, cantidad: 1, anchoSolicitado: 0.835, altoSolicitado: 2, tipoMedida: 'vano', descripcionDocumento: 'Puerta con cerradura', observaciones: 'Abre hacia adentro' },
+        { producto: moldura, cantidad: 4 },
+      ],
+      undefined,
+    );
+    const html = await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 326, montos, fecha: '2026-09-28T12:00:00.000Z' });
+    const texto = textoVisible(html);
+    const [sinTipo, , sinMedida] = html.split('<tr><td>').slice(1).map(textoVisible);
+    expect(texto).toContain('Medida solicitada: 0,835 × 2,00 m · medida de vano');
+    expect(texto).toContain('Puerta con cerradura');
+    expect(texto).toContain('Observación: Abre hacia adentro');
+    // La descripción de catálogo se usa solo donde no hay una escrita por la persona.
+    expect(veces(texto, 'Molco Pino Oregon 0,80 a 0,85 m × 2 m')).toBe(1);
+    expect(sinTipo).toMatch(/Medida solicitada: 0,835 × 2,00 m(?! ·)/);
+    expect(sinTipo).not.toContain('medida de');
+    expect(sinMedida).not.toContain('Medida solicitada');
+    expect(texto).not.toContain('No especificado');
+    expect(texto).not.toContain('Tipo de medida');
+    expect(texto).not.toContain('Rectificar');
+    expect(texto).not.toContain('Referencia de catálogo');
+    expect(texto).not.toContain('0,80–0,85');
+    // El código solo aparece en su columna, nunca dentro de la descripción.
+    expect(veces(texto, 'MOL-O-3-A')).toBe(2);
+    expect(veces(texto, 'MOLD-P-2')).toBe(1);
+  });
+
+  it('la nota para fábrica suma la referencia de catálogo y la medida exacta, nunca el margen', async () => {
+    await aislarBaseDatos();
+    const montos = cotizar(
+      [{ producto: puerta, cantidad: 1, anchoSolicitado: 0.835, altoSolicitado: 2, tipoMedida: 'hoja', descripcionDocumento: 'Puerta con cerradura' }],
+      { ajuste: 0, iva: 0.19 },
+    );
+    const html = await plantilla(cotizacion(), { tipo: 'nota', numero: 8, montos, fecha: '2026-09-28T12:00:00.000Z' });
+    const texto = textoVisible(html);
+    expect(texto).toContain('Puerta con cerradura');
+    expect(texto).toContain('Medida solicitada: 0,835 × 2,00 m · medida de hoja');
+    expect(texto).toContain('Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m');
+    expect(texto).not.toMatch(/margen|No especificado/i);
+  });
+
   it('las descripciones en mayúsculas se muestran legibles y las escuadrías llevan unidad', () => {
     expect(descripcionLegible('HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2,1 MT')).toBe(
       'Huilo Huilo Pino Oregon 0,80 a 0,85 m × 2,1 m',
     );
+    expect(descripcionLegible('Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT')).toBe('Huilo Huilo Mara 0,80 a 0,85 m × 2,4 m');
+    expect(descripcionLegible('Puerta Huilo Huilo reforzada')).toBe('Puerta Huilo Huilo reforzada');
     expect(descripcionLegible('MARCO PINO OREGON 2X4 PULG KIT')).toBe('Marco Pino Oregon 2x4 pulg. kit');
     expect(descripcionLegible('Puerta especial de raulí')).toBe('Puerta especial de raulí');
     const marco: Producto = { ...puerta, codigo: 'MAR-O-2X4-B', familia: 'MARCO', medida: '2X4', largo: 2.1 };

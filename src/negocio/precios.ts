@@ -73,6 +73,8 @@ export interface ItemPrecio extends MedidasSolicitadas {
   margen?: number | null;
   tipoMedida?: 'hoja' | 'vano' | 'no_especificado' | null;
   observaciones?: string | null;
+  /** Texto escrito por la persona para los documentos; no cambia el producto ni su categoría de margen. */
+  descripcionDocumento?: string | null;
 }
 export interface Linea {
   producto: Producto;
@@ -85,6 +87,8 @@ export interface Linea {
   margenPersonalizado?: boolean;
   tipoMedida?: 'hoja' | 'vano' | 'no_especificado' | null;
   observaciones?: string | null;
+  /** Descripción para los documentos; null usa la del producto de catálogo. */
+  descripcionDocumento?: string | null;
   /** Precio unitario fijado solo para esta cotización; null si viene de catálogo. */
   precioUnitarioPersonalizado?: number | null;
   total: number;
@@ -167,11 +171,8 @@ export function cotizar(
       precioCliente: precioUnitario,
       margenPersonalizado: item.margen !== null && item.margen !== undefined,
       tipoMedida: item.tipoMedida ?? 'no_especificado',
-      observaciones:
-        item.observaciones?.trim() ||
-        (producto.familia === 'PUERTA' && (item.tipoMedida === null || item.tipoMedida === undefined || item.tipoMedida === 'no_especificado')
-          ? 'Rectificar si la medida corresponde a hoja o vano.'
-          : null),
+      observaciones: item.observaciones?.trim() || null,
+      descripcionDocumento: item.descripcionDocumento?.trim() || null,
       ...(precioUnitarioPersonalizado !== null ? { precioUnitarioPersonalizado } : {}),
       total: cantidad * precioUnitario,
       indice: item.indice ?? null,

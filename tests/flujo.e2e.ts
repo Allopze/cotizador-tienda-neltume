@@ -66,6 +66,12 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await enviar('3 de 2x4 de 2,1');
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
+  // Una puerta sin tipo de medida sugiere la observación; con un clic queda escrita y ya no se ofrece.
+  const rectificar = 'Rectificar si la medida corresponde a hoja o vano.';
+  await expect(panel.getByText(rectificar, { exact: true })).toHaveCount(1);
+  await panel.getByRole('button', { name: 'Agregar como observación' }).click();
+  await expect(panel.getByRole('button', { name: 'Agregar como observación' })).toHaveCount(0);
+  await expect(panel.getByText(rectificar, { exact: true })).toHaveCount(2);
   const descarga = page.waitForEvent('download');
   await emitir();
   expect((await descarga).suggestedFilename()).toBe('cotizacion-323.pdf');
@@ -73,6 +79,10 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   expect(contenido).toContain('COTIZACIÓN N° 323');
   expect(contenido).toContain(pesos(completo.total));
   expect(contenido).not.toMatch(/precio de lista|ajuste|25 %/i);
+  // El cliente no ve la referencia interna ni un tipo de medida sin definir; la observación escrita sí.
+  expect(contenido).not.toMatch(/Referencia de catálogo|No especificado/);
+  expect(contenido).toContain('Huilo Huilo Pino Oregon');
+  expect(contenido).toContain(`Observación: ${rectificar}`);
   // La aprobación se registra primero; la nota queda habilitada después del anticipo del 50 %.
   await page.getByRole('button', { name: 'Registrar aprobación del cliente' }).click();
   const dialogo = page.getByRole('alertdialog', { name: '¿Aprobar la cotización N° 323?' });
@@ -97,6 +107,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   const nota = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-1.pdf`);
   expect(nota).toContain('NOTA DE PEDIDO N° 1');
   expect(nota).toMatch(/Ref\. cotización:?\s*N° 323/);
+  expect(nota).toContain('Referencia de catálogo: HUIL-O-3-B');
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
   const estado = await new Almacen(DIR_E2E).leer();

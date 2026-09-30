@@ -6,9 +6,10 @@ import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipo
 import { resolverItem } from '../src/catalogo/resolver';
 import { estadoInicial, type Cotizacion, type Estado } from '../src/negocio/estado';
 import { cotizar } from '../src/negocio/precios';
-import { Almacen } from '../src/servidor/almacen';
+import { Almacen, guardarEstadoCompleto } from '../src/servidor/almacen';
 import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
 import { migrarJsonASqlite } from '../src/servidor/migracion-sqlite';
+import { descripcionLegible } from '../src/servidor/pdf';
 import { completarEstadoLegado } from '../src/servidor/persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 
@@ -138,6 +139,44 @@ describe('Persistencia SQLite', () => {
     });
     expect(repetida.yaMigrada).toBe(true);
     expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
+  });
+
+  it('la migración a v12 separa la descripción del documento y deshace el REPLACE de v11 en las líneas', async () => {
+    const dir = await temp();
+    const rutaDb = join(dir, 'cotizador.sqlite');
+    const db = abrirBaseDatos(rutaDb, { cachear: false, permitirJsonLegado: true });
+    guardarEstadoCompleto(db, completarEstadoLegado(estadoFixture()) as Estado);
+    // Estado de una base en v11: líneas con el modelo canónico y la descripción ya reemplazada, sin la columna nueva.
+    db.exec(`
+      UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT' WHERE cotizacion_id = 'cotizacion-emitida';
+      UPDATE nota_lineas SET modelo = 'Huilo Huilo', descripcion = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT' WHERE cotizacion_id = 'cotizacion-emitida';
+      UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = 'Puerta Huilo Huilo reforzada' WHERE cotizacion_id = 'revision-emitida';
+      ALTER TABLE cotizacion_lineas DROP COLUMN descripcion_documento;
+      ALTER TABLE nota_lineas DROP COLUMN descripcion_documento;
+      PRAGMA user_version = 11;
+    `);
+    db.close();
+
+    const migrada = abrirBaseDatos(rutaDb, { cachear: false });
+    try {
+      expect(migrada.pragma('user_version', { simple: true })).toBe(12);
+      const descripciones = (tabla: string) =>
+        migrada.prepare(`SELECT cotizacion_id AS id, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id`).all();
+      expect(descripciones('cotizacion_lineas')).toEqual([
+        { id: 'cotizacion-emitida', descripcion: 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT', documento: null },
+        // Lo escrito a mano (con minúsculas) no se toca.
+        { id: 'revision-emitida', descripcion: 'Puerta Huilo Huilo reforzada', documento: null },
+      ]);
+      expect(descripciones('nota_lineas')).toEqual([
+        { id: 'cotizacion-emitida', descripcion: 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT', documento: null },
+      ]);
+      expect(descripcionLegible('HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT')).toBe('Huilo Huilo Mara 0,80 a 0,85 m × 2,4 m');
+      const { cotizaciones } = await new Almacen(dir, rutaDb).leer();
+      expect(cotizaciones.flatMap((q) => q.montos.lineas.map((l) => l.descripcionDocumento))).toEqual([null, null]);
+    } finally {
+      migrada.close();
+      cerrarBaseDatos(rutaDb);
+    }
   });
 
   it('si un JSON es inválido no publica una base parcial ni retira los archivos originales', async () => {

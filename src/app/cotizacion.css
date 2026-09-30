@@ -182,6 +182,22 @@
 .quote-dispatch-fields .campo-valor-boton {
   width: 100%;
 }
+.aviso-medida {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 7px;
+  padding: 6px 8px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.aviso-medida .button {
+  background: var(--surface);
+  border-color: var(--line-strong);
+}
 .item-editables {
   display: flex;
   flex-wrap: wrap;

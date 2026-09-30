@@ -83,6 +83,55 @@ describe('márgenes y trazabilidad de precios', () => {
   });
 });
 
+describe('descripción de documento y observaciones de línea', () => {
+  it('la descripción escrita no cambia la categoría de margen ni el producto de catálogo', () => {
+    const reglas = { ...REGLAS, margenes: MARGENES_INICIALES };
+    const linea = cotizar([{ producto: puerta(), cantidad: 1, descripcionDocumento: '  Puerta prepintada especial ' }], reglas).lineas[0];
+    expect(linea.margen).toBe(0.55);
+    expect(linea.precioUnitario).toBe(155_000);
+    expect(linea.producto.descripcion).toBe(puerta().descripcion);
+    expect(linea.descripcionDocumento).toBe('Puerta prepintada especial');
+    expect(cotizar([{ producto: puerta(), cantidad: 1, descripcionDocumento: '  ' }], reglas).lineas[0].descripcionDocumento).toBeNull();
+  });
+
+  it('las observaciones de línea son solo las que escribió la persona', () => {
+    const [sinTipo, conObservacion] = cotizar([
+      { producto: puerta(), cantidad: 1 },
+      { producto: puerta(), cantidad: 1, tipoMedida: 'no_especificado', observaciones: ' Confirmar apertura ' },
+    ]).lineas;
+    expect(sinTipo.observaciones).toBeNull();
+    expect(conObservacion.observaciones).toBe('Confirmar apertura');
+  });
+
+  it('se guarda aparte del producto, sobrevive a recargar y pasa a las líneas de la nota', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-mejoras-'));
+    dirs.push(dir);
+    const almacen = new Almacen(dir);
+    const solicitud: SolicitudItem = { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, medida: null, cantidad: 2 };
+    const llm = { interpretar: vi.fn().mockResolvedValue({ name: 'actualizar_cotizacion', input: { items: [solicitud], cliente: { nombre: 'Ana Soto', rut: null, giro: null, telefono: null, direccion: null, comuna: null, proyecto: null } } }) };
+    const servicio = new Servicio(catalogo, llm, almacen);
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara' })).cotizacion;
+    expect(q.montos.lineas[0]).toMatchObject({ descripcionDocumento: null, observaciones: null });
+    q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada,
+      items: [{ indice: 0, cambios: { descripcion: 'Puerta prepintada especial' } }],
+    })).cotizacion;
+    const esperada = { descripcionDocumento: 'Puerta prepintada especial', margen: 0.55, precioUnitario: 155_000 };
+    expect(q.montos.lineas[0]).toMatchObject(esperada);
+    expect(q.montos.lineas[0].producto.descripcion).toBe(puerta().descripcion);
+    const recargada = () => new Almacen(dir).obtener(q.id)!;
+    expect(recargada().montos.lineas[0]).toMatchObject(esperada);
+    expect(recargada().montos.lineas[0].producto.descripcion).toBe(puerta().descripcion);
+
+    q = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5), fecha: '2026-09-30' })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
+    const nota = recargada().nota!.montos.lineas[0];
+    expect(nota).toMatchObject({ descripcionDocumento: 'Puerta prepintada especial', precioUnitario: 100_000, margen: 0 });
+    expect(nota.producto.descripcion).toBe(puerta().descripcion);
+  });
+});
+
 describe('flujo persistido de venta y producción', () => {
   it('aprueba sin nota, exige 50 %, genera nota a precio fábrica y completa la operación', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'neltume-mejoras-'));

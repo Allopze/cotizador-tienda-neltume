@@ -172,7 +172,7 @@ export function resumenTexto(q: Cotizacion) {
   const c = q.cliente;
   const lineas = q.montos.lineas.map(
     (l) =>
-      `• ${l.cantidad} × ${l.producto.descripcion} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
+      `• ${l.cantidad} × ${l.descripcionDocumento ?? l.producto.descripcion} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
   );
   return [
     `Cotización ${numeroCotizacion(q.numero)}`,

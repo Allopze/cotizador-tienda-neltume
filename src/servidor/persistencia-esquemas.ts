@@ -57,6 +57,7 @@ const montosSchema = z.object({
       margenPersonalizado: z.boolean().optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
       observaciones: z.string().max(1000).nullable().optional(),
+      descripcionDocumento: z.string().max(300).nullable().optional(),
       total: z.number().int(),
       precioUnitarioPersonalizado: z.number().int().positive().max(100_000_000).nullable().optional(),
       indice: z.number().int().nonnegative().nullable(),
@@ -221,6 +222,7 @@ const completarMontos = (m: unknown) =>
               margenPersonalizado: false,
               tipoMedida: null,
               observaciones: null,
+              descripcionDocumento: null,
               ...l,
             }))
           : m.lineas,
