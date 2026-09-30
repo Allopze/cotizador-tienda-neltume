@@ -363,6 +363,114 @@ p + .pregunta-opciones {
   font-size: var(--fs-md);
   line-height: 1.65;
 }
+.catalogo-busqueda {
+  display: grid;
+  gap: 6px;
+  max-width: 560px;
+  margin: 14px 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.catalogo-busqueda input {
+  min-height: var(--control);
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.gestion-manuales {
+  min-width: 0;
+}
+.gestion-manuales .catalogo-lista {
+  max-height: 60vh;
+}
+.manual-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(120px, 1fr));
+  gap: 8px;
+  min-width: 380px;
+}
+.manual-editor label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.manual-editor input,
+.manual-editor select {
+  min-height: var(--control-sm);
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.manual-editor-wide {
+  grid-column: 1 / -1;
+}
+.logo-configuracion {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px 18px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.ia-field-label {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.logo-configuracion .muted {
+  max-width: 620px;
+  line-height: 1.5;
+}
+.logo-configuracion-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.logo-configuracion-vista {
+  width: 180px;
+  height: 90px;
+  grid-column: 2;
+  justify-self: end;
+  object-fit: contain;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+.feriado-form {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.5fr) minmax(200px, 1fr) auto;
+  align-items: end;
+  gap: 10px 14px;
+  margin: 16px 0;
+}
+.feriado-lista {
+  max-width: 680px;
+  border-top: 1px solid var(--line);
+}
+.feriado-fila {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.feriado-fila span {
+  display: grid;
+  gap: 3px;
+}
+.feriado-fila small {
+  color: var(--muted);
+}
 .catalog-chat {
   max-height: 265px;
   overflow-y: auto;
@@ -571,6 +679,8 @@ p + .pregunta-opciones {
   border: 1px solid var(--line-strong);
   background: var(--surface);
   box-shadow: 0 14px 32px rgb(23 33 25 / 18%);
+  /* Con un disparador angosto («Todas las familias») la opción más larga se partía en dos líneas. */
+  min-width: max-content;
 }
 .familia-option {
   display: flex;
@@ -676,6 +786,28 @@ p + .pregunta-opciones {
   margin-top: 16px;
   padding-top: 16px;
   border-top: 1px solid var(--line);
+}
+.ia-key-settings {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.ia-key-settings > .eyebrow {
+  margin-bottom: 8px;
+}
+.ia-key-settings > .catalog-modal-intro {
+  margin: 0 0 12px;
+}
+.usuario-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.usuario-crear-form {
+  max-width: 720px;
+}
+.usuarios-admin > .catalog-modal-intro {
+  margin: 8px 0 12px;
 }
 .ia-field {
   display: grid;
@@ -899,6 +1031,9 @@ p + .pregunta-opciones {
   resize: vertical;
 }
 @media (max-width: 520px) {
+  .usuario-form-grid {
+    grid-template-columns: 1fr;
+  }
   .ia-model-option {
     grid-template-columns: minmax(0, 1fr);
     gap: 5px;

@@ -34,6 +34,7 @@ const solicitudCambioSchema = z
     alto: z.number().nullable().optional(),
     medida: texto.optional(),
     cantidad: z.number().nullable().optional(),
+    precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
   })
   .strict();
 const clienteCambioSchema = z

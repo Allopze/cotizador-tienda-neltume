@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+	<meta charset="UTF-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+	<title>Neltume · Cotizador - Informe de revisión de diseño</title>
+	<script src="https://cdn.tailwindcss.com"></script>
+	<style>
+		body { font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+		.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.report-section { border: 1px solid #222226; background: #0a0a0b; position: relative; }
+		.corner-box { position: absolute; width: 20px; height: 20px; border: 1px solid #222226; background: #000; }
+	</style>
+</head>
+<body class="bg-black text-[#fafafa]">
+	<main class="mx-auto w-full max-w-6xl px-5 py-8 md:px-10 md:py-12">
+		<header class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// REVISIÓN</div>
+					<h1 class="text-4xl font-bold tracking-tight md:text-6xl">NELTUME · COTIZADOR</h1>
+				</div>
+				<div class="mono text-left text-xs text-[#666] md:text-right">
+					<div>COMMANDCODE REPORT</div>
+					<div class="text-[#444]">29 SEPTIEMBRE 2026</div>
+					<div class="text-[#444]">COMMIT 1535847</div>
+				</div>
+			</div>
+		</header>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="corner-box left-0 top-0 -translate-x-1/2 -translate-y-1/2"></div>
+			<div class="corner-box right-0 top-0 translate-x-1/2 -translate-y-1/2"></div>
+			<div class="grid gap-8 md:grid-cols-[minmax(0,0.8fr)_minmax(0,1.2fr)]">
+				<div>
+					<div class="mono mb-2 text-xs tracking-widest text-[#666]">// GENERAL</div>
+					<div class="text-6xl font-bold tracking-tight md:text-7xl">36</div>
+					<div class="mt-1 text-lg text-[#666]">/ 50</div>
+					<div class="mt-4 inline-flex border border-[#ef4444]/40 bg-[#ef4444]/10 px-3 py-1 text-sm text-[#ef4444]">Block</div>
+					<div class="mt-4 text-xs leading-5 text-[#666]">Un hallazgo HIGH en pie: a 320 px, «Ajustes» y tres de los seis filtros de estado quedan fuera de su fila desplazable sin ninguna señal de que existen.</div>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// TL;DR</div>
+					<p class="text-sm leading-6 text-[#a0a0a0]">La interfaz tiene un punto de vista real: papel cálido, tinta verde, serif editorial y paneles numerados 01 / 02. Los estados explican su consecuencia antes de confirmar y el aparato de accesibilidad está verificado, no supuesto: cada parada de tabulador tiene anillo visible, cada campo tiene nombre y cada texto pasa contraste (peor caso 4,69:1). No huele a generado.</p>
+					<p class="mt-4 text-sm leading-6 text-[#a0a0a0]">Lo que falta es la capa de pantalla angosta: dos filas con desplazamiento horizontal esconden destinos sin avisar, la edición en línea queda en blancos de 29 px al tacto, y el buscador del catálogo ordena por lectura de planilla, así que el código exacto aparece quinto de ocho.</p>
+					<p class="mt-4 text-sm leading-6 text-[#fbbf24]">Siguiente: /design responsive para las filas desplazables y el estado de llegada, y /design a11y para completar la capa pointer: coarse.</p>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// PUNTAJES POR LENTE</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[720px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">#</th>
+							<th class="py-3 pr-4 font-normal">LENTE</th>
+							<th class="py-3 pr-4 font-normal">PUNTAJE</th>
+							<th class="py-3 font-normal">HALLAZGO CLAVE</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">1</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Primera impresión</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">6 / 10</td>
+							<td class="py-4 text-[#a0a0a0]">Voz propia y reconocible, pero en la llegada el 40-70 % del panel izquierdo está vacío y la invitación a actuar queda al fondo, junto al compositor</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">2</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Jerarquía</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">7 / 10</td>
+							<td class="py-4 text-[#a0a0a0]">Con datos, el orden es correcto (título → cliente → ítems → totales → una acción oscura); falla en el estado vacío y en el catálogo, que reserva pantalla completa para 8 filas</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">3</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Voz de color</td>
+							<td class="py-4 pr-4 text-[#34d399]">8 / 10</td>
+							<td class="py-4 text-[#a0a0a0]">Paleta comprometida, neutros teñidos hacia el verde y contrastes verificados en vivo; solo la insignia «Emitida» rompe el registro cálido con un azul</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">4</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Voz tipográfica</td>
+							<td class="py-4 pr-4 text-[#34d399]">8 / 10</td>
+							<td class="py-4 text-[#a0a0a0]">Georgia para la escala de pantalla contra Arial para la interfaz; microetiquetas en mayúsculas con tracking y escalones claros de 30/25/19 y 16/14/13/12</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="py-4 pr-4 text-[#555]">5</td>
+							<td class="py-4 pr-4 text-[#fafafa]">Sensación de interacción</td>
+							<td class="py-4 pr-4 text-[#fbbf24]">7 / 10</td>
+							<td class="py-4 text-[#a0a0a0]">Diálogos nativos con foco devuelto al disparador, acciones deshabilitadas que dicen por qué y confirmaciones que nombran la consecuencia; pierde por las filas desplazables sin señal</td>
+						</tr>
+						<tr>
+							<td class="py-4 pr-4 text-[#555]"></td>
+							<td class="py-4 pr-4 font-semibold text-[#fafafa]">Total</td>
+							<td class="py-4 pr-4 font-semibold text-[#fafafa]">36 / 50</td>
+							<td class="py-4 text-[#a0a0a0]">Trabajo por encima del promedio con defectos concretos; nada se redondeó hacia arriba</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// CARGA COGNITIVA / RIESGO</div>
+			<div class="grid gap-6 md:grid-cols-2">
+				<div>
+					<div class="mb-3 text-xl font-semibold">Carga baja, riesgo de pantalla angosta</div>
+					<ul class="space-y-3 text-sm text-[#a0a0a0]">
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Contraste de texto: 0 fallos en todas las pantallas, peor caso 4,69:1</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Nombres accesibles y anillos de foco: 0 faltantes en 25-29 paradas de tabulador por pantalla</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Reflujo sin desplazamiento horizontal de 320 a 2560 px; tablas móviles como tarjetas</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>El diálogo atrapa el foco, Escape lo cierra y lo devuelve al disparador</li>
+						<li><span class="mono mr-2 text-[#34d399]">PASS</span>Movimiento reducido respetado: nada sobre 1 ms con la preferencia activa</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>Metadato de 12 px en fechas, códigos y autoría sobre contraste suficiente</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>Filas desplazables con la barra oculta; el borde corta a ras del siguiente elemento</li>
+						<li><span class="mono mr-2 text-[#fbbf24]">WATCH</span>El buscador del catálogo no prioriza la coincidencia exacta de código</li>
+						<li><span class="mono mr-2 text-[#ef4444]">FAIL</span>A 320 px, «Ajustes» y los filtros «Reemplazadas» / «Anuladas» quedan fuera de su fila sin señal</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mono mb-3 text-xs tracking-widest text-[#666]">// PRÓXIMOS MODOS</div>
+					<div class="flex flex-wrap gap-2">
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design responsive</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design a11y</span>
+						<span class="border border-[#333] px-3 py-1 text-sm text-[#a0a0a0]">/design refine</span>
+					</div>
+					<div class="mono mt-6 mb-3 text-xs tracking-widest text-[#666]">// ALCANCE</div>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Ingreso, Cotizar (vacío, borrador, pendiente, emitida, aprobada), Historial, Catálogo (Consultar y Agregar producto), Ajustes y los diálogos de emisión y aprobación. Escritorio 1024-2560 px, tableta 768 px, teléfono 390 y 320 px, más una pasada de puntero grueso para el caso táctil real. Instancia aislada: worktree en HEAD con base de fixture y puerto propios.</p>
+					<div class="mono mt-6 text-xs leading-5 text-[#666]">// Este informe no modifica la interfaz. Son hallazgos para que los apliquen los modos de arreglo.</div>
+				</div>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// LO QUE FUNCIONA</div>
+			<div class="grid gap-4 md:grid-cols-3">
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Estados que explican su consecuencia</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Emitir, aprobar y anular nombran lo que va a pasar antes de confirmar, y el foco inicial de la confirmación cae en «Cancelar», no en el botón destructivo.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">La acción deshabilitada dice por qué</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Con un ítem pendiente, «Emitir y generar PDF» se apaga y explica «Completa o quita los ítems pendientes para generar el PDF». La fila pendiente muestra guiones en vez de $0.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">El asistente pregunta con opciones tocables</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Ante un marco sin datos ofrece 2X4 2X5 2X6 2X8, luego los largos y el rango de cantidad, en vez de exigir texto libre.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">El catálogo en teléfono es una tarjeta por producto</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Nombre, código, medida y precio siempre visibles; 8 productos sin recorte ni desplazamiento lateral. El hallazgo de importes cortados del informe anterior ya no se reproduce.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Foco y nombres sistemáticos</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Una sola regla :focus-visible en globals.css, un diálogo nativo dialog.showModal() y aria-label en cada control de icono. No es parche por parche.</p>
+				</article>
+				<article class="border border-[#1f1f24] p-4">
+					<h2 class="mb-2 text-sm font-semibold">Los estados se leen sin color</h2>
+					<p class="text-sm leading-6 text-[#a0a0a0]">Borrador, Emitida, Aprobada, Reemplazada y Anulada llevan texto además del relleno, y la anulada va tachada.</p>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// HALLAZGOS PRIORITARIOS</div>
+			<div class="space-y-5">
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P0 · HIGH · RESPONSIVE</div>
+					<h2 class="mb-2 text-lg font-semibold">Dos destinos quedan fuera de su fila sin ninguna señal</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">Evidencia: <span class="mono text-xs">src/app/responsive.css:155-160</span> y <span class="mono text-xs">:494-499</span> declaran <span class="mono text-xs">overflow-x: auto</span> con <span class="mono text-xs">scrollbar-width: none</span> y sin degradado. Medido en vivo: a 320 px «Ajustes» empieza en x=296 y el contenedor termina en ~304, así que queda entero fuera; a 390 px, «Reemplazadas» y «Anuladas» quedan fuera y la última píldora visible termina a ras del borde. Se alcanzan con deslizamiento o tabulador, así que la falla es de señalización, no de alcance.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">ARREGLO: máscara de degradado en el borde derecho (el mismo recurso que ya usa .messages en chat.css:31), o reservar el asomo del siguiente elemento. El desplazador se mantiene.</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P1 · MEDIUM · INTERACTION</div>
+					<h2 class="mb-2 text-lg font-semibold">La edición en línea queda en blancos de 29 px al tacto</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">Evidencia: <span class="mono text-xs">src/app/globals.css:650-664</span> fija <span class="mono text-xs">.campo-valor-boton</span> en 28 px de alto, y el bloque <span class="mono text-xs">pointer: coarse</span> (<span class="mono text-xs">responsive.css:523-529</span>) no lo incluye. Medido con <span class="mono text-xs">pointer: coarse</span> confirmado por matchMedia: 29 px en las siete instancias de un borrador (cliente, RUT, ciudad/comuna, cantidad, descuento y flete), mientras <span class="mono text-xs">.remove</span> sí sube a 44 px.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">ARREGLO: darle 44 px de área al tacto dentro del bloque coarse, creciendo con relleno o ::before y no con el alto visual, para no mover el lápiz en position: absolute de globals.css:676-687.</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P1 · MEDIUM · SURFACE</div>
+					<h2 class="mb-2 text-lg font-semibold">El buscador del catálogo no prioriza el código exacto</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">Evidencia: <span class="mono text-xs">src/app/api/catalogo/route.ts:81-84</span> ordena por familia, modelo, madera, alto y ancho. Buscando <span class="mono text-xs">HUIL-O-3-B</span> la interfaz muestra «8 productos» con el código exacto en la quinta fila, detrás de tres maderas que solo comparten la palabra clave. El campo se ofrece como búsqueda por modelo, madera, medida o código y se usa como consulta puntual.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">ARREGLO: anteponer la coincidencia exacta de código, luego el prefijo de código, y conservar el orden de lectura actual para el resto.</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P2 · LOW · LAYOUT</div>
+					<h2 class="mb-2 text-lg font-semibold">El disparador del menú de cuenta queda en 36 px al tacto</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">Evidencia: <span class="mono text-xs">src/app/login.css:6-15</span> declara <span class="mono text-xs">.account-toggle { min-height: var(--control-sm) }</span> y, como <span class="mono text-xs">login.css</span> se importa después de <span class="mono text-xs">responsive.css</span> (<span class="mono text-xs">layout.tsx:5-6</span>), gana la cascada. Medido con puntero grueso: 36 px, cuando todos los demás controles compactos miden 44 px.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">ARREGLO: mover el min-height de .account-toggle a un bloque coarse declarado después de login.css, o declarar la capa coarse al final de las importaciones.</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P2 · LOW · LAYOUT</div>
+					<h2 class="mb-2 text-lg font-semibold">El aviso de éxito tapa el total de la cotización</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">Evidencia: <span class="mono text-xs">src/app/globals.css:564-573</span> fija la zona de avisos en <span class="mono text-xs">right:20px; bottom:20px</span> y <span class="mono text-xs">avisos.tsx:14</span> la mantiene 9 s. Al emitir, el aviso «Documento listo: se descargó cotización-325.pdf» cae encima de la fila «Total $811.747».</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">ARREGLO: desplazar la zona de avisos por encima del pie de la cotización, o anclarla al área de trabajo en vez de a la ventana.</div>
+				</article>
+				<article class="border border-[#2a1d22] bg-[#110b0d] p-5">
+					<div class="mono mb-2 text-xs text-[#f43f5e]">P2 · LOW · LAYOUT</div>
+					<h2 class="mb-2 text-lg font-semibold">En la llegada, la primera fijación es espacio vacío</h2>
+					<p class="mb-4 text-sm leading-6 text-[#a0a0a0]">Evidencia: <span class="mono text-xs">src/app/chat.css:70-72</span> con <span class="mono text-xs">responsive.css:391-395</span> anclan la bienvenida al fondo del panel (<span class="mono text-xs">justify-content: flex-end</span>). Medido sin conversación: a 2560 px el bloque queda entre y=960 e y=1195 de un panel de 1280 px, y a 1024 px queda entre y=310 e y=569.</p>
+					<div class="border-l border-[#fbbf24] pl-4 text-sm leading-6 text-[#fbbf24]">ARREGLO: centrar la bienvenida mientras la conversación está vacía y conservar el anclaje al fondo en cuanto hay mensajes.</div>
+				</article>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// CONSIDERADO Y DESCARTADO</div>
+			<div class="overflow-x-auto">
+				<table class="w-full min-w-[820px] border-collapse text-sm">
+					<thead>
+						<tr class="border-b border-[#222226] text-left mono text-xs text-[#666]">
+							<th class="py-3 pr-4 font-normal">UBICACIÓN</th>
+							<th class="py-3 pr-4 font-normal">CANDIDATO</th>
+							<th class="py-3 font-normal">POR QUÉ SE DESCARTÓ</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="mono py-4 pr-4 text-xs text-[#a0a0a0]">globals.css:676-687</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Desborde interno de 16 px en .quote-pie, .totals y .campo-discreto</td>
+							<td class="py-4 text-[#a0a0a0]">Lo produce el lápiz en position: absolute; left: 100%, fuera de su caja. Nada se recorta y no hay desplazamiento horizontal de página: es ruido de medición</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="mono py-4 pr-4 text-xs text-[#a0a0a0]">historial.tsx:197-208</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">El buscador del historial no tiene etiqueta visible</td>
+							<td class="py-4 text-[#a0a0a0]">Sí tiene nombre accesible (span sr-only «Buscar cotizaciones») y el marcador describe el alcance, no la identidad del campo</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="mono py-4 pr-4 text-xs text-[#a0a0a0]">cotizacion.css:88-91</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">La insignia «Emitida» usa azul, el único tono frío del sistema</td>
+							<td class="py-4 text-[#a0a0a0]">El estado también lleva texto y el frío separa «en curso» de «cerrado»; cambiarlo costaría una distinción útil</td>
+						</tr>
+						<tr class="border-b border-[#1a1a1e]">
+							<td class="mono py-4 pr-4 text-xs text-[#a0a0a0]">globals.css:31-34</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">El texto más pequeño de la interfaz mide 12 px</td>
+							<td class="py-4 text-[#a0a0a0]">Es metadato sobre contraste verificado, en una herramienta interna de escritorio; subirlo rompería la densidad de las tablas</td>
+						</tr>
+						<tr>
+							<td class="mono py-4 pr-4 text-xs text-[#a0a0a0]">responsive.css:239-315</td>
+							<td class="py-4 pr-4 text-[#a0a0a0]">Los ítems del historial ocupan ~200 px de alto por fila en móvil</td>
+							<td class="py-4 text-[#a0a0a0]">La rejilla de 3 columnas con meta en la segunda fila es legible y mantiene carriles estables; compactarla costaría la alineación de importes</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+		</section>
+
+		<section class="report-section mb-8 p-6 md:p-8">
+			<div class="mono mb-6 text-xs tracking-widest text-[#666]">// VERIFICACIÓN</div>
+			<div class="grid gap-8 md:grid-cols-2">
+				<div>
+					<div class="mb-3 text-sm font-semibold text-[#34d399]">Pasaron</div>
+					<ul class="space-y-3 text-sm leading-6 text-[#a0a0a0]">
+						<li>Flujos reales recorridos con Playwright sobre instancia aislada: ingreso, borrador, ítem pendiente, emisión, aprobación, historial, catálogo (consultar y agregar) y ajustes</li>
+						<li>Contraste con composición de alfa sobre el fondo efectivo: 0 fallos en todas las pantallas; peor caso 4,69:1 (botón deshabilitado, exento) y peor texto habilitado 5,22:1</li>
+						<li>Nombres accesibles: 0 campos sin nombre y 0 controles sin nombre en todos los estados</li>
+						<li>Foco: 25-29 paradas de tabulador por pantalla, 0 sin indicador visible; anillo 2 px rgb(170,113,77) con 4 px de aire. El diálogo cicla dentro, Escape lo cierra y devuelve el foco al disparador</li>
+						<li>Estructura: un solo h1 por pantalla, sin saltos de nivel, main/nav/header presentes, 0 imágenes sin alt, lang es-CL</li>
+						<li>Reflujo sin desplazamiento horizontal en 320, 360, 390, 768, 1024, 1440 y 2560 px, con y sin cotización abierta</li>
+						<li>Movimiento reducido: ninguna transición o animación sobre 1 ms con la preferencia activa</li>
+						<li>Táctil real con pointer: coarse confirmado: .button.small, .remove, .jump-to-quote y el envío del chat miden 44 px; el compositor pasa a 16 px, sin zoom automático en iOS</li>
+					</ul>
+				</div>
+				<div>
+					<div class="mb-3 text-sm font-semibold text-[#fbbf24]">No verificadas</div>
+					<ul class="space-y-3 text-sm leading-6 text-[#a0a0a0]">
+						<li>Navegadores iOS y Android reales: la emulación reproduce el caso, no el motor</li>
+						<li>Respuestas del asistente contra el proveedor real: la instancia usó el adaptador fijo, así que el texto del modelo y su latencia no se ejercitaron</li>
+						<li>La maquetación de los PDF emitidos: se descargaron cotizacion-*.pdf y nota-pedido-*.pdf, pero no se revisó su diseño</li>
+						<li>Ampliación al 200 % en el navegador: se aproximó con el barrido a 320 px, que es el mismo caso de reflujo pero no la misma prueba</li>
+						<li>Lectura con lector de pantalla: se inspeccionaron estructura y nombres, no el orden de anuncio hablado</li>
+						<li>Los avisos de error (role alert) no se provocaron; solo se vio el de éxito</li>
+					</ul>
+					<p class="mono mt-6 text-xs leading-5 text-[#666]">Informes previos: ui-audit/ corresponde a una versión anterior. Su hallazgo de importes cortados en móvil ya está resuelto y los blancos táctiles suben a 44 px con puntero grueso; el desplazamiento vertical del flujo móvil se atiende con el salto «Ver cotización ↓».</p>
+				</div>
+			</div>
+		</section>
+
+		<footer class="mono py-8 text-center text-xs tracking-widest text-[#444]">
+			Generado con CommandCode - 29 SEPTIEMBRE 2026
+		</footer>
+	</main>
+</body>
+</html>

@@ -1,0 +1,199 @@
+'use client';
+import { useEffect, useState, type FormEvent } from 'react';
+import Image from 'next/image';
+import type { TipoAviso } from '../avisos';
+import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+
+interface Empresa {
+  nombre: string | null;
+  rut: string | null;
+  direccion: string | null;
+  telefono: string | null;
+  correo: string;
+  web: string | null;
+  condicionesPago: string | null;
+  plazoEntrega: string | null;
+  datosBancarios: string | null;
+  logoSvg: string | null;
+}
+interface Configuracion {
+  empresa: Empresa;
+  reglas: { ajuste: number; iva: number; vigenciaDiasHabiles: number; descuentoMaximo: number };
+}
+interface Estado {
+  configuracion: Configuracion;
+  puedeEditar: boolean;
+}
+
+const vacío = (v: string | null) => v ?? '';
+
+export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number }) {
+  const [estado, setEstado] = useState<Estado | null>(null);
+  const [borrador, setBorrador] = useState<Configuracion | null>(null);
+  const [error, setError] = useState('');
+  const [ocupado, setOcupado] = useState(false);
+  const [logoError, setLogoError] = useState('');
+
+  useEffect(() => {
+    const control = new AbortController();
+    pedirJSON<Estado>('/api/configuracion-negocio', { signal: control.signal, cache: 'no-store' }).then(
+      (data) => {
+        setEstado(data);
+        setBorrador(data.configuracion);
+      },
+      (causa) => {
+        if (!esSilencioso(causa)) setError(mensajeDe(causa));
+      },
+    );
+    return () => control.abort();
+  }, []);
+
+  if (!estado || !borrador)
+    return <p className="catalog-modal-intro">{error || 'Cargando la configuración comercial…'}</p>;
+
+  const editable = estado.puedeEditar;
+  const setEmpresa = (campo: keyof Empresa, valor: string) =>
+    setBorrador((actual) => (actual ? { ...actual, empresa: { ...actual.empresa, [campo]: valor || null } } : actual));
+  const campo = (campoEmpresa: keyof Empresa, etiqueta: string, multilinea = false) => {
+    const valor = vacío(borrador.empresa[campoEmpresa] as string | null);
+    return (
+      <label className="ia-field" key={campoEmpresa}>
+        <span>{etiqueta}</span>
+        {multilinea ? (
+          <textarea value={valor} onChange={(e) => setEmpresa(campoEmpresa, e.target.value)} rows={3} maxLength={1200} disabled={!editable || ocupado} />
+        ) : (
+          <input
+            value={valor}
+            onChange={(e) => setEmpresa(campoEmpresa, e.target.value)}
+            type={campoEmpresa === 'correo' ? 'email' : 'text'}
+            maxLength={campoEmpresa === 'correo' ? 254 : 300}
+            disabled={!editable || ocupado}
+          />
+        )}
+      </label>
+    );
+  };
+
+  async function guardar(evento: FormEvent) {
+    evento.preventDefault();
+    if (!editable || ocupado) return;
+    setOcupado(true);
+    setError('');
+    try {
+      const data = await pedirJSON<Estado>('/api/configuracion-negocio', { json: borrador });
+      setEstado(data);
+      setBorrador(data.configuracion);
+      avisar('exito', 'Configuración comercial guardada.', { clave: 'configuracion-negocio' });
+    } catch (causa) {
+      if (!esSilencioso(causa)) setError(mensajeDe(causa));
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  async function seleccionarLogo(evento: React.ChangeEvent<HTMLInputElement>) {
+    const archivo = evento.target.files?.[0];
+    evento.target.value = '';
+    if (!archivo) return;
+    if (archivo.size > 48_000 || (archivo.type && archivo.type !== 'image/svg+xml' && !archivo.name.toLowerCase().endsWith('.svg'))) {
+      setLogoError('El logo debe ser un archivo SVG de hasta 48 KB.');
+      return;
+    }
+    const textoLogo = await archivo.text();
+    if (!/<svg(?:\s|>)/i.test(textoLogo) || /<script|<foreignObject|\son\w+\s*=|javascript:/i.test(textoLogo)) {
+      setLogoError('El SVG no tiene un formato permitido.');
+      return;
+    }
+    setLogoError('');
+    setBorrador((actual) => (actual ? { ...actual, empresa: { ...actual.empresa, logoSvg: textoLogo } } : actual));
+  }
+
+  return (
+    <form onSubmit={guardar}>
+      <p className="catalog-modal-intro">
+        Estos datos se imprimen en las cotizaciones y notas nuevas. Las reglas quedan congeladas en cada cotización al crearla.
+      </p>
+      <div className="usuario-form-grid">
+        {campo('nombre', 'Nombre de la empresa')}
+        {campo('rut', 'RUT')}
+        {campo('direccion', 'Dirección')}
+        {campo('telefono', 'Teléfono')}
+        {campo('correo', 'Correo de contacto')}
+        {campo('web', 'Sitio web')}
+        {campo('condicionesPago', 'Condiciones de pago', true)}
+        {campo('plazoEntrega', 'Plazo de entrega', true)}
+        {campo('datosBancarios', 'Datos bancarios', true)}
+      </div>
+      <div className="logo-configuracion">
+        <div>
+          <span className="ia-field-label">Logo para la aplicación y los documentos</span>
+          <p className="muted">Sube un SVG seguro de hasta 48 KB. Si lo quitas, se usa el logo publicado por defecto.</p>
+        </div>
+        <div className="logo-configuracion-acciones">
+          <input type="file" accept="image/svg+xml,.svg" onChange={(e) => void seleccionarLogo(e)} disabled={!editable || ocupado} />
+          {borrador.empresa.logoSvg && <button type="button" className="button secondary small" onClick={() => setBorrador({ ...borrador, empresa: { ...borrador.empresa, logoSvg: null } })} disabled={!editable || ocupado}>Usar logo predeterminado</button>}
+        </div>
+        {logoError && <p className="catalog-error" role="alert">{logoError}</p>}
+        <Image className="logo-configuracion-vista" src={borrador.empresa.logoSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(borrador.empresa.logoSvg)}` : '/logo-neltume.svg'} alt="Vista previa del logo" width={180} height={90} unoptimized />
+      </div>
+      <h3 className="eyebrow">REGLAS DE COTIZACIÓN</h3>
+      <div className="usuario-form-grid">
+        <label className="ia-field">
+          <span>Ajuste sobre precio neto (%)</span>
+          <input
+            type="number"
+            min={-50}
+            max={100}
+            step="0.01"
+            value={borrador.reglas.ajuste * 100}
+            onChange={(e) => setBorrador({ ...borrador, reglas: { ...borrador.reglas, ajuste: Number(e.target.value) / 100 } })}
+            disabled={!editable || ocupado}
+          />
+        </label>
+        <label className="ia-field">
+          <span>IVA (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            value={borrador.reglas.iva * 100}
+            onChange={(e) => setBorrador({ ...borrador, reglas: { ...borrador.reglas, iva: Number(e.target.value) / 100 } })}
+            disabled={!editable || ocupado}
+          />
+        </label>
+        <label className="ia-field">
+          <span>Vigencia (días hábiles)</span>
+          <input
+            type="number"
+            min={0}
+            max={365}
+            step={1}
+            value={borrador.reglas.vigenciaDiasHabiles}
+            onChange={(e) => setBorrador({ ...borrador, reglas: { ...borrador.reglas, vigenciaDiasHabiles: Number(e.target.value) } })}
+            disabled={!editable || ocupado}
+          />
+        </label>
+        <label className="ia-field">
+          <span>Descuento máximo (%)</span>
+          <input
+            type="number"
+            min={0}
+            max={100}
+            step="0.01"
+            value={borrador.reglas.descuentoMaximo}
+            onChange={(e) => setBorrador({ ...borrador, reglas: { ...borrador.reglas, descuentoMaximo: Number(e.target.value) } })}
+            disabled={!editable || ocupado}
+          />
+        </label>
+      </div>
+      {error && <p className="catalog-error" role="alert">{error}</p>}
+      {editable && (
+        <div className="ia-actions">
+          <button type="button" className="button secondary" onClick={() => setBorrador(estado.configuracion)} disabled={ocupado}>Descartar cambios</button>
+          <button type="submit" className="button primary" disabled={ocupado}>{ocupado ? 'Guardando…' : 'Guardar configuración'}</button>
+        </div>
+      )}
+    </form>
+  );
+}

@@ -40,8 +40,9 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
             sufijo="%"
             validar={(v) => {
               const n = leerPorcentaje(v);
-              if (!Number.isFinite(n) || n < 0 || n > REGLAS.descuentoMaximo)
-                return `El descuento debe estar entre 0 y ${REGLAS.descuentoMaximo}%.`;
+              const maximo = actual?.reglas?.descuentoMaximo ?? REGLAS.descuentoMaximo;
+              if (!Number.isFinite(n) || n < 0 || n > maximo)
+                return `El descuento debe estar entre 0 y ${maximo}%.`;
               if (!conDosDecimales(n)) return 'Usa como máximo dos decimales.';
               return null;
             }}
@@ -76,7 +77,7 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
       </div>
       <div>
         <span>
-          IVA <small>{iva()}</small>
+          IVA <small>{iva(actual?.reglas?.iva)}</small>
         </span>
         <span>{pesos(m?.iva ?? 0)}</span>
       </div>

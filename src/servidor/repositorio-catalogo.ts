@@ -17,7 +17,21 @@ export type ProductoManual = Producto & {
   creadaPor: string | null;
   actualizada: string | null;
 };
+/** Producto que puede mantenerse desde la aplicación; los importados no se pueden eliminar. */
+export type ProductoAdministrable = Producto & {
+  fuente: 'planilla' | 'manual';
+  creada: string | null;
+  creadaPor: string | null;
+  actualizada: string | null;
+};
 export interface CambiosProductoManual {
+  modelo?: string;
+  familia?: Producto['familia'];
+  madera?: string;
+  medida?: string;
+  anchoMin?: number | null;
+  anchoMax?: number | null;
+  largo?: number;
   precioNeto?: number;
   descripcion?: string;
   tipo?: string | null;
@@ -395,6 +409,50 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     }));
   }
 
+  /**
+   * Lista productos de ambas fuentes para su mantenimiento. La búsqueda se hace sobre los atributos
+   * legibles y se limita para que una instalación con miles de filas no bloquee la pantalla.
+   */
+  listarAdministrables(busqueda = '', limite = 300): ProductoAdministrable[] {
+    const filas = this.db
+      .prepare(
+        `
+        SELECT 'planilla' AS fuente, NULL AS creada, NULL AS creada_por, NULL AS actualizada,
+               codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, largo, precio_neto,
+               descripcion, fila_origen, orden AS orden_fuente
+        FROM productos_catalogo
+        UNION ALL
+        SELECT 'manual' AS fuente, creada, creada_por, actualizada,
+               codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, largo, precio_neto,
+               descripcion, fila_origen, rowid AS orden_fuente
+        FROM productos_adicionales
+        ORDER BY fuente, orden_fuente
+      `,
+      )
+      .all() as (FilaProducto & {
+      fuente: 'planilla' | 'manual';
+      creada: string | null;
+      creada_por: string | null;
+      actualizada: string | null;
+      orden_fuente: number;
+    })[];
+    const termino = normalizar(busqueda.trim());
+    return filas
+      .map((f) => ({
+        ...convertirProducto(f),
+        fuente: f.fuente,
+        creada: f.creada,
+        creadaPor: f.creada_por,
+        actualizada: f.actualizada,
+      }))
+      .filter((p) =>
+        termino
+          ? normalizar(`${p.codigo} ${p.modelo} ${p.madera} ${p.medida} ${p.descripcion}`).includes(termino)
+          : true,
+      )
+      .slice(0, Math.max(1, Math.min(limite, 500)));
+  }
+
   private manual(codigo: string) {
     const existe = this.db.prepare('SELECT 1 FROM productos_adicionales WHERE codigo = ?').get(codigo);
     if (existe) return;
@@ -407,13 +465,33 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     throw new ErrorUsuarioCatalogo('No se encontró el producto.', 'no_encontrada', 404);
   }
 
-  /** Cambia precio, descripción o tipo de un producto manual; las cotizaciones emitidas conservan su snapshot. */
-  editarManual(codigo: string, cambios: CambiosProductoManual) {
+  /** Cambia cualquier atributo operativo de un producto manual; las cotizaciones emitidas conservan su snapshot. */
+  editarProducto(codigo: string, cambios: CambiosProductoManual) {
     return this.db
       .transaction(() => {
-        this.manual(codigo);
+        const fuente = this.db.prepare('SELECT 1 FROM productos_adicionales WHERE codigo = ?').get(codigo)
+          ? 'manual'
+          : this.db.prepare('SELECT 1 FROM productos_catalogo WHERE codigo = ?').get(codigo)
+            ? 'planilla'
+            : null;
+        if (!fuente) throw new ErrorUsuarioCatalogo('No se encontró el producto.', 'no_encontrada', 404);
         const actual = this.buscarPorCodigo(codigo)!;
+        const modelo = cambios.modelo?.replace(/\s+/g, ' ').trim() || actual.modelo;
+        const familia = cambios.familia ?? actual.familia;
+        const madera = cambios.madera?.replace(/\s+/g, ' ').trim() || actual.madera;
+        const medida = cambios.medida?.replace(/\s+/g, ' ').trim() || actual.medida;
+        const anchoMin = cambios.anchoMin === undefined ? actual.anchoMin : cambios.anchoMin;
+        const anchoMax = cambios.anchoMax === undefined ? actual.anchoMax : cambios.anchoMax;
+        const largo = cambios.largo ?? actual.largo;
         const precioNeto = cambios.precioNeto ?? actual.precioNeto;
+        if (!modelo || !madera || !medida || !Number.isFinite(largo) || largo <= 0 || largo > 100)
+          throw new ErrorUsuarioCatalogo('Modelo, madera, medida y largo deben tener valores válidos.');
+        if (
+          (anchoMin !== null && (!Number.isFinite(anchoMin) || anchoMin <= 0)) ||
+          (anchoMax !== null && (!Number.isFinite(anchoMax) || anchoMax <= 0)) ||
+          (anchoMin !== null && anchoMax !== null && anchoMin > anchoMax)
+        )
+          throw new ErrorUsuarioCatalogo('El rango de ancho no es válido.');
         if (!Number.isFinite(precioNeto) || precioNeto <= 0 || precioNeto > 100_000_000)
           throw new ErrorUsuarioCatalogo(
             'El precio neto unitario debe ser mayor que $0 y no superar $100.000.000.',
@@ -421,15 +499,97 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         const descripcion = cambios.descripcion?.replace(/\s+/g, ' ').trim() || actual.descripcion;
         const tipo =
           cambios.tipo === undefined ? actual.tipo : cambios.tipo?.trim().toLocaleUpperCase('es-CL') || null;
-        this.db
-          .prepare(
-            'UPDATE productos_adicionales SET precio_neto = ?, descripcion = ?, tipo = ?, actualizada = ? WHERE codigo = ?',
-          )
-          .run(precioNeto, descripcion.slice(0, 300), tipo, new Date().toISOString(), codigo);
+        const candidato: Producto = {
+          ...actual,
+          modelo,
+          familia,
+          madera,
+          medida,
+          anchoMin,
+          anchoMax,
+          largo,
+          precioNeto,
+          descripcion,
+          tipo,
+        };
+        const duplicado = this.productosDeModelo(normalizar(modelo)).find(
+          (p) =>
+            p.codigo !== codigo &&
+            normalizar(p.madera) === normalizar(madera) &&
+            normalizarMedida(p.medida) === normalizarMedida(medida) &&
+            Math.abs(p.largo - largo) < 0.000001,
+        );
+        if (duplicado) throw new ErrorUsuarioCatalogo('Ya existe un producto con esos atributos.');
+        const superpuesto = this.rangoSuperpuesto(candidato, codigo);
+        if (superpuesto)
+          throw new ErrorUsuarioCatalogo(
+            `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) para el mismo modelo, madera y alto.`,
+          );
+        if (fuente === 'manual') {
+          this.db
+            .prepare(
+              `UPDATE productos_adicionales SET
+                modelo = ?, modelo_normalizado = ?, familia = ?, madera = ?, medida = ?, ancho_min = ?, ancho_max = ?,
+                largo = ?, precio_neto = ?, descripcion = ?, tipo = ?, actualizada = ? WHERE codigo = ?`,
+            )
+            .run(
+              modelo,
+              normalizar(modelo),
+              familia,
+              madera,
+              medida,
+              anchoMin,
+              anchoMax,
+              largo,
+              precioNeto,
+              descripcion.slice(0, 300),
+              tipo,
+              new Date().toISOString(),
+              codigo,
+            );
+        } else {
+          this.db
+            .prepare(
+              `UPDATE productos_catalogo SET
+                modelo = ?, modelo_normalizado = ?, familia = ?, madera = ?, medida = ?, ancho_min = ?, ancho_max = ?,
+                largo = ?, precio_neto = ?, descripcion = ?, tipo = ? WHERE codigo = ?`,
+            )
+            .run(
+              modelo,
+              normalizar(modelo),
+              familia,
+              madera,
+              medida,
+              anchoMin,
+              anchoMax,
+              largo,
+              precioNeto,
+              descripcion.slice(0, 300),
+              tipo,
+              codigo,
+            );
+        }
         this.tocarMetadata();
         return this.buscarPorCodigo(codigo)!;
       })
       .immediate();
+  }
+
+  editarManual(codigo: string, cambios: CambiosProductoManual) {
+    this.manual(codigo);
+    return this.editarProducto(codigo, cambios);
+  }
+
+  guardarConfiguracion(configuracion: ConfiguracionCatalogo) {
+    const validada = validarConfiguracionCatalogo(configuracion);
+    this.db
+      .prepare(
+        `INSERT INTO catalogo_configuracion (id, configuracion_json) VALUES (1, ?)
+         ON CONFLICT(id) DO UPDATE SET configuracion_json = excluded.configuracion_json`,
+      )
+      .run(JSON.stringify(validada));
+    this.tocarMetadata();
+    return validada;
   }
 
   /** Elimina un producto manual. Los borradores que lo usaban quedan pendientes al recalcular. */

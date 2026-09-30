@@ -37,6 +37,7 @@ import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } fro
 import { prepararFeriados } from './feriados-sync';
 import { generarPdf, plantilla } from './pdf';
 import { resolverReferencia, type OpcionCotizacion } from './referencias';
+import { leerConfiguracionNegocio } from './configuracion-negocio';
 
 export { ErrorUsuario };
 
@@ -60,7 +61,7 @@ export type Accion =
       contexto?: Mensaje[];
     }
   | { tipo: 'quitar'; id: string; actualizada: string; indice: number }
-  | { tipo: 'emitir'; id: string; actualizada: string }
+  | { tipo: 'emitir'; id: string; actualizada: string; numero?: number }
   | {
       tipo: 'aprobar';
       id: string;
@@ -77,8 +78,14 @@ export type Accion =
       actualizada: string;
       cliente?: Partial<Cliente>;
       cantidades?: { indice: number; cantidad: number }[];
+      items?: {
+        indice: number;
+        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario'>>;
+      }[];
       descuento?: number;
       flete?: number;
+      observaciones?: string | null;
+      despacho?: Partial<Despacho> | null;
     };
 
 export interface ItemCambio {
@@ -188,6 +195,9 @@ export class Servicio {
       vence: null,
       descuento: 0,
       flete: 0,
+      observaciones: null,
+      despacho: null,
+      reglas: { ...leerConfiguracionNegocio(this.almacen.baseDatos()).reglas },
       creadaPor: this.autor,
       emitidaPor: null,
       aprobadaPor: null,
@@ -223,11 +233,12 @@ export class Servicio {
           anchoSolicitado: res.anchoSolicitado,
           altoSolicitado: res.altoSolicitado,
           medidaSolicitada: res.medidaSolicitada,
+          precioUnitario: s.precioUnitario ?? null,
         });
       else q.incompletos.push({ indice, rechazo: res.rechazo, pregunta: pregunta(res.rechazo, s.modelo) });
     }
     q.montos = validos.length
-      ? cotizar(validos, REGLAS, { descuento: q.descuento, flete: q.flete })
+      ? cotizar(validos, q.reglas ?? REGLAS, { descuento: q.descuento, flete: q.flete })
       : montosVacios();
     if (tocar) q.actualizada = marca(q.actualizada);
   }
@@ -274,7 +285,14 @@ export class Servicio {
     };
     const r = resolverItem(this.catalogo, s);
     if (r.ok)
-      return [r.producto.codigo, r.cantidad, m(s.ancho), m(s.alto), r.medidaSolicitada ?? ''].join('|');
+      return [
+        r.producto.codigo,
+        r.cantidad,
+        m(s.ancho),
+        m(s.alto),
+        r.medidaSolicitada ?? '',
+        s.precioUnitario ?? '',
+      ].join('|');
     return [
       normalizar(s.modelo ?? ''),
       normalizar(s.madera ?? ''),
@@ -282,6 +300,7 @@ export class Servicio {
       m(s.alto),
       s.medida ? normalizarMedida(s.medida) : '',
       s.cantidad ?? '',
+      s.precioUnitario ?? '',
     ].join('|');
   }
 
@@ -295,7 +314,13 @@ export class Servicio {
   }
 
   private mismoContenido(a: Cotizacion, b: Cotizacion) {
-    return this.sinCambios(a, b.solicitudes, b.cliente) && a.descuento === b.descuento && a.flete === b.flete;
+    return (
+      this.sinCambios(a, b.solicitudes, b.cliente) &&
+      a.descuento === b.descuento &&
+      a.flete === b.flete &&
+      a.observaciones === b.observaciones &&
+      JSON.stringify(a.despacho) === JSON.stringify(b.despacho)
+    );
   }
 
   /**
@@ -472,6 +497,8 @@ export class Servicio {
           // El descuento y el flete acordados forman parte de lo que se duplica.
           q.descuento = origen.descuento;
           q.flete = origen.flete;
+          q.observaciones = origen.observaciones;
+          q.despacho = structuredClone(origen.despacho);
           q.historial = [
             {
               rol: 'asistente',
@@ -559,21 +586,76 @@ export class Servicio {
           throw new ErrorUsuario('La cantidad debe ser un entero entre 1 y 10.000.');
         solicitudes[indice] = { ...solicitudes[indice], cantidad };
       }
+      const indicesEditados = new Set<number>();
+      for (const cambio of accion.items ?? []) {
+        if (!solicitudes[cambio.indice] || indicesEditados.has(cambio.indice))
+          throw new ErrorNoEncontrado('No se encontró el ítem o se repitió su índice.');
+        indicesEditados.add(cambio.indice);
+        const cambios = cambio.cambios;
+        const siguiente = { ...solicitudes[cambio.indice] };
+        for (const campo of ['modelo', 'madera', 'medida'] as const)
+          if (cambios[campo] !== undefined)
+            siguiente[campo] = cambios[campo] === null ? null : String(cambios[campo]).trim().slice(0, 300) || null;
+        for (const campo of ['ancho', 'alto'] as const)
+          if (cambios[campo] !== undefined) {
+            const valor = cambios[campo];
+            if (valor !== null && !Number.isFinite(valor)) throw new ErrorUsuario(`La medida ${campo} no es válida.`);
+            siguiente[campo] = valor ?? null;
+          }
+        if (cambios.precioUnitario !== undefined) {
+          const valor = cambios.precioUnitario;
+          if (valor !== null && (!Number.isSafeInteger(valor) || valor <= 0 || valor > 100_000_000))
+            throw new ErrorUsuario('El precio unitario debe ser un entero entre $1 y $100.000.000.');
+          siguiente.precioUnitario = valor ?? null;
+        }
+        solicitudes[cambio.indice] = siguiente;
+      }
       const { cliente, avisos } = accion.cliente
         ? sanearCliente(accion.cliente, q.cliente)
         : { cliente: q.cliente, avisos: [] as string[] };
       const descuento = accion.descuento ?? q.descuento,
         flete = accion.flete ?? q.flete;
-      if (!descuentoValido(descuento))
+      const reglas = q.reglas ?? REGLAS;
+      if (!descuentoValido(descuento, reglas.descuentoMaximo))
         throw new ErrorUsuario(
-          `El descuento debe estar entre 0 % y ${REGLAS.descuentoMaximo} %, con hasta dos decimales.`,
+          `El descuento debe estar entre 0 % y ${reglas.descuentoMaximo} %, con hasta dos decimales.`,
         );
       if (!fleteValido(flete))
         throw new ErrorUsuario('El flete debe ser un monto neto entero en pesos, desde $0.');
       const extra = avisos.length ? { avisos } : {};
       const descuentoNuevo = aCentesimas(descuento);
+      const observaciones =
+        accion.observaciones === undefined
+          ? q.observaciones
+          : accion.observaciones?.replace(/\s+/g, ' ').trim().slice(0, 2000) || null;
+      const despacho =
+        accion.despacho === undefined
+          ? q.despacho
+          : accion.despacho === null
+            ? null
+            : {
+                direccion:
+                  accion.despacho.direccion === undefined
+                    ? q.despacho?.direccion ?? null
+                    : typeof accion.despacho.direccion === 'string'
+                      ? accion.despacho.direccion.replace(/\s+/g, ' ').trim().slice(0, 300) || null
+                      : null,
+                transporte:
+                  accion.despacho.transporte === undefined
+                    ? q.despacho?.transporte ?? null
+                    : typeof accion.despacho.transporte === 'string'
+                      ? accion.despacho.transporte.replace(/\s+/g, ' ').trim().slice(0, 120) || null
+                      : null,
+                entregaComprometida:
+                  accion.despacho.entregaComprometida === undefined
+                    ? q.despacho?.entregaComprometida ?? null
+                    : typeof accion.despacho.entregaComprometida === 'string'
+                      ? accion.despacho.entregaComprometida.replace(/\s+/g, ' ').trim().slice(0, 120) || null
+                      : null,
+              };
       if (
-        JSON.stringify([solicitudes, cliente]) === JSON.stringify([q.solicitudes, q.cliente]) &&
+        JSON.stringify([solicitudes, cliente, observaciones, despacho]) ===
+          JSON.stringify([q.solicitudes, q.cliente, q.observaciones, q.despacho]) &&
         descuentoNuevo === q.descuento &&
         flete === q.flete
       )
@@ -588,9 +670,13 @@ export class Servicio {
           ? [`Descuento ${porcentajeTexto(destino.descuento)} → ${porcentajeTexto(descuentoNuevo)}`]
           : []),
         ...(flete !== destino.flete ? [`Flete ${pesos(destino.flete)} → ${pesos(flete)}`] : []),
+        ...(observaciones !== destino.observaciones ? ['Observaciones actualizadas'] : []),
+        ...(JSON.stringify(despacho) !== JSON.stringify(destino.despacho) ? ['Despacho actualizado'] : []),
       ];
       destino.descuento = descuentoNuevo;
       destino.flete = flete;
+      destino.observaciones = observaciones;
+      destino.despacho = despacho;
       this.recalcular(destino);
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
@@ -635,7 +721,7 @@ export class Servicio {
           return { listo: null, cambiados: { avisos, total: q.montos.total, actualizada: q.actualizada } };
         }
         // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número.
-        const numero = u.reservarCotizacion();
+        const numero = u.reservarCotizacion(accion.numero);
         return { listo: null, copia, numero, avisos, version: q.actualizada };
       },
     );
@@ -649,9 +735,10 @@ export class Servicio {
     const { copia, numero, avisos, version } = preparado;
     // La vigencia cuenta días hábiles: antes se actualizan los feriados decretados (sin bloquear si no hay red).
     await prepararFeriados(this.almacen.baseDatos());
+    const reglas = copia.reglas ?? REGLAS;
     const archivo = `cotizacion-${numero}.pdf`,
       fecha = new Date().toISOString(),
-      vence = calcularVence(fecha);
+      vence = calcularVence(fecha, reglas.vigenciaDiasHabiles);
     const documento = { ...copia, numero, fechaEmision: fecha, vence, emitidaPor: this.autor };
     await generarPdf(
       this.almacen.directorio,
@@ -663,6 +750,8 @@ export class Servicio {
         fecha,
         vence,
         autor: this.autor,
+        reglas,
+        observaciones: copia.observaciones,
       }),
     );
     try {
@@ -743,24 +832,52 @@ export class Servicio {
           anchoSolicitado: l.anchoSolicitado,
           altoSolicitado: l.altoSolicitado,
           medidaSolicitada: l.medidaSolicitada,
+          // La nota de pedido usa el costo de fábrica, no el precio personalizado de venta.
+          precioUnitario: null,
         })),
-        { ...REGLAS, ajuste: 0 },
+        { ...(q.reglas ?? REGLAS), ajuste: 0 },
       );
       const numero = u.reservarNota();
-      return { listo: null, copia: structuredClone(q), numero, montos, version: q.actualizada };
+      const copia = structuredClone(q);
+      const despacho = accion.despacho ?? q.despacho ?? {};
+      copia.despacho = {
+        direccion:
+          typeof despacho.direccion === 'string'
+            ? despacho.direccion.replace(/\s+/g, ' ').trim().slice(0, 300) || null
+            : q.despacho?.direccion ?? null,
+        transporte:
+          typeof despacho.transporte === 'string'
+            ? despacho.transporte.replace(/\s+/g, ' ').trim().slice(0, 120) || null
+            : q.despacho?.transporte ?? null,
+        entregaComprometida:
+          typeof despacho.entregaComprometida === 'string'
+            ? despacho.entregaComprometida.replace(/\s+/g, ' ').trim().slice(0, 120) || null
+            : q.despacho?.entregaComprometida ?? null,
+      };
+      return { listo: null, copia, numero, montos, version: q.actualizada };
     });
     if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.nota!.pdf };
     const { copia, numero, montos, version } = preparado;
-    const despacho: Despacho = {
-      direccion: accion.despacho?.direccion?.replace(/\s+/g, ' ').trim().slice(0, 300) || null,
-      transporte: accion.despacho?.transporte?.replace(/\s+/g, ' ').trim().slice(0, 120) || null,
+    const despacho: Despacho = copia.despacho ?? {
+      direccion: null,
+      transporte: null,
+      entregaComprometida: null,
     };
     const archivo = `nota-pedido-${numero}.pdf`,
       fecha = new Date().toISOString();
     await generarPdf(
       this.almacen.directorio,
       archivo,
-      await plantilla(copia, { tipo: 'nota', numero, montos, fecha, autor: this.autor, despacho }),
+      await plantilla(copia, {
+        tipo: 'nota',
+        numero,
+        montos,
+        fecha,
+        autor: this.autor,
+        despacho,
+        reglas: copia.reglas,
+        observaciones: copia.observaciones,
+      }),
     );
     try {
       return await this.almacen.transaccion((u): Resultado => {
@@ -769,7 +886,21 @@ export class Servicio {
           throw new ErrorConflicto(`Otra persona aprobó esta cotización (nota N° ${q.nota.numero}).`);
         if (q.actualizada !== version || q.estado !== 'emitida') throw new ErrorConflicto(VERSION_OBSOLETA);
         this.verificarSerieNoAprobada(q, u);
-        q.nota = { numero, pdf: archivo, montos, fecha, despacho, anulada: false };
+        q.despacho = despacho;
+        const notaDespacho: Despacho = {
+          direccion: despacho.direccion,
+          transporte: despacho.transporte,
+          ...(despacho.entregaComprometida ? { entregaComprometida: despacho.entregaComprometida } : {}),
+        };
+        q.nota = {
+          numero,
+          pdf: archivo,
+          montos,
+          fecha,
+          despacho: notaDespacho,
+          observaciones: copia.observaciones,
+          anulada: false,
+        };
         q.estado = 'aprobada';
         q.aprobadaPor = this.autor;
         q.historial.push({

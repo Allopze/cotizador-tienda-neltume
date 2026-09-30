@@ -2,6 +2,7 @@
 import { useState, type RefObject } from 'react';
 import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
+import { leerPesos } from '@/negocio/cifras';
 import { CampoEditable } from './campo-editable';
 import type { CambiosEdicion } from './contrato';
 import {
@@ -192,6 +193,58 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           );
         })}
       </div>
+      {(editable || actual.observaciones || actual.despacho) && (
+        <div className="quote-custom-fields">
+          {(editable || actual.observaciones) && (
+            <CampoEditable
+              etiqueta="Observaciones"
+              valor={actual.observaciones ?? ''}
+              mostrar={actual.observaciones || 'Agregar observaciones'}
+              editable={editable}
+              discreto
+              area
+              maxLength={2000}
+              guardando={guardando === 'observaciones'}
+              guardar={(v) => acciones.editar({ observaciones: v || null }, 'observaciones')}
+            />
+          )}
+          {(editable || actual.despacho) && (
+            <div className="quote-dispatch-fields">
+              <span className="campo-etiqueta">Despacho</span>
+              <CampoEditable
+                etiqueta="Dirección de despacho"
+                valor={actual.despacho?.direccion ?? ''}
+                mostrar={actual.despacho?.direccion || 'Agregar dirección'}
+                editable={editable}
+                discreto
+                guardando={guardando === 'despacho.direccion'}
+                maxLength={300}
+                guardar={(v) => acciones.editar({ despacho: { direccion: v || null } }, 'despacho.direccion')}
+              />
+              <CampoEditable
+                etiqueta="Transporte"
+                valor={actual.despacho?.transporte ?? ''}
+                mostrar={actual.despacho?.transporte || 'Agregar transporte'}
+                editable={editable}
+                discreto
+                guardando={guardando === 'despacho.transporte'}
+                maxLength={120}
+                guardar={(v) => acciones.editar({ despacho: { transporte: v || null } }, 'despacho.transporte')}
+              />
+              <CampoEditable
+                etiqueta="Entrega comprometida"
+                valor={actual.despacho?.entregaComprometida ?? ''}
+                mostrar={actual.despacho?.entregaComprometida || 'Agregar fecha o compromiso'}
+                editable={editable}
+                discreto
+                guardando={guardando === 'despacho.entregaComprometida'}
+                maxLength={120}
+                guardar={(v) => acciones.editar({ despacho: { entregaComprometida: v || null } }, 'despacho.entregaComprometida')}
+              />
+            </div>
+          )}
+        </div>
+      )}
       {/* Zona central: la única que se desplaza cuando el pedido es largo; cabecera, cliente, acciones
           y totales quedan siempre a la vista. */}
       <div className="quote-cuerpo">
@@ -227,6 +280,72 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
                         {medida && <small>{medida}</small>}
                         {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
+                        {editable && (
+                          <div className="item-editables">
+                            <CampoEditable
+                              etiqueta="Modelo"
+                              etiquetaOculta
+                              valor={s.modelo ?? ''}
+                              mostrar={s.modelo || 'Modelo'}
+                              editable={editable}
+                              discreto
+                              guardando={guardando === `item.${i}.modelo`}
+                              maxLength={300}
+                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { modelo: v || null } }] }, `item.${i}.modelo`)}
+                            />
+                            <CampoEditable
+                              etiqueta="Madera"
+                              etiquetaOculta
+                              valor={s.madera ?? ''}
+                              mostrar={s.madera || 'Madera'}
+                              editable={editable}
+                              discreto
+                              guardando={guardando === `item.${i}.madera`}
+                              maxLength={300}
+                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { madera: v || null } }] }, `item.${i}.madera`)}
+                            />
+                            {linea?.producto.familia === 'PUERTA' ? (
+                              <CampoEditable
+                                etiqueta="Ancho"
+                                etiquetaOculta
+                                valor={s.ancho === null ? '' : String(s.ancho)}
+                                mostrar={s.ancho ?? 'Ancho'}
+                                editable={editable}
+                                discreto
+                                tipo="number"
+                                paso={0.01}
+                                guardando={guardando === `item.${i}.ancho`}
+                                validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un ancho válido.')}
+                                guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { ancho: v ? Number(v) : null } }] }, `item.${i}.ancho`)}
+                              />
+                            ) : (
+                              <CampoEditable
+                                etiqueta="Medida"
+                                etiquetaOculta
+                                valor={s.medida ?? ''}
+                                mostrar={s.medida || 'Medida'}
+                                editable={editable}
+                                discreto
+                                guardando={guardando === `item.${i}.medida`}
+                                maxLength={300}
+                                guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { medida: v || null } }] }, `item.${i}.medida`)}
+                              />
+                            )}
+                            <CampoEditable
+                              etiqueta="Alto / largo"
+                              etiquetaOculta
+                              valor={s.alto === null ? '' : String(s.alto)}
+                              mostrar={s.alto ?? 'Alto / largo'}
+                              editable={editable}
+                              discreto
+                              tipo="number"
+                              paso={0.01}
+                              guardando={guardando === `item.${i}.alto`}
+                              validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un alto válido.')}
+                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { alto: v ? Number(v) : null } }] }, `item.${i}.alto`)}
+                            />
+                          </div>
+                        )}
                       </td>
                       <td className="celda-cantidad">
                         <CampoEditable
@@ -257,7 +376,26 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         />
                       </td>
                       <td className="celda-monto" data-etiqueta="Unitario">
-                        {linea ? pesos(linea.precioUnitario) : '—'}
+                        {linea ? (
+                          <CampoEditable
+                            etiqueta="Precio unitario"
+                            etiquetaOculta
+                            valor={s.precioUnitario === null || s.precioUnitario === undefined ? '' : String(s.precioUnitario)}
+                            mostrar={pesos(linea.precioUnitario)}
+                            editable={editable}
+                            discreto
+                            guardando={guardando === `item.${i}.precioUnitario`}
+                            tipo="text"
+                            sufijo="$"
+                            validar={(v) => {
+                              const n = v ? leerPesos(v) : null;
+                              return n === null || (Number.isSafeInteger(n) && n > 0 && n <= 100_000_000)
+                                ? null
+                                : 'El precio debe ser un entero entre $1 y $100.000.000.';
+                            }}
+                            guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { precioUnitario: v ? leerPesos(v) : null } }] }, `item.${i}.precioUnitario`)}
+                          />
+                        ) : '—'}
                       </td>
                       <td className="celda-monto celda-total" data-etiqueta="Total">
                         {linea ? pesos(linea.total) : '—'}

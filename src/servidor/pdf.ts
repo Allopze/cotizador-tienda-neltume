@@ -4,10 +4,11 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Cotizacion, Despacho } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
-import { pesos, porcentaje, porcentajeIva, REGLAS } from '../negocio/precios';
+import { pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { fechaChilena } from '../negocio/vigencia';
 import { chromiumPath } from './chromium';
 import { datosEmpresa } from './empresa';
+import { abrirBaseDatos } from './base-datos';
 import { ErrorPdf } from './errores';
 
 /** Plazo total para lanzar Chromium, cargar la plantilla e imprimir. */
@@ -75,6 +76,8 @@ export interface DocumentoPdf {
   /** Cotización: quien emite. Nota: quien aprueba. */
   autor?: string | null;
   despacho?: Despacho | null;
+  reglas?: ReglasComerciales;
+  observaciones?: string | null;
   /** Documento anulado: se imprime con una marca visible y la fecha y el motivo de la anulación. */
   anulada?: { fecha: string | null; motivo: string | null; por: string | null } | null;
 }
@@ -85,7 +88,7 @@ const fechaDocumento = (iso: string) =>
 export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const nota = doc.tipo === 'nota';
   const { numero, montos, fecha } = doc;
-  const logo = await readFile(join(process.cwd(), 'public/logo-neltume.svg'));
+  const reglas = doc.reglas ?? q.reglas ?? REGLAS;
   const titulo = nota ? `NOTA DE PEDIDO N° ${numero}` : `COTIZACIÓN N° ${numero}`;
   const c = q.cliente;
   type Campo = [string, string | null];
@@ -132,13 +135,17 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
       : []),
     ...(montos.flete ? [fila('FLETE', pesos(montos.flete))] : []),
     ...(montos.descuento || montos.flete ? [fila('NETO', pesos(montos.neto))] : []),
-    fila(`I.V.A. ${porcentajeIva()}`, pesos(montos.iva)),
+    fila(`I.V.A. ${porcentajeIva(reglas.iva)}`, pesos(montos.iva)),
     fila('TOTAL', pesos(montos.total), 'total'),
   ].join('');
   const validez = doc.vence
-    ? `Cotización válida hasta el ${fechaChilena(doc.vence)} (${REGLAS.vigenciaDiasHabiles} días hábiles).`
-    : `Cotización válida por ${REGLAS.vigenciaDiasHabiles} días hábiles.`;
-  const empresa = datosEmpresa();
+    ? `Cotización válida hasta el ${fechaChilena(doc.vence)} (${reglas.vigenciaDiasHabiles} días hábiles).`
+    : `Cotización válida por ${reglas.vigenciaDiasHabiles} días hábiles.`;
+  const empresa = datosEmpresa(abrirBaseDatos());
+  const logo = empresa.logoSvg
+    ? Buffer.from(empresa.logoSvg, 'utf8')
+    : await readFile(join(process.cwd(), 'public/logo-neltume.svg'));
+  const observaciones = doc.observaciones ?? q.observaciones;
   const datosNeltume = [
     empresa.nombre && `<b>${esc(empresa.nombre)}</b>`,
     empresa.rut && `RUT ${esc(empresa.rut)}`,
@@ -166,8 +173,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   // La cotización cierra con sus condiciones y la aceptación del cliente; la nota, con lo que fábrica
   // completa a mano: entrega comprometida, observaciones y recepción.
   const cierre = nota
-    ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span></span></div><div class="observaciones"><b>Observaciones:</b></div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
-    : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
+    ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="observaciones"><b>Observaciones:</b>${observaciones ? `<p>${esc(observaciones)}</p>` : ''}</div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
+    : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
   const descripcion = (l: Linea) => {
     const pedida = medidaPedida(l);
     return `${esc(descripcionLegible(l.producto.descripcion))}${pedida ? `<br><small>Medida solicitada: ${esc(pedida)}</small>` : ''}`;

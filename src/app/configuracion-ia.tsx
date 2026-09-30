@@ -10,12 +10,14 @@ import {
 } from 'react';
 import type { AjustesIA } from '@/asistente/ajustes';
 import type { ModeloCommandCode } from '@/asistente/modelos-commandcode';
+import { useConfirmacion } from './dialogo';
 import type { TipoAviso } from './avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 export interface EstadoAjustes {
   ajustes: AjustesIA;
   commandcodeClave: boolean;
+  commandcodeClaveFuente: 'ajustes' | 'entorno' | 'ninguna';
   asistenteConfigurado: boolean;
   /** Solo quien administra puede cambiar el modelo; ausente = editable (compatibilidad). */
   puedeEditar?: boolean;
@@ -64,6 +66,10 @@ function Formulario({
   const [catalogo, setCatalogo] = useState<CatalogoModelos | null>(null);
   const [errorCatalogo, setErrorCatalogo] = useState('');
   const [intentoCatalogo, setIntentoCatalogo] = useState(0);
+  const [apiKey, setApiKey] = useState('');
+  const [guardandoApiKey, setGuardandoApiKey] = useState(false);
+  const [errorApiKey, setErrorApiKey] = useState('');
+  const [confirmar, dialogoConfirmacion] = useConfirmacion();
   const editable = estado.puedeEditar !== false;
   const cambiado = borrador.commandcode.modelo !== estado.ajustes.commandcode.modelo;
 
@@ -80,7 +86,7 @@ function Formulario({
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
-    if (ocupado || !editable) return;
+    if (ocupado || guardandoApiKey || !editable) return;
     setOcupado(true);
     setError('');
     try {
@@ -96,82 +102,188 @@ function Formulario({
     }
   }
 
-  return (
-    <form onSubmit={guardar}>
-      <p className="catalog-modal-intro">
-        El asistente interpreta los mensajes del chat. Los precios siempre se calculan en el cotizador y nunca
-        se envían al asistente.
-      </p>
+  async function guardarApiKey(evento: FormEvent) {
+    evento.preventDefault();
+    if (ocupado || guardandoApiKey || !editable || !apiKey.trim()) return;
+    setGuardandoApiKey(true);
+    setErrorApiKey('');
+    try {
+      const data = await pedirJSON<EstadoAjustes>('/api/ajustes', {
+        json: { tipo: 'guardar-clave', apiKey },
+      });
+      guardado(data);
+      setApiKey('');
+      avisar('exito', 'Clave API de CommandCode guardada en Ajustes.', { clave: 'clave-commandcode' });
+    } catch (causa) {
+      if (!esSilencioso(causa)) setErrorApiKey(mensajeDe(causa));
+    } finally {
+      setGuardandoApiKey(false);
+    }
+  }
 
-      <div className="ia-section">
-        <div className="ia-field">
-          <span id="ia-modelo-label">Modelo del asistente</span>
-          {!editable ? (
-            // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
-            <div className="ia-model-fijo">
-              <strong>
-                {catalogo?.modelos.find((m) => m.id === borrador.commandcode.modelo)?.nombre ??
-                  borrador.commandcode.modelo}
-              </strong>
-              <code>{borrador.commandcode.modelo}</code>
-            </div>
-          ) : (
-            <SelectorModelo
-              refTrigger={campo}
-              modelo={borrador.commandcode.modelo}
-              modelos={catalogo?.modelos ?? []}
-              cargando={catalogo === null && !errorCatalogo}
-              error={errorCatalogo}
-              desactualizado={catalogo?.desactualizado ?? false}
-              editable={editable && !ocupado}
-              seleccionar={(modelo) => setBorrador({ commandcode: { modelo } })}
-              reintentar={() => {
-                // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
-                setCatalogo(null);
-                setErrorCatalogo('');
-                setIntentoCatalogo((actual) => actual + 1);
-              }}
-            />
-          )}
-          {!editable && (
-            <p id="ia-permiso" className="ia-permiso">
-              Solo quien administra el cotizador puede cambiar el modelo.
+  async function quitarApiKey() {
+    if (!estado.commandcodeClave || ocupado || guardandoApiKey || !editable) return;
+    const aceptado = await confirmar({
+      eyebrow: 'CLAVE API',
+      titulo: 'Quitar clave de CommandCode',
+      mensaje: <p>El asistente dejará de funcionar hasta que se configure otra clave.</p>,
+      aceptar: 'Quitar clave',
+    });
+    if (!aceptado) return;
+    setGuardandoApiKey(true);
+    setErrorApiKey('');
+    try {
+      const data = await pedirJSON<EstadoAjustes>('/api/ajustes', {
+        json: { tipo: 'quitar-clave' },
+      });
+      guardado(data);
+      setApiKey('');
+      avisar('exito', 'Se quitó la clave API de CommandCode.', { clave: 'clave-commandcode' });
+    } catch (causa) {
+      if (!esSilencioso(causa)) setErrorApiKey(mensajeDe(causa));
+    } finally {
+      setGuardandoApiKey(false);
+    }
+  }
+
+  return (
+    <>
+      <form onSubmit={guardar}>
+        <p className="catalog-modal-intro">
+          El asistente interpreta los mensajes del chat. Los precios siempre se calculan en el cotizador y
+          nunca se envían al asistente.
+        </p>
+
+        <div className="ia-section">
+          <div className="ia-field">
+            <span id="ia-modelo-label">Modelo del asistente</span>
+            {!editable ? (
+              // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
+              <div className="ia-model-fijo">
+                <strong>
+                  {catalogo?.modelos.find((m) => m.id === borrador.commandcode.modelo)?.nombre ??
+                    borrador.commandcode.modelo}
+                </strong>
+                <code>{borrador.commandcode.modelo}</code>
+              </div>
+            ) : (
+              <SelectorModelo
+                refTrigger={campo}
+                modelo={borrador.commandcode.modelo}
+                modelos={catalogo?.modelos ?? []}
+                cargando={catalogo === null && !errorCatalogo}
+                error={errorCatalogo}
+                desactualizado={catalogo?.desactualizado ?? false}
+                editable={editable && !ocupado && !guardandoApiKey}
+                seleccionar={(modelo) => setBorrador({ commandcode: { modelo } })}
+                reintentar={() => {
+                  // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
+                  setCatalogo(null);
+                  setErrorCatalogo('');
+                  setIntentoCatalogo((actual) => actual + 1);
+                }}
+              />
+            )}
+            {!editable && (
+              <p id="ia-permiso" className="ia-permiso">
+                Solo quien administra el cotizador puede cambiar el modelo.
+              </p>
+            )}
+          </div>
+          {catalogo?.desactualizado && (
+            <p className="ia-status falta" role="status">
+              CommandCode no respondió; se muestra el último catálogo disponible.
             </p>
           )}
+          <p id="ia-nota" className={`ia-status ${estado.commandcodeClave ? 'ok' : 'falta'}`}>
+            {estado.commandcodeClave
+              ? estado.commandcodeClaveFuente === 'entorno'
+                ? '✓ El asistente usa la clave definida en CMD_API_KEY.'
+                : '✓ El asistente tiene su clave API configurada en Ajustes.'
+              : 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.'}
+          </p>
         </div>
-        {catalogo?.desactualizado && (
-          <p className="ia-status falta" role="status">
-            CommandCode no respondió; se muestra el último catálogo disponible.
+
+        {error && (
+          <p className="catalog-error" role="alert">
+            {error}
           </p>
         )}
-        <p id="ia-nota" className={`ia-status ${estado.commandcodeClave ? 'ok' : 'falta'}`}>
-          {estado.commandcodeClave
-            ? '✓ El asistente tiene su clave de acceso configurada.'
-            : 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.'}
-        </p>
-      </div>
+        {editable && (
+          <div className="ia-actions">
+            <button
+              type="button"
+              className="button secondary"
+              onClick={() => setBorrador(structuredClone(estado.ajustes))}
+              disabled={ocupado || guardandoApiKey || !cambiado}
+            >
+              Descartar cambios
+            </button>
+            <button type="submit" className="button primary" disabled={ocupado || guardandoApiKey || !cambiado}>
+              {ocupado ? 'Guardando…' : 'Guardar'}
+            </button>
+          </div>
+        )}
+      </form>
 
-      {error && (
-        <p className="catalog-error" role="alert">
-          {error}
-        </p>
-      )}
       {editable && (
-        <div className="ia-actions">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => setBorrador(structuredClone(estado.ajustes))}
-            disabled={ocupado || !cambiado}
-          >
-            Descartar cambios
-          </button>
-          <button type="submit" className="button primary" disabled={ocupado || !cambiado}>
-            {ocupado ? 'Guardando…' : 'Guardar'}
-          </button>
-        </div>
+        <section className="ia-key-settings" aria-labelledby="ia-clave-titulo">
+          <h3 id="ia-clave-titulo" className="eyebrow">
+            CLAVE API DE COMMANDCODE
+          </h3>
+          <p className="catalog-modal-intro">
+            {estado.commandcodeClaveFuente === 'entorno'
+              ? 'Hay una clave activa en CMD_API_KEY. Al guardar otra aquí, se reemplazará.'
+              : 'La clave se guarda cifrada en este cotizador y no vuelve a mostrarse.'}
+          </p>
+          <form onSubmit={guardarApiKey} aria-label="Configurar clave API de CommandCode">
+            <label className="ia-field">
+              <span>Nueva clave API</span>
+              <input
+                type="password"
+                value={apiKey}
+                onChange={(evento) => setApiKey(evento.target.value)}
+                placeholder={
+                  estado.commandcodeClave
+                    ? 'Ingresa una clave para reemplazar la actual'
+                    : 'Pega tu clave API'
+                }
+                autoComplete="new-password"
+                autoCapitalize="off"
+                spellCheck={false}
+                maxLength={2048}
+                disabled={guardandoApiKey || ocupado}
+              />
+            </label>
+            {errorApiKey && (
+              <p className="catalog-error" role="alert">
+                {errorApiKey}
+              </p>
+            )}
+            <div className="ia-actions">
+              {estado.commandcodeClave && (
+                <button
+                  type="button"
+                  className="button secondary"
+                  onClick={quitarApiKey}
+                  disabled={guardandoApiKey || ocupado}
+                >
+                  Quitar clave
+                </button>
+              )}
+              <button
+                type="submit"
+                className="button primary"
+                disabled={guardandoApiKey || ocupado || !apiKey.trim()}
+              >
+                {guardandoApiKey ? 'Guardando…' : 'Guardar clave'}
+              </button>
+            </div>
+          </form>
+        </section>
       )}
-    </form>
+      {dialogoConfirmacion}
+    </>
   );
 }
 

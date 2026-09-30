@@ -6,9 +6,21 @@ import { ConfiguracionIA, type EstadoAjustes } from '../configuracion-ia';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { CrearUsuario } from './crear-usuario';
+import { ConfiguracionNegocio } from './configuracion-negocio';
+import { GestionFeriados } from './feriados';
+import { GestionUsuarios } from './usuarios';
 
-/** Pantalla «Ajustes»: contraseña de la cuenta y modelo del asistente. */
-export function PantallaAjustes({ email, nombre }: { email: string; nombre: string }) {
+/** Pantalla «Ajustes»: contraseña, ajustes del asistente y alta de usuarios para admin. */
+export function PantallaAjustes({
+  email,
+  nombre,
+  puedeCrearUsuarios,
+}: {
+  email: string;
+  nombre: string;
+  puedeCrearUsuarios: boolean;
+}) {
   const { avisos, avisar, cerrar } = useAvisos();
   const [estado, setEstado] = useState<EstadoAjustes | null>(null);
   const [error, setError] = useState('');
@@ -50,6 +62,23 @@ export function PantallaAjustes({ email, nombre }: { email: string; nombre: stri
             avisar={avisar}
           />
         </section>
+        <section aria-labelledby="ajustes-negocio">
+          <h2 id="ajustes-negocio">Empresa y reglas comerciales</h2>
+          <ConfiguracionNegocio avisar={avisar} />
+        </section>
+        {puedeCrearUsuarios && (
+          <section aria-labelledby="ajustes-feriados">
+            <h2 id="ajustes-feriados">Feriados adicionales</h2>
+            <GestionFeriados avisar={avisar} />
+          </section>
+        )}
+        {puedeCrearUsuarios && (
+          <section aria-labelledby="ajustes-usuarios">
+            <h2 id="ajustes-usuarios">Usuarios</h2>
+            <GestionUsuarios avisar={avisar} />
+            <CrearUsuario avisar={avisar} />
+          </section>
+        )}
       </main>
       <footer className="site-footer">
         <span>

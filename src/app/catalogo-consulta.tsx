@@ -4,8 +4,10 @@ import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta } from './contrato';
 import { nombreProducto, sinMedida } from './formato';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
+import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
+/** La primera opción vacía es «todas»: el selector la muestra como el estado sin filtro. */
 const FAMILIAS = [
   ['', 'Todas las familias'],
   ['PUERTA', 'Puertas'],
@@ -33,6 +35,8 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
   }, [q, familia]);
   const [datos, setDatos] = useState<{ total: number; productos: ProductoConsulta[] } | null>(null);
   const [error, setError] = useState('');
+  /** Vuelve a consultar sin tocar la búsqueda: el aviso de error trae «Reintentar». */
+  const [reintento, setReintento] = useState(0);
 
   useEffect(() => {
     const control = new AbortController();
@@ -56,7 +60,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
       clearTimeout(t);
       control.abort();
     };
-  }, [q, familia]);
+  }, [q, familia, reintento]);
 
   return (
     <div className="catalogo-consulta">
@@ -74,25 +78,53 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
           placeholder="Ej.: Molco oregón 0,80"
           maxLength={100}
         />
-        <label className="sr-only" htmlFor="catalogo-familia">
+        <span id="catalogo-familia-label" className="sr-only">
           Familia
-        </label>
-        <select id="catalogo-familia" value={familia} onChange={(e) => setFamilia(e.target.value)}>
-          {FAMILIAS.map(([valor, etiqueta]) => (
-            <option key={valor} value={valor}>
-              {etiqueta}
-            </option>
-          ))}
-        </select>
+        </span>
+        <SelectorFamilia
+          id="catalogo-familia-label"
+          value={familia}
+          opciones={FAMILIAS}
+          vacio="Todas las familias"
+          seleccionar={setFamilia}
+        />
       </div>
       {error ? (
         <p className="catalog-error" role="alert">
-          {error}
+          {error}{' '}
+          <button
+            type="button"
+            className="link"
+            onClick={() => {
+              setError('');
+              setDatos(null);
+              setReintento((n) => n + 1);
+            }}
+          >
+            Reintentar
+          </button>
         </p>
       ) : !datos ? (
         <p className="muted">Cargando catálogo…</p>
       ) : !datos.productos.length ? (
-        <p className="muted">Sin productos que coincidan.</p>
+        <p className="muted">
+          Sin productos que coincidan.
+          {(q.trim() || familia) && (
+            <>
+              {' '}
+              <button
+                type="button"
+                className="link"
+                onClick={() => {
+                  setQ('');
+                  setFamilia('');
+                }}
+              >
+                Limpiar filtros
+              </button>
+            </>
+          )}
+        </p>
       ) : (
         <>
           <p className="muted" aria-live="polite">

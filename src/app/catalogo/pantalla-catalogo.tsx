@@ -2,6 +2,8 @@
 import { useEffect, useState, type MouseEvent } from 'react';
 import { AltaProducto } from '../alta-producto';
 import { CatalogoConsulta } from '../catalogo-consulta';
+import { GestionManuales } from '../gestion-manuales';
+import { ConfiguracionCatalogo } from '../configuracion-catalogo';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { useEsCliente, useScrollRecordado } from '../memoria-pantalla';
@@ -13,11 +15,14 @@ export function PantallaCatalogo({
   email,
   nombre,
   seccion: inicial,
+  puedeAdministrar,
 }: {
   email: string;
   nombre: string;
   seccion: Seccion;
+  puedeAdministrar: boolean;
 }) {
+  const seccionesVisibles = puedeAdministrar ? SECCIONES : SECCIONES.filter((s) => s.id === 'consultar' || s.id === 'agregar');
   // Cambiar de sección no es una navegación de Next: cada `?seccion=` sería otra página (se montaría otra
   // instancia y se perdería el scroll). Se actualiza la URL con pushState, así el enlace directo y
   // Atrás/Adelante siguen funcionando, y la sección vive en el estado de esta pantalla.
@@ -25,11 +30,11 @@ export function PantallaCatalogo({
   useEffect(() => {
     const alVolver = () => {
       const pedida = new URLSearchParams(location.search).get('seccion');
-      setSeccion(SECCIONES.find((s) => s.id === pedida)?.id ?? 'consultar');
+      setSeccion(seccionesVisibles.find((s) => s.id === pedida)?.id ?? 'consultar');
     };
     window.addEventListener('popstate', alVolver);
     return () => window.removeEventListener('popstate', alVolver);
-  }, []);
+  }, [seccionesVisibles]);
   const irA = (e: MouseEvent<HTMLAnchorElement>, s: Seccion) => {
     if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     e.preventDefault();
@@ -57,7 +62,7 @@ export function PantallaCatalogo({
   const [visitadas, setVisitadas] = useState<Seccion[]>([seccion]);
   if (!visitadas.includes(seccion)) setVisitadas([...visitadas, seccion]);
   const montada = (s: Seccion) => cliente && (s === seccion || visitadas.includes(s));
-  const actual = SECCIONES.find((s) => s.id === seccion)!;
+  const actual = seccionesVisibles.find((s) => s.id === seccion)!;
 
   return (
     <div className="app-shell pantalla-catalogo">
@@ -66,7 +71,7 @@ export function PantallaCatalogo({
       <div className="con-secciones superficie">
         <nav className="secciones-nav" aria-label="Secciones del catálogo">
           <ul>
-            {SECCIONES.map((s) => (
+            {seccionesVisibles.map((s) => (
               <li key={s.id}>
                 <a
                   href={s.id === 'consultar' ? '/catalogo' : `/catalogo?seccion=${s.id}`}
@@ -89,6 +94,16 @@ export function PantallaCatalogo({
           {montada('agregar') && (
             <div hidden={seccion !== 'agregar'}>
               <AltaProducto asistente={asistente} />
+            </div>
+          )}
+          {montada('manuales') && (
+            <div hidden={seccion !== 'manuales'}>
+              <GestionManuales />
+            </div>
+          )}
+          {montada('configuracion') && (
+            <div hidden={seccion !== 'configuracion'}>
+              <ConfiguracionCatalogo />
             </div>
           )}
         </main>

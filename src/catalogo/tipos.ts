@@ -28,6 +28,8 @@ export interface SolicitudItem {
   alto: number | null;
   medida: string | null;
   cantidad: number | null;
+  /** Precio unitario excepcional para esta cotización; null usa el precio calculado del catálogo. */
+  precioUnitario?: number | null;
 }
 export interface Cliente {
   nombre: string | null;

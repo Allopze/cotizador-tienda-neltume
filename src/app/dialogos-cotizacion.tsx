@@ -8,7 +8,7 @@ import { fechaLarga, numeroCotizacion } from './formato';
 
 interface DatosAprobacion {
   numero: number | null;
-  direccion: string | null;
+  despacho: Despacho | null;
   vence: string | null;
   vencida: boolean;
 }
@@ -54,13 +54,15 @@ function FormAprobacion({
   cancelar: RefObject<HTMLButtonElement | null>;
   responder: (r: { despacho: Despacho; confirmarVencida: boolean } | null) => void;
 }) {
-  const [direccion, setDireccion] = useState(datos.direccion ?? '');
-  const [transporte, setTransporte] = useState('');
+  const [direccion, setDireccion] = useState(datos.despacho?.direccion ?? '');
+  const [transporte, setTransporte] = useState(datos.despacho?.transporte ?? '');
+  const [entregaComprometida, setEntregaComprometida] = useState(datos.despacho?.entregaComprometida ?? '');
   function enviar(e: FormEvent) {
     e.preventDefault();
     const despacho: Despacho = {};
     if (direccion.trim()) despacho.direccion = direccion.trim();
     if (transporte.trim()) despacho.transporte = transporte.trim();
+    if (entregaComprometida.trim()) despacho.entregaComprometida = entregaComprometida.trim();
     responder({ despacho, confirmarVencida: datos.vencida });
   }
   return (
@@ -86,6 +88,16 @@ function FormAprobacion({
           />
         </label>
         <label className="ia-field">
+          <span>Entrega comprometida (opcional)</span>
+          <input
+            value={entregaComprometida}
+            onChange={(e) => setEntregaComprometida(e.target.value)}
+            maxLength={120}
+            placeholder="Ej. semana del 15 de abril"
+            autoComplete="off"
+          />
+        </label>
+        <label className="ia-field">
           <span>Transporte (opcional)</span>
           <input
             value={transporte}
@@ -103,6 +115,98 @@ function FormAprobacion({
         <button type="submit" className="button primary">
           {datos.vencida ? 'Aprobar de todos modos' : 'Aprobar y generar nota'}
         </button>
+      </div>
+    </form>
+  );
+}
+
+interface DatosEmision {
+  numero?: number | null;
+  total: number;
+}
+
+/** Emisión: permite elegir un número nuevo solo por encima del último correlativo reservado. */
+export function useEmision() {
+  const [pendiente, setPendiente] = useState<
+    (DatosEmision & { resolver: (r: { numero: number | null } | null) => void }) | null
+  >(null);
+  const pedir = useCallback(
+    (datos: DatosEmision) =>
+      new Promise<{ numero: number | null } | null>((resolver) => setPendiente({ ...datos, resolver })),
+    [],
+  );
+  const cancelar = useRef<HTMLButtonElement>(null);
+  const cerrar = (r: { numero: number | null } | null) => {
+    pendiente?.resolver(r);
+    setPendiente(null);
+  };
+  const elemento = (
+    <Dialogo
+      abierto={!!pendiente}
+      alCerrar={() => cerrar(null)}
+      titulo="Emitir la cotización"
+      eyebrow="EMITIR"
+      className="dialogo-confirmacion"
+      focoInicial={cancelar}
+      alerta
+    >
+      {pendiente && <FormEmision datos={pendiente} responder={cerrar} cancelar={cancelar} />}
+    </Dialogo>
+  );
+  return [pedir, elemento] as const;
+}
+
+function FormEmision({
+  datos,
+  responder,
+  cancelar,
+}: {
+  datos: DatosEmision;
+  responder: (r: { numero: number | null } | null) => void;
+  cancelar: RefObject<HTMLButtonElement | null>;
+}) {
+  const [numero, setNumero] = useState('');
+  const [error, setError] = useState('');
+  function enviar(e: FormEvent) {
+    e.preventDefault();
+    const escrito = numero.trim();
+    if (escrito && (!/^\d+$/.test(escrito) || Number(escrito) <= 0)) {
+      setError('El número debe ser un entero positivo.');
+      return;
+    }
+    responder({ numero: escrito ? Number(escrito) : null });
+  }
+  return (
+    <form onSubmit={enviar}>
+      <div className="dialogo-mensaje">
+        <p>
+          Total a emitir: <strong>{new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(datos.total)}</strong> (IVA incluido).
+        </p>
+        <p>Si dejas el número vacío se asignará el siguiente correlativo disponible.</p>
+        <p>También puedes indicar un número manual, pero debe ser mayor que el último número usado o reservado.</p>
+      </div>
+      <div className="dialogo-campos">
+        <label className="ia-field">
+          <span>Número de cotización (opcional)</span>
+          <input
+            type="number"
+            min={1}
+            max={1_000_000_000}
+            step={1}
+            value={numero}
+            onChange={(e) => {
+              setNumero(e.target.value);
+              setError('');
+            }}
+            placeholder="Siguiente disponible"
+            autoComplete="off"
+          />
+        </label>
+        {error && <p className="campo-error" role="alert">{error}</p>}
+      </div>
+      <div className="dialogo-acciones">
+        <button ref={cancelar} type="button" className="button secondary" onClick={() => responder(null)}>Cancelar</button>
+        <button type="submit" className="button primary">Emitir y generar PDF</button>
       </div>
     </form>
   );

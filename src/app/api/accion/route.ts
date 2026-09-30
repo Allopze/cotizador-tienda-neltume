@@ -11,7 +11,7 @@ import type { LLM } from '@/asistente/llm';
 import { asistenteConfigurado, crearLLM } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
-import { ErrorPrecio, REGLAS } from '@/negocio/precios';
+import { ErrorPrecio } from '@/negocio/precios';
 import { ESTADOS, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -61,7 +61,14 @@ const accionSchema = z.discriminatedUnion('tipo', [
       indice: z.number().int().nonnegative(),
     })
     .strict(),
-  z.object({ tipo: z.literal('emitir'), id: z.uuid(), actualizada: version }).strict(),
+  z
+    .object({
+      tipo: z.literal('emitir'),
+      id: z.uuid(),
+      actualizada: version,
+      numero: z.number().int().positive().max(1_000_000_000).optional(),
+    })
+    .strict(),
   z
     .object({
       tipo: z.literal('aprobar'),
@@ -69,7 +76,11 @@ const accionSchema = z.discriminatedUnion('tipo', [
       actualizada: version,
       confirmarVencida: z.boolean().optional(),
       despacho: z
-        .object({ direccion: z.string().max(300).optional(), transporte: z.string().max(120).optional() })
+        .object({
+          direccion: z.string().max(300).nullable().optional(),
+          transporte: z.string().max(120).nullable().optional(),
+          entregaComprometida: z.string().max(120).nullable().optional(),
+        })
         .strict()
         .optional(),
     })
@@ -98,8 +109,38 @@ const accionSchema = z.discriminatedUnion('tipo', [
         )
         .max(100)
         .optional(),
-      descuento: z.number().min(0).max(REGLAS.descuentoMaximo).optional(),
+      items: z
+        .array(
+          z
+            .object({
+              indice: z.number().int().nonnegative(),
+              cambios: z
+                .object({
+                  modelo: texto(300),
+                  madera: texto(300),
+                  ancho: z.number().finite().nullable().optional(),
+                  alto: z.number().finite().nullable().optional(),
+                  medida: texto(300),
+                  precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
+                })
+                .strict(),
+            })
+            .strict(),
+        )
+        .max(100)
+        .optional(),
+      descuento: z.number().min(0).max(100).optional(),
       flete: z.number().int().min(0).max(100_000_000).optional(),
+      observaciones: z.string().max(2000).nullable().optional(),
+      despacho: z
+        .object({
+          direccion: z.string().max(300).nullable().optional(),
+          transporte: z.string().max(120).nullable().optional(),
+          entregaComprometida: z.string().max(120).nullable().optional(),
+        })
+        .strict()
+        .nullable()
+        .optional(),
     })
     .strict(),
 ]);

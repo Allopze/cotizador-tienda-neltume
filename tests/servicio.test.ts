@@ -323,6 +323,14 @@ describe('Persistencia y flujo del asistente', () => {
     await writeFile(archivoDb, '{inválido');
     await expect(new Almacen(dir).leer()).rejects.toThrow();
   });
+
+  it('permite elegir un número solo por encima del último usado o reservado', async () => {
+    const { almacen } = await setup();
+    await expect(almacen.transaccion(async (u) => u.reservarCotizacion(322))).rejects.toThrow('mayor que el último');
+    await expect(almacen.transaccion(async (u) => u.reservarCotizacion(500))).resolves.toBe(500);
+    await expect(almacen.transaccion(async (u) => u.reservarCotizacion(500))).rejects.toThrow('mayor que el último');
+    await expect(almacen.transaccion(async (u) => u.reservarCotizacion())).resolves.toBe(501);
+  });
 });
 
 it('preserva el error tipado del proveedor y el borrador cuando la IA falla', async () => {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
 import { estadoFeriados, prepararFeriados, URL_FERIADOS } from '../src/servidor/feriados-sync';
+import { eliminarFeriadoManual, guardarFeriadoManual, listarFeriadosManuales } from '../src/servidor/feriados-manuales';
 import { esFeriado, registrarFeriadosExternos } from '../src/negocio/feriados';
 import { sumarDiasHabiles } from '../src/negocio/vigencia';
 
@@ -100,5 +101,17 @@ describe('sincronización de feriados', () => {
     cerrarBaseDatos(ruta);
     abrirBaseDatos(ruta);
     expect(esFeriado('2026-09-17')).toBe(true);
+  });
+
+  it('conserva feriados manuales al sincronizar y los quita de la vigencia al eliminarlos', async () => {
+    const db = await base();
+    guardarFeriadoManual(db, '2026-09-17', 'Fiesta regional');
+    expect(esFeriado('2026-09-17')).toBe(true);
+    await prepararFeriados(db, { ahora, obtener: async () => respuesta(2026), forzar: true });
+    expect(listarFeriadosManuales(db)).toMatchObject([{ fecha: '2026-09-17', nombre: 'Fiesta regional' }]);
+    eliminarFeriadoManual(db, '2026-09-17');
+    expect(listarFeriadosManuales(db)).toEqual([]);
+    registrarFeriadosExternos([]);
+    expect(esFeriado('2026-09-17')).toBe(false);
   });
 });

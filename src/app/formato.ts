@@ -1,13 +1,13 @@
 import type { KeyboardEvent } from 'react';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
-import { pesos, porcentaje, porcentajeIva, type Linea } from '@/negocio/precios';
+import { pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
 
 // Textos y formatos compartidos por todas las vistas: una sola forma de decir cada cosa.
 export const SIN_NUMERO = 'Sin número';
 export const SIN_CLIENTE = 'Cliente sin nombre';
-export const VALIDEZ = 'Validez: 10 días hábiles';
+export const VALIDEZ = `Validez: ${REGLAS.vigenciaDiasHabiles} días hábiles`;
 
 const zona = { timeZone: 'America/Santiago' } as const;
 // Una fecha sin hora (YYYY-MM-DD) se lee a mediodía: a medianoche UTC caería el día anterior en Chile.
@@ -28,14 +28,16 @@ export const mesAnio = (iso: string) => {
 export const plural = (n: number, singular: string, varios = `${singular}s`) =>
   `${n} ${n === 1 ? singular : varios}`;
 export const numeroCotizacion = (numero: number | null | undefined) => (numero ? `N° ${numero}` : SIN_NUMERO);
-export const iva = () => porcentajeIva().replace(/\s+%/, '%');
+export const iva = (valor = REGLAS.iva) => porcentajeIva(valor).replace(/\s+%/, '%');
 
 export const pct = (n: number) => porcentaje(n).replace(/\s+%/, '%');
 
 /** Validez: usa la fecha de vencimiento cuando el servidor la informe. */
-export function validez(q: Pick<Cotizacion, 'vence'> | null) {
+export function validez(q: Pick<Cotizacion, 'vence' | 'reglas'> | null) {
   const vence = q?.vence;
-  return vence ? `Válida hasta el ${fechaLarga(vence)}` : VALIDEZ;
+  return vence
+    ? `Válida hasta el ${fechaLarga(vence)}`
+    : `Validez: ${q?.reglas?.vigenciaDiasHabiles ?? REGLAS.vigenciaDiasHabiles} días hábiles`;
 }
 /** Solo una emitida puede estar «vencida»: las demás ya no esperan aprobación. */
 export const vencida = (q: Pick<Cotizacion, 'estado' | 'vence'> | null) =>
@@ -183,9 +185,10 @@ export function resumenTexto(q: Cotizacion) {
         ]
       : []),
     `Neto: ${pesos(q.montos.neto)}`,
-    `IVA ${iva()}: ${pesos(q.montos.iva)}`,
+    `IVA ${iva(q.reglas?.iva)}: ${pesos(q.montos.iva)}`,
     `Total: ${pesos(q.montos.total)}`,
     `Valores puestos en fábrica. ${validez(q)}.`,
+    ...(q.observaciones ? ['', `Observaciones: ${q.observaciones}`] : []),
   ].join('\n');
 }
 

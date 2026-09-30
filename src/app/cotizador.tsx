@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { esEditable, etiquetaEstado, type Cotizacion, type Mensaje } from '@/negocio/estado';
+import { esEditable, etiquetaEstado, type Cotizacion, type Despacho, type Mensaje } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
@@ -10,7 +10,7 @@ import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
 import { useConfirmacion } from './dialogo';
-import { useAnulacion, useAprobacion } from './dialogos-cotizacion';
+import { useAnulacion, useAprobacion, useEmision } from './dialogos-cotizacion';
 import type { CambiosEdicion, Detalle, Resultado } from './contrato';
 import {
   SIN_CLIENTE,
@@ -93,6 +93,7 @@ export function Cotizador({
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirAprobacion, dialogoAprobacion] = useAprobacion();
   const [pedirAnulacion, dialogoAnulacion] = useAnulacion();
+  const [pedirEmision, dialogoEmision] = useEmision();
   const mensajes = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
     workspace = useRef<HTMLElement>(null),
@@ -416,11 +417,11 @@ export function Cotizador({
     actualizada: string;
     vence: string | null;
     vencida: boolean;
-    direccion: string | null;
+    despacho: Despacho | null;
   }) {
     const datos = await pedirAprobacion({
       numero: q.numero,
-      direccion: q.direccion,
+      despacho: q.despacho,
       vence: q.vence,
       vencida: q.vencida,
     });
@@ -477,25 +478,21 @@ export function Cotizador({
     async emitir() {
       const q = actual;
       if (!q || ocupado) return;
-      const ok = await confirmar({
-        titulo: 'Emitir la cotización',
-        mensaje: (
-          <>
-            <p>
-              Total a emitir: <strong>{pesos(q.montos.total)}</strong> (IVA incluido).
-            </p>
-            <p>Se asignará el siguiente número correlativo y la cotización quedará emitida.</p>
-            <p>El número no se reutiliza: si luego hay cambios, se creará una revisión con otro número.</p>
-          </>
-        ),
-        aceptar: 'Emitir y generar PDF',
-      });
-      if (!ok) return;
+      const emision = await pedirEmision({ total: q.montos.total });
+      if (!emision) return;
       setEnCurso('emitir');
       limpiar('operacion');
       try {
         try {
-          recibir(await peticion({ tipo: 'emitir', id: q.id, ...versionDe(q) }), { previa: q });
+          recibir(
+            await peticion({
+              tipo: 'emitir',
+              id: q.id,
+              ...versionDe(q),
+              ...(emision.numero === null ? {} : { numero: emision.numero }),
+            }),
+            { previa: q },
+          );
         } catch (e) {
           // El catálogo cambió: el servidor ya guardó los montos nuevos en el borrador y no emitió.
           if (!(e instanceof ErrorSolicitud && e.codigo === 'precios_cambiaron')) throw e;
@@ -521,9 +518,15 @@ export function Cotizador({
             aceptar: 'Emitir con los montos actualizados',
           });
           if (!reconfirmado) return;
-          recibir(await peticion({ tipo: 'emitir', id: vigente.id, ...versionDe(vigente) }), {
-            previa: vigente,
-          });
+          recibir(
+            await peticion({
+              tipo: 'emitir',
+              id: vigente.id,
+              ...versionDe(vigente),
+              ...(emision.numero === null ? {} : { numero: emision.numero }),
+            }),
+            { previa: vigente },
+          );
         }
       } catch (e) {
         fallo(e, q);
@@ -534,7 +537,7 @@ export function Cotizador({
     async aprobar() {
       const q = actual;
       if (!q || ocupado) return;
-      await aprobar({ ...q, vencida: vencida(q), direccion: q.cliente.direccion });
+      await aprobar({ ...q, vencida: vencida(q), despacho: q.despacho ?? { direccion: q.cliente.direccion, transporte: null, entregaComprometida: null } });
     },
     async quitar(indice) {
       const q = actual;
@@ -645,7 +648,14 @@ export function Cotizador({
       actualizada: c.actualizada,
       vence: c.vence,
       vencida: c.vencida,
-      direccion: c.id === conversacion.id ? conversacion.cliente.direccion : null,
+      despacho:
+        c.id === conversacion.id
+          ? conversacion.despacho ?? {
+              direccion: conversacion.cliente.direccion,
+              transporte: null,
+              entregaComprometida: null,
+            }
+          : null,
     });
     if (!ok) {
       if (efimera) setCharla((m) => [...m, { rol: 'asistente', texto: 'Aprobación cancelada.' }]);
@@ -954,7 +964,12 @@ export function Cotizador({
             )}
             {enCurso === 'chat' && (
               <div className="thinking">
-                Preparando los detalles<span aria-hidden> · · ·</span>
+                Preparando los detalles
+                <span className="puntos" aria-hidden>
+                  <span>·</span>
+                  <span>·</span>
+                  <span>·</span>
+                </span>
               </div>
             )}
           </div>
@@ -1070,6 +1085,7 @@ export function Cotizador({
       {confirmacion}
       {dialogoAprobacion}
       {dialogoAnulacion}
+      {dialogoEmision}
     </div>
   );
 }

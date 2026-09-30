@@ -40,6 +40,13 @@
   /* Dos alturas de control: normal y compacto. */
   --control: 44px;
   --control-sm: 36px;
+  /* Movimiento: 100 ms al pulsar, 150 ms en los cambios de estado y 200-280 ms cuando algo entra. */
+  --motion-tap: 100ms;
+  --motion-fast: 150ms;
+  --motion-enter: 200ms;
+  --motion-dialog: 280ms;
+  --curve-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --curve-in: cubic-bezier(0.4, 0, 1, 1);
   /* Espaciado único de las etiquetas en mayúsculas. */
   --tracking-label: 1.2px;
 }

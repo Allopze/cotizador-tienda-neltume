@@ -22,7 +22,7 @@ const MAX_CORREOS_REGISTRADOS = 5000;
 
 const produccion = () => process.env.NODE_ENV === 'production';
 
-// Las cuentas se gestionan solo con scripts/usuarios.ts; el plugin admin no se expone por HTTP.
+// Las cuentas se gestionan desde rutas propias y scripts/usuarios.ts; el plugin admin no se expone por HTTP.
 export const esRutaAdminAuth = (pathname: string) => /^\/api\/auth\/+admin(\/|$)/i.test(pathname);
 
 export function secretoAutenticacion() {
@@ -156,7 +156,7 @@ export function opcionesAutenticacion(
         '/change-password': { window: 15 * 60, max: 5 },
       },
     },
-    plugins: [admin({ defaultRole: 'user' })],
+    plugins: [admin({ defaultRole: 'admin' })],
   };
 }
 
@@ -199,4 +199,6 @@ export async function migrarEsquemaAutenticacion(database: Database.Database) {
     throw new Error([...migracion.schemaProblems, ...migracion.unsafeChanges].join('\n'));
   }
   await migracion.runMigrations();
+  // Neltume no tiene cuentas de rol usuario: normaliza también las cuentas creadas por versiones anteriores.
+  database.prepare('UPDATE "user" SET role = ? WHERE role IS NULL OR role <> ?').run('admin', 'admin');
 }

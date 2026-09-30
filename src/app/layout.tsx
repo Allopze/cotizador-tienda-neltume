@@ -4,6 +4,7 @@ import './chat.css';
 import './cotizacion.css';
 import './responsive.css';
 import './login.css';
+import './movimiento.css';
 export const metadata: Metadata = {
   title: 'Neltume · Cotizaciones',
   description: 'Asistente interno de cotizaciones de puertas sólidas.',

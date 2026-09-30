@@ -10,12 +10,13 @@ const emailSchema = z.string().trim().toLowerCase().email();
 const comando = process.argv[2];
 const email = emailSchema.safeParse(process.argv[3] ?? '');
 const extras = process.argv.slice(4).filter((value) => value !== '--admin');
-const administrador = process.argv.includes('--admin');
 const nombre = extras.join(' ').trim();
 
 function pedirClave(mensaje: string) {
   if (!process.stdin.isTTY || !process.stdin.setRawMode) {
-    throw new Error('Ejecuta este comando en una terminal interactiva para ingresar la contraseña de forma segura.');
+    throw new Error(
+      'Ejecuta este comando en una terminal interactiva para ingresar la contraseña de forma segura.',
+    );
   }
 
   return new Promise<string>((resolve, reject) => {
@@ -64,7 +65,7 @@ function pedirClave(mensaje: string) {
 function uso() {
   console.log(`
 Gestión local de cuentas:
-  npm run usuarios -- crear <correo> [nombre] [--admin]
+  npm run usuarios -- crear <correo> [nombre]
   npm run usuarios -- desactivar <correo>
   npm run usuarios -- activar <correo>
   npm run usuarios -- restablecer-clave <correo>
@@ -96,7 +97,7 @@ async function principal() {
         email: email.data,
         name: nombre || email.data.split('@')[0],
         emailVerified: true,
-        role: administrador ? 'admin' : 'user',
+        role: 'admin',
       },
       { method: 'admin' },
     );
@@ -112,7 +113,7 @@ async function principal() {
       await context.internalAdapter.deleteUser(usuarioNuevo.id);
       throw error;
     }
-    console.log(`Cuenta creada: ${usuarioNuevo.email}${administrador ? ' (administración)' : ''}.`);
+    console.log(`Cuenta admin creada: ${usuarioNuevo.email}.`);
     return;
   }
 
@@ -126,7 +127,8 @@ async function principal() {
         const cuenta = u as typeof usuario;
         return cuenta.role === 'admin' && !cuenta.banned;
       });
-      if (adminsActivos.length <= 1) throw new Error('No se puede desactivar la última cuenta administradora.');
+      if (adminsActivos.length <= 1)
+        throw new Error('No se puede desactivar la última cuenta administradora.');
     }
     await context.internalAdapter.updateUser(usuario.id, {
       banned: true,

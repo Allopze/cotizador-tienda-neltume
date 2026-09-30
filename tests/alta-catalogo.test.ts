@@ -131,6 +131,11 @@ describe('agregarProductoManual y mantención', () => {
       descripcion: 'Molco angosta',
     });
     expect(r.version).not.toBe(version);
+    expect(r.editarProducto('MOL-O-3-A', { precioNeto: 101000, tipo: 'PUERTA ESPECIAL' })).toMatchObject({
+      precioNeto: 101000,
+      tipo: 'PUERTA ESPECIAL',
+    });
+    expect(r.listarAdministrables('MOL-O-3-A')[0]).toMatchObject({ fuente: 'planilla', precioNeto: 101000 });
     expect(() => r.editarManual('MOL-O-3-A', { precioNeto: 1 })).toThrow(/agregados en la aplicación/);
     expect(() => r.editarManual('NO-EXISTE', { precioNeto: 1 })).toThrow(/No se encontró/);
     const pedido = { modelo: 'MOLCO', madera: 'pino', ancho: 0.72, alto: 2, medida: null, cantidad: 1 };

@@ -19,7 +19,7 @@ export function errorProveedor(status?: number): ErrorIA {
       'ia_autenticacion',
       MENSAJE_SIN_CONFIGURAR,
       502,
-      'CommandCode rechazó la clave (401). Revisa CMD_API_KEY en .env.local.',
+      'CommandCode rechazó la clave (401). Revisa o vuelve a guardar la clave API desde Ajustes.',
     );
   if (status === 402 || status === 403)
     return new ErrorIA(

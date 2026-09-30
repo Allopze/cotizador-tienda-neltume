@@ -158,6 +158,8 @@
     gap: 0;
     overflow-x: auto;
     scrollbar-width: none;
+    /* Sin barra, «Ajustes» quedaba fuera de vista sin ninguna señal: el borde se desvanece. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
   }
   .header-nav a {
     flex: none;
@@ -338,10 +340,18 @@
   .button.small,
   .ia-settings-button,
   .logout-button,
-  .account-toggle,
   .composer-bottom button,
   .catalog-composer button {
     min-height: 44px;
+  }
+  /* Con el masthead delante: login.css se importa después y vuelve a fijar el alto en 36px. */
+  .masthead .account-toggle {
+    min-height: 44px;
+  }
+  /* El valor editable es el botón: sin esto, editar cliente, cantidad o flete era un blanco de 29px. */
+  .campo-valor-boton {
+    min-height: 44px;
+    align-items: center;
   }
 }
 /*
@@ -388,10 +398,11 @@
     min-height: 0;
     max-height: none;
   }
+  /* Sin conversación no hay nada que anclar al fondo: la invitación se centra en el panel. */
   .pantalla-completa .chat-panel.inicio .messages {
     display: flex;
     flex-direction: column;
-    justify-content: flex-end;
+    justify-content: center;
   }
   .pantalla-completa .welcome {
     padding: 6px 0 16px;
@@ -480,6 +491,24 @@
     margin-top: 10px;
     padding-top: 8px;
   }
+  .manual-editor {
+    grid-template-columns: 1fr;
+    min-width: 250px;
+  }
+  .manual-editor-wide {
+    grid-column: auto;
+  }
+  .logo-configuracion {
+    grid-template-columns: 1fr;
+  }
+  .logo-configuracion-acciones,
+  .logo-configuracion-vista {
+    grid-column: auto;
+    justify-self: start;
+  }
+  .feriado-form {
+    grid-template-columns: 1fr;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -497,6 +526,8 @@
     width: 100%;
     padding-bottom: 2px;
     scrollbar-width: none;
+    /* Igual que la cabecera: «Reemplazadas» y «Anuladas» se anuncian al desvanecer el borde. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
   }
   .history-filters button {
     flex: none;

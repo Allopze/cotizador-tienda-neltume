@@ -47,7 +47,7 @@ export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado 
   }, [menuCuenta]);
 
   const logo = (
-    <Image src="/logo-neltume.svg" alt="" className="logo" width={143} height={70} priority unoptimized />
+    <Image src="/api/logo" alt="" className="logo" width={143} height={70} priority unoptimized />
   );
   return (
     <header className="masthead">

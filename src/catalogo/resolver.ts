@@ -74,6 +74,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     alto: entrada.alto ?? null,
     medida: entrada.medida ?? null,
     cantidad: entrada.cantidad ?? null,
+    precioUnitario: entrada.precioUnitario ?? null,
   };
   const unicos = (ps: Producto[], campo: 'modelo' | 'madera' | 'medida' | 'largo') => [
     ...new Set(ps.map((p) => String(p[campo]))),

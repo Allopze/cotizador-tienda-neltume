@@ -3,26 +3,41 @@ import { ajustesIASchema } from '@/asistente/ajustes';
 import { exigirSesion, type UsuarioSesion } from '@/servidor/acceso-autenticado';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { leerJson } from '@/servidor/cuerpo';
-import { asistenteConfigurado, guardarAjustesIA, leerAjustesIA } from '@/servidor/ajustes-ia';
+import {
+  estadoClaveCommandCode,
+  ErrorProteccionClave,
+  guardarAjustesIA,
+  guardarClaveCommandCode,
+  leerAjustesIA,
+  quitarClaveCommandCode,
+} from '@/servidor/ajustes-ia';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const peticionSchema = z.object({ tipo: z.literal('guardar'), ajustes: ajustesIASchema }).strict();
+const peticionSchema = z.discriminatedUnion('tipo', [
+  z.object({ tipo: z.literal('guardar'), ajustes: ajustesIASchema }).strict(),
+  z.object({ tipo: z.literal('guardar-clave'), apiKey: z.string().trim().min(1).max(2048) }).strict(),
+  z.object({ tipo: z.literal('quitar-clave') }).strict(),
+]);
 
-// El modelo de IA es global: solo una cuenta administradora puede cambiarlo.
+// El modelo y la clave de IA son globales: solo una cuenta administradora puede cambiarlos.
 function estado(usuario: UsuarioSesion) {
   const ajustes = leerAjustesIA();
+  const apiKey = estadoClaveCommandCode();
   return {
     ajustes,
-    commandcodeClave: !!process.env.CMD_API_KEY,
-    asistenteConfigurado: asistenteConfigurado(),
+    commandcodeClave: apiKey.configurada,
+    commandcodeClaveFuente: apiKey.fuente,
+    asistenteConfigurado: apiKey.configurada,
     puedeEditar: usuario.rol === 'admin',
   };
 }
 
 function falla(error: unknown) {
   if (error instanceof ErrorMigracionRequerida)
+    return Response.json({ error: error.message }, { status: 503 });
+  if (error instanceof ErrorProteccionClave)
     return Response.json({ error: error.message }, { status: 503 });
   console.error('[ajustes] fallo interno:', error instanceof Error ? error.message : 'desconocido');
   return Response.json({ error: 'No se pudo leer ni guardar la configuración.' }, { status: 500 });
@@ -50,7 +65,9 @@ export async function POST(req: Request) {
       { status: 400 },
     );
   try {
-    guardarAjustesIA(parsed.data.ajustes);
+    if (parsed.data.tipo === 'guardar') guardarAjustesIA(parsed.data.ajustes);
+    else if (parsed.data.tipo === 'guardar-clave') guardarClaveCommandCode(parsed.data.apiKey);
+    else quitarClaveCommandCode();
     return Response.json(estado(sesion.usuario), { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) {
     return falla(error);

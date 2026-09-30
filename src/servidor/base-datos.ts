@@ -2,10 +2,11 @@ import Database from 'better-sqlite3';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA } from '../negocio/estado';
+import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 8;
+const VERSION_ESQUEMA = 10;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -96,6 +97,36 @@ function crearEsquema(db: Database.Database) {
           error TEXT
         );
         PRAGMA user_version = 8;
+      `);
+    }).immediate();
+  if (version < 9)
+    db.transaction(() => {
+      // v9: precios unitarios excepcionales, observaciones, despacho preparado y reglas por cotización.
+      db.exec(`
+        ALTER TABLE cotizaciones ADD COLUMN observaciones TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN despacho_direccion TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN despacho_transporte TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN despacho_entrega TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN reglas_json TEXT;
+        ALTER TABLE solicitudes ADD COLUMN precio_unitario INTEGER;
+        ALTER TABLE cotizacion_lineas ADD COLUMN precio_unitario_personalizado INTEGER;
+        ALTER TABLE notas_pedido ADD COLUMN despacho_entrega TEXT;
+        ALTER TABLE notas_pedido ADD COLUMN observaciones TEXT;
+        ALTER TABLE nota_lineas ADD COLUMN precio_unitario_personalizado INTEGER;
+      `);
+      db.prepare('UPDATE cotizaciones SET reglas_json = ? WHERE reglas_json IS NULL').run(JSON.stringify(REGLAS));
+      db.pragma('user_version = 9');
+    }).immediate();
+  if (version < 10)
+    db.transaction(() => {
+      // v10: feriados adicionales definidos por la empresa; la sincronización automática no los borra.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS feriados_manuales (
+          fecha TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          creada TEXT NOT NULL
+        );
+        PRAGMA user_version = 10;
       `);
     }).immediate();
 }
@@ -556,7 +587,11 @@ export function abrirBaseDatos(
     chmodSync(absoluta, 0o600);
     // Feriados sincronizados antes: los días hábiles quedan bien desde el primer cálculo tras reiniciar.
     registrarFeriadosExternos(
-      (nueva.prepare('SELECT fecha FROM feriados').all() as { fecha: string }[]).map((f) => f.fecha),
+      (
+        nueva
+          .prepare('SELECT fecha FROM feriados UNION ALL SELECT fecha FROM feriados_manuales')
+          .all() as { fecha: string }[]
+      ).map((f) => f.fecha),
     );
   } catch (error) {
     nueva.close();

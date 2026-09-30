@@ -12,7 +12,8 @@ export type CodigoError =
   | 'precios_cambiaron'
   | 'ocupado'
   | 'mensaje_procesado'
-  | 'pdf_no_disponible';
+  | 'pdf_no_disponible'
+  | 'numero_invalido';
 
 export class ErrorUsuario extends Error {
   constructor(

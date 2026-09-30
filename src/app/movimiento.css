@@ -1,0 +1,157 @@
+/*
+ * Movimiento: una sola capa para toda la interfaz. Dice qué cambió, de dónde vino lo que entra y
+ * qué sigue en curso; nada se mueve para llamar la atención.
+ *
+ * Las entradas viven dentro de (prefers-reduced-motion: no-preference): sin esa preferencia todo
+ * aparece ya puesto, sin desplazamientos. La espera del asistente queda fuera, porque es una señal
+ * de progreso y no adorno: quien pide menos movimiento sigue necesitando saber que el chat trabaja.
+ */
+
+@media (prefers-reduced-motion: no-preference) {
+  /* --- Respuesta al pulsar: inmediata, chica, y no mueve nada alrededor (transform no afecta al flujo) --- */
+  .button,
+  button,
+  a.button {
+    transition:
+      background var(--motion-fast),
+      border-color var(--motion-fast),
+      color var(--motion-fast),
+      transform var(--motion-tap);
+  }
+  .button:active:not(:disabled),
+  button:active:not(:disabled),
+  a.button:active {
+    transform: scale(0.98);
+  }
+  /* El logo no se encoge: es la marca, no un botón más. */
+  .logo-button:active:not(:disabled) {
+    transform: none;
+  }
+
+  /* --- Lo que entra: mensaje nuevo, fila nueva, bloque de referencia --- */
+  .message:last-child,
+  .table-wrap tbody tr:last-child,
+  .reference-selection,
+  .secciones-contenido > div:not([hidden]) {
+    animation: aparecer var(--motion-enter) var(--curve-out) both;
+  }
+
+  /* --- Menús y popovers: salen del borde más cercano a su disparador --- */
+  .familia-popover,
+  .ia-model-popover,
+  .account-controls {
+    animation: desplegar-abajo var(--motion-enter) var(--curve-out) both;
+  }
+  .menu-acciones ul {
+    animation: desplegar-arriba var(--motion-enter) var(--curve-out) both;
+  }
+
+  /* --- Avisos: entran desde el borde por el que se van --- */
+  .aviso {
+    animation: entrar-aviso var(--motion-enter) var(--curve-out) both;
+  }
+
+  /* --- Diálogos: masa 2, desde el centro; el fondo se funde --- */
+  .dialogo[open] {
+    animation: aparecer-dialogo var(--motion-dialog) var(--curve-out) both;
+  }
+  .dialogo[open]::backdrop {
+    animation: fundir var(--motion-enter) linear both;
+  }
+  /* Sin salida animada a propósito: un diálogo modal en la capa superior deja inerte el resto de la
+     página, así que alargar el cierre 150 ms se lleva por delante el clic que venga detrás. Estas
+     confirmaciones se repiten todos los días y ya se entiende que se están cerrando. */
+
+  /* --- Cambio de estado que no debe saltar: los dos únicos lugares donde el fondo cambia --- */
+  .history-list li,
+  .secciones-nav a {
+    transition: background var(--motion-fast);
+  }
+}
+
+/* --- Espera: tres puntos que respiran. Sigue con movimiento reducido. --- */
+.puntos {
+  margin-left: 4px;
+}
+.puntos > span {
+  display: inline-block;
+  animation: punto 1.2s ease-in-out infinite;
+}
+.puntos > span + span {
+  margin-left: 4px;
+}
+.puntos > span:nth-child(2) {
+  animation-delay: 0.16s;
+}
+.puntos > span:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes aparecer {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes desplegar-abajo {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes desplegar-arriba {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes entrar-aviso {
+  from {
+    opacity: 0;
+    transform: translateX(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes aparecer-dialogo {
+  from {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fundir {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes punto {
+  0%,
+  60%,
+  100% {
+    opacity: 0.28;
+  }
+  30% {
+    opacity: 1;
+  }
+}

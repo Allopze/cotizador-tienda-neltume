@@ -9,7 +9,8 @@ import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
 import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
 import { ErrorUsuario, registrarError } from '@/servidor/errores';
 import { normalizarTexto } from '@/servidor/busqueda';
-import { REGLAS } from '@/negocio/precios';
+import { leerConfiguracionNegocio } from '@/servidor/configuracion-negocio';
+import type { Producto } from '@/catalogo/tipos';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -35,12 +36,20 @@ const peticionSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('confirmar'), id: z.uuid() }).strict(),
   z.object({ tipo: z.literal('cancelar'), id: z.uuid() }).strict(),
   z.object({ tipo: z.literal('listar_manuales') }).strict(),
+  z.object({ tipo: z.literal('listar_productos'), q: z.string().trim().max(120).optional() }).strict(),
   z
     .object({
       tipo: z.literal('editar'),
       codigo,
       cambios: z
         .object({
+          modelo: z.string().trim().min(1).max(100).optional(),
+          familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
+          madera: z.string().trim().min(1).max(80).optional(),
+          medida: z.string().trim().min(1).max(60).optional(),
+          anchoMin: z.number().finite().positive().nullable().optional(),
+          anchoMax: z.number().finite().positive().nullable().optional(),
+          largo: z.number().finite().positive().max(100).optional(),
           precioNeto: z.number().positive().max(100_000_000).optional(),
           descripcion: z.string().trim().min(1).max(300).optional(),
           tipo: z.string().trim().max(120).nullable().optional(),
@@ -69,9 +78,8 @@ export async function GET(req: Request) {
     return Response.json({ error: 'Filtros inválidos.', codigo: 'solicitud_invalida' }, { status: 400 });
   try {
     const catalogo = await cargarCatalogo();
-    const terminos = normalizarTexto(filtros.data.q ?? '')
-      .split(' ')
-      .filter(Boolean);
+    const consulta = normalizarTexto(filtros.data.q ?? '');
+    const terminos = consulta.split(' ').filter(Boolean);
     const manuales = new Set(catalogo.listarManuales().map((p) => p.codigo));
     const coinciden = catalogo.todos().filter((p) => {
       if (filtros.data.familia && p.familia !== filtros.data.familia) return false;
@@ -84,14 +92,24 @@ export async function GET(req: Request) {
       const i = ORDEN_FAMILIAS.indexOf(f);
       return i < 0 ? ORDEN_FAMILIAS.length : i;
     };
+    // Quien busca un código lo busca a él: el exacto primero, después su prefijo, y el resto en orden
+    // de lectura («HUIL-O-3-B» quedaba quinto de ocho, detrás de otras maderas del mismo modelo).
+    const cercania = (p: Producto) => {
+      if (!consulta) return 0;
+      const codigo = normalizarTexto(p.codigo);
+      if (codigo === consulta) return 0;
+      return codigo.startsWith(consulta) ? 1 : 2;
+    };
     coinciden.sort(
       (a, b) =>
+        cercania(a) - cercania(b) ||
         familia(a.familia) - familia(b.familia) ||
         orden.compare(a.modelo, b.modelo) ||
         orden.compare(a.madera, b.madera) ||
         a.largo - b.largo ||
         orden.compare(a.medida, b.medida),
     );
+    const ajuste = leerConfiguracionNegocio(abrirBaseDatos()).reglas.ajuste;
     return Response.json(
       {
         total: coinciden.length,
@@ -104,7 +122,7 @@ export async function GET(req: Request) {
           medida: p.medida,
           largo: p.largo,
           descripcion: p.descripcion,
-          unitario: Math.round(p.precioNeto * (1 + REGLAS.ajuste)),
+          unitario: Math.round(p.precioNeto * (1 + ajuste)),
           manual: manuales.has(p.codigo),
         })),
       },
@@ -138,11 +156,18 @@ export async function POST(req: Request) {
   try {
     const catalogo = await cargarCatalogo();
     const peticion = parsed.data;
+    if ((peticion.tipo === 'listar_productos' || peticion.tipo === 'editar') && sesion.usuario.rol !== 'admin')
+      return Response.json(
+        { error: 'Solo quien administra el catálogo puede modificar productos importados.', codigo: 'sin_permiso' },
+        { status: 403, headers: sinCache },
+      );
     if (peticion.tipo === 'listar_manuales')
       return Response.json({ productos: catalogo.listarManuales() }, { headers: sinCache });
+    if (peticion.tipo === 'listar_productos')
+      return Response.json({ productos: catalogo.listarAdministrables(peticion.q) }, { headers: sinCache });
     if (peticion.tipo === 'editar')
       return Response.json(
-        { producto: catalogo.editarManual(peticion.codigo, peticion.cambios) },
+        { producto: catalogo.editarProducto(peticion.codigo, peticion.cambios) },
         { headers: sinCache },
       );
     if (peticion.tipo === 'eliminar') {

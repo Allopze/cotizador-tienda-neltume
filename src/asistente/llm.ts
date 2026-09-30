@@ -142,7 +142,10 @@ export const esTimeout = (error: unknown) =>
 
 export class CommandCodeLLM implements LLM {
   /** Sin modelo explícito se usa CMD_MODEL; la pantalla de configuración lo entrega desde SQLite. */
-  constructor(private readonly modelo?: string) {}
+  constructor(
+    private readonly modelo?: string,
+    private readonly apiKey?: string,
+  ) {}
 
   async interpretar(contexto: ContextoLLM) {
     return this.consultar(contexto, SYSTEM, HERRAMIENTAS_COTIZACION);
@@ -153,17 +156,23 @@ export class CommandCodeLLM implements LLM {
   }
 
   private async consultar(contexto: unknown, system: string, definiciones: Definiciones) {
-    if (!process.env.CMD_API_KEY)
-      throw new ErrorIA('ia_sin_clave', MENSAJE_SIN_CONFIGURAR, 503, 'Falta CMD_API_KEY en .env.local.');
+    const apiKey = this.apiKey ?? process.env.CMD_API_KEY?.trim() ?? '';
+    if (!apiKey)
+      throw new ErrorIA(
+        'ia_sin_clave',
+        MENSAJE_SIN_CONFIGURAR,
+        503,
+        'Falta configurar la clave API en Ajustes o en CMD_API_KEY.',
+      );
     const model = this.modelo?.trim() || process.env.CMD_MODEL?.trim() || 'claude-sonnet-5';
     const tools = herramientas(definiciones);
     try {
       if (!/^(anthropic\/)?claude-/.test(model)) {
-        return await interpretarChat(process.env.CMD_API_KEY!, model, system, contexto, tools);
+        return await interpretarChat(apiKey, model, system, contexto, tools);
       }
       // El SDK añade /v1/messages. Proveedor fijo: no toma ANTHROPIC_BASE_URL ni sus credenciales.
       const client = new Anthropic({
-        apiKey: process.env.CMD_API_KEY,
+        apiKey,
         authToken: null,
         baseURL: 'https://api.commandcode.ai/provider',
         maxRetries: 0,

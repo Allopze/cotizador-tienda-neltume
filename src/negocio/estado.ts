@@ -1,6 +1,6 @@
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
-import type { Montos } from './precios';
+import type { Montos, ReglasComerciales } from './precios';
 export interface Mensaje {
   rol: 'usuario' | 'asistente';
   texto: string;
@@ -20,6 +20,8 @@ export const ESTADOS: readonly EstadoCotizacion[] = [
 export interface Despacho {
   direccion: string | null;
   transporte: string | null;
+  /** Texto libre o fecha acordada con el cliente. */
+  entregaComprometida?: string | null;
 }
 export interface NotaPedido {
   numero: number;
@@ -27,6 +29,7 @@ export interface NotaPedido {
   montos: Montos;
   fecha: string;
   despacho: Despacho;
+  observaciones?: string | null;
   /** La cotización aprobada se anuló después: la nota ya no es válida para fábrica. */
   anulada: boolean;
 }
@@ -53,6 +56,12 @@ export interface Cotizacion {
   descuento: number;
   /** Flete neto en pesos enteros; se suma como fila propia. */
   flete: number;
+  /** Texto comercial o instrucciones que deben acompañar al documento. */
+  observaciones?: string | null;
+  /** Datos de despacho que se pueden preparar antes de aprobar. */
+  despacho?: Despacho | null;
+  /** Reglas congeladas para que una cotización no cambie si luego se ajusta la configuración. */
+  reglas?: ReglasComerciales;
   creadaPor: string | null;
   emitidaPor: string | null;
   aprobadaPor: string | null;

@@ -14,6 +14,7 @@ import type {
   TipoEvento,
 } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
+import { REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { calcularVence, estaVencida, inicioDiaSantiago } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
 import { normalizarTexto, textoBusqueda } from './busqueda';
@@ -85,6 +86,11 @@ type FilaCotizacion = {
   motivo_anulacion: string | null;
   reemplazada_por: number | null;
   version_catalogo: string | null;
+  observaciones: string | null;
+  despacho_direccion: string | null;
+  despacho_transporte: string | null;
+  despacho_entrega: string | null;
+  reglas_json: string | null;
 };
 
 type FilaLinea = {
@@ -108,6 +114,7 @@ type FilaLinea = {
   ancho_solicitado: number | null;
   alto_solicitado: number | null;
   medida_solicitada: string | null;
+  precio_unitario_personalizado: number | null;
 };
 
 type FilaMontos = {
@@ -131,8 +138,32 @@ type FilaNota = {
   total: number;
   despacho_direccion: string | null;
   despacho_transporte: string | null;
+  despacho_entrega: string | null;
+  observaciones: string | null;
   anulada: number;
 };
+
+function reglasDesdeJson(valor: string | null): ReglasComerciales {
+  if (!valor) return { ...REGLAS };
+  try {
+    const r = JSON.parse(valor) as Partial<ReglasComerciales>;
+    if (
+      Number.isFinite(r.ajuste) &&
+      Number.isFinite(r.iva) &&
+      Number.isInteger(r.vigenciaDiasHabiles) &&
+      Number.isFinite(r.descuentoMaximo)
+    )
+      return {
+        ajuste: r.ajuste!,
+        iva: r.iva!,
+        vigenciaDiasHabiles: r.vigenciaDiasHabiles!,
+        descuentoMaximo: r.descuentoMaximo!,
+      };
+  } catch {
+    // Se usa el valor predeterminado para que una cotización antigua no bloquee todo el listado.
+  }
+  return { ...REGLAS };
+}
 
 const lineaDesdeFila = (l: FilaLinea): Linea => ({
   producto: {
@@ -156,6 +187,9 @@ const lineaDesdeFila = (l: FilaLinea): Linea => ({
   anchoSolicitado: l.ancho_solicitado,
   altoSolicitado: l.alto_solicitado,
   medidaSolicitada: l.medida_solicitada,
+  ...(l.precio_unitario_personalizado !== null
+    ? { precioUnitarioPersonalizado: l.precio_unitario_personalizado }
+    : {}),
 });
 
 function agrupar<T extends { cotizacion_id: string }>(filas: T[]) {
@@ -193,8 +227,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     if (!filas.length) return [];
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
-    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad FROM solicitudes $FILTRO
+    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null }>(`
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
     const incompletos = hijos<{
       cotizacion_id: string;
@@ -216,7 +250,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
         const m = montos.get(f.id)?.[0];
         if (!m) throw new Error('faltan los montos guardados');
         const reparadas = (solicitudes.get(f.id) ?? []).map((fila): SolicitudItem => {
-          const s = {
+          const s: SolicitudItem = {
             modelo: fila.modelo,
             madera: fila.madera,
             ancho: fila.ancho,
@@ -224,10 +258,12 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
             medida: fila.medida,
             cantidad: fila.cantidad,
           };
+          if (fila.precio_unitario !== null) s.precioUnitario = fila.precio_unitario;
           if (s.cantidad === null || cantidadValida(s.cantidad)) return s;
           registrarError('almacen', `Cantidad inválida ${s.cantidad} reparada como pendiente en ${f.id}.`);
           return { ...s, cantidad: null };
         });
+        const reglas = reglasDesdeJson(f.reglas_json);
         const q: Cotizacion = {
           id: f.id,
           numero: f.numero,
@@ -261,9 +297,19 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           creada: f.creada,
           actualizada: f.actualizada,
           pdf: f.pdf,
-          vence: f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision) : null),
+          vence: f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision, reglas.vigenciaDiasHabiles) : null),
           descuento: f.descuento,
           flete: f.flete,
+          observaciones: f.observaciones ?? null,
+          despacho:
+            f.despacho_direccion || f.despacho_transporte || f.despacho_entrega
+              ? {
+                  direccion: f.despacho_direccion,
+                  transporte: f.despacho_transporte,
+                  entregaComprometida: f.despacho_entrega,
+                }
+              : null,
+          reglas: reglasDesdeJson(f.reglas_json),
           creadaPor: f.creada_por,
           emitidaPor: f.emitida_por,
           aprobadaPor: f.aprobada_por,
@@ -294,7 +340,12 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
               iva: n.iva,
               total: n.total,
             },
-            despacho: { direccion: n.despacho_direccion, transporte: n.despacho_transporte },
+            despacho: {
+              direccion: n.despacho_direccion,
+              transporte: n.despacho_transporte,
+              entregaComprometida: n.despacho_entrega,
+            },
+            observaciones: n.observaciones ?? null,
             anulada: !!n.anulada,
           };
         }
@@ -330,11 +381,12 @@ function insertarLineas(
     INSERT INTO ${tabla} (
       cotizacion_id, orden, codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
       largo, precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total,
-      indice, ancho_solicitado, alto_solicitado, medida_solicitada
+      indice, ancho_solicitado, alto_solicitado, medida_solicitada, precio_unitario_personalizado
     ) VALUES (
       @cotizacion_id, @orden, @codigo, @modelo, @familia, @tipo, @madera, @medida,
       @ancho_min, @ancho_max, @largo, @precio_neto, @descripcion, @fila_origen,
-      @cantidad, @precio_unitario, @total, @indice, @ancho_solicitado, @alto_solicitado, @medida_solicitada
+      @cantidad, @precio_unitario, @total, @indice, @ancho_solicitado, @alto_solicitado, @medida_solicitada,
+      @precio_unitario_personalizado
     )
   `);
   montos.lineas.forEach((l, orden) =>
@@ -360,6 +412,7 @@ function insertarLineas(
       ancho_solicitado: l.anchoSolicitado,
       alto_solicitado: l.altoSolicitado,
       medida_solicitada: l.medidaSolicitada,
+      precio_unitario_personalizado: l.precioUnitarioPersonalizado,
     }),
   );
 }
@@ -393,13 +446,15 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       cliente_telefono, cliente_direccion, cliente_comuna, cliente_comuna_normalizada,
       cliente_proyecto, cliente_proyecto_normalizado, creada, actualizada, pdf, fecha_emision,
       fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, flete, creada_por, emitida_por,
-      aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda
+      aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda,
+      observaciones, despacho_direccion, despacho_transporte, despacho_entrega, reglas_json
     ) VALUES (
       @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
       @cliente_telefono, @cliente_direccion, @cliente_comuna, @cliente_comuna_normalizada,
       @cliente_proyecto, @cliente_proyecto_normalizado, @creada, @actualizada, @pdf, @fecha_emision,
       @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @flete, @creada_por, @emitida_por,
-      @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda
+      @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda,
+      @observaciones, @despacho_direccion, @despacho_transporte, @despacho_entrega, @reglas_json
     ) ON CONFLICT(id) DO UPDATE SET
       numero = excluded.numero,
       estado = excluded.estado,
@@ -431,7 +486,12 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       motivo_anulacion = excluded.motivo_anulacion,
       reemplazada_por = excluded.reemplazada_por,
       version_catalogo = excluded.version_catalogo,
-      busqueda = excluded.busqueda
+      busqueda = excluded.busqueda,
+      observaciones = excluded.observaciones,
+      despacho_direccion = excluded.despacho_direccion,
+      despacho_transporte = excluded.despacho_transporte,
+      despacho_entrega = excluded.despacho_entrega,
+      reglas_json = excluded.reglas_json
   `,
   ).run({
     id: q.id,
@@ -466,6 +526,11 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     motivo_anulacion: q.motivoAnulacion,
     reemplazada_por: q.reemplazadaPor,
     version_catalogo: q.versionCatalogo,
+    observaciones: q.observaciones ?? null,
+    despacho_direccion: q.despacho?.direccion ?? null,
+    despacho_transporte: q.despacho?.transporte ?? null,
+    despacho_entrega: q.despacho?.entregaComprometida ?? null,
+    reglas_json: JSON.stringify(q.reglas ?? REGLAS),
     busqueda: textoBusqueda({
       numero: q.numero,
       cliente: q.cliente,
@@ -488,8 +553,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad)
+    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario)
+    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario)
   `);
   q.solicitudes.forEach((s, i) =>
     insSolicitud.run({
@@ -501,6 +566,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       alto: s.alto,
       medida: s.medida,
       cantidad: s.cantidad,
+      precio_unitario: s.precioUnitario ?? null,
     }),
   );
   const insIncompleto = db.prepare(
@@ -531,8 +597,9 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(
       `
       INSERT INTO notas_pedido (
-        cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte, anulada
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte,
+        despacho_entrega, observaciones, anulada
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       q.id,
@@ -544,6 +611,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       q.nota.montos.total,
       q.nota.despacho.direccion,
       q.nota.despacho.transporte,
+      q.nota.despacho.entregaComprometida,
+      q.nota.observaciones,
       Number(q.nota.anulada),
     );
     insertarLineas(db, 'nota_lineas', q.id, q.nota.montos);
@@ -682,8 +751,29 @@ export class Unidad {
       .immediate();
   }
 
-  reservarCotizacion() {
-    return this.reservar('siguiente_cotizacion');
+  reservarCotizacion(numeroSolicitado?: number) {
+    return this.db
+      .transaction(() => {
+        const correlativo = this.db
+          .prepare('SELECT siguiente_cotizacion FROM correlativos WHERE id = 1')
+          .get() as { siguiente_cotizacion: number } | undefined;
+        if (!correlativo) throw new Error('Faltan los correlativos en la base SQLite.');
+        const maximo = (
+          this.db.prepare('SELECT COALESCE(MAX(numero), 0) AS n FROM cotizaciones').get() as { n: number }
+        ).n;
+        const ultimo = Math.max(maximo, correlativo.siguiente_cotizacion - 1);
+        const numero = numeroSolicitado ?? ultimo + 1;
+        if (!Number.isSafeInteger(numero) || numero <= ultimo)
+          throw new ErrorConflicto(
+            `El número de cotización debe ser entero y mayor que el último usado (${ultimo}).`,
+            'numero_invalido',
+          );
+        this.db
+          .prepare('UPDATE correlativos SET siguiente_cotizacion = ? WHERE id = 1')
+          .run(Math.max(correlativo.siguiente_cotizacion, numero + 1));
+        return numero;
+      })
+      .immediate();
   }
 
   reservarNota() {
@@ -956,7 +1046,11 @@ export class Almacen {
         }[],
       );
       const cotizaciones = filas.map((f): ResumenCotizacion => {
-        const vence = f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision) : null);
+        const vence =
+          f.vence ??
+          (f.fecha_emision
+            ? calcularVence(f.fecha_emision, reglasDesdeJson(f.reglas_json).vigenciaDiasHabiles)
+            : null);
         return {
           id: f.id,
           numero: f.numero,

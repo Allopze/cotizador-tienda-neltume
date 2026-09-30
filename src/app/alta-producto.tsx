@@ -1,10 +1,11 @@
 'use client';
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Familia, Producto } from '@/catalogo/tipos';
 import { leerPesos } from '@/negocio/cifras';
 import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
 import { useConfirmacion } from './dialogo';
 import { enterEnvia, nombreProducto } from './formato';
+import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 type Mensaje = { rol: 'usuario' | 'asistente'; texto: string };
@@ -56,8 +57,6 @@ const FAMILIAS: [Familia, string][] = [
   ['PIEZAS_T', 'Piezas T'],
   ['MOLDURA', 'Moldura'],
 ];
-const ajuste = porcentaje(REGLAS.ajuste * 100);
-const venta = (neto: number) => Math.round(neto * (1 + REGLAS.ajuste));
 const decimal = (n: number) => n.toLocaleString('es-CL', { maximumFractionDigits: 4, useGrouping: false });
 /** «0,80», «0.8» u «80» (centímetros) → metros; vacío o ilegible → null. */
 function metros(valor: string, limite: number) {
@@ -66,130 +65,12 @@ function metros(valor: string, limite: number) {
   return n > limite ? n / 100 : n;
 }
 
-function SelectorFamilia({
-  id,
-  value,
-  disabled,
-  seleccionar,
-}: {
-  id: string;
-  value: string;
-  disabled: boolean;
-  seleccionar: (familia: Familia) => void;
-}) {
-  const selector = useRef<HTMLDivElement>(null);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const [abierto, setAbierto] = useState(false);
-  const [activo, setActivo] = useState(0);
-  const actual = FAMILIAS.find(([familia]) => familia === value);
-  const indiceSeleccionado = Math.max(
-    0,
-    FAMILIAS.findIndex(([familia]) => familia === value),
-  );
-  const listaId = `${id}-opciones`;
-
-  useEffect(() => {
-    if (!abierto) return;
-    const cerrarFuera = (evento: PointerEvent) => {
-      if (!selector.current?.contains(evento.target as Node)) setAbierto(false);
-    };
-    document.addEventListener('pointerdown', cerrarFuera);
-    return () => document.removeEventListener('pointerdown', cerrarFuera);
-  }, [abierto]);
-
-  function abrir() {
-    setActivo(indiceSeleccionado);
-    setAbierto(true);
-  }
-
-  function cerrar(devolverFoco = false) {
-    setAbierto(false);
-    if (devolverFoco) trigger.current?.focus();
-  }
-
-  function elegir(familia: Familia) {
-    seleccionar(familia);
-    cerrar(true);
-  }
-
-  function manejarTeclado(evento: KeyboardEvent<HTMLButtonElement>) {
-    if (evento.key === 'ArrowDown' || evento.key === 'ArrowUp') {
-      evento.preventDefault();
-      if (!abierto) {
-        abrir();
-        return;
-      }
-      setActivo((actual) =>
-        evento.key === 'ArrowDown' ? Math.min(actual + 1, FAMILIAS.length - 1) : Math.max(actual - 1, 0),
-      );
-    } else if (evento.key === 'Home' || evento.key === 'End') {
-      if (!abierto) return;
-      evento.preventDefault();
-      setActivo(evento.key === 'Home' ? 0 : FAMILIAS.length - 1);
-    } else if (evento.key === 'Enter' || evento.key === ' ') {
-      evento.preventDefault();
-      if (!abierto) abrir();
-      else elegir(FAMILIAS[activo][0]);
-    } else if (evento.key === 'Escape' && abierto) {
-      evento.preventDefault();
-      cerrar(true);
-    }
-  }
-
-  return (
-    <div
-      ref={selector}
-      className="familia-selector"
-      onBlur={(evento) => {
-        if (!selector.current?.contains(evento.relatedTarget as Node | null)) setAbierto(false);
-      }}
-    >
-      <button
-        ref={trigger}
-        type="button"
-        className="familia-trigger"
-        aria-labelledby={id}
-        aria-haspopup="listbox"
-        aria-expanded={abierto}
-        aria-controls={listaId}
-        disabled={disabled}
-        onClick={() => (abierto ? cerrar(true) : abrir())}
-        onKeyDown={manejarTeclado}
-      >
-        <span>{actual?.[1] ?? 'Elige una familia'}</span>
-        <span className="familia-chevron" aria-hidden="true">
-          {abierto ? '⌃' : '⌄'}
-        </span>
-      </button>
-      {abierto && (
-        <div id={listaId} className="familia-popover" role="listbox" aria-labelledby={id}>
-          {FAMILIAS.map(([familia, texto], indice) => (
-            <div
-              id={`${listaId}-${familia}`}
-              key={familia}
-              className="familia-option"
-              role="option"
-              aria-selected={value === familia}
-              data-activo={indice === activo ? 'true' : undefined}
-              onMouseDown={(evento) => evento.preventDefault()}
-              onMouseMove={() => setActivo(indice)}
-              onClick={() => elegir(familia)}
-            >
-              <span>{texto}</span>
-              {value === familia && <span aria-hidden="true">✓</span>}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 /**
  * Alta de un producto al catálogo en una sola pantalla: el formulario es la vía manual y el asistente,
  * opcional, lo completa a partir de una descripción. Ambas vías terminan en la misma propuesta revisable.
  */
 export function AltaProducto({ asistente }: Props) {
+  const [ajusteNumero, setAjusteNumero] = useState(REGLAS.ajuste);
   const [campos, setCampos] = useState<Campos>(VACIO);
   const [avisosAlta, setAvisosAlta] = useState<string[]>([]);
   const [id, setId] = useState<string | null>(null);
@@ -205,6 +86,15 @@ export function AltaProducto({ asistente }: Props) {
   const [confirmar, confirmacion] = useConfirmacion();
   const uid = useId();
   const puerta = campos.familia === 'PUERTA';
+  const ajuste = porcentaje(ajusteNumero * 100);
+  const venta = (neto: number) => Math.round(neto * (1 + ajusteNumero));
+
+  useEffect(() => {
+    const control = new AbortController();
+    pedirJSON<{ configuracion: { reglas: { ajuste: number } } }>('/api/configuracion-negocio', { signal: control.signal, cache: 'no-store' })
+      .then((data) => setAjusteNumero(data.configuracion.reglas.ajuste), () => {});
+    return () => control.abort();
+  }, []);
 
   // Tras guardar, el foco pasa al botón del resultado para no quedar en un elemento desmontado.
   useEffect(() => {
@@ -463,6 +353,8 @@ export function AltaProducto({ asistente }: Props) {
             <SelectorFamilia
               id={`${uid}-familia-label`}
               value={campos.familia}
+              opciones={FAMILIAS}
+              vacio="Elige una familia"
               disabled={!!ocupado}
               seleccionar={(familia) => cambiar('familia', familia)}
             />

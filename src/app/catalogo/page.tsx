@@ -18,12 +18,18 @@ export default async function CatalogoPage({
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect('/login');
   const pedida = (await searchParams).seccion;
-  const seccion = SECCIONES.some((s) => s.id === pedida) ? (pedida as Seccion) : 'consultar';
+  const rol = (session.user as typeof session.user & { role?: string | null }).role ?? 'user';
+  const puedeAdministrar = rol === 'admin';
+  const administrable = new Set<Seccion>(['manuales', 'configuracion']);
+  const seccion = SECCIONES.some((s) => s.id === pedida) && (puedeAdministrar || !administrable.has(pedida as Seccion))
+    ? (pedida as Seccion)
+    : 'consultar';
   return (
     <PantallaCatalogo
       email={session.user.email}
       nombre={session.user.name || session.user.email}
       seccion={seccion}
+      puedeAdministrar={puedeAdministrar}
     />
   );
 }

@@ -23,6 +23,7 @@ interface Props {
   /** El valor mismo abre la edición (sin botón «Editar» aparte); vacío se lee «Agregar». */
   discreto?: boolean;
   className?: string;
+  area?: boolean;
 }
 export function CampoEditable({
   etiqueta,
@@ -41,11 +42,12 @@ export function CampoEditable({
   etiquetaOculta,
   discreto,
   className,
+  area = false,
 }: Props) {
   const [editando, setEditando] = useState(false);
   const [borrador, setBorrador] = useState(valor);
   const [error, setError] = useState('');
-  const entrada = useRef<HTMLInputElement>(null),
+  const entrada = useRef<HTMLInputElement | HTMLTextAreaElement>(null),
     boton = useRef<HTMLButtonElement>(null);
   const id = useId();
 
@@ -125,28 +127,53 @@ export function CampoEditable({
         {etiqueta}
       </label>
       <span className="campo-valor">
-        <input
-          ref={entrada}
-          id={id}
-          type={tipo}
-          inputMode={tipo === 'number' ? (paso === 1 ? 'numeric' : 'decimal') : undefined}
-          min={min}
-          max={max}
-          step={paso}
-          maxLength={tipo === 'text' ? maxLength : undefined}
-          value={borrador}
-          onChange={(e) => setBorrador(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault();
-              e.stopPropagation();
-              cerrar();
-            }
-          }}
-          disabled={guardando}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? `${id}-error` : undefined}
-        />
+        {area ? (
+          <textarea
+            ref={(elemento) => {
+              entrada.current = elemento;
+            }}
+            id={id}
+            maxLength={maxLength}
+            rows={3}
+            value={borrador}
+            onChange={(e) => setBorrador(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cerrar();
+              }
+            }}
+            disabled={guardando}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${id}-error` : undefined}
+          />
+        ) : (
+          <input
+            ref={(elemento) => {
+              entrada.current = elemento;
+            }}
+            id={id}
+            type={tipo}
+            inputMode={tipo === 'number' ? (paso === 1 ? 'numeric' : 'decimal') : undefined}
+            min={min}
+            max={max}
+            step={paso}
+            maxLength={tipo === 'text' ? maxLength : undefined}
+            value={borrador}
+            onChange={(e) => setBorrador(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                cerrar();
+              }
+            }}
+            disabled={guardando}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? `${id}-error` : undefined}
+          />
+        )}
         {sufijo && <span className="campo-sufijo">{sufijo}</span>}
         <button type="submit" className="campo-guardar" disabled={guardando}>
           {guardando ? 'Guardando…' : 'Guardar'}

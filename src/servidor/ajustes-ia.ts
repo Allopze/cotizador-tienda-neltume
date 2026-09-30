@@ -1,4 +1,6 @@
+import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { z } from 'zod';
 import {
   ajustesIAGuardadosSchema,
   ajustesIASchema,
@@ -9,6 +11,85 @@ import { CommandCodeLLM, type LLM } from '../asistente/llm';
 import { abrirBaseDatos } from './base-datos';
 
 const CLAVE = 'ia';
+const CLAVE_API = 'commandcode-api-key';
+const cifradoSchema = z.discriminatedUnion('desactivada', [
+  z.object({ version: z.literal(1), desactivada: z.literal(true) }).strict(),
+  z
+    .object({
+      version: z.literal(1),
+      desactivada: z.literal(false),
+      sal: z.string().regex(/^[\w-]{22}$/),
+      iv: z.string().regex(/^[\w-]{16}$/),
+      etiqueta: z.string().regex(/^[\w-]{22}$/),
+      datos: z
+        .string()
+        .min(1)
+        .regex(/^[\w-]+$/),
+    })
+    .strict(),
+]);
+
+export type FuenteClaveCommandCode = 'ajustes' | 'entorno' | 'ninguna';
+export interface EstadoClaveCommandCode {
+  configurada: boolean;
+  fuente: FuenteClaveCommandCode;
+}
+
+export class ErrorProteccionClave extends Error {
+  constructor() {
+    super('Configura BETTER_AUTH_SECRET con al menos 32 caracteres antes de guardar la clave API.');
+    this.name = 'ErrorProteccionClave';
+  }
+}
+
+function secretoCifrado() {
+  const secreto = process.env.BETTER_AUTH_SECRET?.trim();
+  if (!secreto || secreto.length < 32) throw new ErrorProteccionClave();
+  return secreto;
+}
+
+function leerFilaClave(db: Database.Database) {
+  return db.prepare('SELECT valor_json FROM ajustes WHERE clave = ?').get(CLAVE_API) as
+    { valor_json: string } | undefined;
+}
+
+function descifrarClave(clave: Extract<z.infer<typeof cifradoSchema>, { desactivada: false }>) {
+  const sal = Buffer.from(clave.sal, 'base64url');
+  const llave = Buffer.from(
+    hkdfSync('sha256', secretoCifrado(), sal, 'neltume:commandcode-api-key:v1', 32),
+  );
+  const descifrador = createDecipheriv('aes-256-gcm', llave, Buffer.from(clave.iv, 'base64url'));
+  descifrador.setAuthTag(Buffer.from(clave.etiqueta, 'base64url'));
+  return Buffer.concat([
+    descifrador.update(Buffer.from(clave.datos, 'base64url')),
+    descifrador.final(),
+  ]).toString('utf8');
+}
+
+function cifrarClave(apiKey: string) {
+  const sal = randomBytes(16);
+  const iv = randomBytes(12);
+  const llave = Buffer.from(
+    hkdfSync('sha256', secretoCifrado(), sal, 'neltume:commandcode-api-key:v1', 32),
+  );
+  const cifrador = createCipheriv('aes-256-gcm', llave, iv);
+  const datos = Buffer.concat([cifrador.update(apiKey, 'utf8'), cifrador.final()]);
+  return JSON.stringify({
+    version: 1,
+    desactivada: false,
+    sal: sal.toString('base64url'),
+    iv: iv.toString('base64url'),
+    etiqueta: cifrador.getAuthTag().toString('base64url'),
+    datos: datos.toString('base64url'),
+  });
+}
+
+function guardarValorClave(valor: string, db: Database.Database) {
+  db.prepare(
+    `INSERT INTO ajustes (clave, valor_json, actualizada) VALUES (?, ?, ?)
+     ON CONFLICT(clave) DO UPDATE SET valor_json = excluded.valor_json, actualizada = excluded.actualizada`,
+  ).run(CLAVE_API, valor, new Date().toISOString());
+}
 
 export function leerAjustesIA(db: Database.Database = abrirBaseDatos()): AjustesIA {
   const predeterminados = ajustesPredeterminados(process.env.CMD_MODEL);
@@ -32,10 +113,48 @@ export function guardarAjustesIA(ajustes: AjustesIA, db: Database.Database = abr
   return validos;
 }
 
+export function estadoClaveCommandCode(db: Database.Database = abrirBaseDatos()): EstadoClaveCommandCode {
+  const fila = leerFilaClave(db);
+  if (fila) {
+    try {
+      const guardada = cifradoSchema.parse(JSON.parse(fila.valor_json));
+      if (guardada.desactivada) return { configurada: false, fuente: 'ninguna' };
+    } catch {
+      // Un registro inválido sigue siendo reemplazable desde Ajustes; nunca se devuelve su contenido.
+    }
+    return { configurada: true, fuente: 'ajustes' };
+  }
+  const configurada = !!process.env.CMD_API_KEY?.trim();
+  return { configurada, fuente: configurada ? 'entorno' : 'ninguna' };
+}
+
+export function leerClaveCommandCode(db: Database.Database = abrirBaseDatos()): string {
+  const fila = leerFilaClave(db);
+  if (!fila) return process.env.CMD_API_KEY?.trim() ?? '';
+  const guardada = cifradoSchema.parse(JSON.parse(fila.valor_json));
+  if (guardada.desactivada) return '';
+  try {
+    return descifrarClave(guardada);
+  } catch {
+    throw new Error('No se pudo descifrar la clave API guardada. Vuelve a ingresarla desde Ajustes.');
+  }
+}
+
+export function guardarClaveCommandCode(apiKey: string, db: Database.Database = abrirBaseDatos()) {
+  const normalizada = apiKey.trim();
+  if (!normalizada) throw new Error('La clave API no puede estar vacía.');
+  guardarValorClave(cifrarClave(normalizada), db);
+}
+
+export function quitarClaveCommandCode(db: Database.Database = abrirBaseDatos()) {
+  // El registro desactivado evita que CMD_API_KEY reaparezca como fallback tras quitarla en Ajustes.
+  guardarValorClave(JSON.stringify({ version: 1, desactivada: true }), db);
+}
+
 export function asistenteConfigurado(): boolean {
-  return !!process.env.CMD_API_KEY;
+  return estadoClaveCommandCode().configurada;
 }
 
 export function crearLLM(ajustes: AjustesIA = leerAjustesIA()): LLM {
-  return new CommandCodeLLM(ajustes.commandcode.modelo);
+  return new CommandCodeLLM(ajustes.commandcode.modelo, leerClaveCommandCode());
 }

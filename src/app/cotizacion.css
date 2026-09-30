@@ -158,6 +158,61 @@
   font-weight: 400;
   overflow-wrap: anywhere;
 }
+.quote-custom-fields {
+  display: grid;
+  gap: 16px;
+  padding: 16px 0 18px;
+  border-top: 1px solid var(--line);
+}
+.quote-custom-fields > .campo {
+  min-width: 0;
+}
+.quote-dispatch-fields {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+.quote-dispatch-fields > .campo-etiqueta {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.quote-dispatch-fields .campo-valor-boton {
+  width: 100%;
+}
+.item-editables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin-top: 7px;
+}
+.item-editables .campo-discreto {
+  min-width: 88px;
+}
+.item-editables .campo-etiqueta {
+  display: none;
+}
+.item-editables .campo-valor-boton {
+  margin: -2px -4px;
+  padding: 2px 4px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.item-editables .campo-valor-boton:hover:not(:disabled) {
+  color: var(--ink);
+}
+.campo textarea {
+  min-width: min(100%, 460px);
+  padding: 8px 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  resize: vertical;
+}
 .items-top {
   display: flex;
   justify-content: space-between;
@@ -342,6 +397,9 @@ td small {
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 520px) {
+  .quote-dispatch-fields {
+    grid-template-columns: 1fr;
+  }
   /* Cada ítem como tarjeta: el nombre ocupa el ancho y los importes quedan siempre visibles. */
   .table-wrap {
     overflow-x: visible;
@@ -528,16 +586,13 @@ td small {
   flex-wrap: wrap;
   gap: 8px;
 }
-.catalogo-filtros input,
-.catalogo-filtros select {
+.catalogo-filtros input {
   min-height: var(--control);
   border: 1px solid var(--line-strong);
   background-color: var(--surface);
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-md);
-}
-.catalogo-filtros input {
   flex: 1 1 220px;
   min-width: 0;
   padding: 10px 12px 10px 36px;
@@ -549,9 +604,13 @@ td small {
 .catalogo-filtros input::placeholder {
   color: var(--subtle);
 }
-.catalogo-filtros select {
+/* Mismo control que el alta de producto: el selector de familia mide lo que el buscador. */
+.catalogo-filtros .familia-selector {
   flex: 0 1 auto;
-  padding: 0 10px;
+  min-width: 0;
+}
+.catalogo-filtros .familia-trigger {
+  width: auto;
 }
 .catalogo-lista {
   max-height: 50vh;

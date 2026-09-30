@@ -12,5 +12,12 @@ export default async function AjustesPage() {
   validarConfiguracionAutenticacion();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect('/login');
-  return <PantallaAjustes email={session.user.email} nombre={session.user.name || session.user.email} />;
+  const rol = (session.user as typeof session.user & { role?: string | null }).role ?? 'user';
+  return (
+    <PantallaAjustes
+      email={session.user.email}
+      nombre={session.user.name || session.user.email}
+      puedeCrearUsuarios={rol === 'admin'}
+    />
+  );
 }

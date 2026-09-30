@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { calcularVence } from '../negocio/vigencia';
+import { REGLAS } from '../negocio/precios';
 
 const clienteSchema = z.object({
   nombre: z.string().nullable(),
@@ -18,6 +19,7 @@ const solicitudSchema = z.object({
   alto: z.number().nullable(),
   medida: z.string().nullable(),
   cantidad: z.number().int().min(1).max(10000).nullable(),
+  precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
 });
 
 const productoSchema = z.object({
@@ -42,6 +44,7 @@ const montosSchema = z.object({
       cantidad: z.number().int().min(1).max(10000),
       precioUnitario: z.number().int(),
       total: z.number().int(),
+      precioUnitarioPersonalizado: z.number().int().positive().max(100_000_000).nullable().optional(),
       indice: z.number().int().nonnegative().nullable(),
       anchoSolicitado: z.number().nullable(),
       altoSolicitado: z.number().nullable(),
@@ -49,7 +52,7 @@ const montosSchema = z.object({
     }),
   ),
   subtotal: z.number().int(),
-  descuentoPorcentaje: z.number().min(0).max(50),
+  descuentoPorcentaje: z.number().min(0).max(100),
   descuento: z.number().int().nonnegative(),
   flete: z.number().int().nonnegative(),
   neto: z.number().int(),
@@ -103,8 +106,25 @@ export const cotizacionSchema = z.looseObject({
   fechaEmision: z.string().nullable().optional(),
   origen: z.number().int().nullable().optional(),
   vence: z.string().nullable(),
-  descuento: z.number().min(0).max(50),
+  descuento: z.number().min(0).max(100),
   flete: z.number().int().nonnegative(),
+  observaciones: z.string().nullable().optional(),
+  despacho: z
+    .object({
+      direccion: z.string().nullable(),
+      transporte: z.string().nullable(),
+      entregaComprometida: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
+  reglas: z
+    .object({
+      ajuste: z.number().finite(),
+      iva: z.number().finite(),
+      vigenciaDiasHabiles: z.number().int().min(0).max(365),
+      descuentoMaximo: z.number().min(0).max(100),
+    })
+    .optional(),
   creadaPor: z.string().nullable(),
   emitidaPor: z.string().nullable(),
   aprobadaPor: z.string().nullable(),
@@ -119,7 +139,12 @@ export const cotizacionSchema = z.looseObject({
       pdf: z.string(),
       montos: montosSchema,
       fecha: z.string(),
-      despacho: z.object({ direccion: z.string().nullable(), transporte: z.string().nullable() }),
+      despacho: z.object({
+        direccion: z.string().nullable(),
+        transporte: z.string().nullable(),
+        entregaComprometida: z.string().nullable().optional(),
+      }),
+      observaciones: z.string().nullable().optional(),
       anulada: z.boolean(),
     })
     .nullable(),
@@ -175,6 +200,9 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         vence: fechaEmision ? calcularVence(fechaEmision) : null,
         descuento: 0,
         flete: 0,
+        observaciones: null,
+        despacho: null,
+        reglas: REGLAS,
         creadaPor: null,
         emitidaPor: null,
         aprobadaPor: null,
@@ -188,7 +216,8 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         montos: completarMontos(q.montos),
         nota: esRegistro(q.nota)
           ? {
-              despacho: { direccion: null, transporte: null },
+              despacho: { direccion: null, transporte: null, entregaComprometida: null },
+              observaciones: null,
               anulada: false,
               ...q.nota,
               montos: completarMontos(q.nota.montos),
