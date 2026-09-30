@@ -351,6 +351,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                   const { pendiente, linea } = lineaDe(actual, i);
                   const medida = linea && medidaPedida(linea);
                   const descripcion = descripcionItem(actual, i);
+                  const posible = pendiente?.rechazo.tipo === 'modelo_posible' ? pendiente.rechazo : null;
                   return (
                     <tr key={i} className={pendiente ? 'pending' : ''}>
                       <td>
@@ -365,6 +366,19 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         )}
                         {medida && <small>{medida}</small>}
                         {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
+                        {editable && posible && (
+                          <div className="aviso-medida" role="note">
+                            <span>{pendiente?.pregunta}</span>
+                            <button
+                              type="button"
+                              className="button secondary small"
+                              aria-label={`Confirmar ${nombreProducto(posible.sugerido)} en el ítem ${i + 1}`}
+                              onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { modelo: posible.sugerido } }] }, `item.${i}.modelo`)}
+                            >
+                              Confirmar {nombreProducto(posible.sugerido)}
+                            </button>
+                          </div>
+                        )}
                         {editable && linea?.producto.familia === 'PUERTA' && (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
                           <div className="aviso-medida" role="note">
                             <span>{RECTIFICAR_MEDIDA}</span>

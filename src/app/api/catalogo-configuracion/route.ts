@@ -13,6 +13,7 @@ const configuracionSchema = z
     ).min(1),
     familiasPorModelo: z.record(z.string(), z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'])),
     aliasModelos: z.record(z.string(), z.array(z.string().trim().min(1))),
+    aliasPosiblesModelos: z.record(z.string(), z.array(z.string().trim().min(1))).default({}),
   })
   .strict();
 const sinCache = { 'Cache-Control': 'no-store' };

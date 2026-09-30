@@ -26,6 +26,8 @@ export function pregunta(r: Rechazo, modelo: string | null) {
         .join('\n');
     case 'modelo_desconocido':
       return `No encontré el modelo “${r.valor}” en puertas sólidas. Modelos disponibles: ${opciones(r.disponibles.map(bonito))}.`;
+    case 'modelo_posible':
+      return `¿Te refieres a ${bonito(r.sugerido)}? Confírmalo para cotizar.`;
     case 'madera_desconocida':
       return `No trabajamos “${r.valor}” en este catálogo. Maderas disponibles: ${listar(r.disponibles.map(bonito))}.`;
     case 'madera_no_disponible':

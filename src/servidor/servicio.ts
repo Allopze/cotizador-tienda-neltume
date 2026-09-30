@@ -332,10 +332,14 @@ export class Servicio {
     );
   }
 
-  /** Modelo y madera comparables: los del catálogo aunque el ítem esté incompleto, así un alias no cuenta como cambio. */
+  /**
+   * Modelo y madera comparables: los del catálogo aunque el ítem esté incompleto, así un alias no cuenta como cambio.
+   * Un alias dudoso cuenta como el modelo que se sugiere: confirmarlo no es cambiar de producto.
+   */
   private producto(s: SolicitudItem): ProductoItem {
+    const modelo = s.modelo ? modeloDelCatalogo(this.catalogo, s.modelo) : null;
     return {
-      modelo: s.modelo ? normalizar(modeloDelCatalogo(this.catalogo, s.modelo).modelo) : '',
+      modelo: modelo ? normalizar(modelo.posible ?? modelo.modelo) : '',
       madera: s.madera ? normalizar(maderaDelCatalogo(this.catalogo, s.madera) ?? s.madera) : '',
     };
   }

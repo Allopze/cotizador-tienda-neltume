@@ -528,6 +528,10 @@ p + .pregunta-opciones {
 .config-grupo > .button {
   margin-bottom: 4px;
 }
+.config-grupo > .catalog-modal-intro {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+}
 .config-json {
   margin-top: 24px;
   border-top: 1px solid var(--line);
