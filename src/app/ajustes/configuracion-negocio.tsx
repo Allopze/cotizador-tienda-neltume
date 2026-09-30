@@ -1,7 +1,7 @@
 'use client';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
-import { errorTramos, MAX_TRAMOS } from '@/negocio/descuento-cantidad';
+import { MAX_TRAMOS, problemaTramos, type ProblemaTramos } from '@/negocio/descuento-cantidad';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 
@@ -54,8 +54,11 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [logoError, setLogoError] = useState('');
-  // El aviso de los tramos aparece cuando la persona los toca (o intenta guardar), no al agregar una fila vacía.
-  const [tramosTocados, setTramosTocados] = useState(false);
+  // Problema de los tramos que se le muestra a la persona: se calcula al salir de un campo o al guardar, no al
+  // agregar una fila vacía ni en cada tecla; una vez visible se actualiza al corregir.
+  const [avisoTramos, setAvisoTramos] = useState<ProblemaTramos | null>(null);
+  const idTramos = useId();
+  const botonAgregar = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const control = new AbortController();
@@ -76,11 +79,25 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
 
   const editable = estado.puedeEditar;
   const tramos = borrador.reglas.descuentosPorCantidad ?? [];
-  const errorTramo = errorTramos(tramos, borrador.reglas.descuentoMaximo);
-  const setTramos = (siguiente: typeof tramos) => {
-    setTramosTocados(true);
+  const problema = () => problemaTramos(tramos, borrador.reglas.descuentoMaximo);
+  const idCampo = (indice: number, campo: 'desdePuertas' | 'porcentaje') => `${idTramos}-${indice}-${campo}`;
+  const setTramos = (siguiente: typeof tramos, revisar = true) => {
     setError('');
     setBorrador({ ...borrador, reglas: { ...borrador.reglas, descuentosPorCantidad: siguiente } });
+    if (revisar && avisoTramos) setAvisoTramos(problemaTramos(siguiente, borrador.reglas.descuentoMaximo));
+  };
+  const quitarTramo = (indice: number) => {
+    setTramos(tramos.filter((_, j) => j !== indice));
+    // El botón que se pulsó desaparece: el foco pasa a «Agregar tramo» en vez de perderse.
+    requestAnimationFrame(() => botonAgregar.current?.focus());
+  };
+  /** Marca el campo con el problema (si lo hay): `aria-invalid` y descrito por el mensaje. */
+  const marca = (indice: number, campo: 'desdePuertas' | 'porcentaje') => {
+    const invalido = avisoTramos?.indice === indice && avisoTramos.campo === campo;
+    return {
+      'aria-invalid': invalido || undefined,
+      'aria-describedby': avisoTramos ? `${idTramos}-error` : undefined,
+    };
   };
   const setTramo = (indice: number, cambio: Partial<(typeof tramos)[number]>) =>
     setTramos(tramos.map((t, i) => (i === indice ? { ...t, ...cambio } : t)));
@@ -110,9 +127,11 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
     if (!editable || ocupado) return;
-    if (errorTramo) {
-      setTramosTocados(true);
-      setError(errorTramo);
+    const invalido = problema();
+    if (invalido) {
+      setAvisoTramos(invalido);
+      if (invalido.indice !== undefined && invalido.campo)
+        document.getElementById(idCampo(invalido.indice, invalido.campo))?.focus();
       return;
     }
     setOcupado(true);
@@ -121,7 +140,7 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
       const data = await pedirJSON<Estado>('/api/configuracion-negocio', { json: borrador });
       setEstado(data);
       setBorrador(data.configuracion);
-      setTramosTocados(false);
+      setAvisoTramos(null);
       avisar('exito', 'Configuración comercial guardada.', { clave: 'configuracion-negocio' });
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
@@ -254,10 +273,22 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
         {tramos.length === 0 && <p className="muted">Sin tramos: las cotizaciones no llevan descuento por cantidad.</p>}
         <div className="tramos-descuento">
           {tramos.map((t, i) => (
-            <div className="tramo-descuento" key={i}>
+            <div
+              className="tramo-descuento"
+              key={i}
+              // Se valida al salir de la fila (no al pasar de «Desde» al porcentaje, que aún está vacío) y solo
+              // lo de esa fila y las anteriores: las de más abajo, todavía sin llenar, se revisan al llegar a ellas.
+              onBlur={(e) => {
+                if (e.currentTarget.contains(e.relatedTarget)) return;
+                const actual = problema();
+                if (!actual) setAvisoTramos(null);
+                else if (actual.indice === undefined || actual.indice <= i) setAvisoTramos(actual);
+              }}
+            >
               <label className="ia-field">
                 <span>Desde (puertas)</span>
                 <input
+                  id={idCampo(i, 'desdePuertas')}
                   type="number"
                   min={2}
                   step={1}
@@ -265,11 +296,13 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
                   value={Number.isFinite(t.desdePuertas) ? t.desdePuertas : ''}
                   onChange={(e) => setTramo(i, { desdePuertas: numero(e.target.value) })}
                   disabled={!editable || ocupado}
+                  {...marca(i, 'desdePuertas')}
                 />
               </label>
               <label className="ia-field">
                 <span>Descuento (%)</span>
                 <input
+                  id={idCampo(i, 'porcentaje')}
                   type="number"
                   min={0}
                   max={borrador.reglas.descuentoMaximo}
@@ -278,6 +311,7 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
                   value={Number.isFinite(t.porcentaje) ? t.porcentaje : ''}
                   onChange={(e) => setTramo(i, { porcentaje: numero(e.target.value) })}
                   disabled={!editable || ocupado}
+                  {...marca(i, 'porcentaje')}
                 />
               </label>
               {editable && (
@@ -285,7 +319,7 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
                   type="button"
                   className="button secondary small"
                   aria-label={`Quitar el tramo ${i + 1}`}
-                  onClick={() => setTramos(tramos.filter((_, j) => j !== i))}
+                  onClick={() => quitarTramo(i)}
                   disabled={ocupado}
                 >
                   Quitar
@@ -296,17 +330,18 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
         </div>
         {editable && (
           <button
+            ref={botonAgregar}
             type="button"
             className="button secondary small"
-            onClick={() => setTramos([...tramos, { desdePuertas: Number.NaN, porcentaje: Number.NaN }])}
+            onClick={() => setTramos([...tramos, { desdePuertas: Number.NaN, porcentaje: Number.NaN }], false)}
             disabled={ocupado || tramos.length >= MAX_TRAMOS}
           >
             Agregar tramo
           </button>
         )}
-        {tramosTocados && errorTramo && (
-          <p className="catalog-error" role="alert">
-            {errorTramo}
+        {avisoTramos && (
+          <p className="catalog-error" id={`${idTramos}-error`} role="alert">
+            {avisoTramos.mensaje}
           </p>
         )}
       </div>

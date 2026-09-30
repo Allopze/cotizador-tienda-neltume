@@ -2,13 +2,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { contextoSeguro } from '../src/asistente/llm';
+import { Totales } from '../src/app/panel-totales';
+import { resumenTexto } from '../src/app/formato';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import {
   contarPuertas,
   descuentoAutomatico,
+  descuentoEsManual,
   errorTramos,
   etiquetaDescuento,
+  problemaTramos,
   siguienteTramo,
   tramoAplicable,
 } from '../src/negocio/descuento-cantidad';
@@ -203,7 +209,7 @@ describe('selección del tramo', () => {
   });
 
   it('solo cuentan las puertas: marcos, molduras y piezas T no', () => {
-    const linea = (familia: string, cantidad: number) => ({ producto: { familia }, cantidad });
+    const linea = (familia: Producto['familia'], cantidad: number) => ({ producto: { familia }, cantidad });
     expect(
       contarPuertas([
         linea('PUERTA', 4),
@@ -230,6 +236,20 @@ describe('selección del tramo', () => {
     expect(etiquetaDescuento({ reglas: { ...REGLAS, descuentosPorCantidad: [] } })).toBe('Descuento');
     expect(etiquetaDescuento({ reglas: REGLAS })).toBe('Descuento');
     expect(etiquetaDescuento({})).toBe('Descuento');
+    // En la caja de totales del PDF va la versión corta.
+    expect(etiquetaDescuento({ reglas }, { corta: true })).toBe('Desc. por cantidad');
+    expect(etiquetaDescuento({ reglas, descuentoManual: true }, { corta: true })).toBe('Descuento');
+  });
+
+  it('sin el dato de quién lo fijó, un descuento que ya existía es manual: una sola regla para todos', () => {
+    expect(descuentoEsManual({ descuento: 7 })).toBe(true);
+    expect(descuentoEsManual({ descuento: 0 })).toBe(false);
+    expect(descuentoEsManual({})).toBe(false);
+    expect(descuentoEsManual({ descuento: 7, descuentoManual: false })).toBe(false);
+    expect(descuentoEsManual({ descuento: 0, descuentoManual: true })).toBe(true);
+    // Y la etiqueta la respeta: un descuento antiguo con tramos hoy configurados no es «por cantidad».
+    const reglas = { ...REGLAS, descuentosPorCantidad: TRAMOS };
+    expect(etiquetaDescuento({ reglas, descuento: 7 })).toBe('Descuento');
   });
 });
 
@@ -292,6 +312,30 @@ describe('configuración de los tramos', () => {
       'Completa «Desde» y el porcentaje de cada tramo.',
     );
     expect(errorTramos(TRAMOS, 50)).toBeNull();
+  });
+
+  it('indica la fila y el campo con el problema, para marcarlos en la pantalla', () => {
+    const fila = (desdePuertas: number, porcentaje: number) => ({ desdePuertas, porcentaje });
+    expect(problemaTramos([fila(10, 5), fila(Number.NaN, 5)], 50)).toMatchObject({
+      indice: 1,
+      campo: 'desdePuertas',
+    });
+    expect(problemaTramos([fila(10, 5), fila(20, Number.NaN)], 50)).toMatchObject({
+      indice: 1,
+      campo: 'porcentaje',
+    });
+    expect(problemaTramos([fila(10, 5), fila(20, 60)], 50)).toMatchObject({ indice: 1, campo: 'porcentaje' });
+    expect(problemaTramos([fila(10, 5), fila(10, 8)], 50)).toMatchObject({
+      indice: 1,
+      campo: 'desdePuertas',
+    });
+    expect(problemaTramos([fila(10, 5)], 50)).toBeNull();
+    expect(
+      problemaTramos(
+        Array.from({ length: 11 }, (_, i) => fila(i + 2, 1)),
+        50,
+      )?.indice,
+    ).toBeUndefined();
   });
 
   it('se guarda y se lee; una configuración guardada antes de esta regla carga sin tramos', async () => {
@@ -452,9 +496,8 @@ describe('descuento manual', () => {
   it('repetir el descuento automático actual no lo fija ni deja ruido', async () => {
     const { conPedido, editar, cambiarPedido } = await setup();
     let q = await conPedido([puertas(10)]);
-    const antes = { version: q.actualizada, eventos: 0 };
     const despues = await editar(q, { descuento: 5 });
-    expect(despues.actualizada).toBe(antes.version);
+    expect(despues.actualizada).toBe(q.actualizada);
     expect(despues.descuentoManual).toBe(false);
     // Sigue el automático.
     q = await cambiarPedido(despues, [puertas(20)]);
@@ -637,6 +680,20 @@ describe('reglas congeladas y cotizaciones anteriores', () => {
       q.id,
     );
     expect(almacen.obtener(q.id)!.reglas!.descuentosPorCantidad).toBeUndefined();
+    // Un porcentaje fuera de rango o un umbral inválido también invalida la lista entera.
+    for (const tramos of [
+      [{ desdePuertas: 10, porcentaje: -5 }],
+      [{ desdePuertas: 10, porcentaje: 150 }],
+      [{ desdePuertas: 0, porcentaje: 5 }],
+      [{ desdePuertas: 2.5, porcentaje: 5 }],
+      'no es una lista',
+    ]) {
+      db.prepare('UPDATE cotizaciones SET reglas_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...q.reglas, descuentosPorCantidad: tramos }),
+        q.id,
+      );
+      expect(almacen.obtener(q.id)!.reglas!.descuentosPorCantidad).toBeUndefined();
+    }
   });
 
   it('un tramo guardado por encima del máximo de la cotización se acota en vez de fallar', async () => {
@@ -665,10 +722,14 @@ describe('migración v15', () => {
     const conDescuento = await editar(await conPedido([puertas(10)]), { descuento: 10 });
     const sinDescuento = await conPedido([puertas(2)]);
     const ruta = join(dir, 'cotizador.sqlite');
-    // Deja la base como estaba en v14: sin la columna.
-    almacen
-      .baseDatos()
-      .exec('ALTER TABLE cotizaciones DROP COLUMN descuento_manual; PRAGMA user_version = 14;');
+    // Deja la base como estaba en v14: sin la columna y con reglas congeladas sin el campo de los tramos.
+    const db = almacen.baseDatos();
+    for (const q of [conDescuento, sinDescuento])
+      db.prepare('UPDATE cotizaciones SET reglas_json = ? WHERE id = ?').run(
+        JSON.stringify({ ...REGLAS, margenes: q.reglas!.margenes }),
+        q.id,
+      );
+    db.exec('ALTER TABLE cotizaciones DROP COLUMN descuento_manual; PRAGMA user_version = 14;');
     cerrarAlmacen(ruta);
 
     const migrada = abrirBaseDatos(ruta, { cachear: false });
@@ -693,14 +754,28 @@ describe('migración v15', () => {
         otra.prepare('SELECT descuento_manual AS m FROM cotizaciones WHERE id = ?').get(sinDescuento.id),
       ).toEqual({ m: 1 });
       expect(otra.pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
+      otra.prepare('UPDATE cotizaciones SET descuento_manual = 0 WHERE id = ?').run(sinDescuento.id);
     } finally {
       otra.close();
     }
     const recargada = new Almacen(dir);
-    expect(recargada.obtener(conDescuento.id)).toMatchObject({ descuento: 10, descuentoManual: true });
-    // Sin tramos en sus reglas, la migrada se edita como siempre: más puertas no cambian nada.
-    const s = recargada.obtener(sinDescuento.id)!;
-    expect(s.reglas!.descuentosPorCantidad).toEqual([]);
+    const servicio = new Servicio(catalogo(), { interpretar: vi.fn() }, recargada);
+    const cargada = (q: Cotizacion) => recargada.obtener(q.id)!;
+    expect(cargada(conDescuento)).toMatchObject({ descuento: 10, descuentoManual: true });
+    expect(cargada(sinDescuento)).toMatchObject({ descuento: 0, descuentoManual: false });
+    expect(cargada(sinDescuento).reglas!.descuentosPorCantidad).toBeUndefined();
+    // Las migradas se editan como siempre: sus reglas no tienen tramos, así que más puertas no cambian el
+    // descuento (el que tenía una persona sigue siendo suyo).
+    for (const q of [conDescuento, sinDescuento]) {
+      const actual = cargada(q);
+      const r = await servicio.ejecutar({
+        tipo: 'editar',
+        id: q.id,
+        actualizada: actual.actualizada,
+        cantidades: [{ indice: 0, cantidad: 30 }],
+      });
+      expect(r.cotizacion.descuento).toBe(actual.descuento);
+    }
   });
 
   it('el estado de un JSON anterior deriva el modo: con descuento es manual', () => {
@@ -710,6 +785,111 @@ describe('migración v15', () => {
       cotizaciones: [{ descuento: 12 }, { descuento: 0 }, { descuento: 4, descuentoManual: false }],
     }) as { cotizaciones: { descuentoManual: boolean }[] };
     expect(estado.cotizaciones.map((q) => q.descuentoManual)).toEqual([true, false, false]);
+  });
+});
+
+describe('con márgenes y precios manuales', () => {
+  // Puertas: 100.000 + 85 % = 185.000; marco: 20.000 + 25 % = 25.000 (márgenes iniciales de la categoría).
+  const pedido = [puertas(6), { ...puertas(4), ancho: 0.83 }, marcos(2)];
+  const precios = (q: Cotizacion) => q.montos.lineas.map((l) => l.precioUnitario);
+
+  it('el descuento recae sobre el subtotal ya con margen de la cotización, de la línea y precio manual', async () => {
+    const { conPedido, editar, ultimo } = await setup();
+    let q = await conPedido(pedido);
+    expect([precios(q), q.descuento, contarPuertas(q.montos.lineas)]).toEqual([
+      [185_000, 185_000, 25_000],
+      5,
+      10,
+    ]);
+    expect(q.montos.descuento).toBe(Math.round((q.montos.subtotal * 5) / 100));
+
+    // El precio manual de la línea 0 y el margen de la línea 1 ganan al margen de la cotización (50 %).
+    q = await editar(q, {
+      margenCotizacion: 0.5,
+      items: [
+        { indice: 0, cambios: { precioUnitario: 120_000 } },
+        { indice: 1, cambios: { margen: 0.3 } },
+      ],
+    });
+    expect(precios(q)).toEqual([120_000, 130_000, 30_000]);
+    // 6 × 120.000 + 4 × 130.000 + 2 × 30.000 = 1.300.000; 5 % = 65.000. Los márgenes no cambian el tramo.
+    expect([q.montos.subtotal, q.descuento, q.descuentoManual, q.montos.descuento, q.montos.neto]).toEqual([
+      1_300_000,
+      5,
+      false,
+      65_000,
+      1_235_000,
+    ]);
+    expect([q.montos.iva, q.montos.total]).toEqual([234_650, 1_469_650]);
+    expect(ultimo(q)).not.toContain('Descuento');
+
+    // Manual: 3 % del subtotal; un cambio posterior de margen lo recalcula en pesos pero no lo suelta.
+    q = await editar(q, { descuento: 3 });
+    expect([q.montos.descuento, q.montos.neto]).toEqual([39_000, 1_261_000]);
+    q = await editar(q, { margenCotizacion: 0.1 });
+    expect(precios(q)).toEqual([120_000, 130_000, 22_000]);
+    expect([q.montos.subtotal, q.descuento, q.descuentoManual, q.montos.descuento]).toEqual([
+      1_284_000,
+      3,
+      true,
+      38_520,
+    ]);
+    expect(ultimo(q)).not.toContain('Descuento');
+
+    // Restaurar: vuelve el 5 % del tramo, sobre los mismos precios.
+    q = await editar(q, { descuentoAutomatico: true });
+    expect([q.descuento, q.descuentoManual, q.montos.descuento]).toEqual([5, false, 64_200]);
+    expect(precios(q)).toEqual([120_000, 130_000, 22_000]);
+  });
+
+  it('quitar el margen o el precio manual de una línea no toca el tramo ni el modo', async () => {
+    const { conPedido, editar } = await setup();
+    let q = await conPedido(pedido);
+    q = await editar(q, { items: [{ indice: 0, cambios: { precioUnitario: 120_000 } }] });
+    q = await editar(q, { items: [{ indice: 0, cambios: { precioUnitario: null } }] });
+    expect([precios(q)[0], q.descuento, q.descuentoManual]).toEqual([185_000, 5, false]);
+  });
+});
+
+describe('panel de totales', () => {
+  const html = (q: Cotizacion, editable: boolean) =>
+    renderToStaticMarkup(
+      createElement(Totales, { actual: q, editable, guardando: null, editar: async () => true }),
+    );
+
+  it('explica el descuento automático con el tramo y el siguiente, en una región en vivo', async () => {
+    const { conPedido } = await setup();
+    const q = await conPedido([puertas(14)]);
+    const h = html(q, true);
+    expect(h).toContain('Descuento por cantidad: 14 puertas → 5 %');
+    expect(h).toContain('Siguiente tramo: desde 20 puertas −10 %');
+    expect(h).toContain('aria-live="polite"');
+    expect(h).not.toContain('Restaurar automático');
+    // Sin tramos en las reglas no se muestra nada de esto.
+    const sin = await setup(null);
+    expect(html(await sin.conPedido([puertas(14)]), true)).not.toContain('descuento-origen');
+  });
+
+  it('el descuento manual ofrece volver al automático solo si se puede editar', async () => {
+    const { conPedido, editar } = await setup();
+    const q = await editar(await conPedido([puertas(14)]), { descuento: 3 });
+    const h = html(q, true);
+    expect(h).toContain('Descuento manual: 3 %');
+    expect(h).toContain('Restaurar automático');
+    expect(h).toContain('Automático: 5 % con 14 puertas');
+    const lectura = html(q, false);
+    expect(lectura).toContain('Descuento manual: 3 %');
+    expect(lectura).not.toContain('Restaurar automático');
+  });
+
+  it('sin fila de descuento (no editable y sin descuento) tampoco se muestra «Descuento manual: 0 %»', async () => {
+    const { conPedido, editar } = await setup();
+    const q = await editar(await conPedido([puertas(14)]), { descuento: 0 });
+    expect(q.descuentoManual).toBe(true);
+    expect(html(q, true)).toContain('Descuento manual: 0 %');
+    const lectura = html(q, false);
+    expect(lectura).not.toContain('Descuento manual');
+    expect(lectura).not.toContain('Descuento');
   });
 });
 
@@ -738,6 +918,59 @@ describe('documentos y nota de pedido', () => {
     });
     // La cotización conserva su descuento.
     expect([a.descuento, a.montos.descuento]).toEqual([10, e.montos.descuento]);
+  });
+
+  it('emitir conserva el descuento; si los precios del catálogo cambiaron, el borrador queda consistente con los montos nuevos', async () => {
+    const { almacen, llm, conPedido, editar } = await setup();
+    const automatica = await conPedido([puertas(10)]);
+    const manual = await editar(await conPedido([puertas(10)]), { descuento: 3 });
+    const nuevoCatalogo: Catalogo = {
+      ...catalogo(),
+      productos: catalogo().productos.map((p) =>
+        p.familia === 'PUERTA' ? { ...p, precioNeto: p.precioNeto + 1000 } : p,
+      ),
+    };
+    const otro = new Servicio(nuevoCatalogo, llm, almacen, { nombre: 'Paula', email: 'paula@neltume.cl' });
+    // Cada puerta pasa de 185.000 a round(101.000 × 1,85) = 186.850: 10 puertas son 1.868.500.
+    for (const [q, porcentaje, monto] of [
+      [automatica, 5, 93_425],
+      [manual, 3, 56_055],
+    ] as const) {
+      await expect(
+        otro.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada }),
+      ).rejects.toMatchObject({
+        codigo: 'precios_cambiaron',
+      });
+      const revisada = almacen.obtener(q.id)!;
+      expect(revisada.estado).toBe('borrador');
+      expect([
+        revisada.montos.subtotal,
+        revisada.descuento,
+        revisada.montos.descuentoPorcentaje,
+        revisada.montos.descuento,
+      ]).toEqual([1_868_500, porcentaje, porcentaje, monto]);
+      const e = (await otro.ejecutar({ tipo: 'emitir', id: q.id, actualizada: revisada.actualizada }))
+        .cotizacion;
+      expect([e.estado, e.descuento, e.descuentoManual, e.montos.descuento]).toEqual([
+        'emitida',
+        porcentaje,
+        q === manual,
+        monto,
+      ]);
+    }
+  });
+
+  it('el texto copiado de la cotización rotula el descuento según quién lo fijó', async () => {
+    const { conPedido, editar } = await setup();
+    let q = await conPedido([puertas(10)]);
+    expect(resumenTexto(q)).toContain('\nDescuento por cantidad 5%: −$92.500\n');
+    q = await editar(q, { descuento: 3 });
+    expect(resumenTexto(q)).toContain('\nDescuento 3%: −$55.500\n');
+    expect(resumenTexto(q)).not.toContain('por cantidad');
+    // Sin tramos configurados el texto es el de siempre.
+    const sin = await setup(null);
+    const d = await sin.editar(await sin.conPedido([puertas(10)]), { descuento: 10 });
+    expect(resumenTexto(d)).toContain('\nDescuento 10%: −$185.000\n');
   });
 
   it('al emitir, el documento recibe el descuento y su origen (automático) y la cotización queda igual', async () => {

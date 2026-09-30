@@ -39,27 +39,49 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
     // Una administradora agrega los tramos, con sus validaciones.
     rol.run('admin', USUARIO_E2E);
     await page.goto('/ajustes');
-    await page.getByRole('button', { name: 'Agregar tramo' }).click();
-    await page.getByRole('button', { name: 'Agregar tramo' }).click();
-    await page.getByLabel('Tramo 1: desde (puertas)').fill('10');
-    await page.getByLabel('Tramo 1: descuento (%)').fill('5');
-    await page.getByLabel('Tramo 2: desde (puertas)').fill('10');
-    await page.getByLabel('Tramo 2: descuento (%)').fill('10');
-    const alerta = page.getByRole('alert').filter({ hasText: 'tramo' });
+    const agregar = page.getByRole('button', { name: 'Agregar tramo' });
+    const alerta = page.getByRole('alert').filter({ hasText: /tramo|Desde/ });
+    const desde = (n: number) => page.getByLabel(`Tramo ${n}: desde (puertas)`);
+    const descuento = (n: number) => page.getByLabel(`Tramo ${n}: descuento (%)`);
+    await agregar.click();
+    await agregar.click();
+    // Las filas vacías recién agregadas no muestran ningún error.
+    await expect(alerta).toHaveCount(0);
+    await desde(1).fill('10');
+    await descuento(1).fill('5');
+    await desde(2).fill('10');
+    await descuento(2).fill('10');
+    // Tampoco se valida mientras se escribe: el aviso sale al salir de la fila.
+    await expect(alerta).toHaveCount(0);
+    await page.getByRole('heading', { name: 'DESCUENTO POR CANTIDAD' }).click();
     await expect(alerta).toHaveText('Hay más de un tramo «desde 10 puertas»: cada umbral debe ser distinto.');
+    // El campo con el problema queda marcado y descrito por el aviso; los demás no.
+    await expect(desde(2)).toHaveAttribute('aria-invalid', 'true');
+    await expect(desde(2)).toHaveAttribute('aria-describedby', /.+/);
+    await expect(desde(1)).not.toHaveAttribute('aria-invalid', 'true');
+    // Guardar con el problema avisa una sola vez y lleva el foco al campo.
     await page.getByRole('button', { name: 'Guardar configuración' }).click();
-    await expect(alerta.first()).toContainText('cada umbral debe ser distinto');
-    await page.getByLabel('Tramo 2: desde (puertas)').fill('20');
-    await page.getByLabel('Tramo 2: descuento (%)').fill('60');
+    await expect(alerta).toHaveCount(1);
+    await expect(desde(2)).toBeFocused();
+    // Corregir el campo con el problema quita el aviso a medida que se escribe; uno nuevo sale al salir de la fila.
+    await desde(2).fill('20');
+    await expect(alerta).toHaveCount(0);
+    await descuento(2).fill('60');
+    await expect(alerta).toHaveCount(0);
+    await page.getByRole('heading', { name: 'DESCUENTO POR CANTIDAD' }).click();
     await expect(alerta).toHaveText(
       'El porcentaje del tramo «desde 20 puertas» no puede superar el descuento máximo (50 %).',
     );
-    await page.getByLabel('Tramo 2: descuento (%)').fill('10');
+    await expect(descuento(2)).toHaveAttribute('aria-invalid', 'true');
+    await descuento(2).fill('10');
     await expect(alerta).toHaveCount(0);
-    // Agregar un tramo y quitarlo no deja nada pendiente.
-    await page.getByRole('button', { name: 'Agregar tramo' }).click();
+    await expect(descuento(2)).not.toHaveAttribute('aria-invalid', 'true');
+    // Agregar un tramo y quitarlo deja el foco en «Agregar tramo», sin avisos pendientes.
+    await agregar.click();
     await page.getByRole('button', { name: 'Quitar el tramo 3' }).click();
-    await expect(page.getByLabel('Tramo 3: desde (puertas)')).toHaveCount(0);
+    await expect(desde(3)).toHaveCount(0);
+    await expect(agregar).toBeFocused();
+    await expect(alerta).toHaveCount(0);
     await page.getByRole('button', { name: 'Guardar configuración' }).click();
     await expect(aviso.filter({ hasText: 'Configuración comercial guardada.' })).toBeVisible();
     expect(leerConfiguracionNegocio(db).reglas.descuentosPorCantidad).toEqual([
