@@ -4,6 +4,7 @@ import type { Cotizacion, EventoCotizacion, ResumenCotizacion } from '@/negocio/
 import type { Producto, SolicitudItem } from '@/catalogo/tipos';
 import type { Cliente } from '@/catalogo/tipos';
 import type { OpcionCotizacion } from '@/servidor/referencias';
+import type { TarifaStarkenAplicada } from '@/negocio/starken';
 
 export interface ItemCambio {
   indice: number;
@@ -65,6 +66,8 @@ export interface CambiosEdicion {
   margenCotizacion?: number | null;
   observaciones?: string | null;
   despacho?: Partial<Despacho> | null;
+  /** Tarifa de Starken elegida por la persona: el valor de despacho es su neto y la actividad la registra. */
+  tarifaStarken?: TarifaStarkenAplicada;
 }
 /** Producto del catálogo tal como lo muestra la consulta: con el precio unitario de la cotización. */
 export interface ProductoConsulta {
