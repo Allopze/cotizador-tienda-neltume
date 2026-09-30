@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { esEditable, etiquetaEstado, type Cotizacion, type Despacho, type Mensaje } from '@/negocio/estado';
+import { anticipoMinimo, esEditable, etiquetaEstado, type Cotizacion, type Despacho, type Mensaje } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
@@ -607,7 +607,20 @@ export function Cotizador({
       const q = actual;
       const pago = q?.pagos?.find((p) => p.id === pagoId);
       if (!q || !pago || ocupado) return false;
-      const datos = await pedirAnulacionPago({ monto: pesos(pago.monto), fecha: fechaLarga(pago.fecha) });
+      // Con la nota ya generada, quedar bajo el 50 % frena la producción hasta volver a registrar el anticipo.
+      const restante = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0) - pago.monto;
+      const minimo = anticipoMinimo(q.montos.total);
+      const frenaProduccion =
+        !!q.nota && ['pedido_generado', 'en_produccion'].includes(q.estadoOperativo ?? '') && restante < minimo;
+      const datos = await pedirAnulacionPago({
+        monto: pesos(pago.monto),
+        fecha: fechaLarga(pago.fecha),
+        ...(frenaProduccion
+          ? {
+              aviso: `La nota de pedido ya está generada y quedarían ${pesos(restante)} pagados, menos del 50 % (${pesos(minimo)}): la producción no podrá ${q.estadoOperativo === 'pedido_generado' ? 'iniciarse' : 'terminarse'} hasta volver a registrar el anticipo.`,
+            }
+          : {}),
+      });
       if (!datos) return false;
       const ok = await ejecutar(
         'workflow',
@@ -1107,6 +1120,8 @@ export function Cotizador({
           </form>
         </section>
         <CotizacionPanel
+          // Un panel por cotización: los borradores de pago, facturación y nota interna no pasan a otra.
+          key={actual?.id ?? 'vacio'}
           actual={actual}
           enCurso={enCurso}
           guardando={guardando}

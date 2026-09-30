@@ -295,6 +295,8 @@ function FormAnulacion({
 interface DatosAnulacionPago {
   monto: string;
   fecha: string;
+  /** Consecuencia que conviene leer antes de confirmar (p. ej. la producción vuelve a exigir el anticipo). */
+  aviso?: string;
 }
 /** Anular un pago registrado por error: motivo opcional; el monto vuelve al saldo y queda en la actividad. */
 export function useAnulacionPago() {
@@ -348,6 +350,7 @@ function FormAnulacionPago({
           Se quitará el pago de <strong>{datos.monto}</strong> del {datos.fecha} y ese monto volverá al saldo
           pendiente. Queda registrado en la actividad.
         </p>
+        {datos.aviso && <p className="dialogo-advertencia">{datos.aviso}</p>}
       </div>
       <div className="dialogo-campos">
         <label className="ia-field">

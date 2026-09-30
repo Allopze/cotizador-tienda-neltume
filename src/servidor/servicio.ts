@@ -36,11 +36,13 @@ import {
   type ProductoItem,
 } from '../negocio/items';
 import {
+  anticipoMinimo,
   despachoEditable,
   etiquetaComercial,
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
+  sinTransportista,
   type Cotizacion,
   type Despacho,
   type Facturacion,
@@ -222,15 +224,32 @@ function fechaElegida(fecha: string): string | null {
   // «2026-02-31» no es un error para Date: se corre al 3 de marzo, y eso no es lo que la persona escribió.
   return soloDia && iso.slice(0, 10) !== fecha ? null : iso;
 }
-const CAMPOS_DESPACHO = [
+type CampoDespacho = 'direccion' | 'transporte' | 'entregaComprometida' | 'destino';
+const CAMPOS_DESPACHO: readonly (readonly [CampoDespacho, string, number])[] = [
   ['direccion', 'Dirección', 300],
   ['transporte', 'Transportista', 120],
   ['entregaComprometida', 'Entrega comprometida', 120],
   ['destino', 'Destino', 300],
-] as const;
-/** «Otro» solo indica que falta el nombre: no identifica a quien lleva el pedido. */
-const sinTransportista = (transporte: string | null | undefined) =>
-  !transporte || transporte.trim().toLowerCase() === 'otro';
+];
+/** Despacho con los cambios ya limpios sobre `base`, y el texto de lo que cambió (para la actividad). */
+function aplicarDespacho(base: Despacho | null | undefined, cambios: Partial<Despacho>, valor: number) {
+  const despacho: Despacho = {
+    direccion: base?.direccion ?? null,
+    transporte: base?.transporte ?? null,
+    entregaComprometida: base?.entregaComprometida ?? null,
+    destino: base?.destino ?? null,
+    valor,
+  };
+  const cambiados: { campo: CampoDespacho; texto: string }[] = [];
+  for (const [campo, etiqueta, largo] of CAMPOS_DESPACHO) {
+    if (cambios[campo] === undefined) continue;
+    const nuevo = limpiarTexto(cambios[campo], largo);
+    if (nuevo === despacho[campo]) continue;
+    cambiados.push({ campo, texto: `${etiqueta}: ${despacho[campo] ?? '—'} → ${nuevo ?? '—'}` });
+    despacho[campo] = nuevo;
+  }
+  return { despacho, cambiados };
+}
 /** Margen (fracción) como porcentaje legible: 0,42 → «42 %»; sin el ruido binario de 0,07 × 100. */
 const margenTexto = (m: number) => porcentajeTexto(margenAPorcentaje(m));
 const ESTANDAR_CATEGORIA = 'estándar de categoría';
@@ -673,7 +692,7 @@ export class Servicio {
               'estado_invalido',
             );
           this.verificarVersion(q, accion.actualizada);
-          const motivo = accion.motivo?.replace(/\s+/g, ' ').trim().slice(0, 300) || null;
+          const motivo = limpiarTexto(accion.motivo, 300);
           const fecha = new Date().toISOString();
           q.estado = 'anulada';
           q.estadoComercial = 'rechazada';
@@ -793,39 +812,13 @@ export class Servicio {
       const observaciones =
         accion.observaciones === undefined
           ? q.observaciones
-          : accion.observaciones?.replace(/\s+/g, ' ').trim().slice(0, 2000) || null;
+          : limpiarTexto(accion.observaciones, 2000);
       const despacho =
         accion.despacho === undefined
           ? q.despacho
           : accion.despacho === null
             ? null
-            : {
-                direccion:
-                  accion.despacho.direccion === undefined
-                    ? q.despacho?.direccion ?? null
-                    : typeof accion.despacho.direccion === 'string'
-                      ? accion.despacho.direccion.replace(/\s+/g, ' ').trim().slice(0, 300) || null
-                      : null,
-                transporte:
-                  accion.despacho.transporte === undefined
-                    ? q.despacho?.transporte ?? null
-                    : typeof accion.despacho.transporte === 'string'
-                      ? accion.despacho.transporte.replace(/\s+/g, ' ').trim().slice(0, 120) || null
-                      : null,
-                entregaComprometida:
-                  accion.despacho.entregaComprometida === undefined
-                    ? q.despacho?.entregaComprometida ?? null
-                    : typeof accion.despacho.entregaComprometida === 'string'
-                      ? accion.despacho.entregaComprometida.replace(/\s+/g, ' ').trim().slice(0, 120) || null
-                      : null,
-                destino:
-                  accion.despacho.destino === undefined
-                    ? q.despacho?.destino ?? null
-                    : typeof accion.despacho.destino === 'string'
-                      ? accion.despacho.destino.replace(/\s+/g, ' ').trim().slice(0, 300) || null
-                      : null,
-                valor: flete,
-              };
+            : aplicarDespacho(q.despacho, accion.despacho, flete).despacho;
       if (
         JSON.stringify([solicitudes, cliente, observaciones, despacho]) ===
           JSON.stringify([q.solicitudes, q.cliente, q.observaciones, q.despacho]) &&
@@ -1014,15 +1007,7 @@ export class Servicio {
           'cotizacion_vencida',
           { vence: q.vence },
         );
-      const despacho = accion.despacho ?? q.despacho ?? {};
-      this.exigirValorDespachoFijo(q, accion.despacho?.valor);
-      q.despacho = {
-        direccion: despacho.direccion ?? q.despacho?.direccion ?? null,
-        transporte: despacho.transporte ?? q.despacho?.transporte ?? null,
-        entregaComprometida: despacho.entregaComprometida ?? q.despacho?.entregaComprometida ?? null,
-        destino: despacho.destino ?? q.despacho?.destino ?? null,
-        valor: q.flete,
-      };
+      q.despacho = this.despachoEditado(q, accion.despacho ?? {}).despacho;
       q.estado = 'aprobada';
       q.estadoComercial = 'aprobada';
       q.aprobadaPor = this.autor;
@@ -1054,7 +1039,7 @@ export class Servicio {
         throw new ErrorUsuario(`El pago supera el saldo pendiente de ${pesos(saldo)}.`);
       const fecha = accion.fecha ? fechaElegida(accion.fecha) : new Date().toISOString();
       if (!fecha) throw new ErrorUsuario('La fecha del pago no es válida.');
-      const observacion = accion.observacion?.replace(/\s+/g, ' ').trim().slice(0, 500) || null;
+      const observacion = limpiarTexto(accion.observacion, 500);
       const pago = { id: randomUUID(), fecha, monto: accion.monto, observacion, usuario: this.autor };
       q.pagos = [...(q.pagos ?? []), pago];
       this.estadoPorPagos(q);
@@ -1070,7 +1055,7 @@ export class Servicio {
     const pagado = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0);
     const operacion = q.estadoOperativo ?? (q.nota ? 'pedido_generado' : 'sin_pedido');
     if (!q.nota && (operacion === 'sin_pedido' || operacion === 'anticipo_pagado'))
-      q.estadoOperativo = pagado >= Math.ceil(q.montos.total * 0.5) ? 'anticipo_pagado' : 'sin_pedido';
+      q.estadoOperativo = pagado >= anticipoMinimo(q.montos.total) ? 'anticipo_pagado' : 'sin_pedido';
     else if (['produccion_terminada', 'saldo_pendiente', 'pagada'].includes(operacion))
       q.estadoOperativo = pagado >= q.montos.total ? 'pagada' : 'saldo_pendiente';
   }
@@ -1101,7 +1086,7 @@ export class Servicio {
         q.id,
         'pago_anulado',
         this.autor,
-        `${pesos(pago.monto)} · ${pago.fecha.slice(0, 10)}${motivo ? ` · Motivo: ${motivo}` : ''}${cambio}`,
+        `${pesos(pago.monto)} · ${pago.fecha.slice(0, 10)}${pago.observacion ? ` · ${pago.observacion}` : ''}${motivo ? ` · Motivo: ${motivo}` : ''}${cambio}`,
       );
       return { cotizacion: q };
     });
@@ -1154,25 +1139,10 @@ export class Servicio {
       );
   }
 
-  /** Despacho con los cambios pedidos ya limpios y el detalle de lo que cambió, para el registro de actividad. */
+  /** Despacho con los cambios pedidos: el valor es siempre el flete emitido y cualquier otro se rechaza. */
   private despachoEditado(q: Cotizacion, cambios: Partial<Despacho>) {
     this.exigirValorDespachoFijo(q, cambios.valor);
-    const despacho: Despacho = {
-      direccion: q.despacho?.direccion ?? null,
-      transporte: q.despacho?.transporte ?? null,
-      entregaComprometida: q.despacho?.entregaComprometida ?? null,
-      destino: q.despacho?.destino ?? null,
-      valor: q.flete,
-    };
-    const detalle: string[] = [];
-    for (const [campo, etiqueta, largo] of CAMPOS_DESPACHO) {
-      if (cambios[campo] === undefined) continue;
-      const nuevo = limpiarTexto(cambios[campo], largo);
-      if (nuevo === despacho[campo]) continue;
-      detalle.push(`${etiqueta}: ${despacho[campo] ?? '—'} → ${nuevo ?? '—'}`);
-      despacho[campo] = nuevo;
-    }
-    return { despacho, detalle };
+    return aplicarDespacho(q.despacho, cambios, q.flete);
   }
 
   /** Despacho, operación y facturación parten de la aprobación del cliente y terminan si la cotización se anula. */
@@ -1196,13 +1166,13 @@ export class Servicio {
           `El despacho ya está registrado (${etiquetaOperativo[q.estadoOperativo!]}) y sus datos no se pueden cambiar.`,
           'no_editable',
         );
-      const { despacho, detalle } = this.despachoEditado(q, accion.despacho);
-      if (!detalle.length) return { cotizacion: q };
+      const { despacho, cambiados } = this.despachoEditado(q, accion.despacho);
+      if (!cambiados.length) return { cotizacion: q };
       // La nota de pedido conserva el despacho con que se generó: no se regenera ni se toca su PDF.
       q.despacho = despacho;
       q.actualizada = marca(q.actualizada);
       u.guardar(q);
-      u.registrarEvento(q.id, 'despacho_actualizado', this.autor, detalle.join(' · '));
+      u.registrarEvento(q.id, 'despacho_actualizado', this.autor, cambiados.map((c) => c.texto).join(' · '));
       return { cotizacion: q };
     });
   }
@@ -1221,13 +1191,28 @@ export class Servicio {
         (paso === 'despachada' && q.estadoOperativo === 'lista_despacho') ||
         (paso === 'completada' && q.estadoOperativo === 'despachada');
       if (!esPasoValido) throw new ErrorConflicto('Esta acción no está disponible para el estado actual.', 'estado_invalido');
+      // Anular un pago después de la nota puede dejar el pedido bajo el anticipo: la producción lo exige de nuevo.
+      if ((paso === 'iniciar_produccion' || paso === 'produccion_terminada') && pagado < anticipoMinimo(q.montos.total))
+        throw new ErrorConflicto(
+          `La producción se habilita con al menos 50 % pagado (${pesos(anticipoMinimo(q.montos.total))}); hay ${pesos(pagado)} registrados.`,
+          'estado_invalido',
+        );
       const anterior = q.estadoOperativo!;
       let despacho: Despacho | undefined;
+      let logistica = '';
       if (paso === 'despachada') {
-        despacho = this.despachoEditado(q, accion.despacho ?? {}).despacho;
+        const editado = this.despachoEditado(q, accion.despacho ?? {});
+        despacho = editado.despacho;
         if (sinTransportista(despacho.transporte))
           throw new ErrorUsuario('Indica el transportista antes de registrar el despacho.');
         q.despacho = despacho;
+        // Transportista y destino vigentes; dirección y entrega solo si este paso las cambió.
+        logistica = [
+          '',
+          `Transportista: ${despacho.transporte}`,
+          `Destino: ${despacho.destino ?? 'sin indicar'}`,
+          ...editado.cambiados.filter((c) => c.campo === 'direccion' || c.campo === 'entregaComprometida').map((c) => c.texto),
+        ].join(' · ');
       }
       q.estadoOperativo = ({
         iniciar_produccion: 'en_produccion',
@@ -1245,9 +1230,6 @@ export class Servicio {
         despachada: 'despachada',
         completada: 'completada',
       };
-      const logistica = despacho
-        ? ` · Transportista: ${despacho.transporte} · Destino: ${despacho.destino ?? 'sin indicar'}`
-        : '';
       u.registrarEvento(
         q.id,
         evento[paso],
@@ -1311,8 +1293,8 @@ export class Servicio {
         );
       this.verificarVersion(q, accion.actualizada);
       const pagado = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0);
-      if (pagado < Math.ceil(q.montos.total * 0.5))
-        throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos 50 % (${pesos(Math.ceil(q.montos.total * 0.5))}).`, 'estado_invalido');
+      if (pagado < anticipoMinimo(q.montos.total))
+        throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos 50 % (${pesos(anticipoMinimo(q.montos.total))}).`, 'estado_invalido');
       this.verificarSerieNoAprobada(q, u);
       // La nota usa los precios guardados sin ajuste, sin descuento ni flete, y a precio de fábrica:
       // ni el margen especial de la cotización ni el de las líneas (no se pasan) intervienen.
@@ -1340,20 +1322,11 @@ export class Servicio {
       const copia = structuredClone(q);
       const despacho: Despacho = q.despacho ?? { direccion: null, transporte: null };
       copia.despacho = {
-        direccion:
-          typeof despacho.direccion === 'string'
-            ? despacho.direccion.replace(/\s+/g, ' ').trim().slice(0, 300) || null
-            : q.despacho?.direccion ?? null,
-        transporte:
-          typeof despacho.transporte === 'string'
-            ? despacho.transporte.replace(/\s+/g, ' ').trim().slice(0, 120) || null
-            : q.despacho?.transporte ?? null,
-        entregaComprometida:
-          typeof despacho.entregaComprometida === 'string'
-            ? despacho.entregaComprometida.replace(/\s+/g, ' ').trim().slice(0, 120) || null
-            : q.despacho?.entregaComprometida ?? null,
+        direccion: limpiarTexto(despacho.direccion, 300),
+        transporte: limpiarTexto(despacho.transporte, 120),
+        entregaComprometida: limpiarTexto(despacho.entregaComprometida, 120),
         destino: despacho.destino ?? null,
-        valor: despacho.valor ?? q.flete,
+        valor: q.flete,
       };
       return { listo: null, copia, numero, montos, version: q.actualizada };
     });

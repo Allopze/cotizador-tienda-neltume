@@ -5,12 +5,14 @@ import { join } from 'node:path';
 import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
 import { clienteVacio } from '../src/catalogo/tipos';
 import {
+  anticipoMinimo,
   despachoEditable,
   etiquetaComercial,
   etiquetaEvento,
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
+  sinTransportista,
   type Cotizacion,
   type EstadoOperativo,
 } from '../src/negocio/estado';
@@ -83,7 +85,10 @@ async function setup() {
     return ir({ tipo: 'aprobar' });
   };
   const mitad = () => Math.ceil(q.montos.total * 0.5);
-  const pagar = (monto: number, fecha = '2026-09-30') => ir({ tipo: 'pago', monto, fecha });
+  const pagar = (monto: number, fecha = '2026-09-30', observacion?: string) =>
+    ir({ tipo: 'pago', monto, fecha, ...(observacion ? { observacion } : {}) });
+  /** Los pagos se releen ordenados por fecha e id: con la misma fecha el orden no es el de registro, se busca por monto. */
+  const pagoDe = (monto: number) => q.pagos!.find((p) => p.monto === monto)!.id;
   const eventos = () => almacen.eventos(q.id);
   const ultimo = (tipo: string) => eventos().filter((e) => e.tipo === tipo).at(-1);
   /** Aprobada con el 50 % pagado y la nota de pedido generada. */
@@ -102,7 +107,7 @@ async function setup() {
     return operar('lista_despacho');
   };
   return {
-    dir, almacen, servicio, ir, intentar, emitida, aprobada, mitad, pagar, eventos, ultimo, conNota, operar,
+    dir, almacen, servicio, ir, intentar, emitida, aprobada, mitad, pagar, pagoDe, eventos, ultimo, conNota, operar,
     listaParaDespacho, actual: () => q, recargada: () => new Almacen(dir).obtener(q.id)!,
   };
 }
@@ -134,6 +139,13 @@ describe('pagos: solo después de la aprobación del cliente', () => {
     expect(t.actual().estadoOperativo).toBe('anticipo_pagado');
     await expect(t.intentar({ tipo: 'pago', monto: 1, fecha: '2026-02-31' })).rejects.toThrow(/fecha del pago/);
   });
+
+  it('sin fecha el pago queda con la de hoy', async () => {
+    const t = await setup();
+    await t.aprobada();
+    await t.ir({ tipo: 'pago', monto: 1000 });
+    expect(t.recargada().pagos![0].fecha.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+  });
 });
 
 describe('anular un pago', () => {
@@ -164,7 +176,7 @@ describe('anular un pago', () => {
     await t.aprobada();
     await t.pagar(1000);
     await t.pagar(t.mitad());
-    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(1000) });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'anticipo_pagado' });
     expect(t.ultimo('pago_anulado')!.detalle).toBe(`${pesos(1000)} · 2026-09-30`);
   });
@@ -176,7 +188,7 @@ describe('anular un pago', () => {
     await t.operar('iniciar_produccion');
     await t.operar('produccion_terminada');
     expect(t.actual().estadoOperativo).toBe('pagada');
-    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![1].id, motivo: 'Transferencia rebotada' });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(t.actual().montos.total - t.mitad()), motivo: 'Transferencia rebotada' });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'saldo_pendiente' });
     expect(t.ultimo('pago_anulado')!.detalle).toContain(
       `${etiquetaOperativo.pagada} → ${etiquetaOperativo.saldo_pendiente}`,
@@ -193,6 +205,57 @@ describe('anular un pago', () => {
     await t.conNota();
     await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'pedido_generado', pagos: [] });
+  });
+
+  it('el detalle conserva la observación original del pago', async () => {
+    const t = await setup();
+    await t.aprobada();
+    await t.pagar(1000, '2026-09-28', 'Transferencia  BCI');
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id, motivo: 'Duplicado' });
+    expect(t.ultimo('pago_anulado')!.detalle).toBe(`${pesos(1000)} · 2026-09-28 · Transferencia BCI · Motivo: Duplicado`);
+  });
+
+  it('anular devuelve el monto al saldo: un pago mayor sigue rechazado y el exacto entra', async () => {
+    const t = await setup();
+    await t.aprobada();
+    const total = t.actual().montos.total;
+    await t.pagar(total);
+    await expect(t.intentar({ tipo: 'pago', monto: 1 })).rejects.toThrow(/supera el saldo pendiente de \$0/);
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id });
+    expect(t.actual()).toMatchObject({ pagos: [], estadoOperativo: 'sin_pedido' });
+    await expect(t.intentar({ tipo: 'pago', monto: total + 1 })).rejects.toThrow(/supera el saldo pendiente/);
+    await t.pagar(total);
+    expect(t.recargada().pagos).toHaveLength(1);
+    expect(t.actual().estadoOperativo).toBe('anticipo_pagado');
+  });
+
+  it('se puede anular en producción: el estado sigue y queda registrado', async () => {
+    const t = await setup();
+    await t.conNota();
+    await t.pagar(1000);
+    await t.operar('iniciar_produccion');
+    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(1000) });
+    expect(t.actual()).toMatchObject({ estadoOperativo: 'en_produccion' });
+    expect(t.actual().pagos).toHaveLength(1);
+    expect(t.ultimo('pago_anulado')!.detalle).toBe(`${pesos(1000)} · 2026-09-30`);
+  });
+
+  it('con saldo pendiente anular un pago mantiene el estado y pagar el saldo lo deja en «pagada»', async () => {
+    const t = await setup();
+    await t.conNota();
+    await t.pagar(1000);
+    await t.operar('iniciar_produccion');
+    await t.operar('produccion_terminada');
+    expect(t.actual().estadoOperativo).toBe('saldo_pendiente');
+    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(1000) });
+    expect(t.actual().estadoOperativo).toBe('saldo_pendiente');
+    expect(t.ultimo('pago_anulado')!.detalle).not.toContain('→');
+    // Un pago que no cubre el saldo lo deja igual; el que lo completa pasa a «pagada».
+    await t.pagar(1000);
+    expect(t.actual().estadoOperativo).toBe('saldo_pendiente');
+    await t.pagar(t.actual().montos.total - t.mitad() - 1000);
+    expect(t.recargada().estadoOperativo).toBe('pagada');
+    await t.operar('lista_despacho');
   });
 
   it('no se puede desde «lista para despacho» ni en una cotización sin aprobar, y exige un pago existente', async () => {
@@ -214,6 +277,74 @@ describe('anular un pago', () => {
     expect(pagoAnulable(t.actual())).toBe(false);
     await expect(t.intentar({ tipo: 'anular_pago', pagoId: id })).rejects.toThrow(/Lista para despacho/);
     expect(t.recargada().pagos).toHaveLength(2);
+  });
+});
+
+describe('producción y anticipo', () => {
+  it('iniciar y terminar la producción exigen al menos 50 % pagado, también tras anular un pago', async () => {
+    const t = await setup();
+    await t.conNota();
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id });
+    expect(t.actual()).toMatchObject({ estadoOperativo: 'pedido_generado', pagos: [] });
+    await expect(t.intentar({ tipo: 'operacion', paso: 'iniciar_produccion' })).rejects.toThrow(
+      /al menos 50 % pagado/,
+    );
+    expect(t.recargada().estadoOperativo).toBe('pedido_generado');
+    expect(t.eventos().map((e) => e.tipo)).not.toContain('produccion');
+    // Menos del anticipo no alcanza; completarlo habilita la producción.
+    await t.pagar(t.mitad() - 1);
+    await expect(t.intentar({ tipo: 'operacion', paso: 'iniciar_produccion' })).rejects.toThrow(/al menos 50 %/);
+    await t.pagar(1);
+    await t.operar('iniciar_produccion');
+    // Ya en producción, anular el anticipo frena el cierre de la producción hasta volver a registrarlo.
+    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(t.mitad() - 1) });
+    expect(t.actual()).toMatchObject({ estadoOperativo: 'en_produccion' });
+    await expect(t.intentar({ tipo: 'operacion', paso: 'produccion_terminada' })).rejects.toThrow(/al menos 50 %/);
+    expect(t.recargada().estadoOperativo).toBe('en_produccion');
+    await t.pagar(1);
+    await expect(t.intentar({ tipo: 'operacion', paso: 'produccion_terminada' })).rejects.toThrow(/al menos 50 %/);
+    await t.pagar(t.mitad() - 2);
+    await t.operar('produccion_terminada');
+    expect(t.actual().estadoOperativo).toBe('saldo_pendiente');
+  });
+
+  it('el umbral es el mismo de la nota de pedido', () => {
+    expect(anticipoMinimo(1000)).toBe(500);
+    expect(anticipoMinimo(1001)).toBe(501);
+  });
+});
+
+describe('versiones obsoletas y cotizaciones sin aprobar', () => {
+  it('despacho, facturación, operación y pagos rechazan una versión obsoleta', async () => {
+    const t = await setup();
+    await t.conNota();
+    const pagoId = t.actual().pagos![0].id;
+    const { id } = t.actual();
+    for (const accion of [
+      { tipo: 'despacho', despacho: { destino: 'Osorno' } },
+      { tipo: 'facturacion', estado: 'pendiente' },
+      { tipo: 'operacion', paso: 'iniciar_produccion' },
+      { tipo: 'pago', monto: 1000 },
+      { tipo: 'anular_pago', pagoId },
+    ])
+      await expect(
+        t.servicio.ejecutar({ ...accion, id, actualizada: '2020-01-01T00:00:00.000Z' } as never),
+      ).rejects.toThrow(/cambió desde que la abriste/);
+    expect(t.recargada()).toMatchObject({ estadoOperativo: 'pedido_generado' });
+    expect(t.recargada().despacho?.destino ?? null).toBeNull();
+  });
+
+  it('los pasos de operación exigen la aprobación del cliente', async () => {
+    const t = await setup();
+    for (const paso of ['iniciar_produccion', 'produccion_terminada', 'lista_despacho', 'despachada', 'completada'])
+      await expect(t.intentar({ tipo: 'operacion', paso })).rejects.toThrow(/aprobación del cliente/);
+    await t.emitida();
+    for (const paso of ['iniciar_produccion', 'lista_despacho', 'despachada'])
+      await expect(t.intentar({ tipo: 'operacion', paso, despacho: { transporte: 'Starken' } })).rejects.toThrow(
+        /aprobación del cliente/,
+      );
+    expect(t.recargada().estadoOperativo).toBe('sin_pedido');
+    expect(t.recargada().despacho ?? null).toBeNull();
   });
 });
 
@@ -288,6 +419,22 @@ describe('despacho después de la aprobación', () => {
     expect(t.actual()).toMatchObject({ estado: 'aprobada', despacho: { transporte: 'Starken', valor: 25_000 } });
   });
 
+  it('aprobar limpia los datos de despacho y deja el flete como valor', async () => {
+    const t = await setup();
+    await t.emitida();
+    await t.ir({
+      tipo: 'aprobar',
+      despacho: { direccion: '  Los   Carrera  450 ', transporte: ' Starken ', entregaComprometida: '  Semana 42', destino: '  ' },
+    });
+    expect(t.recargada().despacho).toEqual({
+      direccion: 'Los Carrera 450',
+      transporte: 'Starken',
+      entregaComprometida: 'Semana 42',
+      destino: null,
+      valor: 0,
+    });
+  });
+
   it('no cambia la nota de pedido ya generada ni regenera su PDF', async () => {
     const t = await setup();
     await t.aprobada();
@@ -352,6 +499,19 @@ describe('registrar el despacho', () => {
     expect(t.ultimo('despachada')!.detalle).toBe(
       'Lista para despacho → Despachada · Transportista: Starken · Destino: Osorno',
     );
+  });
+
+  it('si el paso también cambia dirección o entrega, el evento lo registra', async () => {
+    const t = await setup();
+    await t.listaParaDespacho();
+    await t.ir({ tipo: 'despacho', despacho: { transporte: 'Starken', direccion: 'Los Carrera 450' } });
+    await t.operar('despachada', {
+      despacho: { direccion: ' Calle  Nueva 12 ', entregaComprometida: 'Semana 42', destino: 'Osorno' },
+    });
+    expect(t.ultimo('despachada')!.detalle).toBe(
+      'Lista para despacho → Despachada · Transportista: Starken · Destino: Osorno · Dirección: Los Carrera 450 → Calle Nueva 12 · Entrega comprometida: — → Semana 42',
+    );
+    expect(t.recargada().despacho).toMatchObject({ direccion: 'Calle Nueva 12', entregaComprometida: 'Semana 42' });
   });
 
   it('con el transportista ya guardado basta registrar el despacho; sin destino lo dice', async () => {
@@ -446,7 +606,17 @@ describe('etiquetas legibles', () => {
     await t.operar('despachada', { despacho: { transporte: 'Starken' } });
     await t.operar('completada');
     expect(t.ultimo('completada')!.detalle).toBe('Despachada → Completada');
-    for (const e of t.eventos()) expect(e.detalle ?? '').not.toMatch(/[a-z]+_[a-z]+/);
+    expect(t.ultimo('despachada')!.detalle).toBe(
+      'Lista para despacho → Despachada · Transportista: Starken · Destino: sin indicar',
+    );
+    // Ningún identificador interno compuesto (sin_pedido, en_produccion…) llega a la actividad.
+    const internos = [...Object.keys(etiquetaOperativo), ...Object.keys(etiquetaComercial)].filter((id) => id.includes('_'));
+    for (const e of t.eventos()) for (const id of internos) expect(e.detalle ?? '').not.toContain(id);
+  });
+
+  it('un transportista válido no puede estar vacío ni ser solo «Otro»', () => {
+    for (const vacio of [null, undefined, '', '   ', 'Otro', ' otro ', 'OTRO']) expect(sinTransportista(vacio)).toBe(true);
+    for (const valido of ['Starken', 'Otro · Juan', 'Camión de Juan']) expect(sinTransportista(valido)).toBe(false);
   });
 
   it('el estado de pago del listado solo aparece en emitidas y aprobadas', () => {

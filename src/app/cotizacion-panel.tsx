@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, type RefObject } from 'react';
 import {
+  anticipoMinimo,
   despachoEditable,
   esEditable,
   etiquetaComercial,
@@ -8,6 +9,7 @@ import {
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
+  sinTransportista,
   type Cotizacion,
 } from '@/negocio/estado';
 import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
@@ -107,6 +109,10 @@ function notaEstado(q: Cotizacion | null) {
   }
 }
 
+/** Transportistas de la configuración del negocio: se conservan entre cotizaciones para no parpadear al abrir otra. */
+let transportistasConfigurados: string[] | null = null;
+const TRANSPORTISTAS_INICIALES = ['Starken', 'Transportes Paredes', 'Ignacio', 'Otro'];
+
 export function CotizacionPanel({ actual, enCurso, guardando, descargando, acciones, tituloRef }: Props) {
   const ocupado = enCurso !== null;
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
@@ -118,11 +124,15 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
   const [numeroFactura, setNumeroFactura] = useState('');
   const [fechaFactura, setFechaFactura] = useState(() => fechaLocal(new Date()));
   const [comentario, setComentario] = useState('');
-  const [transportistas, setTransportistas] = useState(['Starken', 'Transportes Paredes', 'Ignacio', 'Otro']);
+  const [transportistas, setTransportistas] = useState(transportistasConfigurados ?? TRANSPORTISTAS_INICIALES);
   useEffect(() => {
     const abort = new AbortController();
     pedirJSON<{ configuracion?: { transportistas?: string[] } }>('/api/configuracion-negocio', { signal: abort.signal, cache: 'no-store' })
-      .then((d) => { if (d.configuracion?.transportistas?.length) setTransportistas(d.configuracion.transportistas); })
+      .then((d) => {
+        if (!d.configuracion?.transportistas?.length) return;
+        transportistasConfigurados = d.configuracion.transportistas;
+        setTransportistas(d.configuracion.transportistas);
+      })
       .catch(() => {});
     return () => abort.abort();
   }, []);
@@ -168,20 +178,19 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
   const porcentajePagado = actual.montos.total ? Math.min(100, (100 * pagado) / actual.montos.total) : 0;
   const operacionActual = actual.estadoOperativo ?? (actual.nota ? 'pedido_generado' : 'sin_pedido');
   const estadoComercial = actual.estadoComercial ?? (actual.estado === 'emitida' ? 'enviada' : 'pendiente');
-  const pagoMinimoNP = Math.ceil(actual.montos.total * 0.5);
+  const pagoMinimoNP = anticipoMinimo(actual.montos.total);
   const aprobada = estado === 'aprobada';
   const puedeAnularPago = pagoAnulable(actual);
   // Desde la aprobación y hasta registrar el despacho, los datos logísticos se editan sin crear revisión.
   const editaDespacho = editable || (despachoEditable(actual) && !ocupado);
   const guardarDespacho = (cambios: Despacho, campo: string) =>
     editable ? acciones.editar({ despacho: cambios }, campo) : acciones.despacho(cambios, campo);
-  const transportista = actual.despacho?.transporte ?? '';
-  const sinTransportista = !transportista.trim() || transportista.trim().toLowerCase() === 'otro';
+  const faltaTransportista = sinTransportista(actual.despacho?.transporte);
   async function registrarPago(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const monto = leerPesos(montoPago);
     if (!Number.isSafeInteger(monto) || monto <= 0 || monto > saldo || ocupado) return;
-    if (await acciones.flujo({ tipo: 'pago', monto, fecha: fechaPago, observacion: observacionPago || null })) {
+    if (await acciones.flujo({ tipo: 'pago', monto, fecha: fechaPago || undefined, observacion: observacionPago || null })) {
       setMontoPago('');
       setObservacionPago('');
     }
@@ -340,8 +349,8 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               )}
               <CampoEditable
                 etiqueta="Valor de despacho"
-                valor={String(actual.despacho?.valor ?? actual.flete)}
-                mostrar={pesos(actual.despacho?.valor ?? actual.flete)}
+                valor={String(actual.flete)}
+                mostrar={pesos(actual.flete)}
                 editable={editable}
                 discreto
                 guardando={guardando === 'despacho.valor'}
@@ -798,12 +807,13 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           )}
           {actual.nota && (
             <div className="workflow-actions">
-              {operacionActual === 'pedido_generado' && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('iniciar_produccion')}>Iniciar producción</button>}
-              {operacionActual === 'en_produccion' && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('produccion_terminada')}>Marcar producción terminada</button>}
-              {operacionActual === 'produccion_terminada' && pagado < actual.montos.total && <p className="muted">La producción terminó. Registra el saldo antes de habilitar el despacho.</p>}
+              {operacionActual === 'pedido_generado' && <button type="button" className="button secondary" disabled={ocupado || pagado < pagoMinimoNP} onClick={() => void operar('iniciar_produccion')}>Iniciar producción</button>}
+              {operacionActual === 'en_produccion' && <button type="button" className="button secondary" disabled={ocupado || pagado < pagoMinimoNP} onClick={() => void operar('produccion_terminada')}>Marcar producción terminada</button>}
+              {(operacionActual === 'pedido_generado' || operacionActual === 'en_produccion') && pagado < pagoMinimoNP && <p className="muted">La producción se habilita con al menos {pesos(pagoMinimoNP)} (50 %) pagado.</p>}
+              {operacionActual === 'saldo_pendiente' && <p className="muted">La producción terminó. Registra el saldo antes de habilitar el despacho.</p>}
               {(operacionActual === 'pagada' || operacionActual === 'produccion_terminada') && pagado >= actual.montos.total && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('lista_despacho')}>Marcar lista para despacho</button>}
-              {operacionActual === 'lista_despacho' && <button type="button" className="button primary" disabled={ocupado || sinTransportista} onClick={() => void operar('despachada')}>Registrar despacho</button>}
-              {operacionActual === 'lista_despacho' && sinTransportista && <p className="muted">Indica el transportista en «Despacho» para registrar el despacho.</p>}
+              {operacionActual === 'lista_despacho' && <button type="button" className="button primary" disabled={ocupado || faltaTransportista} onClick={() => void operar('despachada')}>Registrar despacho</button>}
+              {operacionActual === 'lista_despacho' && faltaTransportista && <p className="muted">Indica el transportista en «Despacho» para registrar el despacho.</p>}
               {operacionActual === 'despachada' && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('completada')}>Completar operación</button>}
             </div>
           )}

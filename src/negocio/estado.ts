@@ -145,6 +145,11 @@ export interface Cotizacion {
   comentariosInternos?: ComentarioInterno[];
   facturacion?: Facturacion;
 }
+/** Anticipo que habilita la nota de pedido y la producción: la mitad del total, redondeada hacia arriba. */
+export const anticipoMinimo = (total: number) => Math.ceil(total * 0.5);
+/** «Otro» solo indica que falta el nombre: no identifica a quien lleva el pedido. */
+export const sinTransportista = (transporte: string | null | undefined) =>
+  !transporte?.trim() || transporte.trim().toLowerCase() === 'otro';
 type FaseOperativa = Pick<Cotizacion, 'estado' | 'estadoOperativo'>;
 /** Un pago se anula mientras la operación no llegue a «Lista para despacho» (ahí el saldo ya está pagado). */
 export const pagoAnulable = (q: FaseOperativa) =>
