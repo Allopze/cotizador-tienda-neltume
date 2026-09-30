@@ -283,7 +283,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     const lineas = hijos<FilaLinea>(`SELECT * FROM cotizacion_lineas $FILTRO ORDER BY cotizacion_id, orden`);
     const notas = hijos<FilaNota>(`SELECT * FROM notas_pedido $FILTRO`);
     const lineasNota = hijos<FilaLinea>(`SELECT * FROM nota_lineas $FILTRO ORDER BY cotizacion_id, orden`);
-    const pagos = hijos<FilaPago>(`SELECT cotizacion_id, id, fecha, monto, observacion, usuario FROM pagos $FILTRO ORDER BY fecha, id`);
+    // Los pagos del mismo día salen en el orden en que se registraron (rowid), no en el de su id aleatorio.
+    const pagos = hijos<FilaPago>(`SELECT cotizacion_id, id, fecha, monto, observacion, usuario FROM pagos $FILTRO ORDER BY fecha, rowid`);
     const comentarios = hijos<FilaComentario>(`SELECT cotizacion_id, id, fecha, texto, usuario FROM comentarios_internos $FILTRO ORDER BY fecha, id`);
 
     const resultado: Cotizacion[] = [];

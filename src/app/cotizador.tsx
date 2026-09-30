@@ -1120,8 +1120,6 @@ export function Cotizador({
           </form>
         </section>
         <CotizacionPanel
-          // Un panel por cotización: los borradores de pago, facturación y nota interna no pasan a otra.
-          key={actual?.id ?? 'vacio'}
           actual={actual}
           enCurso={enCurso}
           guardando={guardando}

@@ -87,8 +87,6 @@ async function setup() {
   const mitad = () => Math.ceil(q.montos.total * 0.5);
   const pagar = (monto: number, fecha = '2026-09-30', observacion?: string) =>
     ir({ tipo: 'pago', monto, fecha, ...(observacion ? { observacion } : {}) });
-  /** Los pagos se releen ordenados por fecha e id: con la misma fecha el orden no es el de registro, se busca por monto. */
-  const pagoDe = (monto: number) => q.pagos!.find((p) => p.monto === monto)!.id;
   const eventos = () => almacen.eventos(q.id);
   const ultimo = (tipo: string) => eventos().filter((e) => e.tipo === tipo).at(-1);
   /** Aprobada con el 50 % pagado y la nota de pedido generada. */
@@ -107,7 +105,7 @@ async function setup() {
     return operar('lista_despacho');
   };
   return {
-    dir, almacen, servicio, ir, intentar, emitida, aprobada, mitad, pagar, pagoDe, eventos, ultimo, conNota, operar,
+    dir, almacen, servicio, ir, intentar, emitida, aprobada, mitad, pagar, eventos, ultimo, conNota, operar,
     listaParaDespacho, actual: () => q, recargada: () => new Almacen(dir).obtener(q.id)!,
   };
 }
@@ -138,6 +136,21 @@ describe('pagos: solo después de la aprobación del cliente', () => {
     await t.pagar(1);
     expect(t.actual().estadoOperativo).toBe('anticipo_pagado');
     await expect(t.intentar({ tipo: 'pago', monto: 1, fecha: '2026-02-31' })).rejects.toThrow(/fecha del pago/);
+  });
+
+  it('los pagos del mismo día se leen en el orden en que se registraron', async () => {
+    const t = await setup();
+    await t.aprobada();
+    const montos = [5000, 1000, 4000, 2000, 3000];
+    for (const monto of montos) await t.pagar(monto, '2026-09-30');
+    expect(t.actual().pagos!.map((p) => p.monto)).toEqual(montos);
+    expect(t.recargada().pagos!.map((p) => p.monto)).toEqual(montos);
+    // Un pago con fecha anterior va primero; los demás conservan su orden.
+    await t.pagar(6000, '2026-09-01');
+    expect(t.recargada().pagos!.map((p) => p.monto)).toEqual([6000, ...montos]);
+    // Anular uno no reordena el resto.
+    await t.ir({ tipo: 'anular_pago', pagoId: t.recargada().pagos![2].id });
+    expect(t.recargada().pagos!.map((p) => p.monto)).toEqual([6000, 5000, 4000, 2000, 3000]);
   });
 
   it('sin fecha el pago queda con la de hoy', async () => {
@@ -176,7 +189,7 @@ describe('anular un pago', () => {
     await t.aprobada();
     await t.pagar(1000);
     await t.pagar(t.mitad());
-    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(1000) });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'anticipo_pagado' });
     expect(t.ultimo('pago_anulado')!.detalle).toBe(`${pesos(1000)} · 2026-09-30`);
   });
@@ -188,7 +201,7 @@ describe('anular un pago', () => {
     await t.operar('iniciar_produccion');
     await t.operar('produccion_terminada');
     expect(t.actual().estadoOperativo).toBe('pagada');
-    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(t.actual().montos.total - t.mitad()), motivo: 'Transferencia rebotada' });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![1].id, motivo: 'Transferencia rebotada' });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'saldo_pendiente' });
     expect(t.ultimo('pago_anulado')!.detalle).toContain(
       `${etiquetaOperativo.pagada} → ${etiquetaOperativo.saldo_pendiente}`,
@@ -234,7 +247,7 @@ describe('anular un pago', () => {
     await t.conNota();
     await t.pagar(1000);
     await t.operar('iniciar_produccion');
-    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(1000) });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![1].id });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'en_produccion' });
     expect(t.actual().pagos).toHaveLength(1);
     expect(t.ultimo('pago_anulado')!.detalle).toBe(`${pesos(1000)} · 2026-09-30`);
@@ -247,7 +260,7 @@ describe('anular un pago', () => {
     await t.operar('iniciar_produccion');
     await t.operar('produccion_terminada');
     expect(t.actual().estadoOperativo).toBe('saldo_pendiente');
-    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(1000) });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![1].id });
     expect(t.actual().estadoOperativo).toBe('saldo_pendiente');
     expect(t.ultimo('pago_anulado')!.detalle).not.toContain('→');
     // Un pago que no cubre el saldo lo deja igual; el que lo completa pasa a «pagada».
@@ -297,7 +310,7 @@ describe('producción y anticipo', () => {
     await t.pagar(1);
     await t.operar('iniciar_produccion');
     // Ya en producción, anular el anticipo frena el cierre de la producción hasta volver a registrarlo.
-    await t.ir({ tipo: 'anular_pago', pagoId: t.pagoDe(t.mitad() - 1) });
+    await t.ir({ tipo: 'anular_pago', pagoId: t.actual().pagos![0].id });
     expect(t.actual()).toMatchObject({ estadoOperativo: 'en_produccion' });
     await expect(t.intentar({ tipo: 'operacion', paso: 'produccion_terminada' })).rejects.toThrow(/al menos 50 %/);
     expect(t.recargada().estadoOperativo).toBe('en_produccion');
