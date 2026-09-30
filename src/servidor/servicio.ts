@@ -1245,6 +1245,10 @@ export class Servicio {
         return null;
       actualizarIndices.add(cambio.indice);
       const siguiente = { ...items[cambio.indice], ...sanearTextos(cambio.cambios) };
+      if (cambio.cambios.modelo !== undefined) {
+        siguiente.modeloOriginal = null;
+        siguiente.coincidenciaModelo = null;
+      }
       if (descartaDescripcion(items[cambio.indice], siguiente, (s) => this.producto(s))) {
         siguiente.descripcion = null;
         descartados.push(siguiente);

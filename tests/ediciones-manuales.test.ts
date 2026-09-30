@@ -160,6 +160,16 @@ describe('un cambio de modelo o madera descarta la descripción de documento', (
     expect(r.avisos).toEqual([avisoDescripcionDescartada(1)]);
   });
 
+  it('lista completa: al cambiar de modelo con las mismas medidas se conserva el margen pero no el precio manual', async () => {
+    const { q, chat } = await preparar();
+    const r = await chat(q, lista(item({ modelo: 'PANGUIPULLI' }), item({ ancho: 0.85 })));
+    const [a, b] = r.cotizacion.solicitudes;
+    expect(a).toMatchObject({ modelo: 'PANGUIPULLI', margen: 0.3, tipoMedida: 'vano', observaciones: 'Confirmar apertura' });
+    // El segundo tenía un precio manual de PANGUIPULLI: con otro modelo vuelve al precio de catálogo.
+    expect(b).toMatchObject({ modelo: 'MOLCO', precioUnitario: null, observaciones: 'Entrega en obra' });
+    expect(r.cotizacion.montos.lineas[1].precioUnitario).not.toBe(150_000);
+  });
+
   it('lista completa: una descripción nueva pedida en el mismo mensaje se respeta', async () => {
     const { q, chat } = await preparar();
     const r = await chat(q, lista(item({ modelo: 'PANGUIPULLI', descripcion: '  Puerta   Panguipulli enchapada ' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
@@ -193,6 +203,15 @@ describe('un cambio de modelo o madera descarta la descripción de documento', (
     });
     expect(r.cotizacion.solicitudes).toMatchObject([{ modelo: 'MOLCO', descripcion: null, precioUnitario: 150_000 }]);
     expect(r.avisos).toEqual([avisoDescripcionDescartada(1)]);
+  });
+
+  it('modificación parcial: un cambio de modelo reinicia el origen del modelo; uno de medidas no', async () => {
+    const { q, modificar } = await preparar(item({ modelo: 'PANGIPULLI' }));
+    expect(q.solicitudes[0]).toMatchObject({ modelo: 'PANGUIPULLI', modeloOriginal: 'PANGIPULLI', coincidenciaModelo: 'alias' });
+    const medida = await modificar(q, cambiar(0, { ancho: 0.85 }));
+    expect(medida.cotizacion.solicitudes[0]).toMatchObject({ modeloOriginal: 'PANGIPULLI', coincidenciaModelo: 'alias' });
+    const modelo = await modificar(medida.cotizacion, cambiar(0, { modelo: 'MOLCO' }));
+    expect(modelo.cotizacion.solicitudes[0]).toMatchObject({ modelo: 'MOLCO', modeloOriginal: null, coincidenciaModelo: 'canonico' });
   });
 
   it('modificación parcial: una descripción nueva en el mismo cambio se respeta', async () => {

@@ -46,8 +46,9 @@ export const avisoDescripcionDescartada = (numero: number) =>
  * Devuelve los ítems que propone la IA con las ediciones manuales del ítem anterior que corresponde. La IA no ve
  * margen ni precio, y deja en null lo que no cambia. Orden de emparejamiento, cada ítem nuevo con uno anterior libre:
  * misma posición e identidad (modelo, madera y medidas); misma identidad en otra posición; misma posición con las
- * medidas cambiadas o completadas; misma posición con otro modelo o madera pero las mismas medidas.
- * Sin pareja es un ítem nuevo y no hereda nada. `descartadas` son las posiciones que perdieron su descripción.
+ * medidas cambiadas o completadas; misma posición con otro modelo o madera pero las mismas medidas (este último no
+ * hereda el precio manual, que era del producto anterior). Sin pareja es un ítem nuevo y no hereda nada.
+ * `descartadas` son las posiciones que perdieron su descripción.
  */
 export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[], producto: ClaveProducto) {
   const pp = previos.map(producto),
@@ -80,7 +81,7 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
     const item: SolicitudItem = {
       ...nuevo,
       margen: previo.margen ?? null,
-      precioUnitario: previo.precioUnitario ?? null,
+      precioUnitario: cambioDeProducto(pp[j], pn[i]) ? null : (previo.precioUnitario ?? null),
       tipoMedida: nuevo.tipoMedida ?? previo.tipoMedida ?? null,
       descripcion: nuevo.descripcion ?? previo.descripcion ?? null,
       observaciones: nuevo.observaciones ?? previo.observaciones ?? null,
