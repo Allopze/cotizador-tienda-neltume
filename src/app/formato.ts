@@ -1,4 +1,5 @@
 import type { KeyboardEvent } from 'react';
+import { ajusteMedida, escalon, type Escalon } from '@/catalogo/escalones';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
 import { pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
 import { estaVencida } from '@/negocio/vigencia';
@@ -90,9 +91,9 @@ export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   proyecto: 'Proyecto',
 };
 
-/** «Medida pedida: 0,80 × 2,10 m» o «Escuadría 2X4 · 2,10 m». */
+/** «Medida pedida: 0,835 × 2,36 m» o «Escuadría 2X4 · 2,10 m»: hasta milímetros, tal como se pidió. */
 export function medidaPedida(l: Linea) {
-  const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
   const tipo = l.tipoMedida === 'hoja' ? ' · medida de hoja' : l.tipoMedida === 'vano' ? ' · medida de vano' : '';
   if (l.medidaSolicitada)
     return `Escuadría ${l.medidaSolicitada}${l.altoSolicitado ? ` · ${m(l.altoSolicitado)} m` : ''}${tipo}`;
@@ -102,16 +103,21 @@ export function medidaPedida(l: Linea) {
   return null;
 }
 
-/** Referencia de catálogo seleccionada por el resolvedor, para que la cotización sea verificable. */
+/**
+ * Referencia de catálogo seleccionada por el resolvedor, para que la cotización sea verificable. Si la
+ * medida pedida cae entre dos escalones, lo dice: se cotiza la siguiente medida del catálogo.
+ */
 export function referenciaCatalogo(l: Linea) {
   const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const ancho = l.producto.anchoMin !== null && l.producto.anchoMax !== null
-    ? `${m(l.producto.anchoMin)}–${m(l.producto.anchoMax)} m`
-    : null;
-  const altoMin = l.producto.altoMin ?? l.producto.largo - 0.005;
-  const altoMax = l.producto.altoMax ?? l.producto.largo + 0.005;
-  const alto = altoMax - altoMin > 0.005 ? `${m(altoMin)}–${m(altoMax)} m` : `${m(l.producto.largo)} m`;
-  return `Referencia ${l.producto.codigo} · ${[ancho, alto].filter(Boolean).join(' × ')}`;
+  const texto = (e: Escalon | null) => e && (e.exacto ? `${m(e.min)} m` : `${m(e.min)}–${m(e.max)} m`);
+  const medidas = [texto(escalon(l.producto, 'ancho')), texto(escalon(l.producto, 'alto'))].filter(Boolean);
+  const siguiente = [
+    l.anchoSolicitado !== null && ajusteMedida(l.anchoSolicitado, l.producto, 'ancho') === 'siguiente' && 'ancho',
+    l.altoSolicitado !== null &&
+      ajusteMedida(l.altoSolicitado, l.producto, 'alto') === 'siguiente' &&
+      (l.producto.familia === 'PUERTA' ? 'alto' : 'largo'),
+  ].filter(Boolean);
+  return `Referencia ${l.producto.codigo} · ${medidas.join(' × ')}${siguiente.length ? ` · siguiente medida del catálogo en ${siguiente.join(' y ')}` : ''}`;
 }
 
 /** «Creada por Ana · emitida por Luis»; si la misma persona hizo varios pasos seguidos, «Creada y emitida por Ana». */

@@ -1,4 +1,5 @@
 import type { Catalogo, Producto, SolicitudItem } from './tipos';
+import { ajusteMedida, enEscalon, escalon, type AjusteMedida } from './escalones';
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
@@ -46,6 +47,9 @@ export type Resolucion =
       anchoSolicitado: number | null;
       altoSolicitado: number | null;
       medidaSolicitada: string | null;
+      /** Cómo calzó cada medida con la referencia; null si no se pidió o no aplica. */
+      ajusteAncho: AjusteMedida | null;
+      ajusteAlto: AjusteMedida | null;
     }
   | { ok: false; rechazo: Rechazo };
 export interface FuenteCatalogo {
@@ -68,6 +72,22 @@ export const aliasMaderasCatalogo = (catalogo: CatalogoConsultable) =>
     : (catalogo.aliasMaderas?.() ?? {});
 export const aliasModelosCatalogo = (catalogo: CatalogoConsultable) =>
   'productos' in catalogo ? CONFIGURACION_CATALOGO_BASE.aliasModelos : (catalogo.aliasModelos?.() ?? {});
+/**
+ * Cada medida distinta de los candidatos es un escalón. Se usa el que contiene la medida pedida; en el
+ * hueco entre dos, el siguiente hacia arriba. Bajo el menor o sobre el mayor no hay precio: no se extrapola.
+ */
+function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
+  const con = ps.flatMap((p) => {
+    const e = escalon(p, campo);
+    return e ? [{ p, e }] : [];
+  });
+  const dentro = con.filter(({ e }) => enEscalon(valor, e));
+  if (dentro.length) return dentro.map(({ p }) => p);
+  const mayores = con.filter(({ e }) => e.min > valor);
+  if (!mayores.length || mayores.length === con.length) return [];
+  const siguiente = Math.min(...mayores.map(({ e }) => e.min));
+  return mayores.filter(({ e }) => e.min - siguiente < 1e-9).map(({ p }) => p);
+}
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
     modelo: entrada.modelo ?? null,
@@ -135,9 +155,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rango });
     anchoSolicitado = ancho;
     const medidas = unicos(opciones, 'medida');
-    opciones = opciones.filter(
-      (p) => p.anchoMin !== null && p.anchoMax !== null && ancho >= p.anchoMin - 1e-9 && ancho <= p.anchoMax + 1e-9,
-    );
+    opciones = porEscalon(opciones, ancho, 'ancho');
     if (!opciones.length)
       return no({ tipo: 'medida_no_disponible', campo: 'ancho', valor: ancho, disponibles: medidas });
   }
@@ -156,11 +174,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     if (alto === null)
       return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rango });
     altoSolicitado = alto;
-    opciones = opciones.filter((p) => {
-      const min = p.altoMin ?? p.largo - 0.005;
-      const max = p.altoMax ?? p.largo + 0.005;
-      return alto >= min - 1e-9 && alto <= max + 1e-9;
-    });
+    opciones = porEscalon(opciones, alto, 'alto');
     if (!opciones.length)
       return no({ tipo: 'medida_no_disponible', campo: 'alto', valor: alto, disponibles });
   }
@@ -188,13 +202,16 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       valor: modelo,
       disponibles: opciones.map((p) => `${p.codigo}: ${p.descripcion}`),
     });
+  const producto = opciones[0];
   return {
     ok: true,
-    producto: opciones[0],
+    producto,
     cantidad: s.cantidad!,
     coincidenciaModelo,
     anchoSolicitado,
     altoSolicitado,
     medidaSolicitada,
+    ajusteAncho: anchoSolicitado === null ? null : ajusteMedida(anchoSolicitado, producto, 'ancho'),
+    ajusteAlto: altoSolicitado === null ? null : ajusteMedida(altoSolicitado, producto, 'alto'),
   };
 }

@@ -16,7 +16,9 @@ import {
   normalizarMedida,
   resolverItem,
   type CatalogoConsultable,
+  type Resolucion,
 } from '../catalogo/resolver';
+import { escalon } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { aCentesimas } from '../negocio/cifras';
@@ -156,6 +158,17 @@ const CAMPOS_CLIENTE: (keyof Cliente)[] = [
 const marca = (anterior?: string) =>
   new Date(Math.max(Date.now(), anterior ? Date.parse(anterior) + 1 : 0)).toISOString();
 const decimal = (n: number) => n.toFixed(2).replace('.', ',');
+const cifra = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
+/** «Medida especial 0,87 × 2,36 m: se cotiza con la referencia HUIL-M-4-E (0,90–0,95 × 2,40 m), …». */
+function avisoMedidaEspecial(r: Extract<Resolucion, { ok: true }>) {
+  const pedida = [r.anchoSolicitado, r.altoSolicitado].filter((n) => n !== null).map(cifra).join(' × ');
+  const referencia = [escalon(r.producto, 'ancho'), escalon(r.producto, 'alto')]
+    .filter((e) => e !== null)
+    .map((e) => (e.exacto ? decimal(e.min) : `${decimal(e.min)}–${decimal(e.max)}`))
+    .join(' × ');
+  return `${r.producto.familia === 'PUERTA' ? 'Medida' : 'Largo'} especial ${pedida} m: se cotiza con la referencia ${r.producto.codigo} (${referencia} m), la siguiente medida del catálogo.`;
+}
 
 /** Texto breve de las diferencias, para el registro de actividad. */
 export function textoCambios(c: CambiosCotizacion | undefined, extras: string[] = []) {
@@ -233,7 +246,11 @@ export class Servicio {
     return c.version ?? null;
   }
 
+  /** Devuelve un aviso por cada línea que pasa a cotizarse con la siguiente medida del catálogo. */
   private recalcular(q: Cotizacion, tocar = true) {
+    const clave = (codigo: string, ancho: number | null, alto: number | null) => `${codigo}|${ancho}|${alto}`;
+    const previas = new Set(q.montos.lineas.map((l) => clave(l.producto.codigo, l.anchoSolicitado, l.altoSolicitado)));
+    const avisos: string[] = [];
     const validos: ItemPrecio[] = [];
     q.incompletos = [];
     for (const [indice, s] of q.solicitudes.entries()) {
@@ -247,6 +264,11 @@ export class Servicio {
         }
         s.modelo = nombreCanonicoModelo(res.producto.modelo);
         s.madera = res.producto.madera;
+        if (
+          (res.ajusteAncho === 'siguiente' || res.ajusteAlto === 'siguiente') &&
+          !previas.has(clave(res.producto.codigo, res.anchoSolicitado, res.altoSolicitado))
+        )
+          avisos.push(avisoMedidaEspecial(res));
         validos.push({
           producto: {
             ...res.producto,
@@ -269,6 +291,7 @@ export class Servicio {
       ? cotizar(validos, q.reglas ?? REGLAS, { descuento: q.descuento, flete: q.flete })
       : montosVacios();
     if (tocar) q.actualizada = marca(q.actualizada);
+    return avisos;
   }
 
   /** Solo un borrador cambia de versión con el historial: así no se invalidan selecciones de otras personas. */
@@ -764,11 +787,11 @@ export class Servicio {
       destino.flete = flete;
       destino.observaciones = observaciones;
       destino.despacho = despacho;
-      this.recalcular(destino);
+      const todos = [...avisos, ...this.recalcular(destino)];
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
       u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, extras));
-      return { cotizacion: destino, ...extra, ...(cambios ? { cambios } : {}) };
+      return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
     });
   }
 
@@ -1398,7 +1421,7 @@ export class Servicio {
       const destino = this.abrirEdicion(q, u);
       destino.solicitudes = solicitudes;
       destino.cliente = cliente;
-      this.recalcular(destino);
+      const todos = [...avisos, ...this.recalcular(destino)];
       const exito =
         modo === 'modificacion_anterior'
           ? `Cotización actualizada${destino.origen ? ` como revisión de la N° ${destino.origen}` : ''}. Revisa el detalle y genera el PDF cuando esté listo.`
@@ -1407,7 +1430,7 @@ export class Servicio {
         destino,
         accion.mensaje,
         [
-          ...avisos,
+          ...todos,
           destino.incompletos.length ? destino.incompletos.map((i) => i.pregunta).join('\n\n') : exito,
         ].join('\n\n'),
       );
@@ -1415,7 +1438,7 @@ export class Servicio {
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
       if (destino === nuevo) u.registrarEvento(destino.id, 'creada', this.autor, textoCambios(cambios));
       else u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios));
-      return { cotizacion: destino, ...extra, ...(cambios ? { cambios } : {}) };
+      return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
     });
   }
 

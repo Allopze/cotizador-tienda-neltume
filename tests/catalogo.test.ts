@@ -135,9 +135,9 @@ describe('Flujo secuencial sobre la planilla real', () => {
       [{ modelo: 'Neltume', madera: null, ancho: null, alto: null }, 'faltan_datos'],
       [{ modelo: 'los ríos' }, 'modelo_desconocido'],
       [{ madera: 'roble' }, 'madera_desconocida'],
-      [{ ancho: 0.67 }, 'medida_no_disponible'],
+      [{ ancho: 0.55 }, 'medida_no_disponible'],
       [{ ancho: 1.6 }, 'medida_no_disponible'],
-      [{ alto: 2.05 }, 'medida_no_disponible'],
+      [{ alto: 2.7 }, 'medida_no_disponible'],
       [{ modelo: 'Piezas T', medida: '2x4', alto: 3 }, 'medida_no_disponible'],
       [{ cantidad: 0 }, 'cantidad_invalida'],
       [{ cantidad: 1.5 }, 'cantidad_invalida'],
@@ -150,6 +150,16 @@ describe('Flujo secuencial sobre la planilla real', () => {
         expect(res.rechazo.disponibles).toBeDefined();
       }
     }
+    // Entre dos escalones del catálogo se cotiza el siguiente hacia arriba.
+    const especiales: [Partial<SolicitudItem>, string][] = [
+      [{ ancho: 0.67 }, 'MOL-O-2-A'],
+      [{ alto: 2.05 }, 'MOL-O-3-B'],
+      [{ modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, cantidad: 3 }, 'HUIL-M-3-E'],
+    ];
+    for (const [patch, codigo] of especiales) {
+      const res = resolverItem(r.catalogo, { ...base, ...patch });
+      expect(res.ok && res.producto.codigo).toBe(codigo);
+    }
     const faltan = resolverItem(r.catalogo, {
       ...base,
       modelo: 'Neltume',
@@ -159,10 +169,15 @@ describe('Flujo secuencial sobre la planilla real', () => {
     });
     if (!faltan.ok && faltan.rechazo.tipo === 'faltan_datos')
       expect(faltan.rechazo.campos).toEqual(['madera', 'ancho', 'alto']);
-    expect(resolverItem(r.catalogo, { ...base, alto: 2.005 }).ok).toBe(true);
-    expect(resolverItem(r.catalogo, { ...base, alto: 2.0051 }).ok).toBe(false);
+    // ±0,005 m es la misma medida exacta; pasado ese margen ya es la siguiente del catálogo.
+    const ajuste = (patch: Partial<SolicitudItem>) => {
+      const res = resolverItem(r.catalogo, { ...base, ...patch });
+      return res.ok && [res.producto.codigo, res.ajusteAncho, res.ajusteAlto];
+    };
+    expect(ajuste({ alto: 2.005 })).toEqual(['MOL-O-3-A', 'rango', 'exacto']);
+    expect(ajuste({ alto: 2.0051 })).toEqual(['MOL-O-3-B', 'rango', 'siguiente']);
     expect(resolverItem(r.catalogo, { ...base, modelo: 'Puñir' }).ok).toBe(true);
-    expect(resolverItem(r.catalogo, { ...base, ancho: 0.850001 }).ok).toBe(false);
+    expect(ajuste({ ancho: 0.850001 })).toEqual(['MOL-O-4-A', 'siguiente', 'exacto']);
   });
 });
 
