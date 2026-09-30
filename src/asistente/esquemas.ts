@@ -7,6 +7,9 @@ export const solicitudSchema = z
     ancho: z.number().nullable(),
     alto: z.number().nullable(),
     medida: texto,
+    tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+    descripcion: texto.optional(),
+    observaciones: z.string().max(1000).nullable().optional(),
     // Se acepta cualquier número y el servidor anula cantidades no enteras o fuera de 1–10.000 (con aviso).
     cantidad: z.number().nullable(),
   })
@@ -34,7 +37,9 @@ const solicitudCambioSchema = z
     alto: z.number().nullable().optional(),
     medida: texto.optional(),
     cantidad: z.number().nullable().optional(),
-    precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
+    tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+    descripcion: texto.optional(),
+    observaciones: z.string().max(1000).nullable().optional(),
   })
   .strict();
 const clienteCambioSchema = z

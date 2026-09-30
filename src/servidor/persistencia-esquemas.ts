@@ -20,6 +20,12 @@ const solicitudSchema = z.object({
   medida: z.string().nullable(),
   cantidad: z.number().int().min(1).max(10000).nullable(),
   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
+  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+  descripcion: z.string().max(300).nullable().optional(),
+  observaciones: z.string().max(1000).nullable().optional(),
+  modeloOriginal: z.string().max(300).nullable().optional(),
+  coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
 });
 
 const productoSchema = z.object({
@@ -31,6 +37,8 @@ const productoSchema = z.object({
   medida: z.string(),
   anchoMin: z.number().nullable(),
   anchoMax: z.number().nullable(),
+  altoMin: z.number().nullable().optional(),
+  altoMax: z.number().nullable().optional(),
   largo: z.number(),
   precioNeto: z.number(),
   descripcion: z.string(),
@@ -43,6 +51,12 @@ const montosSchema = z.object({
       producto: productoSchema,
       cantidad: z.number().int().min(1).max(10000),
       precioUnitario: z.number().int(),
+      precioFabrica: z.number().finite().nonnegative().optional(),
+      margen: z.number().finite().min(-0.5).max(5).optional(),
+      precioCliente: z.number().int().optional(),
+      margenPersonalizado: z.boolean().optional(),
+      tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+      observaciones: z.string().max(1000).nullable().optional(),
       total: z.number().int(),
       precioUnitarioPersonalizado: z.number().int().positive().max(100_000_000).nullable().optional(),
       indice: z.number().int().nonnegative().nullable(),
@@ -123,6 +137,15 @@ export const cotizacionSchema = z.looseObject({
       iva: z.number().finite(),
       vigenciaDiasHabiles: z.number().int().min(0).max(365),
       descuentoMaximo: z.number().min(0).max(100),
+      margenes: z.object({
+        puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
+        puertas_solidas_oregon: z.number().finite().min(0).max(5),
+        puertas_prepintadas: z.number().finite().min(0).max(5),
+        puertas_enchapadas_mara: z.number().finite().min(0).max(5),
+        marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
+        marcos_finger_enchapados: z.number().finite().min(0).max(5),
+        otros: z.number().finite().min(0).max(5),
+      }).strict().optional(),
     })
     .optional(),
   creadaPor: z.string().nullable(),
@@ -148,6 +171,18 @@ export const cotizacionSchema = z.looseObject({
       anulada: z.boolean(),
     })
     .nullable(),
+  estadoComercial: z.enum(['pendiente', 'enviada', 'seguimiento', 'aprobada', 'rechazada', 'vendida']).optional(),
+  estadoOperativo: z.enum(['sin_pedido', 'anticipo_pagado', 'pedido_generado', 'en_produccion', 'produccion_terminada', 'saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada']).optional(),
+  pagos: z.array(z.object({
+    id: z.string(), fecha: z.string(), monto: z.number().int().positive(), observacion: z.string().nullable(), usuario: z.string().nullable(),
+  })).optional(),
+  comentariosInternos: z.array(z.object({
+    id: z.string(), fecha: z.string(), texto: z.string().min(1).max(2000), usuario: z.string().nullable(),
+  })).optional(),
+  facturacion: z.object({
+    estado: z.enum(['pendiente', 'facturada']), tipo: z.enum(['factura', 'boleta']).nullable(),
+    identificadorExterno: z.string().nullable(), fecha: z.string().nullable(),
+  }).optional(),
 });
 
 export const estadoPersistidoSchema = z.object({
@@ -179,6 +214,12 @@ const completarMontos = (m: unknown) =>
               anchoSolicitado: null,
               altoSolicitado: null,
               medidaSolicitada: null,
+              precioFabrica: esRegistro(l) && esRegistro(l.producto) ? l.producto.precioNeto : undefined,
+              margen: esRegistro(l) && esRegistro(l.producto) && typeof l.producto.precioNeto === 'number' && l.producto.precioNeto > 0 && typeof l.precioUnitario === 'number' ? l.precioUnitario / l.producto.precioNeto - 1 : 0,
+              precioCliente: esRegistro(l) && typeof l.precioUnitario === 'number' ? l.precioUnitario : undefined,
+              margenPersonalizado: false,
+              tipoMedida: null,
+              observaciones: null,
               ...l,
             }))
           : m.lineas,
@@ -212,7 +253,23 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         reemplazadaPor: null,
         versionCatalogo: null,
         ...q,
+        estadoComercial:
+          typeof q.estadoComercial === 'string'
+            ? q.estadoComercial
+            : q.estado === 'emitida' ? 'enviada' : q.estado === 'aprobada' ? 'aprobada' : 'pendiente',
+        estadoOperativo: typeof q.estadoOperativo === 'string' ? q.estadoOperativo : q.nota ? 'pedido_generado' : 'sin_pedido',
+        pagos: Array.isArray(q.pagos) ? q.pagos : [],
+        comentariosInternos: Array.isArray(q.comentariosInternos) ? q.comentariosInternos : [],
+        facturacion: esRegistro(q.facturacion)
+          ? q.facturacion
+          : { estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null },
         cliente: esRegistro(q.cliente) ? { giro: null, ...q.cliente } : q.cliente,
+        solicitudes: Array.isArray(q.solicitudes)
+          ? q.solicitudes.map((s) => esRegistro(s) ? {
+              tipoMedida: null, descripcion: null, observaciones: null, margen: null,
+              modeloOriginal: null, coincidenciaModelo: null, ...s,
+            } : s)
+          : q.solicitudes,
         montos: completarMontos(q.montos),
         nota: esRegistro(q.nota)
           ? {

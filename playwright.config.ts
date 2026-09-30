@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import { resolve } from 'node:path';
 import { chromiumPath } from './src/servidor/chromium';
-const dataE2E = resolve('data/test-e2e');
+const dataE2E = resolve(process.env.NELTUME_E2E_DIR ?? 'data/test-e2e');
 const dbE2E = resolve(dataE2E, 'cotizador.sqlite');
 process.env.BETTER_AUTH_SECRET = 'playwright-secret-neltume-0123456789abcdef';
 process.env.BETTER_AUTH_URL = 'http://127.0.0.1:3100';

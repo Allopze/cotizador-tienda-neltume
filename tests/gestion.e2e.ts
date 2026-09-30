@@ -1,17 +1,18 @@
 import { test, expect } from '@playwright/test';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
-import { cotizar, pesos, REGLAS } from '../src/negocio/precios';
-import { iniciarSesion } from './login-e2e';
+import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
+import { DIR_E2E, iniciarSesion } from './login-e2e';
 
 // Corre después de flujo.e2e.ts (orden alfabético, un solo worker): no asume números fijos.
 test('edición directa, conflicto de versión, duplicar, eliminar y anular', async ({ page }) => {
   const catalogo = new RepositorioCatalogoSqlite(
-    abrirBaseDatos('data/test-e2e/cotizador.sqlite', { permitirJsonLegado: true }),
+    abrirBaseDatos(`${DIR_E2E}/cotizador.sqlite`, { permitirJsonLegado: true }),
   );
   const puerta = catalogo.buscarPorCodigo('HUIL-O-3-B')!;
+  const reglas = { ...REGLAS, margenes: MARGENES_INICIALES };
   const montos = (cantidad: number, extras: { descuento?: number; flete?: number } = {}) =>
-    cotizar([{ producto: puerta, cantidad }], REGLAS, extras);
+    cotizar([{ producto: puerta, cantidad }], reglas, extras);
   await iniciarSesion(page);
   const panel = page.getByLabel('Cotización en curso'),
     total = page.getByTestId('total');
@@ -105,10 +106,14 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
 test('si el catálogo cambia antes de emitir, muestra los montos nuevos y pide confirmar', async ({
   page,
 }) => {
-  const db = abrirBaseDatos('data/test-e2e/cotizador.sqlite', { permitirJsonLegado: true });
+  const db = abrirBaseDatos(`${DIR_E2E}/cotizador.sqlite`, { permitirJsonLegado: true });
   const puerta = new RepositorioCatalogoSqlite(db).buscarPorCodigo('HUIL-O-3-B')!;
-  const antes = cotizar([{ producto: puerta, cantidad: 3 }]);
-  const despues = cotizar([{ producto: { ...puerta, precioNeto: puerta.precioNeto + 1000 }, cantidad: 3 }]);
+  const reglas = { ...REGLAS, margenes: MARGENES_INICIALES };
+  const antes = cotizar([{ producto: puerta, cantidad: 3 }], reglas);
+  const despues = cotizar(
+    [{ producto: { ...puerta, precioNeto: puerta.precioNeto + 1000 }, cantidad: 3 }],
+    reglas,
+  );
   const precio = db.prepare('UPDATE productos_catalogo SET precio_neto = ? WHERE codigo = ?');
   await iniciarSesion(page);
   const total = page.getByTestId('total');

@@ -8,6 +8,10 @@ export const normalizarCatalogo = (s: string) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
 
+/** Presentación estable del nombre que se guarda en todos los documentos y consultas. */
+export const nombreCanonicoModelo = (s: string) =>
+  normalizarCatalogo(s) === 'HUILOHUILO' ? 'Huilo Huilo' : s;
+
 const maderaSchema = z.object({
   nombre: z.string().trim().min(1),
   codigo: z.string().trim().regex(/^[A-Z0-9]+$/i),
@@ -49,20 +53,26 @@ export const CONFIGURACION_CATALOGO_BASE: ConfiguracionCatalogo = {
     PILASTRA: 'MOLDURA',
   },
   aliasModelos: {
-    'HUILO HUILO': ['WILLOW WILLOW'],
+    'HUILO HUILO': ['HUILO', 'HUILA', 'WILLO', 'WILLOW', 'PILLO', 'HUILO HUILA', 'WILLOW WILLOW'],
     PANGUIPULLI: ['PANGIPULLI'],
   },
 };
 
 export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatalogo {
   const entrada = configuracionParcialSchema.parse(valor);
+  const aliasModelos: Record<string, string[]> = { ...CONFIGURACION_CATALOGO_BASE.aliasModelos };
+  for (const [modelo, aliases] of Object.entries(entrada.aliasModelos ?? {})) {
+    const existente = Object.keys(aliasModelos).find((clave) => normalizarCatalogo(clave) === normalizarCatalogo(modelo));
+    const clave = existente ?? modelo;
+    aliasModelos[clave] = [...new Set([...(aliasModelos[clave] ?? []), ...aliases])];
+  }
   const configuracion: ConfiguracionCatalogo = {
     maderas: entrada.maderas ?? structuredClone(CONFIGURACION_CATALOGO_BASE.maderas),
     familiasPorModelo: {
       ...CONFIGURACION_CATALOGO_BASE.familiasPorModelo,
       ...entrada.familiasPorModelo,
     },
-    aliasModelos: { ...CONFIGURACION_CATALOGO_BASE.aliasModelos, ...entrada.aliasModelos },
+    aliasModelos,
   };
 
   const codigos = new Set<string>();

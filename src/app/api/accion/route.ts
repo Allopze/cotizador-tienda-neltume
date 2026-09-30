@@ -80,6 +80,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
           direccion: z.string().max(300).nullable().optional(),
           transporte: z.string().max(120).nullable().optional(),
           entregaComprometida: z.string().max(120).nullable().optional(),
+          destino: z.string().max(300).nullable().optional(),
+          valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
         })
         .strict()
         .optional(),
@@ -122,6 +124,10 @@ const accionSchema = z.discriminatedUnion('tipo', [
                   alto: z.number().finite().nullable().optional(),
                   medida: texto(300),
                   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
+                  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+                  tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+                  descripcion: texto(300),
+                  observaciones: texto(1000),
                 })
                 .strict(),
             })
@@ -137,12 +143,35 @@ const accionSchema = z.discriminatedUnion('tipo', [
           direccion: z.string().max(300).nullable().optional(),
           transporte: z.string().max(120).nullable().optional(),
           entregaComprometida: z.string().max(120).nullable().optional(),
+          destino: z.string().max(300).nullable().optional(),
+          valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
         })
         .strict()
         .nullable()
         .optional(),
     })
     .strict(),
+  z.object({
+    tipo: z.literal('pago'), id: z.uuid(), actualizada: version,
+    monto: z.number().int().positive().max(100_000_000), fecha: z.iso.date().optional(),
+    observacion: z.string().max(500).nullable().optional(),
+  }).strict(),
+  z.object({ tipo: z.literal('comentario'), id: z.uuid(), actualizada: version, texto: z.string().trim().min(1).max(2000) }).strict(),
+  z.object({ tipo: z.literal('comercial'), id: z.uuid(), actualizada: version, estado: z.enum(['seguimiento', 'rechazada']) }).strict(),
+  z.object({ tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version }).strict(),
+  z.object({
+    tipo: z.literal('operacion'), id: z.uuid(), actualizada: version,
+    paso: z.enum(['iniciar_produccion', 'produccion_terminada', 'lista_despacho', 'despachada', 'completada']),
+    despacho: z.object({
+      direccion: texto(300), transporte: texto(120), entregaComprometida: texto(120), destino: texto(300),
+      valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
+    }).strict().optional(),
+  }).strict(),
+  z.object({
+    tipo: z.literal('facturacion'), id: z.uuid(), actualizada: version,
+    estado: z.enum(['pendiente', 'facturada']), tipoDocumento: z.enum(['factura', 'boleta']).nullable().optional(),
+    identificadorExterno: z.string().max(120).nullable().optional(), fecha: z.iso.datetime().nullable().optional(),
+  }).strict(),
 ]);
 const fecha = z.iso.date();
 const listadoSchema = z.object({

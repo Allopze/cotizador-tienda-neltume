@@ -40,6 +40,8 @@ export type Resolucion =
       ok: true;
       producto: Producto;
       cantidad: number;
+      /** Indica si el nombre de entrada ya era canónico o se resolvió mediante alias. */
+      coincidenciaModelo: 'canonico' | 'alias' | 'posible';
       /** Medidas pedidas, ya en metros o en forma canónica. */
       anchoSolicitado: number | null;
       altoSolicitado: number | null;
@@ -86,10 +88,15 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       campos: ['modelo'],
       disponibles: { modelo: modelosCatalogo(catalogo) },
     });
-  const modelo =
+  const disponiblesModelos = modelosCatalogo(catalogo);
+  // Un nombre canónico existente siempre gana frente al alias de otro modelo (p. ej. «Pillo»).
+  const canonico = disponiblesModelos.find((m) => normalizar(m) === normalizar(s.modelo!));
+  const modelo = canonico ?? (
     'productos' in catalogo
       ? resolverModeloConfigurado(s.modelo, CONFIGURACION_CATALOGO_BASE)
-      : (catalogo.resolverModelo?.(s.modelo) ?? s.modelo);
+      : (catalogo.resolverModelo?.(s.modelo) ?? s.modelo)
+  );
+  const coincidenciaModelo = canonico ? 'canonico' : normalizar(s.modelo) === 'PILLO' ? 'posible' : 'alias';
   let opciones =
     'productos' in catalogo
       ? catalogo.productos.filter((p) => normalizar(p.modelo) === normalizar(modelo))
@@ -128,7 +135,9 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rango });
     anchoSolicitado = ancho;
     const medidas = unicos(opciones, 'medida');
-    opciones = opciones.filter((p) => ancho >= p.anchoMin! - 1e-9 && ancho <= p.anchoMax! + 1e-9);
+    opciones = opciones.filter(
+      (p) => p.anchoMin !== null && p.anchoMax !== null && ancho >= p.anchoMin - 1e-9 && ancho <= p.anchoMax + 1e-9,
+    );
     if (!opciones.length)
       return no({ tipo: 'medida_no_disponible', campo: 'ancho', valor: ancho, disponibles: medidas });
   }
@@ -147,7 +156,11 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     if (alto === null)
       return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rango });
     altoSolicitado = alto;
-    opciones = opciones.filter((p) => Math.abs(p.largo - alto) <= 0.005 + 1e-9);
+    opciones = opciones.filter((p) => {
+      const min = p.altoMin ?? p.largo - 0.005;
+      const max = p.altoMax ?? p.largo + 0.005;
+      return alto >= min - 1e-9 && alto <= max + 1e-9;
+    });
     if (!opciones.length)
       return no({ tipo: 'medida_no_disponible', campo: 'alto', valor: alto, disponibles });
   }
@@ -179,6 +192,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     ok: true,
     producto: opciones[0],
     cantidad: s.cantidad!,
+    coincidenciaModelo,
     anchoSolicitado,
     altoSolicitado,
     medidaSolicitada,

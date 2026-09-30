@@ -46,9 +46,13 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
   await expect(panel.getByRole('heading', { level: 2 })).toHaveText(/^N° \d+$/);
   await sinScrollDePagina(page);
 
-  await page.getByRole('button', { name: 'Aprobar y generar nota de pedido' }).click();
-  await page.getByRole('alertdialog').getByRole('button', { name: 'Aprobar y generar nota' }).click();
+  await page.getByRole('button', { name: 'Registrar aprobación del cliente' }).click();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Registrar aprobación' }).click();
   await expect(panel.locator('.status.aprobada').first()).toBeVisible();
+  const total = Number(((await page.getByTestId('total').textContent()) ?? '').replace(/\D/g, ''));
+  await panel.getByLabel(/^Monto recibido/).fill(String(Math.ceil(total * 0.5)));
+  await panel.getByRole('button', { name: 'Registrar pago' }).click();
+  await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
   await sinScrollDePagina(page);
   await expect(panel.getByRole('button', { name: 'Descargar nota de pedido' })).toBeInViewport();
   await page.screenshot({ path: 'test-results/pantalla-completa-aprobada.png' });
@@ -109,7 +113,7 @@ test('ajustes y alta conservan sus bloques verticales; las listas cortas no agre
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/ajustes');
   await expect(page.getByRole('heading', { name: 'Contraseña' })).toBeVisible();
-  const estadoAsistente = page.getByText('El asistente tiene su clave de acceso configurada.');
+  const estadoAsistente = page.getByText(/El asistente usa la clave definida en CMD_API_KEY/);
   await estadoAsistente.scrollIntoViewIfNeeded();
   await expect(estadoAsistente).toBeInViewport();
 

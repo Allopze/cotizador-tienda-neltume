@@ -156,7 +156,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                     </td>
                     <td data-etiqueta="Medida">
                       {p.familia === 'PUERTA'
-                        ? `${p.medida.replace(' A ', '–')} × ${largo(p.largo)}`
+                        ? `${p.anchoMin != null && p.anchoMax != null ? `${largo(p.anchoMin)}–${largo(p.anchoMax)}` : p.medida.replace(' A ', '–')} × ${p.altoMin != null && p.altoMax != null && p.altoMin !== p.altoMax ? `${largo(p.altoMin)}–${largo(p.altoMax)}` : largo(p.largo)}`
                         : `${p.medida} × ${largo(p.largo)}`}
                     </td>
                     <td data-etiqueta="Unitario neto">{pesos(p.unitario)}</td>

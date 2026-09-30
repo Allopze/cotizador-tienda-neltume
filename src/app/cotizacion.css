@@ -705,3 +705,198 @@ td small {
   color: var(--pending);
   font-weight: 600;
 }
+.item-select-field {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  max-width: 280px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.item-select-field select,
+.item-select-field input {
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.item-select-field small,
+.match-confidence {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.match-confidence.posible {
+  color: var(--pending);
+}
+.margen-manual {
+  color: var(--warm-text) !important;
+  font-weight: 600;
+}
+.precio-trazabilidad {
+  align-self: center;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.quote-workflow {
+  display: grid;
+  gap: 14px;
+  padding: 18px 0;
+  border-top: 1px solid var(--line);
+}
+.workflow-heading,
+.workflow-states,
+.workflow-actions,
+.workflow-ledger li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.workflow-heading h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--serif-3);
+}
+.workflow-heading .eyebrow {
+  margin: 0 0 5px;
+  font-size: var(--fs-xs);
+}
+.workflow-states {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.workflow-payment {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+}
+.workflow-payment .ia-field,
+.workflow-comment .ia-field {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.workflow-payment input,
+.workflow-comment textarea {
+  min-height: 38px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+}
+.workflow-ledger {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workflow-ledger li {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.workflow-ledger strong {
+  flex: none;
+  color: var(--ink);
+}
+.workflow-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+.workflow-actions p {
+  margin: 0;
+}
+.workflow-comment {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 10px;
+}
+.workflow-comment textarea {
+  resize: vertical;
+}
+.catalog-import {
+  max-width: 1050px;
+}
+.catalog-import-preview {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.catalog-import-preview h3,
+.catalog-import-preview h4 {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+}
+.import-counts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+.import-counts span {
+  padding: 10px;
+  background: var(--panel);
+  color: var(--muted);
+}
+.import-counts strong {
+  display: block;
+  color: var(--ink);
+  font-size: var(--fs-lg);
+}
+.catalog-warning,
+.import-force {
+  display: block;
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+}
+.import-force input {
+  margin-right: 7px;
+}
+.import-change-groups {
+  display: grid;
+  gap: 12px;
+  max-height: 340px;
+  overflow: auto;
+  padding: 8px 0;
+}
+.import-change-groups ul,
+.catalog-import-preview details ul {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .workflow-payment {
+    grid-template-columns: 1fr 1fr;
+  }
+  .workflow-payment button {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 520px) {
+  .workflow-payment,
+  .workflow-comment {
+    grid-template-columns: 1fr;
+  }
+  .workflow-comment button {
+    justify-self: start;
+  }
+  .import-counts {
+    grid-template-columns: 1fr 1fr;
+  }
+}

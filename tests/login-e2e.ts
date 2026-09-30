@@ -1,12 +1,12 @@
 import { expect, type Page } from '@playwright/test';
 import { readFile, writeFile } from 'node:fs/promises';
-import { CLAVE_E2E, USUARIO_E2E } from './datos-e2e';
+import { CLAVE_E2E, DIR_E2E, USUARIO_E2E } from './datos-e2e';
 
-export { CLAVE_E2E, USUARIO_E2E };
+export { CLAVE_E2E, DIR_E2E, USUARIO_E2E };
 
 // El login tiene límite de 5 intentos cada 15 minutos por IP: la sesión se reutiliza entre pruebas
 // (se guarda dentro del directorio aislado del E2E, que preparar-e2e borra en cada corrida).
-const SESION = 'data/test-e2e/sesion-e2e.json';
+const SESION = `${DIR_E2E}/sesion-e2e.json`;
 const titulo = (page: Page) => page.getByRole('heading', { name: 'Cotizar', exact: true, level: 1 });
 
 export async function iniciarSesion(page: Page) {

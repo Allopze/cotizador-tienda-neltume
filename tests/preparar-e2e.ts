@@ -4,9 +4,8 @@ import { importar } from '../src/catalogo/importar';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { guardarCatalogo } from '../src/servidor/repositorio-catalogo';
 import { migrarEsquemaAutenticacion } from '../src/servidor/autenticacion-config';
-import { CLAVE_E2E, USUARIO_E2E } from './datos-e2e';
-// Todo lo del E2E vive en data/test-e2e: no toca el catálogo, el estado ni el logo reales.
-export const DIR_E2E = 'data/test-e2e';
+import { CLAVE_E2E, DIR_E2E, USUARIO_E2E } from './datos-e2e';
+// Todo lo del E2E vive en un directorio aislado: no toca el catálogo ni la base reales.
 export default async function preparar() {
   await rm(DIR_E2E, { recursive: true, force: true });
   process.env.NELTUME_DATA_DIR = DIR_E2E;

@@ -93,12 +93,25 @@ export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
 /** «Medida pedida: 0,80 × 2,10 m» o «Escuadría 2X4 · 2,10 m». */
 export function medidaPedida(l: Linea) {
   const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const tipo = l.tipoMedida === 'hoja' ? ' · medida de hoja' : l.tipoMedida === 'vano' ? ' · medida de vano' : '';
   if (l.medidaSolicitada)
-    return `Escuadría ${l.medidaSolicitada}${l.altoSolicitado ? ` · ${m(l.altoSolicitado)} m` : ''}`;
+    return `Escuadría ${l.medidaSolicitada}${l.altoSolicitado ? ` · ${m(l.altoSolicitado)} m` : ''}${tipo}`;
   if (l.anchoSolicitado && l.altoSolicitado)
-    return `Medida pedida: ${m(l.anchoSolicitado)} × ${m(l.altoSolicitado)} m`;
-  if (l.altoSolicitado) return `Largo pedido: ${m(l.altoSolicitado)} m`;
+    return `Medida pedida: ${m(l.anchoSolicitado)} × ${m(l.altoSolicitado)} m${tipo}`;
+  if (l.altoSolicitado) return `Largo pedido: ${m(l.altoSolicitado)} m${tipo}`;
   return null;
+}
+
+/** Referencia de catálogo seleccionada por el resolvedor, para que la cotización sea verificable. */
+export function referenciaCatalogo(l: Linea) {
+  const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const ancho = l.producto.anchoMin !== null && l.producto.anchoMax !== null
+    ? `${m(l.producto.anchoMin)}–${m(l.producto.anchoMax)} m`
+    : null;
+  const altoMin = l.producto.altoMin ?? l.producto.largo - 0.005;
+  const altoMax = l.producto.altoMax ?? l.producto.largo + 0.005;
+  const alto = altoMax - altoMin > 0.005 ? `${m(altoMin)}–${m(altoMax)} m` : `${m(l.producto.largo)} m`;
+  return `Referencia ${l.producto.codigo} · ${[ancho, alto].filter(Boolean).join(' × ')}`;
 }
 
 /** «Creada por Ana · emitida por Luis»; si la misma persona hizo varios pasos seguidos, «Creada y emitida por Ana». */

@@ -339,11 +339,15 @@ function Fila({
             {q.pendientes ? ` · ${plural(q.pendientes, 'pendiente')}` : ''}
             {q.nota ? ` · Nota N° ${q.nota.numero}${q.nota.anulada ? ' (anulada)' : ''}` : ''}
           </small>
+          <small>Actualizada {fechaCorta(q.actualizada)}</small>
           {autor && <small>por {autor}</small>}
         </span>
         <span className="history-estado">
           <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
           {vencida && <span className="status vencida">Vencida</span>}
+          <small>{q.estadoComercial ?? (q.estado === 'emitida' ? 'enviada' : q.estado)}</small>
+          {q.nota && <small>{q.estadoOperativo?.replaceAll('_', ' ') ?? 'pedido generado'}</small>}
+          <small>Pago {Math.round(q.porcentajePagado ?? 0)}% · {pesos(q.pagado ?? 0)}</small>
         </span>
         <strong>{pesos(q.total)}</strong>
         <span aria-hidden>›</span>

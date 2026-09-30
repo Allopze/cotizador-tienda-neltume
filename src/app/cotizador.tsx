@@ -475,6 +475,21 @@ export function Cotizador({
   );
 
   const acciones: AccionesPanel = {
+    async flujo(accion) {
+      const q = actual;
+      if (!q || ocupado) return false;
+      setEnCurso('workflow');
+      limpiar('operacion');
+      try {
+        recibir(await peticion({ ...accion, id: q.id, ...versionDe(q) }));
+        return true;
+      } catch (e) {
+        fallo(e, q);
+        return false;
+      } finally {
+        setEnCurso(null);
+      }
+    },
     async emitir() {
       const q = actual;
       if (!q || ocupado) return;

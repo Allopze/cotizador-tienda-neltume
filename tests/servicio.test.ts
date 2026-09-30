@@ -78,7 +78,7 @@ describe('Persistencia y flujo del asistente', () => {
     q = (await servicio.ejecutar({ tipo: 'chat', id: q.id, mensaje: '3 Molco' })).cotizacion;
     const emitida = (await emitir(servicio, q)).cotizacion;
     expect(emitida.numero).toBe(323);
-    expect(emitida.montos.total).toBe(450);
+    expect(emitida.montos.total).toBe(664);
     const alterado = structuredClone(catalogo);
     alterado.productos[0].precioNeto = 999;
     const reiniciado = new Servicio(alterado, llm, new Almacen(dir));
@@ -99,7 +99,7 @@ describe('Persistencia y flujo del asistente', () => {
     expect(copia.numero).toBeNull();
     expect(copia.estado).toBe('borrador');
     expect(copia.montos.total).toBe(
-      Math.round(999 * 1.25) * 4 + Math.round(Math.round(999 * 1.25) * 4 * 0.19),
+      Math.round(999 * 1.85) * 4 + Math.round(Math.round(999 * 1.85) * 4 * 0.19),
     );
     const revision = (await emitir(reiniciado, copia)).cotizacion;
     expect(revision.numero).toBe(324);
@@ -108,8 +108,21 @@ describe('Persistencia y flujo del asistente', () => {
     expect(original.estado).toBe('reemplazada');
     expect(original.reemplazadaPor).toBe(324);
     await expect(aprobar(reiniciado, original)).rejects.toThrow('reemplazada');
-    const aprobada = (await aprobar(reiniciado, revision)).cotizacion;
+    let aprobada = (await aprobar(reiniciado, revision)).cotizacion;
     expect(aprobada.montos.total).toBe(copia.montos.total);
+    expect(aprobada.nota).toBeNull();
+    const mitad = Math.ceil(aprobada.montos.total * 0.5);
+    aprobada = (
+      await reiniciado.ejecutar({
+        tipo: 'pago',
+        id: aprobada.id,
+        actualizada: aprobada.actualizada,
+        monto: mitad,
+      })
+    ).cotizacion;
+    aprobada = (
+      await reiniciado.ejecutar({ tipo: 'generar_nota', id: aprobada.id, actualizada: aprobada.actualizada })
+    ).cotizacion;
     expect(aprobada.nota?.montos.lineas[0].precioUnitario).toBe(999);
     expect(aprobada.nota?.numero).toBe(1);
     expect(plantilla).toHaveBeenCalledTimes(3);
@@ -141,10 +154,12 @@ describe('Persistencia y flujo del asistente', () => {
 
     expect(resultado.cotizacion.id).not.toBe(emitida.id);
     expect(resultado.cotizacion.origen).toBe(323);
-    expect(resultado.cotizacion.solicitudes).toEqual([{ ...solicitud, cantidad: 8 }]);
+    expect(resultado.cotizacion.solicitudes).toMatchObject([
+      { ...solicitud, madera: 'PINO OREGON', modelo: 'MOLCO', cantidad: 8 },
+    ]);
     expect(resultado.cotizacion.cliente).toEqual(clienteMaria);
-    expect(resultado.cotizacion.montos.total).toBe(1200);
-    expect(emitida.solicitudes).toEqual([solicitud]);
+    expect(resultado.cotizacion.montos.total).toBe(1771);
+    expect(emitida.solicitudes).toMatchObject([{ ...solicitud, madera: 'PINO OREGON', modelo: 'MOLCO' }]);
     expect(emitida.pdf).toBe('cotizacion-323.pdf');
     const estado = await almacen.leer();
     expect(estado.cotizaciones).toHaveLength(2);
@@ -166,7 +181,10 @@ describe('Persistencia y flujo del asistente', () => {
       tipo: 'chat',
       mensaje: 'La cotización de María José ahora debe ser de 8 y no de 3 puertas',
     });
-    expect(resultado.cotizacion.solicitudes).toEqual([{ ...solicitud, cantidad: 8 }, segundo]);
+    expect(resultado.cotizacion.solicitudes).toMatchObject([
+      { ...solicitud, madera: 'PINO OREGON', modelo: 'MOLCO', cantidad: 8 },
+      { ...segundo, madera: 'PINO OREGON', modelo: 'MOLCO' },
+    ]);
     expect(resultado.cotizacion.cliente).toEqual(clienteMaria);
   });
 
@@ -264,7 +282,9 @@ describe('Persistencia y flujo del asistente', () => {
   it('sin una referencia encontrada crea solo la cotización nueva para el mensaje', async () => {
     const { servicio, llm, almacen } = await setup();
     const resultado = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza 3 Molco' });
-    expect(resultado.cotizacion.solicitudes).toEqual([solicitud]);
+    expect(resultado.cotizacion.solicitudes).toMatchObject([
+      { ...solicitud, madera: 'PINO OREGON', modelo: 'MOLCO' },
+    ]);
     expect((await almacen.leer()).cotizaciones).toHaveLength(1);
     expect(llm.interpretar.mock.calls[0][0].modo).toBe('cotizacion_nueva');
   });
@@ -277,7 +297,7 @@ describe('Persistencia y flujo del asistente', () => {
       input: { items: [], cliente: {}, precio: 123 },
     });
     const nueva = (await servicio.ejecutar({ tipo: 'chat', id: q.id, mensaje: 'algo' })).cotizacion;
-    expect(nueva.solicitudes).toEqual(q.solicitudes);
+    expect(nueva.solicitudes).toMatchObject(q.solicitudes);
     expect(nueva.montos).toEqual(q.montos);
     expect(nueva.historial.at(-1)?.texto).toBe('No entendí, ¿puedes reformularlo?');
     const contexto = llm.interpretar.mock.calls[0][0];
@@ -291,7 +311,7 @@ describe('Persistencia y flujo del asistente', () => {
       input: { ...actualizar.input, items: [solicitud, { ...solicitud, madera: null, cantidad: null }] },
     });
     const r = (await servicio.ejecutar({ tipo: 'chat', id: q.id, mensaje: 'pedido' })).cotizacion;
-    expect(r.montos.total).toBe(450);
+    expect(r.montos.total).toBe(664);
     expect(r.incompletos).toHaveLength(1);
     expect(r.incompletos[0].pregunta).toMatch(/madera.*\n.*cantidad/);
     await expect(emitir(servicio, r)).rejects.toThrow('pendientes');

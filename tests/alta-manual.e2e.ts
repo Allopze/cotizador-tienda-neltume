@@ -20,7 +20,7 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
 
   const revision = page.locator('.catalog-preview');
-  await expect(revision).toContainText('Roble Raulí 0,80 a 0,85 m × 2,1 m');
+  await expect(revision).toContainText('Roble Raulí 0,8 a 0,85 m × 2,1 m');
   await expect(revision).toContainText('$145.000');
   await page.screenshot({ path: 'test-results/alta-manual.png', fullPage: true });
 

@@ -1,10 +1,11 @@
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { REGLAS, type ReglasComerciales } from '../negocio/precios';
+import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { abrirBaseDatos } from './base-datos';
 import type { DatosEmpresa } from './empresa';
 
 const texto = (max: number) => z.string().trim().max(max).nullable();
+const TRANSPORTISTAS_INICIALES = ['Starken', 'Transportes Paredes', 'Ignacio', 'Otro'];
 const logoSvg = z
   .string()
   .max(48_000)
@@ -17,6 +18,9 @@ const logoSvg = z
 
 export const configuracionNegocioSchema = z
   .object({
+    transportistas: z.array(z.string().trim().min(1).max(120)).max(30)
+      .refine((lista) => new Set(lista.map((x) => x.toLocaleLowerCase())).size === lista.length)
+      .default(TRANSPORTISTAS_INICIALES),
     empresa: z
       .object({
         nombre: texto(200),
@@ -37,6 +41,15 @@ export const configuracionNegocioSchema = z
         iva: z.number().finite().min(0).max(1),
         vigenciaDiasHabiles: z.number().int().min(0).max(365),
         descuentoMaximo: z.number().finite().min(0).max(100),
+        margenes: z.object({
+          puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
+          puertas_solidas_oregon: z.number().finite().min(0).max(5),
+          puertas_prepintadas: z.number().finite().min(0).max(5),
+          puertas_enchapadas_mara: z.number().finite().min(0).max(5),
+          marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
+          marcos_finger_enchapados: z.number().finite().min(0).max(5),
+          otros: z.number().finite().min(0).max(5),
+        }).strict(),
       })
       .strict(),
   })
@@ -45,6 +58,7 @@ export const configuracionNegocioSchema = z
 export interface ConfiguracionNegocio {
   empresa: DatosEmpresa;
   reglas: ReglasComerciales;
+  transportistas: string[];
 }
 
 const leerEntorno = (clave: string) => process.env[clave]?.trim() || null;
@@ -53,6 +67,7 @@ export const CORREO_PREDETERMINADO_NEGOCIO = 'Neltume.co@gmail.com';
 
 export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
   return {
+    transportistas: [...TRANSPORTISTAS_INICIALES],
     empresa: {
       nombre: leerEntorno('NELTUME_EMPRESA_NOMBRE'),
       rut: leerEntorno('NELTUME_EMPRESA_RUT'),
@@ -65,15 +80,21 @@ export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
       datosBancarios: leerEntorno('NELTUME_DATOS_BANCARIOS'),
       logoSvg: null,
     },
-    reglas: { ...REGLAS },
+    reglas: { ...REGLAS, margenes: { ...MARGENES_INICIALES } },
   };
 }
 
 function validarConfiguracion(valor: unknown, respaldo: ConfiguracionNegocio) {
   const parcial = valor as Partial<ConfiguracionNegocio> | null;
+  const reglasParciales = parcial?.reglas as (Partial<ReglasComerciales> & { margenes?: Partial<ReglasComerciales['margenes']> }) | undefined;
   return configuracionNegocioSchema.parse({
+    transportistas: parcial?.transportistas ?? respaldo.transportistas,
     empresa: { ...respaldo.empresa, ...(parcial?.empresa ?? {}) },
-    reglas: { ...respaldo.reglas, ...(parcial?.reglas ?? {}) },
+    reglas: {
+      ...respaldo.reglas,
+      ...(reglasParciales ?? {}),
+      margenes: { ...respaldo.reglas.margenes, ...(reglasParciales?.margenes ?? {}) },
+    },
   });
 }
 

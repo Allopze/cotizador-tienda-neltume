@@ -12,7 +12,7 @@ interface DatosAprobacion {
   vence: string | null;
   vencida: boolean;
 }
-/** Aprobación: pide despacho (opcional) y advierte si la cotización está vencida. */
+/** Aprobación: registra la aceptación del cliente y deja la nota para después del anticipo. */
 export function useAprobacion() {
   const [pendiente, setPendiente] = useState<
     | (DatosAprobacion & { resolver: (r: { despacho: Despacho; confirmarVencida: boolean } | null) => void })
@@ -68,8 +68,8 @@ function FormAprobacion({
   return (
     <form onSubmit={enviar}>
       <div className="dialogo-mensaje">
-        <p>Se generará la nota de pedido para fábrica y la cotización quedará bloqueada.</p>
-        <p>Esta acción no se puede deshacer.</p>
+        <p>Se registrará la aprobación del cliente y la cotización quedará bloqueada para edición.</p>
+        <p>La nota de pedido se habilitará cuando registres al menos 50 % de pago.</p>
         {datos.vencida && (
           <p className="dialogo-advertencia">
             Esta cotización venció{datos.vence ? ` el ${fechaLarga(datos.vence)}` : ''}. Apruébala solo si el
@@ -113,7 +113,7 @@ function FormAprobacion({
           Cancelar
         </button>
         <button type="submit" className="button primary">
-          {datos.vencida ? 'Aprobar de todos modos' : 'Aprobar y generar nota'}
+          {datos.vencida ? 'Registrar aprobación de todos modos' : 'Registrar aprobación'}
         </button>
       </div>
     </form>

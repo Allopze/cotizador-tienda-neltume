@@ -20,7 +20,7 @@ export default async function CatalogoPage({
   const pedida = (await searchParams).seccion;
   const rol = (session.user as typeof session.user & { role?: string | null }).role ?? 'user';
   const puedeAdministrar = rol === 'admin';
-  const administrable = new Set<Seccion>(['manuales', 'configuracion']);
+  const administrable = new Set<Seccion>(['manuales', 'configuracion', 'importar']);
   const seccion = SECCIONES.some((s) => s.id === pedida) && (puedeAdministrar || !administrable.has(pedida as Seccion))
     ? (pedida as Seccion)
     : 'consultar';

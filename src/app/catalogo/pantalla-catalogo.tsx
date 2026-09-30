@@ -4,6 +4,7 @@ import { AltaProducto } from '../alta-producto';
 import { CatalogoConsulta } from '../catalogo-consulta';
 import { GestionManuales } from '../gestion-manuales';
 import { ConfiguracionCatalogo } from '../configuracion-catalogo';
+import { ImportarCatalogo } from './importar-catalogo';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { useEsCliente, useScrollRecordado } from '../memoria-pantalla';
@@ -89,6 +90,11 @@ export function PantallaCatalogo({
           {montada('consultar') && (
             <div hidden={seccion !== 'consultar'}>
               <CatalogoConsulta activa={seccion === 'consultar'} />
+            </div>
+          )}
+          {montada('importar') && (
+            <div hidden={seccion !== 'importar'}>
+              <ImportarCatalogo />
             </div>
           )}
           {montada('agregar') && (

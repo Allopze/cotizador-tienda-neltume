@@ -4,8 +4,8 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { Almacen } from '../src/servidor/almacen';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
-import { cotizar, pesos } from '../src/negocio/precios';
-import { iniciarSesion } from './login-e2e';
+import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
+import { DIR_E2E, iniciarSesion } from './login-e2e';
 async function textoPdf(ruta: string) {
   const task = getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: true });
   const doc = await task.promise;
@@ -19,15 +19,19 @@ async function textoPdf(ruta: string) {
 }
 test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', async ({ page }) => {
   const catalogo = new RepositorioCatalogoSqlite(
-    abrirBaseDatos('data/test-e2e/cotizador.sqlite', { permitirJsonLegado: true }),
+    abrirBaseDatos(`${DIR_E2E}/cotizador.sqlite`, { permitirJsonLegado: true }),
   );
   const puerta = catalogo.buscarPorCodigo('HUIL-O-3-B')!,
     marco = catalogo.buscarPorCodigo('MAR-O-2X4-B')!;
-  const primero = cotizar([{ producto: puerta, cantidad: 3 }]);
-  const completo = cotizar([
-    { producto: puerta, cantidad: 3 },
-    { producto: marco, cantidad: 3 },
-  ]);
+  const reglas = { ...REGLAS, margenes: MARGENES_INICIALES };
+  const primero = cotizar([{ producto: puerta, cantidad: 3 }], reglas);
+  const completo = cotizar(
+    [
+      { producto: puerta, cantidad: 3 },
+      { producto: marco, cantidad: 3 },
+    ],
+    reglas,
+  );
   await iniciarSesion(page);
   const conversacion = page.getByTestId('conversacion'),
     panel = page.getByLabel('Cotización en curso');
@@ -65,17 +69,20 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   const descarga = page.waitForEvent('download');
   await emitir();
   expect((await descarga).suggestedFilename()).toBe('cotizacion-323.pdf');
-  const contenido = await textoPdf('data/test-e2e/pdf/cotizacion-323.pdf');
+  const contenido = await textoPdf(`${DIR_E2E}/pdf/cotizacion-323.pdf`);
   expect(contenido).toContain('COTIZACIÓN N° 323');
   expect(contenido).toContain(pesos(completo.total));
   expect(contenido).not.toMatch(/precio de lista|ajuste|25 %/i);
-  // Aprobación desde el panel: el diálogo pide el despacho (opcional) antes de generar la nota.
-  const notaDownload = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Aprobar y generar nota de pedido' }).click();
+  // La aprobación se registra primero; la nota queda habilitada después del anticipo del 50 %.
+  await page.getByRole('button', { name: 'Registrar aprobación del cliente' }).click();
   const dialogo = page.getByRole('alertdialog', { name: '¿Aprobar la cotización N° 323?' });
   await expect(dialogo).toBeVisible();
   await dialogo.getByLabel('Transporte (opcional)').fill('Retira el cliente');
-  await dialogo.getByRole('button', { name: 'Aprobar y generar nota' }).click();
+  await dialogo.getByRole('button', { name: 'Registrar aprobación' }).click();
+  const notaDownload = page.waitForEvent('download');
+  await panel.getByLabel(/^Monto recibido/).fill(String(Math.ceil(completo.total * 0.5)));
+  await panel.getByRole('button', { name: 'Registrar pago' }).click();
+  await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
   expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-1.pdf');
   await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
   // Una aprobada no ofrece quitar ítems.
@@ -87,12 +94,12 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     ],
     { ajuste: 0, iva: 0.19 },
   );
-  const nota = await textoPdf('data/test-e2e/pdf/nota-pedido-1.pdf');
+  const nota = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-1.pdf`);
   expect(nota).toContain('NOTA DE PEDIDO N° 1');
   expect(nota).toMatch(/Ref\. cotización:?\s*N° 323/);
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
-  const estado = await new Almacen('data/test-e2e').leer();
+  const estado = await new Almacen(DIR_E2E).leer();
   expect(estado.cotizaciones[0].estado).toBe('aprobada');
   expect(estado.siguienteCotizacion).toBe(324);
   expect(estado.siguienteNota).toBe(2);
@@ -165,7 +172,7 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
   await seleccion.getByRole('button', { name: `Elegir cotización N° ${segunda} de María José` }).click();
   await expect(page.getByLabel('Cotización en curso').getByText('8', { exact: true })).toBeVisible();
 
-  const estado = await new Almacen('data/test-e2e').leer();
+  const estado = await new Almacen(DIR_E2E).leer();
   expect(estado.cotizaciones.find((q) => q.numero === original)?.solicitudes[0]?.cantidad).toBe(3);
   expect(estado.cotizaciones.find((q) => q.numero === segunda)?.solicitudes[0]?.cantidad).toBe(3);
   expect(estado.cotizaciones.some((q) => q.origen === segunda && q.solicitudes[0]?.cantidad === 8)).toBe(
@@ -191,11 +198,17 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
     .click();
   const numero = Number((await descarga).suggestedFilename().match(/cotizacion-(\d+)\.pdf/)![1]);
 
-  const nota = page.waitForEvent('download');
+  const textoTotal = (await page.getByTestId('total').textContent()) ?? '';
+  const anticipo = Math.ceil(Number(textoTotal.replace(/\D/g, '')) * 0.5);
   await enviar(`se aprobó la ${numero}`);
   const dialogo = page.getByRole('alertdialog', { name: `¿Aprobar la cotización N° ${numero}?` });
   await expect(dialogo).toBeVisible();
-  await dialogo.getByRole('button', { name: 'Aprobar y generar nota' }).click();
+  await dialogo.getByRole('button', { name: 'Registrar aprobación' }).click();
+  const nota = page.waitForEvent('download');
+  const panel = page.getByLabel('Cotización en curso');
+  await panel.getByLabel(/^Monto recibido/).fill(String(anticipo));
+  await panel.getByRole('button', { name: 'Registrar pago' }).click();
+  await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
   expect((await nota).suggestedFilename()).toMatch(/^nota-pedido-\d+\.pdf$/);
   await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
 });

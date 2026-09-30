@@ -177,7 +177,13 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
   const descripcion = (l: Linea) => {
     const pedida = medidaPedida(l);
-    return `${esc(descripcionLegible(l.producto.descripcion))}${pedida ? `<br><small>Medida solicitada: ${esc(pedida)}</small>` : ''}`;
+    const tipoMedida = {
+      hoja: 'Hoja',
+      vano: 'Vano',
+      no_especificado: 'No especificado',
+    }[l.tipoMedida ?? 'no_especificado'];
+    const referencia = `${l.producto.codigo}: ${l.producto.anchoMin !== null && l.producto.anchoMax !== null ? `${decimal(l.producto.anchoMin)}–${decimal(l.producto.anchoMax)} m × ` : ''}${l.producto.altoMin !== undefined && l.producto.altoMin !== null && l.producto.altoMax !== undefined && l.producto.altoMax !== null && l.producto.altoMin !== l.producto.altoMax ? `${decimal(l.producto.altoMin)}–${decimal(l.producto.altoMax)} m` : `${decimal(l.producto.largo)} m`}`;
+    return `${esc(descripcionLegible(l.producto.descripcion))}${pedida ? `<br><small>Medida solicitada: ${esc(pedida)} · tipo: ${tipoMedida}</small>` : `<br><small>Tipo de medida: ${tipoMedida}</small>`}<br><small>Referencia de catálogo: ${esc(referencia)}</small>${l.observaciones ? `<br><small>Observación: ${esc(l.observaciones)}</small>` : ''}`;
   };
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
     @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}

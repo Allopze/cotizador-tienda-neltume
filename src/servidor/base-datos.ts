@@ -6,7 +6,7 @@ import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 10;
+const VERSION_ESQUEMA = 11;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -127,6 +127,76 @@ function crearEsquema(db: Database.Database) {
           creada TEXT NOT NULL
         );
         PRAGMA user_version = 10;
+      `);
+    }).immediate();
+  if (version < 11)
+    db.transaction(() => {
+      // v11: márgenes por categoría, descripción y tipo de medida editables, pagos y flujo operativo.
+      db.exec(`
+        ALTER TABLE cotizaciones ADD COLUMN estado_comercial TEXT NOT NULL DEFAULT 'pendiente';
+        ALTER TABLE cotizaciones ADD COLUMN estado_operativo TEXT NOT NULL DEFAULT 'sin_pedido';
+        ALTER TABLE cotizaciones ADD COLUMN despacho_destino TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN despacho_valor INTEGER;
+        ALTER TABLE cotizaciones ADD COLUMN facturacion_estado TEXT NOT NULL DEFAULT 'pendiente';
+        ALTER TABLE cotizaciones ADD COLUMN facturacion_tipo TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN facturacion_id_externo TEXT;
+        ALTER TABLE cotizaciones ADD COLUMN facturacion_fecha TEXT;
+        ALTER TABLE solicitudes ADD COLUMN margen REAL;
+        ALTER TABLE solicitudes ADD COLUMN tipo_medida TEXT;
+        ALTER TABLE solicitudes ADD COLUMN descripcion TEXT;
+        ALTER TABLE solicitudes ADD COLUMN observaciones TEXT;
+        ALTER TABLE solicitudes ADD COLUMN modelo_original TEXT;
+        ALTER TABLE solicitudes ADD COLUMN coincidencia_modelo TEXT;
+        ALTER TABLE productos_catalogo ADD COLUMN alto_min REAL;
+        ALTER TABLE productos_catalogo ADD COLUMN alto_max REAL;
+        ALTER TABLE productos_adicionales ADD COLUMN alto_min REAL;
+        ALTER TABLE productos_adicionales ADD COLUMN alto_max REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN alto_min REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN alto_max REAL;
+        ALTER TABLE nota_lineas ADD COLUMN alto_min REAL;
+        ALTER TABLE nota_lineas ADD COLUMN alto_max REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN precio_fabrica REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN margen REAL;
+        ALTER TABLE cotizacion_lineas ADD COLUMN margen_personalizado INTEGER;
+        ALTER TABLE cotizacion_lineas ADD COLUMN precio_cliente INTEGER;
+        ALTER TABLE cotizacion_lineas ADD COLUMN tipo_medida TEXT;
+        ALTER TABLE cotizacion_lineas ADD COLUMN observaciones TEXT;
+        ALTER TABLE nota_lineas ADD COLUMN precio_fabrica REAL;
+        ALTER TABLE nota_lineas ADD COLUMN margen REAL;
+        ALTER TABLE nota_lineas ADD COLUMN margen_personalizado INTEGER;
+        ALTER TABLE nota_lineas ADD COLUMN precio_cliente INTEGER;
+        ALTER TABLE nota_lineas ADD COLUMN tipo_medida TEXT;
+        ALTER TABLE nota_lineas ADD COLUMN observaciones TEXT;
+        CREATE TABLE pagos (
+          id TEXT PRIMARY KEY,
+          cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          fecha TEXT NOT NULL,
+          monto INTEGER NOT NULL CHECK (monto > 0),
+          observacion TEXT,
+          usuario TEXT
+        );
+        CREATE INDEX pagos_cotizacion_fecha ON pagos(cotizacion_id, fecha, id);
+        CREATE TABLE comentarios_internos (
+          id TEXT PRIMARY KEY,
+          cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          fecha TEXT NOT NULL,
+          texto TEXT NOT NULL,
+          usuario TEXT
+        );
+        CREATE INDEX comentarios_cotizacion_fecha ON comentarios_internos(cotizacion_id, fecha, id);
+        UPDATE cotizaciones SET estado_comercial = CASE
+          WHEN estado = 'aprobada' THEN 'aprobada'
+          WHEN estado = 'emitida' THEN 'enviada'
+          WHEN estado = 'anulada' THEN 'rechazada'
+          ELSE 'pendiente' END;
+        UPDATE cotizaciones SET estado_operativo = 'pedido_generado'
+          WHERE EXISTS (SELECT 1 FROM notas_pedido n WHERE n.cotizacion_id = cotizaciones.id);
+        UPDATE productos_catalogo SET modelo = 'Huilo Huilo' WHERE modelo_normalizado = 'HUILOHUILO';
+        UPDATE productos_adicionales SET modelo = 'Huilo Huilo' WHERE modelo_normalizado = 'HUILOHUILO';
+        UPDATE solicitudes SET modelo = 'Huilo Huilo' WHERE UPPER(REPLACE(REPLACE(modelo, ' ', ''), '-', '')) = 'HUILOHUILO';
+        UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = REPLACE(descripcion, 'HUILO HUILO', 'Huilo Huilo') WHERE UPPER(REPLACE(REPLACE(modelo, ' ', ''), '-', '')) = 'HUILOHUILO';
+        UPDATE nota_lineas SET modelo = 'Huilo Huilo', descripcion = REPLACE(descripcion, 'HUILO HUILO', 'Huilo Huilo') WHERE UPPER(REPLACE(REPLACE(modelo, ' ', ''), '-', '')) = 'HUILOHUILO';
+        PRAGMA user_version = 11;
       `);
     }).immediate();
 }

@@ -100,6 +100,19 @@ afterEach(async () => {
   }
 });
 
+async function aprobarPagarYGenerarNota(servicio: Servicio, q: Cotizacion) {
+  let actual = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
+  actual = (
+    await servicio.ejecutar({
+      tipo: 'pago',
+      id: actual.id,
+      actualizada: actual.actualizada,
+      monto: Math.ceil(actual.montos.total * 0.5),
+    })
+  ).cotizacion;
+  return servicio.ejecutar({ tipo: 'generar_nota', id: actual.id, actualizada: actual.actualizada });
+}
+
 describe('C1: cantidades inválidas del modelo', () => {
   it('anula cantidades no enteras o enormes con aviso y la base sigue legible', async () => {
     const { servicio, llm, almacen } = await setup();
@@ -202,18 +215,18 @@ describe('M3: emisión con precios vigentes', () => {
     const catalogo = catalogoBase();
     const { servicio, almacen, conPedido } = await setup(catalogo);
     const q = await conPedido();
-    expect(q.montos.lineas[0].precioUnitario).toBe(126);
+    expect(q.montos.lineas[0].precioUnitario).toBe(186);
     catalogo.productos[0].precioNeto = 200;
     const rechazo = await servicio
       .ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })
       .catch((e: ErrorUsuario) => e);
     expect(rechazo).toMatchObject({ status: 409, codigo: 'precios_cambiaron' });
     const detalle = (rechazo as ErrorUsuario).detalle!;
-    expect((detalle.avisos as string[]).join(' ')).toMatch(/\$126 a \$250/);
+    expect((detalle.avisos as string[]).join(' ')).toMatch(/\$186 a \$370/);
     // Nada emitido ni número consumido; el borrador ya muestra los montos que se emitirán.
     const vigente = almacen.obtener(q.id)!;
     expect(vigente).toMatchObject({ estado: 'borrador', numero: null, pdf: null });
-    expect(vigente.montos.lineas[0].precioUnitario).toBe(250);
+    expect(vigente.montos.lineas[0].precioUnitario).toBe(370);
     expect(vigente.montos.total).toBe(detalle.total);
     expect(vigente.actualizada).toBe(detalle.actualizada);
     expect(almacen.correlativos().siguienteCotizacion).toBe(CORRELATIVO_COTIZACION);
@@ -224,7 +237,7 @@ describe('M3: emisión con precios vigentes', () => {
     ).rejects.toMatchObject({ codigo: 'version_obsoleta' });
     const r = await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: vigente.actualizada });
     expect(r.cotizacion.numero).toBe(CORRELATIVO_COTIZACION);
-    expect(r.cotizacion.montos.lineas[0].precioUnitario).toBe(250);
+    expect(r.cotizacion.montos.lineas[0].precioUnitario).toBe(370);
     expect(r.avisos).toBeUndefined();
     expect(r.cotizacion.versionCatalogo).toBe('test:2026-01-01');
   });
@@ -348,7 +361,7 @@ describe('A3: medidas pedidas en las líneas', () => {
       [0, 0.82, 2, null],
       [1, null, 2.1, '2X4'],
     ]);
-    const a = (await servicio.ejecutar({ tipo: 'aprobar', id: e.id, actualizada: e.actualizada })).cotizacion;
+    const a = (await aprobarPagarYGenerarNota(servicio, e)).cotizacion;
     expect(a.nota!.montos.lineas[0].anchoSolicitado).toBe(0.82);
     expect(vi.mocked(plantilla).mock.calls.at(-1)![1].montos.lineas[1].medidaSolicitada).toBe('2X4');
   });
@@ -362,7 +375,7 @@ describe('Nuevas acciones', () => {
     expect(e.emitidaPor).toBe('Paula');
     expect(e.vence).toBe(calcularVence(e.fechaEmision!));
     expect(e.cliente.giro).toBe('Construcción');
-    const a = (
+    let a = (
       await servicio.ejecutar({
         tipo: 'aprobar',
         id: e.id,
@@ -371,7 +384,14 @@ describe('Nuevas acciones', () => {
       })
     ).cotizacion;
     expect(a.aprobadaPor).toBe('Paula');
-    expect(a.nota!.despacho).toEqual({ direccion: 'Los Carrera #450', transporte: 'Camión propio' });
+    expect(a.nota).toBeNull();
+    a = (
+      await servicio.ejecutar({ tipo: 'pago', id: a.id, actualizada: a.actualizada, monto: Math.ceil(a.montos.total * 0.5) })
+    ).cotizacion;
+    a = (
+      await servicio.ejecutar({ tipo: 'generar_nota', id: a.id, actualizada: a.actualizada })
+    ).cotizacion;
+    expect(a.nota!.despacho).toMatchObject({ direccion: 'Los Carrera #450', transporte: 'Camión propio' });
     expect(vi.mocked(plantilla).mock.calls.at(-1)![1]).toMatchObject({ tipo: 'nota', autor: 'Paula' });
     const anulada = (
       await servicio.ejecutar({
@@ -395,7 +415,7 @@ describe('Nuevas acciones', () => {
   it('una aprobada que se anuló no se vuelve a informar como aprobada', async () => {
     const { servicio, llm, emitida, conPedido } = await setup();
     const e = await emitida();
-    const a = (await servicio.ejecutar({ tipo: 'aprobar', id: e.id, actualizada: e.actualizada })).cotizacion;
+    const a = (await aprobarPagarYGenerarNota(servicio, e)).cotizacion;
     const anulada = (await servicio.ejecutar({ tipo: 'anular', id: a.id, actualizada: a.actualizada }))
       .cotizacion;
     await expect(
@@ -473,8 +493,8 @@ describe('Nuevas acciones', () => {
       cantidades: [{ indice: 0, cantidad: 4 }],
     });
     const m = r.cotizacion.montos;
-    expect([m.subtotal, m.descuento, m.flete, m.neto]).toEqual([504, 50, 5000, 5454]);
-    expect(m.total).toBe(5454 + Math.round(5454 * 0.19));
+    expect([m.subtotal, m.descuento, m.flete, m.neto]).toEqual([744, 74, 5000, 5670]);
+    expect(m.total).toBe(5670 + Math.round(5670 * 0.19));
     expect(r.cotizacion.cliente).toMatchObject({ rut: '12.345.678-5', giro: 'Constructora' });
     expect(r.cambios?.modificados).toHaveLength(1);
     expect(r.cambios?.cliente).toEqual(['rut', 'giro']);
@@ -487,7 +507,7 @@ describe('Nuevas acciones', () => {
     expect(invalido.cotizacion.cliente.rut).toBe('12345678-9');
     expect(invalido.avisos?.[0]).toMatch(/dígito verificador/);
     const e = (await emitir(invalido.cotizacion)).cotizacion;
-    const a = (await servicio.ejecutar({ tipo: 'aprobar', id: e.id, actualizada: e.actualizada })).cotizacion;
+    const a = (await aprobarPagarYGenerarNota(servicio, e)).cotizacion;
     expect(a.nota!.montos).toMatchObject({ descuento: 0, flete: 0, neto: 400, subtotal: 400 });
   });
 

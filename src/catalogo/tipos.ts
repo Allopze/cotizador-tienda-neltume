@@ -10,6 +10,9 @@ export interface Producto {
   medida: string;
   anchoMin: number | null;
   anchoMax: number | null;
+  /** Rangos de alto opcionales; si faltan, se usa `largo` como medida exacta. */
+  altoMin?: number | null;
+  altoMax?: number | null;
   largo: number;
   precioNeto: number;
   descripcion: string;
@@ -30,6 +33,12 @@ export interface SolicitudItem {
   cantidad: number | null;
   /** Precio unitario excepcional para esta cotización; null usa el precio calculado del catálogo. */
   precioUnitario?: number | null;
+  margen?: number | null;
+  tipoMedida?: 'hoja' | 'vano' | 'no_especificado' | null;
+  descripcion?: string | null;
+  observaciones?: string | null;
+  modeloOriginal?: string | null;
+  coincidenciaModelo?: 'canonico' | 'alias' | 'posible' | null;
 }
 export interface Cliente {
   nombre: string | null;

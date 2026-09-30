@@ -11,6 +11,7 @@ import { ErrorUsuario, registrarError } from '@/servidor/errores';
 import { normalizarTexto } from '@/servidor/busqueda';
 import { leerConfiguracionNegocio } from '@/servidor/configuracion-negocio';
 import type { Producto } from '@/catalogo/tipos';
+import { margenProducto } from '@/negocio/precios';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -109,7 +110,7 @@ export async function GET(req: Request) {
         a.largo - b.largo ||
         orden.compare(a.medida, b.medida),
     );
-    const ajuste = leerConfiguracionNegocio(abrirBaseDatos()).reglas.ajuste;
+    const reglas = leerConfiguracionNegocio(abrirBaseDatos()).reglas;
     return Response.json(
       {
         total: coinciden.length,
@@ -120,9 +121,13 @@ export async function GET(req: Request) {
           tipo: p.tipo,
           madera: p.madera,
           medida: p.medida,
+          anchoMin: p.anchoMin,
+          anchoMax: p.anchoMax,
           largo: p.largo,
+          altoMin: p.altoMin ?? null,
+          altoMax: p.altoMax ?? null,
           descripcion: p.descripcion,
-          unitario: Math.round(p.precioNeto * (1 + ajuste)),
+          unitario: Math.round(p.precioNeto * (1 + margenProducto(p, reglas))),
           manual: manuales.has(p.codigo),
         })),
       },

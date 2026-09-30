@@ -3,8 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
-import { cotizar, pesos, REGLAS } from '../src/negocio/precios';
-import { iniciarSesion } from './login-e2e';
+import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
+import { DIR_E2E, iniciarSesion } from './login-e2e';
 
 async function textoPdf(ruta: string) {
   const task = getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: true });
@@ -23,9 +23,10 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   page,
 }) => {
   const catalogo = new RepositorioCatalogoSqlite(
-    abrirBaseDatos('data/test-e2e/cotizador.sqlite', { permitirJsonLegado: true }),
+    abrirBaseDatos(`${DIR_E2E}/cotizador.sqlite`, { permitirJsonLegado: true }),
   );
   const puerta = catalogo.buscarPorCodigo('HUIL-O-3-B')!;
+  const reglas = { ...REGLAS, margenes: MARGENES_INICIALES };
   await iniciarSesion(page);
   const panel = page.getByLabel('Cotización en curso'),
     conversacion = page.getByTestId('conversacion'),
@@ -54,7 +55,9 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   await expect(pantalla.getByLabel('Buscar en el catálogo')).toBeFocused();
   await pantalla.getByLabel('Buscar en el catálogo').fill('HUIL-O-3-B');
   await expect(pantalla.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
-  await expect(pantalla).toContainText(pesos(Math.round(puerta.precioNeto * (1 + REGLAS.ajuste))));
+  await expect(pantalla).toContainText(
+    pesos(cotizar([{ producto: puerta, cantidad: 1 }], reglas).lineas[0].precioUnitario),
+  );
   // El asistente tiene su propia pantalla, «Ajustes».
   await page.getByRole('link', { name: 'Ajustes', exact: true }).click();
   await expect(page).toHaveURL(/\/ajustes$/);
@@ -77,7 +80,7 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   await panel.getByLabel('Descuento', { exact: true }).fill('2.5');
   await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(page.getByTestId('total')).toHaveText(
-    pesos(cotizar([{ producto: puerta, cantidad: 3 }], REGLAS, { descuento: 2.5 }).total),
+    pesos(cotizar([{ producto: puerta, cantidad: 3 }], reglas, { descuento: 2.5 }).total),
   );
 
   const descarga = page.waitForEvent('download');
@@ -100,8 +103,8 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   await panel.getByRole('button', { name: 'Descargar cotización' }).click();
   const nombreAnulada = (await anulada).suggestedFilename();
   expect(nombreAnulada).toBe(archivo.replace('.pdf', '-anulada.pdf'));
-  expect(await textoPdf(`data/test-e2e/pdf/${nombreAnulada}`)).toContain('ANULADA');
-  expect(await textoPdf(`data/test-e2e/pdf/${archivo}`)).not.toContain('ANULADA');
+  expect(await textoPdf(`${DIR_E2E}/pdf/${nombreAnulada}`)).toContain('ANULADA');
+  expect(await textoPdf(`${DIR_E2E}/pdf/${archivo}`)).not.toContain('ANULADA');
 
   // Exportación del listado (pantalla del historial).
   await page.getByRole('link', { name: 'Historial' }).click();

@@ -18,7 +18,8 @@ interface Empresa {
 }
 interface Configuracion {
   empresa: Empresa;
-  reglas: { ajuste: number; iva: number; vigenciaDiasHabiles: number; descuentoMaximo: number };
+  reglas: { ajuste: number; iva: number; vigenciaDiasHabiles: number; descuentoMaximo: number; margenes: Record<string, number> };
+  transportistas: string[];
 }
 interface Estado {
   configuracion: Configuracion;
@@ -26,6 +27,15 @@ interface Estado {
 }
 
 const vacío = (v: string | null) => v ?? '';
+const ETIQUETAS_MARGEN: [string, string][] = [
+  ['puertas_solidas_mara_lenga', 'Puertas sólidas Mara / Lenga'],
+  ['puertas_solidas_oregon', 'Puertas sólidas Pino Oregón'],
+  ['puertas_prepintadas', 'Puertas prepintadas'],
+  ['puertas_enchapadas_mara', 'Puertas enchapadas Mara'],
+  ['marcos_finger_sin_enchape', 'Marcos Pino Finger sin enchape'],
+  ['marcos_finger_enchapados', 'Marcos Pino Finger enchapados'],
+  ['otros', 'Otros productos'],
+];
 
 export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number }) {
   const [estado, setEstado] = useState<Estado | null>(null);
@@ -111,7 +121,7 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
   return (
     <form onSubmit={guardar}>
       <p className="catalog-modal-intro">
-        Estos datos se imprimen en las cotizaciones y notas nuevas. Las reglas quedan congeladas en cada cotización al crearla.
+        Los márgenes se aplican por categoría y quedan guardados en cada nueva cotización. Cambiar estos valores no modifica cotizaciones existentes.
       </p>
       <div className="usuario-form-grid">
         {campo('nombre', 'Nombre de la empresa')}
@@ -145,20 +155,29 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
         {logoError && <p className="catalog-error" role="alert">{logoError}</p>}
         <Image className="logo-configuracion-vista" src={borrador.empresa.logoSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(borrador.empresa.logoSvg)}` : '/logo-neltume.svg'} alt="Vista previa del logo" width={180} height={90} unoptimized />
       </div>
-      <h3 className="eyebrow">REGLAS DE COTIZACIÓN</h3>
+      <h3 className="eyebrow">AJUSTES &gt; MÁRGENES</h3>
+      <p className="muted">Define el margen estándar por categoría. El cambio solo se aplicará a nuevas cotizaciones.</p>
       <div className="usuario-form-grid">
-        <label className="ia-field">
-          <span>Ajuste sobre precio neto (%)</span>
-          <input
-            type="number"
-            min={-50}
-            max={100}
-            step="0.01"
-            value={borrador.reglas.ajuste * 100}
-            onChange={(e) => setBorrador({ ...borrador, reglas: { ...borrador.reglas, ajuste: Number(e.target.value) / 100 } })}
-            disabled={!editable || ocupado}
-          />
-        </label>
+        {ETIQUETAS_MARGEN.map(([clave, etiqueta]) => (
+          <label className="ia-field" key={clave}>
+            <span>{etiqueta} · margen (%)</span>
+            <input
+              type="number"
+              min={0}
+              max={500}
+              step="0.01"
+              value={Number(borrador.reglas.margenes?.[clave] ?? 0) * 100}
+              onChange={(e) => setBorrador({
+                ...borrador,
+                reglas: {
+                  ...borrador.reglas,
+                  margenes: { ...borrador.reglas.margenes, [clave]: Number(e.target.value) / 100 },
+                },
+              })}
+              disabled={!editable || ocupado}
+            />
+          </label>
+        ))}
         <label className="ia-field">
           <span>IVA (%)</span>
           <input
@@ -196,6 +215,17 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
           />
         </label>
       </div>
+      <h3 className="eyebrow">TRANSPORTISTAS</h3>
+      <label className="ia-field">
+        <span>Opciones de despacho, una por línea</span>
+        <textarea
+          rows={4}
+          maxLength={800}
+          value={borrador.transportistas.join('\n')}
+          onChange={(e) => setBorrador({ ...borrador, transportistas: [...new Set(e.target.value.split('\n').map((x) => x.trim()).filter(Boolean))] })}
+          disabled={!editable || ocupado}
+        />
+      </label>
       {error && <p className="catalog-error" role="alert">{error}</p>}
       {editable && (
         <div className="ia-actions">

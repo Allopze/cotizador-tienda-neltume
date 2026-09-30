@@ -3,6 +3,7 @@ import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/r
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
+  nombreCanonicoModelo,
   resolverMaderaConfigurada,
   resolverModeloConfigurado,
   validarConfiguracionCatalogo,
@@ -31,6 +32,8 @@ export interface CambiosProductoManual {
   medida?: string;
   anchoMin?: number | null;
   anchoMax?: number | null;
+  altoMin?: number | null;
+  altoMax?: number | null;
   largo?: number;
   precioNeto?: number;
   descripcion?: string;
@@ -53,6 +56,8 @@ type FilaProducto = {
   medida: string;
   ancho_min: number | null;
   ancho_max: number | null;
+  alto_min: number | null;
+  alto_max: number | null;
   largo: number;
   precio_neto: number;
   descripcion: string;
@@ -61,13 +66,15 @@ type FilaProducto = {
 
 const convertirProducto = (p: FilaProducto): Producto => ({
   codigo: p.codigo,
-  modelo: p.modelo,
+  modelo: nombreCanonicoModelo(p.modelo),
   familia: p.familia,
   tipo: p.tipo,
   madera: p.madera,
   medida: p.medida,
   anchoMin: p.ancho_min,
   anchoMax: p.ancho_max,
+  ...(p.alto_min !== null ? { altoMin: p.alto_min } : {}),
+  ...(p.alto_max !== null ? { altoMax: p.alto_max } : {}),
   largo: p.largo,
   precioNeto: p.precio_neto,
   descripcion: p.descripcion,
@@ -91,10 +98,10 @@ export function guardarCatalogo(
   const insertar = db.prepare(`
     INSERT INTO productos_catalogo (
       codigo, orden, modelo, modelo_normalizado, familia, tipo, madera, medida,
-      ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+      ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
     ) VALUES (
       @codigo, @orden, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida,
-      @ancho_min, @ancho_max, @largo, @precio_neto, @descripcion, @fila_origen
+      @ancho_min, @ancho_max, @alto_min, @alto_max, @largo, @precio_neto, @descripcion, @fila_origen
     )
   `);
   db.transaction(() => {
@@ -113,7 +120,7 @@ export function guardarCatalogo(
       insertar.run({
         codigo: p.codigo,
         orden,
-        modelo: p.modelo,
+        modelo: nombreCanonicoModelo(p.modelo),
         modelo_normalizado: normalizar(p.modelo),
         familia: p.familia,
         tipo: p.tipo,
@@ -121,6 +128,8 @@ export function guardarCatalogo(
         medida: p.medida,
         ancho_min: p.anchoMin,
         ancho_max: p.anchoMax,
+        alto_min: p.altoMin ?? null,
+        alto_max: p.altoMax ?? null,
         largo: p.largo,
         precio_neto: p.precioNeto,
         descripcion: p.descripcion,
@@ -227,18 +236,30 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     const filas = this.db
       .prepare(
         `
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
+        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
                largo, precio_neto, descripcion, fila_origen
         FROM (
           SELECT 0 AS fuente, orden, codigo, modelo, familia, tipo, madera, medida,
-                 ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+                 ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
           FROM productos_catalogo
           UNION ALL
           SELECT 1 AS fuente, rowid AS orden, codigo, modelo, familia, tipo, madera, medida,
-                 ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+                 ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
           FROM productos_adicionales
         ) ORDER BY fuente, orden
       `,
+      )
+      .all() as FilaProducto[];
+    return filas.map(convertirProducto);
+  }
+
+  /** Productos que proceden de la última planilla; excluye las altas manuales. */
+  importados() {
+    const filas = this.db
+      .prepare(
+        `SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
+                largo, precio_neto, descripcion, fila_origen
+         FROM productos_catalogo ORDER BY orden`,
       )
       .all() as FilaProducto[];
     return filas.map(convertirProducto);
@@ -293,15 +314,15 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     const filas = this.db
       .prepare(
         `
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
+        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
                largo, precio_neto, descripcion, fila_origen
         FROM (
           SELECT modelo_normalizado, 0 AS fuente, orden, codigo, modelo, familia, tipo, madera,
-                 medida, ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+                 medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
           FROM productos_catalogo
           UNION ALL
           SELECT modelo_normalizado, 1 AS fuente, rowid AS orden, codigo, modelo, familia, tipo, madera,
-                 medida, ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen
+                 medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
           FROM productos_adicionales
         ) WHERE modelo_normalizado = ?
         ORDER BY fuente, orden
@@ -315,11 +336,11 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     const fila = this.db
       .prepare(
         `
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
+        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
                largo, precio_neto, descripcion, fila_origen
         FROM productos_catalogo WHERE codigo = ?
         UNION ALL
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max,
+        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
                largo, precio_neto, descripcion, fila_origen
         FROM productos_adicionales WHERE codigo = ?
         LIMIT 1
@@ -354,7 +375,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         (p) =>
           p.codigo !== excluirCodigo &&
           normalizar(p.madera) === normalizar(producto.madera) &&
-          Math.abs(p.largo - producto.largo) < 0.000001 &&
+          (p.altoMin ?? p.largo - 0.005) <= (producto.altoMax ?? producto.largo + 0.005) &&
+          (p.altoMax ?? p.largo + 0.005) >= (producto.altoMin ?? producto.largo - 0.005) &&
           traslapan(p, producto),
       ) ?? null
     );
@@ -395,7 +417,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     const filas = this.db
       .prepare(
         `
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, largo, precio_neto,
+        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto,
                descripcion, fila_origen, creada, creada_por, actualizada
         FROM productos_adicionales ORDER BY creada DESC, rowid DESC
       `,
@@ -419,12 +441,12 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       .prepare(
         `
         SELECT 'planilla' AS fuente, NULL AS creada, NULL AS creada_por, NULL AS actualizada,
-               codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, largo, precio_neto,
+               codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto,
                descripcion, fila_origen, orden AS orden_fuente
         FROM productos_catalogo
         UNION ALL
         SELECT 'manual' AS fuente, creada, creada_por, actualizada,
-               codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, largo, precio_neto,
+               codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto,
                descripcion, fila_origen, rowid AS orden_fuente
         FROM productos_adicionales
         ORDER BY fuente, orden_fuente
@@ -477,12 +499,14 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
             : null;
         if (!fuente) throw new ErrorUsuarioCatalogo('No se encontró el producto.', 'no_encontrada', 404);
         const actual = this.buscarPorCodigo(codigo)!;
-        const modelo = cambios.modelo?.replace(/\s+/g, ' ').trim() || actual.modelo;
+        const modelo = nombreCanonicoModelo(cambios.modelo?.replace(/\s+/g, ' ').trim() || actual.modelo);
         const familia = cambios.familia ?? actual.familia;
         const madera = cambios.madera?.replace(/\s+/g, ' ').trim() || actual.madera;
         const medida = cambios.medida?.replace(/\s+/g, ' ').trim() || actual.medida;
         const anchoMin = cambios.anchoMin === undefined ? actual.anchoMin : cambios.anchoMin;
         const anchoMax = cambios.anchoMax === undefined ? actual.anchoMax : cambios.anchoMax;
+        const altoMin = cambios.altoMin === undefined ? actual.altoMin ?? null : cambios.altoMin;
+        const altoMax = cambios.altoMax === undefined ? actual.altoMax ?? null : cambios.altoMax;
         const largo = cambios.largo ?? actual.largo;
         const precioNeto = cambios.precioNeto ?? actual.precioNeto;
         if (!modelo || !madera || !medida || !Number.isFinite(largo) || largo <= 0 || largo > 100)
@@ -493,6 +517,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           (anchoMin !== null && anchoMax !== null && anchoMin > anchoMax)
         )
           throw new ErrorUsuarioCatalogo('El rango de ancho no es válido.');
+        if ((altoMin !== null && (altoMin <= 0 || altoMin > 100)) || (altoMax !== null && (altoMax <= 0 || altoMax > 100)) || (altoMin !== null && altoMax !== null && altoMin > altoMax))
+          throw new ErrorUsuarioCatalogo('El rango de alto no es válido.');
         if (!Number.isFinite(precioNeto) || precioNeto <= 0 || precioNeto > 100_000_000)
           throw new ErrorUsuarioCatalogo(
             'El precio neto unitario debe ser mayor que $0 y no superar $100.000.000.',
@@ -508,6 +534,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           medida,
           anchoMin,
           anchoMax,
+          altoMin,
+          altoMax,
           largo,
           precioNeto,
           descripcion,
@@ -530,7 +558,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           this.db
             .prepare(
               `UPDATE productos_adicionales SET
-                modelo = ?, modelo_normalizado = ?, familia = ?, madera = ?, medida = ?, ancho_min = ?, ancho_max = ?,
+                modelo = ?, modelo_normalizado = ?, familia = ?, madera = ?, medida = ?, ancho_min = ?, ancho_max = ?, alto_min = ?, alto_max = ?,
                 largo = ?, precio_neto = ?, descripcion = ?, tipo = ?, actualizada = ? WHERE codigo = ?`,
             )
             .run(
@@ -541,6 +569,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
               medida,
               anchoMin,
               anchoMax,
+              altoMin,
+              altoMax,
               largo,
               precioNeto,
               descripcion.slice(0, 300),
@@ -552,7 +582,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           this.db
             .prepare(
               `UPDATE productos_catalogo SET
-                modelo = ?, modelo_normalizado = ?, familia = ?, madera = ?, medida = ?, ancho_min = ?, ancho_max = ?,
+                modelo = ?, modelo_normalizado = ?, familia = ?, madera = ?, medida = ?, ancho_min = ?, ancho_max = ?, alto_min = ?, alto_max = ?,
                 largo = ?, precio_neto = ?, descripcion = ?, tipo = ? WHERE codigo = ?`,
             )
             .run(
@@ -563,6 +593,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
               medida,
               anchoMin,
               anchoMax,
+              altoMin,
+              altoMax,
               largo,
               precioNeto,
               descripcion.slice(0, 300),
@@ -635,17 +667,17 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           .prepare(
             `
           INSERT INTO productos_adicionales (
-            codigo, modelo, modelo_normalizado, familia, tipo, madera, medida, ancho_min, ancho_max,
+            codigo, modelo, modelo_normalizado, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
             largo, precio_neto, descripcion, fila_origen, creada, creada_por
           ) VALUES (
-            @codigo, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida, @ancho_min, @ancho_max,
+            @codigo, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida, @ancho_min, @ancho_max, @alto_min, @alto_max,
             @largo, @precio_neto, @descripcion, 0, @creada, @creada_por
           )
         `,
           )
           .run({
             codigo: producto.codigo,
-            modelo: producto.modelo,
+            modelo: nombreCanonicoModelo(producto.modelo),
             modelo_normalizado: normalizar(producto.modelo),
             familia: producto.familia,
             tipo: producto.tipo,
@@ -653,6 +685,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
             medida: producto.medida,
             ancho_min: producto.anchoMin,
             ancho_max: producto.anchoMax,
+            alto_min: producto.altoMin ?? null,
+            alto_max: producto.altoMax ?? null,
             largo: producto.largo,
             precio_neto: producto.precioNeto,
             descripcion: producto.descripcion,

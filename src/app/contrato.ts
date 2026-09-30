@@ -54,7 +54,7 @@ export interface CambiosEdicion {
   cantidades?: { indice: number; cantidad: number }[];
   items?: {
     indice: number;
-    cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario'>>;
+    cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones'>>;
   }[];
   descuento?: number;
   flete?: number;
@@ -70,6 +70,10 @@ export interface ProductoConsulta {
   madera: string;
   medida: string;
   largo: number;
+  anchoMin?: number | null;
+  anchoMax?: number | null;
+  altoMin?: number | null;
+  altoMax?: number | null;
   descripcion: string;
   unitario: number;
   manual: boolean;
@@ -78,4 +82,6 @@ export interface Despacho {
   direccion?: string | null;
   transporte?: string | null;
   entregaComprometida?: string | null;
+  destino?: string | null;
+  valor?: number | null;
 }

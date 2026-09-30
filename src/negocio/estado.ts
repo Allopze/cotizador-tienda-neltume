@@ -22,6 +22,39 @@ export interface Despacho {
   transporte: string | null;
   /** Texto libre o fecha acordada con el cliente. */
   entregaComprometida?: string | null;
+  destino?: string | null;
+  valor?: number | null;
+}
+export type EstadoComercial = 'pendiente' | 'enviada' | 'seguimiento' | 'aprobada' | 'rechazada' | 'vendida';
+export type EstadoOperativo =
+  | 'sin_pedido'
+  | 'anticipo_pagado'
+  | 'pedido_generado'
+  | 'en_produccion'
+  | 'produccion_terminada'
+  | 'saldo_pendiente'
+  | 'pagada'
+  | 'lista_despacho'
+  | 'despachada'
+  | 'completada';
+export interface Pago {
+  id: string;
+  fecha: string;
+  monto: number;
+  observacion: string | null;
+  usuario: string | null;
+}
+export interface ComentarioInterno {
+  id: string;
+  fecha: string;
+  texto: string;
+  usuario: string | null;
+}
+export interface Facturacion {
+  estado: 'pendiente' | 'facturada';
+  tipo: 'factura' | 'boleta' | null;
+  identificadorExterno: string | null;
+  fecha: string | null;
 }
 export interface NotaPedido {
   numero: number;
@@ -73,6 +106,12 @@ export interface Cotizacion {
   /** Versión del catálogo (sha256:fecha) con la que se calcularon los montos al emitir. */
   versionCatalogo: string | null;
   nota: NotaPedido | null;
+  /** Fases comerciales y operativas separadas del estado del documento. */
+  estadoComercial?: EstadoComercial;
+  estadoOperativo?: EstadoOperativo;
+  pagos?: Pago[];
+  comentariosInternos?: ComentarioInterno[];
+  facturacion?: Facturacion;
 }
 /** Fila del listado: sin historial, solicitudes ni líneas. */
 export interface ResumenCotizacion {
@@ -110,6 +149,12 @@ export interface ResumenCotizacion {
   anuladaPor: string | null;
   fechaAnulacion: string | null;
   nota: { numero: number; pdf: string; fecha: string; anulada: boolean } | null;
+  estadoComercial?: EstadoComercial;
+  estadoOperativo?: EstadoOperativo;
+  pagado?: number;
+  saldoPendiente?: number;
+  porcentajePagado?: number;
+  pagos?: number;
 }
 /** Entrada del registro de actividad de una cotización. */
 export interface EventoCotizacion {
@@ -127,7 +172,17 @@ export type TipoEvento =
   | 'aprobada'
   | 'anulada'
   | 'reemplazada'
-  | 'desvinculada';
+  | 'desvinculada'
+  | 'pago_registrado'
+  | 'comentario'
+  | 'seguimiento'
+  | 'produccion'
+  | 'produccion_terminada'
+  | 'nota_generada'
+  | 'despachada'
+  | 'lista_despacho'
+  | 'completada'
+  | 'facturada';
 export const etiquetaEvento: Record<TipoEvento, string> = {
   creada: 'Creada',
   revision: 'Revisión creada',
@@ -138,6 +193,16 @@ export const etiquetaEvento: Record<TipoEvento, string> = {
   anulada: 'Anulada',
   reemplazada: 'Reemplazada',
   desvinculada: 'Queda como cotización nueva',
+  pago_registrado: 'Pago registrado',
+  comentario: 'Comentario interno',
+  seguimiento: 'Seguimiento actualizado',
+  produccion: 'Producción iniciada',
+  produccion_terminada: 'Producción terminada',
+  nota_generada: 'Nota de pedido generada',
+  despachada: 'Despachada',
+  lista_despacho: 'Lista para despacho',
+  completada: 'Completada',
+  facturada: 'Facturación actualizada',
 };
 export interface Estado {
   siguienteCotizacion: number;

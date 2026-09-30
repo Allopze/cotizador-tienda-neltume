@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { abrirXlsx, type Hoja } from './xlsx';
 import {
   normalizarCatalogo,
+  nombreCanonicoModelo,
   resolverMaderaConfigurada,
   validarConfiguracionCatalogo,
   type ConfiguracionCatalogo,
@@ -33,8 +34,14 @@ export interface Incidencia {
   detalle: string;
 }
 export function descripcion(p: Producto) {
-  const base = `${p.modelo} ${p.madera === 'RAULI' ? 'RAULÍ' : p.madera} ${p.medida}`;
-  if (p.familia === 'PUERTA') return `${base} MT X ${decimal(p.largo)} MT`;
+  const base = `${p.modelo} ${p.madera === 'RAULI' ? 'RAULÍ' : p.madera} ${p.familia === 'PUERTA' ? p.medida.split(' A ').map((v) => {
+    const n = Number(v.replace(',', '.'));
+    return decimal(n > 10 ? n / 100 : n);
+  }).join(' A ') : p.medida}`;
+  const altoMin = p.altoMin ?? p.largo;
+  const altoMax = p.altoMax ?? p.largo;
+  const alto = altoMin === altoMax ? decimal(p.largo) : `${decimal(altoMin)} A ${decimal(altoMax)}`;
+  if (p.familia === 'PUERTA') return `${base} MT X ${alto} MT`;
   if (p.familia === 'MOLDURA') return `${base} CM X ${decimal(p.largo)} MT`;
   return p.largo < 3 ? `${base} PULG KIT` : `${base} PULG X ${decimal(p.largo)} MT`;
 }
@@ -83,13 +90,14 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       ]),
     );
   const codigoCalculado = (p: Producto) => {
+    if (p.altoMin !== null && p.altoMin !== undefined && p.altoMax !== null && p.altoMax !== undefined && p.altoMin !== p.altoMax) return null;
     const letra = largos.get(p.familia === 'MOLDURA' ? `${p.medida}X${decimal(p.largo)}` : String(p.largo));
     const seg = medidas.get(p.medida),
-      abrev = modelos.get(p.modelo),
+      abrev = [...modelos].find(([nombre]) => normalizarCatalogo(nombre) === normalizarCatalogo(p.modelo))?.[1],
       madera = maderaCodigo.get(normalizarCatalogo(p.madera));
     return letra && seg && abrev && madera ? `${abrev}-${madera}-${seg}-${letra}` : null;
   };
-  const clave = (p: Producto) => `${p.modelo}|${p.madera}|${p.medida}|${p.largo}`;
+  const clave = (p: Producto) => `${p.modelo}|${p.madera}|${p.medida}|${p.altoMin ?? p.largo}|${p.altoMax ?? p.largo}`;
   const filas = [...new Set([...precio.keys()].map((k) => Number(k.replace(/[A-Z]/g, ''))))].sort(
     (a, b) => a - b,
   );
@@ -107,7 +115,10 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
         : familia === 'MOLDURA'
           ? codigo.split('-')[2]
           : `2X${get(precio, 'D', r)}`;
-    const anchos = familia === 'PUERTA' ? medida.split(' A ').map((n) => Number(n.replace(',', '.'))) : [];
+    const anchos = familia === 'PUERTA' ? medida.split(' A ').map((valor) => {
+      const n = Number(valor.replace(',', '.'));
+      return n > 10 ? n / 100 : n;
+    }) : [];
     const maderaHoja = limpio(get(precio, 'G', r))
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
@@ -120,12 +131,24 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       madera: maderaConfigurada ?? maderaHoja,
       medida,
       anchoMin: anchos[0] ?? null,
-      anchoMax: anchos[1] ?? null,
+      anchoMax: anchos[1] ?? anchos[0] ?? null,
       largo: num(get(precio, 'F', r)),
       precioNeto: num(get(precio, 'O', r)),
       descripcion: '',
       filaOrigen: r,
     };
+    const altoRango = typeof get(precio, 'F', r) === 'string'
+      ? String(get(precio, 'F', r)).trim().match(/^\s*(\d+(?:[.,]\d+)?)\s*(?:A|[-–])\s*(\d+(?:[.,]\d+)?)\s*$/i)
+      : null;
+    if (altoRango) {
+      const dimension = (v: string) => {
+        const n = Number(v.replace(',', '.'));
+        return n <= 10 ? n : n <= 300 ? n / 100 : n / 1000;
+      };
+      p.altoMin = dimension(altoRango[1]);
+      p.altoMax = dimension(altoRango[2]);
+      p.largo = Math.round(((p.altoMin + p.altoMax) / 2) * 10000) / 10000;
+    }
     const bruto = Number(get(precio, 'O', r)),
       conIva = Number(get(precio, 'P', r));
     if (
@@ -133,7 +156,7 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       p.precioNeto <= 0 ||
       !maderaConfigurada ||
       !maderaPorNombreHoja.has(normalizarCatalogo(maderaConfigurada)) ||
-      !codigoCalculado(p) ||
+      (!(p.altoMin !== undefined && p.altoMax !== undefined && p.altoMin !== p.altoMax) && !codigoCalculado(p)) ||
       Math.abs(conIva - bruto * 1.19) > 0.01
     ) {
       incidencias.push({
@@ -156,8 +179,8 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
   const candidatos: Producto[] = [];
   for (const original of originales) {
     let p = { ...original };
-    const calculado = codigoCalculado(p)!;
-    if (p.codigo !== calculado) {
+    const calculado = codigoCalculado(p);
+    if (calculado && p.codigo !== calculado) {
       const [abrev, madera, seg, letra] = p.codigo.split('-');
       const modelo = [...modelos].find(([, v]) => v === abrev)?.[0];
       const especie = maderaPorCodigo.get(madera);
@@ -195,6 +218,7 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
           : `${p.codigo}: largo ${decimal(original.largo)} → ${decimal(p.largo)} m`,
       });
     }
+    p.modelo = nombreCanonicoModelo(p.modelo);
     p.descripcion = descripcion(p);
     candidatos.push(p);
   }

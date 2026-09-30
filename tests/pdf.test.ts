@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { clienteVacio, type Producto } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
 import { cotizar, montosVacios } from '../src/negocio/precios';
+import { cerrarBaseDatos } from '../src/servidor/base-datos';
 
 const navegador = vi.hoisted(() => ({ demora: 0, cerrado: 0 }));
 vi.mock('playwright', () => ({
@@ -74,13 +75,24 @@ const cotizacion = (): Cotizacion => ({
 const dirs: string[] = [];
 afterEach(async () => {
   navegador.demora = 0;
-  for (const dir of dirs.splice(0)) await rm(dir, { recursive: true, force: true });
+  vi.unstubAllEnvs();
+  for (const dir of dirs.splice(0)) {
+    cerrarBaseDatos(join(dir, 'cotizador.sqlite'));
+    await rm(dir, { recursive: true, force: true });
+  }
 });
+
+async function aislarBaseDatos() {
+  const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-db-'));
+  dirs.push(dir);
+  vi.stubEnv('NELTUME_DB_PATH', join(dir, 'cotizador.sqlite'));
+}
 
 describe('Plantillas', () => {
   it('la cotización muestra revisión, vigencia exacta, autor, medidas pedidas, descuento y flete', async () => {
+    await aislarBaseDatos();
     const montos = cotizar(
-      [{ producto: puerta, cantidad: 2, anchoSolicitado: 0.82, altoSolicitado: 2 }],
+      [{ producto: puerta, cantidad: 2, anchoSolicitado: 0.82, altoSolicitado: 2, tipoMedida: 'vano' }],
       undefined,
       { descuento: 10, flete: 15000 },
     );
@@ -96,6 +108,7 @@ describe('Plantillas', () => {
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('Emitida por:</b> Paula');
     expect(html).toContain('Medida solicitada: 0,82 × 2,00 m');
+    expect(html).toContain('tipo: Vano');
     expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
     expect(html).toContain('FLETE');
     expect(html).toMatch(/FLETE<\/span><b>\$15\.000/);
@@ -104,7 +117,8 @@ describe('Plantillas', () => {
   });
 
   it('la nota imprime giro, despacho, transporte y quién aprobó', async () => {
-    const montos = cotizar([{ producto: puerta, cantidad: 1, anchoSolicitado: 0.83, altoSolicitado: 2 }], {
+    await aislarBaseDatos();
+    const montos = cotizar([{ producto: puerta, cantidad: 1, anchoSolicitado: 0.83, altoSolicitado: 2, tipoMedida: 'hoja' }], {
       ajuste: 0,
       iva: 0.19,
     });
@@ -121,6 +135,7 @@ describe('Plantillas', () => {
     expect(html).toContain('Medio de transporte:</b> Camión');
     expect(html).toContain('Aprobada por:</b> Paulette');
     expect(html).toContain('Medida solicitada: 0,83 × 2,00 m');
+    expect(html).toContain('tipo: Hoja');
     expect(html).not.toContain('DESCUENTO');
     expect(html).toContain('Ref. cotización:</b> N° 325');
     expect(html).toContain('Recibido por fábrica');
@@ -141,6 +156,7 @@ describe('Plantillas', () => {
   });
 
   it('las condiciones comerciales configuradas se imprimen y la aceptación se omite si está anulada', async () => {
+    await aislarBaseDatos();
     vi.stubEnv('NELTUME_CONDICIONES_PAGO', '50 % anticipo');
     const montos = cotizar([{ producto: puerta, cantidad: 1 }]);
     const doc = { tipo: 'cotizacion' as const, numero: 330, montos, fecha: '2026-09-28T12:00:00.000Z' };
