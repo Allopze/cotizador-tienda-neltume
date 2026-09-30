@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, type RefObject } from 'react';
 import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
-import { descripcionLinea, margenProducto, pesos, porcentaje } from '@/negocio/precios';
+import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
 import { leerPesos } from '@/negocio/cifras';
 import { CampoEditable } from './campo-editable';
 import type { CambiosEdicion } from './contrato';
@@ -18,6 +18,7 @@ import {
   validez,
   vencida,
 } from './formato';
+import { MargenCotizacion, MargenLinea } from './margenes';
 import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales } from './panel-totales';
 import { pedirJSON } from './solicitud';
@@ -478,26 +479,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                               guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { observaciones: v || null } }] }, `item.${i}.observaciones`)}
                             />
                             {linea && (
-                              <label className="ia-field item-select-field">
-                                <span>Margen aplicado{linea.margenPersonalizado ? ' · modificado manualmente' : ' · estándar de categoría'}</span>
-                                <input
-                                  key={`${actual.actualizada}-${i}-margen`}
-                                  type="number"
-                                  min={-50}
-                                  max={500}
-                                  step="0.01"
-                                  defaultValue={Number(((linea.margen ?? margenProducto(linea.producto, actual.reglas ?? { ajuste: 0.25 })) * 100).toFixed(2))}
-                                  disabled={!editable || ocupado}
-                                  readOnly={!editable}
-                                  onBlur={(e) => {
-                                    const nuevo = Number(e.currentTarget.value);
-                                    const vigente = (linea.margen ?? margenProducto(linea.producto, actual.reglas ?? { ajuste: 0.25 })) * 100;
-                                    if (Number.isFinite(nuevo) && Math.abs(nuevo - vigente) >= 0.001)
-                                      void acciones.editar({ items: [{ indice: i, cambios: { margen: nuevo / 100 } }] }, `item.${i}.margen`);
-                                  }}
-                                />
-                                <small>Estándar de categoría: {porcentaje(margenProducto(linea.producto, actual.reglas ?? { ajuste: 0.25 }))}</small>
-                              </label>
+                              <MargenLinea actual={actual} linea={linea} indice={i} editable={editable} editar={acciones.editar} />
                             )}
                           </div>
                         )}
@@ -643,6 +625,9 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               </p>
             )}
           </div>
+          {conItems && (
+            <MargenCotizacion actual={actual} editable={editable} guardando={guardando} editar={acciones.editar} />
+          )}
           {actual && (actual.pdf || actual.nota) && (
             <div className="quote-docs">
               {actual.pdf && (

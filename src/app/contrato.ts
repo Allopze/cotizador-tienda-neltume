@@ -58,6 +58,8 @@ export interface CambiosEdicion {
   }[];
   descuento?: number;
   flete?: number;
+  /** Fracción (0,42 = 42 %); null vuelve al margen de cada categoría. */
+  margenCotizacion?: number | null;
   observaciones?: string | null;
   despacho?: Partial<Despacho> | null;
 }

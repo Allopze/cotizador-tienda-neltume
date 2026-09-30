@@ -80,6 +80,7 @@ type FilaCotizacion = {
   vence: string | null;
   descuento: number;
   flete: number;
+  margen_cotizacion: number | null;
   creada_por: string | null;
   emitida_por: string | null;
   aprobada_por: string | null;
@@ -342,6 +343,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           vence: f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision, reglas.vigenciaDiasHabiles) : null),
           descuento: f.descuento,
           flete: f.flete,
+          margenCotizacion: f.margen_cotizacion ?? null,
           observaciones: f.observaciones ?? null,
           despacho:
             f.despacho_direccion || f.despacho_transporte || f.despacho_entrega || f.despacho_destino || f.despacho_valor !== null
@@ -509,7 +511,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut, cliente_giro,
       cliente_telefono, cliente_direccion, cliente_comuna, cliente_comuna_normalizada,
       cliente_proyecto, cliente_proyecto_normalizado, creada, actualizada, pdf, fecha_emision,
-      fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, flete, creada_por, emitida_por,
+      fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, flete, margen_cotizacion, creada_por, emitida_por,
       aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda,
       observaciones, despacho_direccion, despacho_transporte, despacho_entrega, reglas_json,
       estado_comercial, estado_operativo, despacho_destino, despacho_valor,
@@ -518,7 +520,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
       @cliente_telefono, @cliente_direccion, @cliente_comuna, @cliente_comuna_normalizada,
       @cliente_proyecto, @cliente_proyecto_normalizado, @creada, @actualizada, @pdf, @fecha_emision,
-      @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @flete, @creada_por, @emitida_por,
+      @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @flete, @margen_cotizacion, @creada_por, @emitida_por,
       @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda,
       @observaciones, @despacho_direccion, @despacho_transporte, @despacho_entrega, @reglas_json,
       @estado_comercial, @estado_operativo, @despacho_destino, @despacho_valor,
@@ -546,6 +548,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       vence = excluded.vence,
       descuento = excluded.descuento,
       flete = excluded.flete,
+      margen_cotizacion = excluded.margen_cotizacion,
       creada_por = excluded.creada_por,
       emitida_por = excluded.emitida_por,
       aprobada_por = excluded.aprobada_por,
@@ -594,6 +597,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     vence: q.vence,
     descuento: q.descuento,
     flete: q.flete,
+    margen_cotizacion: q.margenCotizacion ?? null,
     creada_por: q.creadaPor,
     emitida_por: q.emitidaPor,
     aprobada_por: q.aprobadaPor,

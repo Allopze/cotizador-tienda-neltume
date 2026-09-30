@@ -6,7 +6,7 @@ import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 12;
+const VERSION_ESQUEMA = 13;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -224,6 +224,16 @@ function crearEsquema(db: Database.Database) {
         ${['cotizacion_lineas', 'nota_lineas', 'productos_catalogo', 'productos_adicionales'].map(revertirHuiloHuilo).join('')}
         ${['cotizacion_lineas', 'nota_lineas'].map(limpiarRectificar).join('')}
         PRAGMA user_version = 12;
+      `);
+    }).immediate();
+  if (version < 13)
+    db.transaction(() => {
+      // v13: margen especial de toda la cotización (fracción; NULL = el de cada categoría). Las reglas
+      // congeladas de las cotizaciones existentes quedan como están: sin las categorías nuevas, esas
+      // usan su propio `otros`.
+      db.exec(`
+        ALTER TABLE cotizaciones ADD COLUMN margen_cotizacion REAL;
+        PRAGMA user_version = 13;
       `);
     }).immediate();
 }

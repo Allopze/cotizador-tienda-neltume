@@ -13,27 +13,35 @@ export interface ReglasComerciales {
   iva: number;
   vigenciaDiasHabiles: number;
   descuentoMaximo: number;
-  /** Márgenes por categoría, expresados como fracción (0,55 = 55 %). Congelados en cada cotización. */
-  margenes?: MargenesCategoria;
+  /**
+   * Márgenes por categoría, expresados como fracción (0,55 = 55 %). Congelados en cada cotización: los
+   * guardados antes de una categoría nueva no la traen y esa categoría usa el `otros` de la propia cotización.
+   */
+  margenes?: Partial<MargenesCategoria>;
 }
 export type CategoriaMargen =
   | 'puertas_solidas_mara_lenga'
   | 'puertas_solidas_oregon'
+  | 'puertas_solidas_rauli'
   | 'puertas_prepintadas'
   | 'puertas_enchapadas_mara'
   | 'marcos_finger_sin_enchape'
   | 'marcos_finger_enchapados'
+  | 'accesorios_madera_solida'
   | 'otros';
 export type MargenesCategoria = Record<CategoriaMargen, number>;
 /** Valores comerciales iniciales. Se guardan en Ajustes y se copian a los borradores nuevos. */
 export const MARGENES_INICIALES: MargenesCategoria = {
   puertas_solidas_mara_lenga: 0.55,
   puertas_solidas_oregon: 0.85,
+  puertas_solidas_rauli: 0.25,
   puertas_prepintadas: 1.4,
   puertas_enchapadas_mara: 0.75,
   marcos_finger_sin_enchape: 1,
   marcos_finger_enchapados: 0.75,
-  // Conserva el ajuste histórico para categorías aún no detalladas por las usuarias.
+  // Marcos, molduras y piezas T de Lenga, Mara, Pino Oregón o Raulí.
+  accesorios_madera_solida: 0.25,
+  // Último recurso: conserva el ajuste histórico para lo que ninguna categoría describe.
   otros: 0.25,
 };
 export const REGLAS: ReglasComerciales = {
@@ -116,6 +124,8 @@ export interface Montos {
 export interface Extras {
   descuento?: number;
   flete?: number;
+  /** Margen especial de toda la cotización (fracción): pasa por encima de la categoría y por debajo del margen de cada línea. */
+  margenCotizacion?: number | null;
 }
 export const montosVacios = (): Montos => ({
   lineas: [],
@@ -130,6 +140,8 @@ export const montosVacios = (): Montos => ({
 export const descuentoValido = (d: number, maximo = REGLAS.descuentoMaximo) =>
   Number.isFinite(d) && d >= 0 && d <= maximo && conDosDecimales(d);
 export const fleteValido = (f: number) => Number.isSafeInteger(f) && f >= 0 && f <= 100_000_000;
+/** Margen manual (de una línea o de la cotización), como fracción: −50 %…500 % con hasta dos decimales. */
+export const margenValido = (m: number) => Number.isFinite(m) && m >= -0.5 && m <= 5 && conDosDecimales(m * 100);
 export function cotizar(
   items: ItemPrecio[],
   reglas: Pick<ReglasComerciales, 'ajuste' | 'iva'> &
@@ -141,10 +153,12 @@ export function cotizar(
     throw new ErrorPrecio('ajuste_invalido');
   if (!Number.isFinite(reglas.iva) || reglas.iva < 0 || reglas.iva > 1) throw new ErrorPrecio('iva_invalido');
   const descuentoPorcentaje = extras.descuento ?? 0,
-    flete = extras.flete ?? 0;
+    flete = extras.flete ?? 0,
+    margenCotizacion = extras.margenCotizacion ?? null;
   if (!descuentoValido(descuentoPorcentaje, reglas.descuentoMaximo ?? REGLAS.descuentoMaximo))
     throw new ErrorPrecio('descuento_invalido');
   if (!fleteValido(flete)) throw new ErrorPrecio('flete_invalido');
+  if (margenCotizacion !== null && !margenValido(margenCotizacion)) throw new ErrorPrecio('margen_invalido');
   const lineas = items.map((item): Linea => {
     const { producto, cantidad } = item;
     if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 10000)
@@ -152,7 +166,9 @@ export function cotizar(
     if (!Number.isFinite(producto.precioNeto) || producto.precioNeto <= 0)
       throw new ErrorPrecio('precio_invalido');
     const precioUnitarioPersonalizado = item.precioUnitario ?? null;
-    const margenCalculado = item.margen ?? margenProducto(producto, reglas);
+    // Prioridad: margen de la línea > margen especial de la cotización > margen de la categoría.
+    const margenManual = item.margen ?? margenCotizacion;
+    const margenCalculado = margenManual ?? margenProducto(producto, reglas);
     if (
       precioUnitarioPersonalizado !== null &&
       (!Number.isSafeInteger(precioUnitarioPersonalizado) ||
@@ -160,7 +176,7 @@ export function cotizar(
         precioUnitarioPersonalizado > 100_000_000)
     )
       throw new ErrorPrecio('precio_invalido');
-    if (!Number.isFinite(margenCalculado) || margenCalculado < -0.5 || margenCalculado > 5 || (item.margen !== null && item.margen !== undefined && !conDosDecimales(margenCalculado * 100)))
+    if (!Number.isFinite(margenCalculado) || margenCalculado < -0.5 || margenCalculado > 5 || (margenManual !== null && !margenValido(margenManual)))
       throw new ErrorPrecio('margen_invalido');
     const precioUnitario = precioUnitarioPersonalizado ?? Math.round(producto.precioNeto * (1 + margenCalculado));
     const margen = precioUnitarioPersonalizado === null ? margenCalculado : precioUnitario / producto.precioNeto - 1;
@@ -202,29 +218,64 @@ export function cotizar(
 const textoNormalizado = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 
+const MADERAS_SOLIDAS = new Set(['LENGA', 'MARA', 'OREGON', 'PINO OREGON', 'RAULI']);
+
+/**
+ * Categoría de margen de un producto de catálogo. Solo mira el producto, nunca la descripción escrita
+ * para el documento. El orden importa: «MARA ENCHAPADA» es enchapada, jamás Mara sólida.
+ */
 export function categoriaMargen(producto: Producto): CategoriaMargen {
   const contexto = textoNormalizado(`${producto.modelo} ${producto.tipo ?? ''} ${producto.madera} ${producto.descripcion}`);
-  const madera = textoNormalizado(producto.madera);
+  const madera = textoNormalizado(producto.madera).replace(/\s+/g, ' ').trim();
   if (producto.familia === 'PUERTA') {
     if (/PREPINTAD/.test(contexto)) return 'puertas_prepintadas';
     if (/ENCHAPAD/.test(contexto))
       return madera.includes('MARA') ? 'puertas_enchapadas_mara' : 'otros';
     if (madera.includes('OREGON')) return 'puertas_solidas_oregon';
     if (madera.includes('MARA') || madera.includes('LENGA')) return 'puertas_solidas_mara_lenga';
+    if (madera.includes('RAULI')) return 'puertas_solidas_rauli';
     return 'otros';
   }
-  if (producto.familia === 'MARCO' && madera.includes('FINGER'))
-    return /SIN\s*ENCHAP|DESNUD/.test(contexto) ? 'marcos_finger_sin_enchape' : 'marcos_finger_enchapados';
+  if (producto.familia === 'MARCO' && madera.includes('FINGER')) {
+    // El marco Pino Finger base es «desnudo»: solo es enchapado si el producto lo dice.
+    const enchapado = /ENCHAP/.test(contexto) && !/SIN\s*ENCHAP|DESNUD/.test(contexto);
+    return enchapado ? 'marcos_finger_enchapados' : 'marcos_finger_sin_enchape';
+  }
+  if (
+    (producto.familia === 'MARCO' || producto.familia === 'MOLDURA' || producto.familia === 'PIEZAS_T') &&
+    MADERAS_SOLIDAS.has(madera)
+  )
+    return 'accesorios_madera_solida';
   return 'otros';
 }
 
+/**
+ * Margen estándar de la categoría según las reglas de la cotización. Una categoría que esas reglas no
+ * traen (guardadas antes de que existiera) usa el `otros` de la propia cotización y, sin márgenes por
+ * categoría, su `ajuste`; nunca la configuración actual.
+ */
 export function margenProducto(
   producto: Producto,
   reglas: Pick<ReglasComerciales, 'ajuste'> & Partial<Pick<ReglasComerciales, 'margenes'>>,
 ) {
-  const categoria = categoriaMargen(producto);
-  return reglas.margenes?.[categoria] ?? (reglas.margenes ? MARGENES_INICIALES.otros : reglas.ajuste);
+  const margenes = reglas.margenes;
+  if (!margenes) return reglas.ajuste;
+  return margenes[categoriaMargen(producto)] ?? margenes.otros ?? reglas.ajuste;
 }
+
+/** De dónde sale el margen aplicado a una línea, para explicarlo en la interfaz. */
+export type OrigenMargen = 'linea' | 'precio' | 'cotizacion' | 'categoria';
+export const origenMargen = (
+  linea: Pick<Linea, 'margenPersonalizado' | 'precioUnitarioPersonalizado'>,
+  margenCotizacion: number | null | undefined,
+): OrigenMargen =>
+  linea.margenPersonalizado
+    ? 'linea'
+    : linea.precioUnitarioPersonalizado !== undefined && linea.precioUnitarioPersonalizado !== null
+      ? 'precio'
+      : margenCotizacion !== null && margenCotizacion !== undefined
+        ? 'cotizacion'
+        : 'categoria';
 export const pesos = (n: number) =>
   '$' + new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(n);
 export const porcentajeIva = (iva = REGLAS.iva) =>

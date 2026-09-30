@@ -481,6 +481,36 @@ td small {
 .total-editable .campo.editando {
   flex-wrap: wrap;
 }
+/* Margen especial de la cotización: bajo las acciones, en una fila que se envuelve (los totales ya ocupan el alto). */
+.margen-cotizacion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.margen-cotizacion .campo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+}
+.margen-cotizacion .campo-valor strong {
+  font-weight: 400;
+}
+.margen-cotizacion small {
+  flex-basis: 100%;
+  font-size: var(--fs-xs);
+}
+.margen-linea {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
 /* «Más acciones»: secundarias agrupadas, a la derecha de la acción principal. */
 .menu-acciones {
   position: relative;

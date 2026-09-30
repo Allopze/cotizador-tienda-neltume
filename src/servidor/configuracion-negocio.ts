@@ -44,10 +44,13 @@ export const configuracionNegocioSchema = z
         margenes: z.object({
           puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
           puertas_solidas_oregon: z.number().finite().min(0).max(5),
+          // Categorías posteriores a la primera versión: un ajuste guardado sin ellas recibe su valor inicial.
+          puertas_solidas_rauli: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.puertas_solidas_rauli),
           puertas_prepintadas: z.number().finite().min(0).max(5),
           puertas_enchapadas_mara: z.number().finite().min(0).max(5),
           marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
           marcos_finger_enchapados: z.number().finite().min(0).max(5),
+          accesorios_madera_solida: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.accesorios_madera_solida),
           otros: z.number().finite().min(0).max(5),
         }).strict(),
       })
@@ -86,7 +89,7 @@ export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
 
 function validarConfiguracion(valor: unknown, respaldo: ConfiguracionNegocio) {
   const parcial = valor as Partial<ConfiguracionNegocio> | null;
-  const reglasParciales = parcial?.reglas as (Partial<ReglasComerciales> & { margenes?: Partial<ReglasComerciales['margenes']> }) | undefined;
+  const reglasParciales = parcial?.reglas as Partial<ReglasComerciales> | undefined;
   return configuracionNegocioSchema.parse({
     transportistas: parcial?.transportistas ?? respaldo.transportistas,
     empresa: { ...respaldo.empresa, ...(parcial?.empresa ?? {}) },

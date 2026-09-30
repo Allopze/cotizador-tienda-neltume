@@ -180,13 +180,15 @@ describe('Persistencia SQLite', () => {
         VALUES ('IA-1', 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'MARA', '1,00 A 1,05', 1, 1.05, 2.4, 100000, 'Huilo Huilo MARA 1,00 A 1,05 MT X 2,4 MT', '2026-01-01T00:00:00.000Z');
       ALTER TABLE cotizacion_lineas DROP COLUMN descripcion_documento;
       ALTER TABLE nota_lineas DROP COLUMN descripcion_documento;
+      ALTER TABLE cotizaciones DROP COLUMN margen_cotizacion;
       PRAGMA user_version = 11;
     `);
     db.close();
 
     const migrada = abrirBaseDatos(rutaDb, { cachear: false });
     try {
-      expect(migrada.pragma('user_version', { simple: true })).toBe(12);
+      // Llega a la versión vigente del esquema (las migraciones posteriores a v12 tienen sus propias pruebas).
+      expect(migrada.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(12);
       const descripciones = (tabla: string) =>
         migrada.prepare(`SELECT cotizacion_id AS id, orden, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id, orden`).all();
       expect(descripciones('cotizacion_lineas')).toEqual([

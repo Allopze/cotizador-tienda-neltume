@@ -38,6 +38,14 @@ export const leerPorcentaje = (texto: string) => {
   return /^\d+(?:\.\d+)?$/.test(limpio) ? Number(limpio) : NaN;
 };
 
+/** Porcentaje con signo opcional («-10», «−10,5 %»), para márgenes que pueden ser negativos. */
+export const leerPorcentajeConSigno = (texto: string) => {
+  const limpio = texto.trim();
+  const negativo = /^[-−]/.test(limpio);
+  const n = leerPorcentaje(negativo ? limpio.slice(1) : limpio);
+  return negativo ? -n : n;
+};
+
 /** Hasta dos decimales, tolerando el error binario de coma flotante (2,3 × 100 = 229,999…). */
 export const conDosDecimales = (n: number) =>
   Number.isFinite(n) && Math.abs(Math.round(n * 100) - n * 100) < 1e-6;

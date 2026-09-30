@@ -40,6 +40,7 @@ import {
   descuentoValido,
   fleteValido,
   MARGENES_INICIALES,
+  margenValido,
   montosVacios,
   pesos,
   REGLAS,
@@ -100,6 +101,8 @@ export type Accion =
       }[];
       descuento?: number;
       flete?: number;
+      /** Margen especial de toda la cotización (fracción); null vuelve al margen de cada categoría. */
+      margenCotizacion?: number | null;
       observaciones?: string | null;
       despacho?: Partial<Despacho> | null;
     }
@@ -193,6 +196,9 @@ export function textoCambios(c: CambiosCotizacion | undefined, extras: string[] 
   return partes.length ? partes.join(' · ') : null;
 }
 const porcentajeTexto = (n: number) => `${String(n).replace('.', ',')} %`;
+/** Margen (fracción) como porcentaje legible: 0,42 → «42 %»; sin el ruido binario de 0,07 × 100. */
+const margenTexto = (m: number) => porcentajeTexto(Math.round(m * 10000) / 100);
+const ESTANDAR_CATEGORIA = 'estándar de categoría';
 
 export class Servicio {
   private readonly autor: string | null;
@@ -223,6 +229,7 @@ export class Servicio {
       vence: null,
       descuento: 0,
       flete: 0,
+      margenCotizacion: null,
       observaciones: null,
       despacho: null,
       reglas: { ...leerConfiguracionNegocio(this.almacen.baseDatos()).reglas },
@@ -292,7 +299,11 @@ export class Servicio {
       } else q.incompletos.push({ indice, rechazo: res.rechazo, pregunta: pregunta(res.rechazo, s.modelo) });
     }
     q.montos = validos.length
-      ? cotizar(validos, q.reglas ?? REGLAS, { descuento: q.descuento, flete: q.flete })
+      ? cotizar(validos, q.reglas ?? REGLAS, {
+          descuento: q.descuento,
+          flete: q.flete,
+          margenCotizacion: q.margenCotizacion ?? null,
+        })
       : montosVacios();
     if (tocar) q.actualizada = marca(q.actualizada);
     return avisos;
@@ -384,6 +395,7 @@ export class Servicio {
       this.sinCambios(a, b.solicitudes, b.cliente) &&
       a.descuento === b.descuento &&
       a.flete === b.flete &&
+      (a.margenCotizacion ?? null) === (b.margenCotizacion ?? null) &&
       a.observaciones === b.observaciones &&
       JSON.stringify(a.despacho) === JSON.stringify(b.despacho)
     );
@@ -575,6 +587,7 @@ export class Servicio {
           // El descuento y el flete acordados forman parte de lo que se duplica.
           q.descuento = origen.descuento;
           q.flete = origen.flete;
+          q.margenCotizacion = origen.margenCotizacion ?? null;
           q.observaciones = origen.observaciones;
           q.despacho = structuredClone(origen.despacho);
           q.historial = [
@@ -700,7 +713,7 @@ export class Servicio {
         }
         if (cambios.margen !== undefined) {
           const valor = cambios.margen;
-          if (valor !== null && (!Number.isFinite(valor) || valor < -0.5 || valor > 5 || Math.round(valor * 10000) !== valor * 10000))
+          if (valor !== null && !margenValido(valor))
             throw new ErrorUsuario('El margen debe ser un porcentaje entre -50 % y 500 %, con hasta dos decimales.');
           siguiente.margen = valor ?? null;
           if (valor !== null) siguiente.precioUnitario = null;
@@ -722,6 +735,14 @@ export class Servicio {
         );
       if (!fleteValido(flete))
         throw new ErrorUsuario('El flete debe ser un monto neto entero en pesos, desde $0.');
+      const margenAntes = q.margenCotizacion ?? null;
+      const margenPedido = accion.margenCotizacion === undefined ? margenAntes : accion.margenCotizacion;
+      if (margenPedido !== null && !margenValido(margenPedido))
+        throw new ErrorUsuario(
+          'El margen especial de la cotización debe ser un porcentaje entre -50 % y 500 %, con hasta dos decimales.',
+        );
+      // Sin el error binario de dividir un porcentaje por 100 (0,07 llega como 0,07000000000000001).
+      const margenCotizacion = margenPedido === null ? null : Math.round(margenPedido * 10000) / 10000;
       const extra = avisos.length ? { avisos } : {};
       const descuentoNuevo = aCentesimas(descuento);
       const observaciones =
@@ -764,7 +785,8 @@ export class Servicio {
         JSON.stringify([solicitudes, cliente, observaciones, despacho]) ===
           JSON.stringify([q.solicitudes, q.cliente, q.observaciones, q.despacho]) &&
         descuentoNuevo === q.descuento &&
-        flete === q.flete
+        flete === q.flete &&
+        margenCotizacion === margenAntes
       )
         return { cotizacion: q, ...extra };
       const destino = this.abrirEdicion(q, u);
@@ -777,16 +799,23 @@ export class Servicio {
           ? [`Descuento ${porcentajeTexto(destino.descuento)} → ${porcentajeTexto(descuentoNuevo)}`]
           : []),
         ...(flete !== destino.flete ? [`Flete ${pesos(destino.flete)} → ${pesos(flete)}`] : []),
+        ...(margenCotizacion !== margenAntes
+          ? [
+              `Margen especial de la cotización: ${margenAntes === null ? ESTANDAR_CATEGORIA : margenTexto(margenAntes)} → ${margenCotizacion === null ? ESTANDAR_CATEGORIA : margenTexto(margenCotizacion)}`,
+            ]
+          : []),
         ...(observaciones !== destino.observaciones ? ['Observaciones actualizadas'] : []),
         ...(JSON.stringify(despacho) !== JSON.stringify(destino.despacho) ? ['Despacho actualizado'] : []),
       ];
       for (const cambio of accion.items ?? []) {
-        const anterior = q.solicitudes[cambio.indice];
+        // `antes` y no `q.solicitudes`: en un borrador `destino` es `q` y sus ítems ya son los nuevos.
+        const anterior = antes[cambio.indice];
         if (!anterior) continue;
-        if (cambio.cambios.margen !== undefined && cambio.cambios.margen !== anterior.margen) {
+        if (cambio.cambios.margen !== undefined && cambio.cambios.margen !== (anterior.margen ?? null)) {
           const linea = q.montos.lineas.find((l) => l.indice === cambio.indice);
-          const margenAnterior = linea ? porcentajeTexto(Math.round((linea.margen ?? 0) * 10000) / 100) : 'sin resolver';
-          const margenNuevo = cambio.cambios.margen === null ? 'estándar de categoría' : porcentajeTexto(cambio.cambios.margen * 100);
+          const margenAnterior = linea ? margenTexto(linea.margen ?? 0) : 'sin resolver';
+          const sinMargenPropio = margenCotizacion === null ? ESTANDAR_CATEGORIA : 'margen especial de la cotización';
+          const margenNuevo = cambio.cambios.margen === null ? sinMargenPropio : margenTexto(cambio.cambios.margen);
           extras.push(`Margen de ${this.describir(anterior)}: ${margenAnterior} → ${margenNuevo}`);
         }
         if (cambio.cambios.precioUnitario !== undefined && cambio.cambios.precioUnitario !== anterior.precioUnitario)
@@ -794,6 +823,7 @@ export class Servicio {
       }
       destino.descuento = descuentoNuevo;
       destino.flete = flete;
+      destino.margenCotizacion = margenCotizacion;
       destino.observaciones = observaciones;
       destino.despacho = despacho;
       const todos = [...avisos, ...this.recalcular(destino)];
@@ -1107,7 +1137,8 @@ export class Servicio {
       if (pagado < Math.ceil(q.montos.total * 0.5))
         throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos 50 % (${pesos(Math.ceil(q.montos.total * 0.5))}).`, 'estado_invalido');
       this.verificarSerieNoAprobada(q, u);
-      // La nota usa los precios guardados sin ajuste, sin descuento ni flete.
+      // La nota usa los precios guardados sin ajuste, sin descuento ni flete, y a precio de fábrica:
+      // ni el margen especial de la cotización ni el de las líneas (no se pasan) intervienen.
       const montos = cotizar(
         q.montos.lineas.map((l) => ({
           producto: l.producto,
