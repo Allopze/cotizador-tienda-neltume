@@ -9,6 +9,7 @@ import {
   type ConfiguracionCatalogo,
 } from './configuracion';
 import type { Catalogo, Producto } from './tipos';
+import { esKit } from './escalones';
 const decimal = (v: unknown) => String(v).replace('.', ',');
 const limpio = (v: unknown) =>
   String(v ?? '')
@@ -43,7 +44,7 @@ export function descripcion(p: Producto) {
   const alto = altoMin === altoMax ? decimal(p.largo) : `${decimal(altoMin)} A ${decimal(altoMax)}`;
   if (p.familia === 'PUERTA') return `${base} MT X ${alto} MT`;
   if (p.familia === 'MOLDURA') return `${base} CM X ${decimal(p.largo)} MT`;
-  return p.largo < 3 ? `${base} PULG KIT` : `${base} PULG X ${decimal(p.largo)} MT`;
+  return esKit(p) ? `${base} PULG KIT` : `${base} PULG X ${decimal(p.largo)} MT`;
 }
 export async function importar(ruta: string, configEntrada?: ConfiguracionCatalogo) {
   const configuracion = validarConfiguracionCatalogo(configEntrada ?? {});

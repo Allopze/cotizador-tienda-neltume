@@ -1,5 +1,5 @@
 import type { Catalogo, Producto, SolicitudItem } from './tipos';
-import { ajusteMedida, enEscalon, escalon, type AjusteMedida } from './escalones';
+import { ajusteMedida, enEscalon, escalon, esKit, LARGO_PIEZA, vieneEnKit, type AjusteMedida } from './escalones';
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
@@ -75,14 +75,18 @@ export const aliasModelosCatalogo = (catalogo: CatalogoConsultable) =>
 /**
  * Cada medida distinta de los candidatos es un escalón. Se usa el que contiene la medida pedida; en el
  * hueco entre dos, el siguiente hacia arriba. Bajo el menor o sobre el mayor no hay precio: no se extrapola.
+ * Un kit y una pieza lineal son productos distintos: el siguiente escalón nunca salta de uno a otro.
  */
 function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
-  const con = ps.flatMap((p) => {
+  const todos = ps.flatMap((p) => {
     const e = escalon(p, campo);
     return e ? [{ p, e }] : [];
   });
-  const dentro = con.filter(({ e }) => enEscalon(valor, e));
+  const dentro = todos.filter(({ e }) => enEscalon(valor, e));
   if (dentro.length) return dentro.map(({ p }) => p);
+  const con = todos.filter(
+    ({ p }) => campo === 'ancho' || !vieneEnKit(p.familia) || esKit(p) === valor < LARGO_PIEZA,
+  );
   const mayores = con.filter(({ e }) => e.min > valor);
   if (!mayores.length || mayores.length === con.length) return [];
   const siguiente = Math.min(...mayores.map(({ e }) => e.min));

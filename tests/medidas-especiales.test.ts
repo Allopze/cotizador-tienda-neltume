@@ -33,14 +33,20 @@ const calafquen = [0.7, 0.8, 0.9].flatMap((ancho, i) =>
     descripcion: `CALAFQUEN MARA ${c(ancho)} MT X ${c(altoMin)} A ${c(altoMax)} MT`, filaOrigen: 30 + i * 2 + j,
   })),
 );
-const marco = [2.6, 3.0].map((largo, i): Producto => ({
-  codigo: `MAR-M-2X4-${'GH'[i]}`, modelo: 'MARCO', familia: 'MARCO', tipo: null, madera: 'MARA',
-  medida: '2X4', anchoMin: null, anchoMax: null, largo, precioNeto: 90_000 + i * 1_000,
-  descripcion: `MARCO MARA 2X4 PULG X ${largo} MT`, filaOrigen: 40 + i,
+// Marco: kits bajo 3 m y una pieza lineal de 3 m (más barata); moldura: piezas de 1, 2 y 3 m.
+const marco = [2.5, 2.6, 3.0].map((largo, i): Producto => ({
+  codigo: `MAR-M-2X4-${'FGH'[i]}`, modelo: 'MARCO', familia: 'MARCO', tipo: null, madera: 'MARA',
+  medida: '2X4', anchoMin: null, anchoMax: null, largo, precioNeto: largo < 3 ? 99_000 + i * 3_000 : 51_000,
+  descripcion: `MARCO MARA 2X4 PULG ${largo < 3 ? 'KIT' : `X ${largo} MT`}`, filaOrigen: 40 + i,
+}));
+const moldura = [1, 2, 3].map((largo, i): Producto => ({
+  codigo: `ENDO-M-6X1-${'HIJ'[i]}`, modelo: 'ENDOLADO', familia: 'MOLDURA', tipo: null, madera: 'MARA',
+  medida: '6X1', anchoMin: null, anchoMax: null, largo, precioNeto: 5_000 + i * 2_000,
+  descripcion: `ENDOLADO MARA 6X1 CM X ${largo} MT`, filaOrigen: 50 + i,
 }));
 const catalogo: Catalogo = {
   fuente: 'escalones.xlsx', sha256: 'escalones', fecha: '2026-01-01T00:00:00.000Z',
-  productos: [...huilo, ...calafquen, ...marco],
+  productos: [...huilo, ...calafquen, ...marco, ...moldura],
 };
 const puerta = (modelo: string, ancho: number, alto: number) =>
   resolverItem(catalogo, { modelo, madera: 'Mara', ancho, alto, cantidad: 1 });
@@ -89,15 +95,21 @@ describe('medidas especiales por escalones del catálogo', () => {
       expect(puerta(modelo, ancho, alto)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_no_disponible', campo } });
   });
 
-  it('los largos de accesorios también suben al siguiente escalón; la escuadría sigue siendo exacta', () => {
-    const accesorio = (medida: string, alto: number) =>
-      resolverItem(catalogo, { modelo: 'Marco', madera: 'Mara', medida, alto, cantidad: 1 });
-    expect(elegido(accesorio('2x4', 2.6))).toEqual(['MAR-M-2X4-G', null, 'exacto']);
-    expect(elegido(accesorio('2x4', 2.8))).toEqual(['MAR-M-2X4-H', null, 'siguiente']);
-    expect(accesorio('2x4', 2.5)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_no_disponible', campo: 'alto' } });
+  it('los largos de accesorios suben al siguiente escalón sin saltar de kit a pieza; la escuadría es exacta', () => {
+    const accesorio = (modelo: string, medida: string, alto: number) =>
+      resolverItem(catalogo, { modelo, madera: 'Mara', medida, alto, cantidad: 1 });
+    const noDisponible = (campo: string) => ({ ok: false, rechazo: { tipo: 'medida_no_disponible', campo } });
+    expect(elegido(accesorio('Marco', '2x4', 2.6))).toEqual(['MAR-M-2X4-G', null, 'exacto']);
+    expect(elegido(accesorio('Marco', '2x4', 2.55))).toEqual(['MAR-M-2X4-G', null, 'siguiente']);
+    expect(elegido(accesorio('Marco', '2x4', 3.0))).toEqual(['MAR-M-2X4-H', null, 'exacto']);
+    // 2,8 m supera el kit mayor (2,6): la pieza lineal de 3 m es otro producto, no el siguiente kit.
+    expect(accesorio('Marco', '2x4', 2.8)).toMatchObject(noDisponible('alto'));
+    expect(accesorio('Marco', '2x4', 2.45)).toMatchObject(noDisponible('alto'));
     // Sobre 3 m ya es una medida implausible (RANGO_METROS): tampoco tiene precio.
-    expect(accesorio('2x4', 3.1)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_implausible', campo: 'alto' } });
-    expect(accesorio('2x5', 2.6)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_no_disponible', campo: 'medida' } });
+    expect(accesorio('Marco', '2x4', 3.1)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_implausible', campo: 'alto' } });
+    expect(accesorio('Marco', '2x5', 2.6)).toMatchObject(noDisponible('medida'));
+    expect(elegido(accesorio('Endolado', '6x1', 1.5))).toEqual(['ENDO-M-6X1-I', null, 'siguiente']);
+    expect(elegido(accesorio('Endolado', '6x1', 2.5))).toEqual(['ENDO-M-6X1-J', null, 'siguiente']);
   });
 
   it('la referencia del panel indica cuándo se usó la siguiente medida del catálogo', () => {
