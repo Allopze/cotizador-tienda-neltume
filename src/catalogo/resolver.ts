@@ -124,13 +124,13 @@ export function modeloDelCatalogo(catalogo: CatalogoConsultable, valor: string) 
 }
 /** Madera canónica para un nombre o alias; null si el catálogo no la conoce. */
 export function maderaDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
-  return 'productos' in catalogo
-    ? (resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE) ??
-        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
-        null)
-    : (catalogo.resolverMadera?.(valor) ??
-        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
-        null);
+  const configurada =
+    'productos' in catalogo
+      ? resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE)
+      : catalogo.resolverMadera?.(valor);
+  return (
+    configurada ?? maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ?? null
+  );
 }
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
