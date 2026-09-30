@@ -383,6 +383,25 @@ describe('margen especial de la cotización en el servicio', () => {
     expect(contexto).not.toMatch(/margen|0\.42|0,42|142/i);
   });
 
+  it('una modificación parcial por chat (borrador y emitida) tampoco toca el margen especial', async () => {
+    const t = await preparar();
+    await t.editar({ margenCotizacion: 0.42 });
+    const cambiar = (cantidad: number) => ({ name: 'modificar_cotizacion', input: { items: [{ indice: 1, cambios: { cantidad } }] } });
+    // Borrador: cambia la cantidad de la segunda línea; el margen y los precios siguen.
+    t.llm.interpretar.mockResolvedValueOnce(cambiar(4));
+    let r = await t.servicio.ejecutar({ tipo: 'chat', id: t.q.id, actualizada: t.q.actualizada, objetivoId: t.q.id, objetivoActualizada: t.q.actualizada, mensaje: 'ahora 4 de Raulí' });
+    t.q = r.cotizacion;
+    expect(t.q).toMatchObject({ margenCotizacion: 0.42 });
+    expect(t.q.montos.lineas.map((l) => [l.cantidad, l.precioUnitario])).toEqual([[1, 142_000], [4, 142_000]]);
+    // Emitida: el cambio abre una revisión que conserva el margen; la emitida queda como estaba.
+    const emitida = (await t.servicio.ejecutar({ tipo: 'emitir', id: t.q.id, actualizada: t.q.actualizada })).cotizacion;
+    t.llm.interpretar.mockResolvedValueOnce(cambiar(2));
+    r = await t.servicio.ejecutar({ tipo: 'chat', objetivoId: emitida.id, objetivoActualizada: emitida.actualizada, mensaje: `ahora 2 de Raulí en la ${emitida.numero}` });
+    expect(r.cotizacion).toMatchObject({ estado: 'borrador', origen: emitida.numero, margenCotizacion: 0.42 });
+    expect(r.cotizacion.montos.lineas.map((l) => [l.cantidad, l.precioUnitario])).toEqual([[1, 142_000], [2, 142_000]]);
+    expect(new Almacen(t.dir).obtener(emitida.id)).toMatchObject({ margenCotizacion: 0.42 });
+  });
+
   it('la nota de pedido sale a precio de fábrica con el margen especial y con márgenes de línea', async () => {
     const t = await preparar();
     await t.editar({ margenCotizacion: 0.42, items: [{ indice: 0, cambios: { margen: 0.3 } }] });
