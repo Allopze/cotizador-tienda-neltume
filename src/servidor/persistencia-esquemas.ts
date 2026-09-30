@@ -88,6 +88,7 @@ const rechazoSchema = z.discriminatedUnion('tipo', [
     campo: z.enum(['ancho', 'alto', 'medida']),
     valor: z.union([z.number(), z.string()]),
     disponibles: z.array(z.string()),
+    rango: z.object({ min: z.number(), max: z.number() }).optional(),
   }),
   z.object({
     tipo: z.literal('medida_implausible'),

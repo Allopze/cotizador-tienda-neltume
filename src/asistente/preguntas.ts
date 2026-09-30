@@ -1,4 +1,5 @@
 import type { Rechazo } from '../catalogo/resolver';
+import { metrosTexto } from '../catalogo/escalones';
 const bonito = (s: string) =>
   s
     .toLocaleLowerCase('es-CL')
@@ -35,7 +36,13 @@ export function pregunta(r: Rechazo, modelo: string | null) {
       return `No entendí la medida ${String(r.valor).replace('.', ',')} de ${r.campo === 'alto' ? 'alto o largo' : 'ancho'} para ${nombre}. Indícala en metros (por ejemplo 0,80) o centímetros (80); admito ${r.disponibles.join(', ')}.`;
     case 'producto_ambiguo':
       return `Hay más de un producto de ${nombre} que coincide con esas medidas: ${r.disponibles.join('; ')}. ¿Cuál necesitas?`;
-    case 'medida_no_disponible':
-      return `${nombre} no viene en ${String(r.valor).replace('.', ',')}${r.campo === 'medida' ? '' : ' m'} de ${r.campo === 'alto' ? 'alto o largo' : r.campo}. Opciones disponibles: ${opciones(r.disponibles)}.`;
+    case 'medida_no_disponible': {
+      const valor = typeof r.valor === 'number' ? `${metrosTexto(r.valor)} m` : r.valor;
+      const inicio = `${nombre} no viene en ${valor} de ${r.campo === 'alto' ? 'alto o largo' : r.campo}.`;
+      // Entre escalones se cotiza la siguiente medida: se informa el tramo, no una lista cerrada.
+      return r.rango
+        ? `${inicio} Se cotizan ${r.campo === 'ancho' ? 'anchos' : 'altos o largos'} entre ${metrosTexto(r.rango.min)} y ${metrosTexto(r.rango.max)} m; las medidas intermedias usan la siguiente medida del catálogo.`
+        : `${inicio} Opciones disponibles: ${opciones(r.disponibles)}.`;
+    }
   }
 }

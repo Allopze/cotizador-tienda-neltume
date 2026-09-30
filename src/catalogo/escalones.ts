@@ -9,17 +9,21 @@ export interface Escalon {
   max: number;
   exacto: boolean;
 }
-/** Medida de catálogo del producto: rango de ancho o de alto, o valor exacto. El alto sin rango es el largo. */
+const rango = (min: number | null | undefined, max: number | null | undefined) =>
+  min != null && max != null && min <= max + 1e-9 ? { min, max, exacto: max - min < 1e-9 } : null;
+/**
+ * Medida de catálogo del producto: rango de ancho o de alto, o valor exacto. Un rango vale solo con sus dos
+ * límites en orden; si no, el alto es el `largo` exacto y el ancho no existe.
+ */
 export function escalon(p: Producto, campo: 'ancho' | 'alto'): Escalon | null {
-  const min = campo === 'ancho' ? p.anchoMin : (p.altoMin ?? p.largo);
-  const max = campo === 'ancho' ? p.anchoMax : (p.altoMax ?? p.largo);
-  if (min === null || max === null) return null;
-  return { min, max, exacto: max - min < 1e-9 };
+  if (campo === 'ancho') return rango(p.anchoMin, p.anchoMax);
+  return rango(p.altoMin, p.altoMax) ?? { min: p.largo, max: p.largo, exacto: true };
 }
 /** Marcos y piezas T bajo 3 m se venden como kit («PULG KIT»); desde 3 m, como pieza lineal («PULG X 3 MT»). */
 export const LARGO_PIEZA = 3;
 export const vieneEnKit = (f: Familia) => f === 'MARCO' || f === 'PIEZAS_T';
-export const esKit = (p: Pick<Producto, 'familia' | 'largo'>) => vieneEnKit(p.familia) && p.largo < LARGO_PIEZA;
+export const esKit = (p: Pick<Producto, 'familia' | 'largo'>) =>
+  vieneEnKit(p.familia) && p.largo < LARGO_PIEZA;
 const holgura = (e: Escalon) => (e.exacto ? HOLGURA : 0);
 export const enEscalon = (valor: number, e: Escalon) =>
   valor >= e.min - holgura(e) - 1e-9 && valor <= e.max + holgura(e) + 1e-9;
@@ -29,4 +33,14 @@ export function ajusteMedida(valor: number, p: Producto, campo: 'ancho' | 'alto'
   if (!e) return null;
   if (valor < e.min - holgura(e) - 1e-9) return 'siguiente';
   return e.exacto ? 'exacto' : 'rango';
+}
+
+/** «0,835», «2,40»: metros en formato chileno, hasta milímetros. Lo usan el panel y los avisos. */
+export const metrosTexto = (n: number) =>
+  n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+/** «0,90–0,95 × 2,40 m» o «2,60 m»: la medida de catálogo de una referencia. */
+export function medidaReferencia(p: Producto) {
+  const texto = (e: Escalon | null) =>
+    e && (e.exacto ? metrosTexto(e.min) : `${metrosTexto(e.min)}–${metrosTexto(e.max)}`);
+  return `${[texto(escalon(p, 'ancho')), texto(escalon(p, 'alto'))].filter(Boolean).join(' × ')} m`;
 }

@@ -111,6 +111,20 @@ it('preguntas determinísticas contienen los datos que faltan y las opciones', (
       'MOLCO',
     ),
   ).toContain('0,60–0,65');
+  expect(
+    pregunta(
+      {
+        tipo: 'medida_no_disponible',
+        campo: 'ancho',
+        valor: 1.6,
+        disponibles: ['0,60 A 0,65', '1,40 A 1,45'],
+        rango: { min: 0.6, max: 1.45 },
+      },
+      'MOLCO',
+    ),
+  ).toBe(
+    'Molco no viene en 1,60 m de ancho. Se cotizan anchos entre 0,60 y 1,45 m; las medidas intermedias usan la siguiente medida del catálogo.',
+  );
   expect(pregunta({ tipo: 'madera_desconocida', valor: 'roble', disponibles: ['RAULI'] }, 'MOLCO')).toContain(
     'Raulí',
   );

@@ -32,6 +32,8 @@ export type Rechazo =
       campo: 'ancho' | 'alto' | 'medida';
       valor: number | string;
       disponibles: string[];
+      /** Ancho o alto: extremos de los escalones que se cotizan, en metros. */
+      rango?: { min: number; max: number };
     }
   | { tipo: 'medida_implausible'; campo: 'ancho' | 'alto'; valor: number; disponibles: string[] }
   | { tipo: 'producto_ambiguo'; valor: string; disponibles: string[] }
@@ -76,6 +78,7 @@ export const aliasModelosCatalogo = (catalogo: CatalogoConsultable) =>
  * Cada medida distinta de los candidatos es un escalón. Se usa el que contiene la medida pedida; en el
  * hueco entre dos, el siguiente hacia arriba. Bajo el menor o sobre el mayor no hay precio: no se extrapola.
  * Un kit y una pieza lineal son productos distintos: el siguiente escalón nunca salta de uno a otro.
+ * Ancho y alto se resuelven en orden: si el ancho elegido no tiene ese alto, no se prueba otro ancho.
  */
 function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
   const todos = ps.flatMap((p) => {
@@ -83,14 +86,16 @@ function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
     return e ? [{ p, e }] : [];
   });
   const dentro = todos.filter(({ e }) => enEscalon(valor, e));
-  if (dentro.length) return dentro.map(({ p }) => p);
-  const con = todos.filter(
-    ({ p }) => campo === 'ancho' || !vieneEnKit(p.familia) || esKit(p) === valor < LARGO_PIEZA,
-  );
-  const mayores = con.filter(({ e }) => e.min > valor);
-  if (!mayores.length || mayores.length === con.length) return [];
-  const siguiente = Math.min(...mayores.map(({ e }) => e.min));
-  return mayores.filter(({ e }) => e.min - siguiente < 1e-9).map(({ p }) => p);
+  if (dentro.length) return { productos: dentro.map(({ p }) => p), rango: null };
+  const candidatos = todos.filter(({ p }) => !vieneEnKit(p.familia) || esKit(p) === (valor < LARGO_PIEZA));
+  const minimos = candidatos.map(({ e }) => e.min);
+  const rango = candidatos.length
+    ? { min: Math.min(...minimos), max: Math.max(...candidatos.map(({ e }) => e.max)) }
+    : null;
+  if (!rango || valor < rango.min || valor > rango.max) return { productos: [], rango };
+  const siguiente = Math.min(...minimos.filter((min) => min > valor));
+  const productos = candidatos.filter(({ e }) => Math.abs(e.min - siguiente) < 1e-9).map(({ p }) => p);
+  return { productos, rango };
 }
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
@@ -159,9 +164,16 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rango });
     anchoSolicitado = ancho;
     const medidas = unicos(opciones, 'medida');
-    opciones = porEscalon(opciones, ancho, 'ancho');
+    const { productos, rango: extremos } = porEscalon(opciones, ancho, 'ancho');
+    opciones = productos;
     if (!opciones.length)
-      return no({ tipo: 'medida_no_disponible', campo: 'ancho', valor: ancho, disponibles: medidas });
+      return no({
+        tipo: 'medida_no_disponible',
+        campo: 'ancho',
+        valor: ancho,
+        disponibles: medidas,
+        ...(extremos ? { rango: extremos } : {}),
+      });
   }
   if (!puerta && s.medida) {
     let medida = normalizarMedida(s.medida);
@@ -178,9 +190,16 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     if (alto === null)
       return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rango });
     altoSolicitado = alto;
-    opciones = porEscalon(opciones, alto, 'alto');
+    const { productos, rango: extremos } = porEscalon(opciones, alto, 'alto');
+    opciones = productos;
     if (!opciones.length)
-      return no({ tipo: 'medida_no_disponible', campo: 'alto', valor: alto, disponibles });
+      return no({
+        tipo: 'medida_no_disponible',
+        campo: 'alto',
+        valor: alto,
+        disponibles,
+        ...(extremos ? { rango: extremos } : {}),
+      });
   }
   const campos: string[] = [];
   if (!s.madera) campos.push('madera');

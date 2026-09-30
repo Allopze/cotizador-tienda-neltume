@@ -18,7 +18,7 @@ import {
   type CatalogoConsultable,
   type Resolucion,
 } from '../catalogo/resolver';
-import { escalon } from '../catalogo/escalones';
+import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { aCentesimas } from '../negocio/cifras';
@@ -158,16 +158,11 @@ const CAMPOS_CLIENTE: (keyof Cliente)[] = [
 const marca = (anterior?: string) =>
   new Date(Math.max(Date.now(), anterior ? Date.parse(anterior) + 1 : 0)).toISOString();
 const decimal = (n: number) => n.toFixed(2).replace('.', ',');
-const cifra = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 
 /** «Medida especial 0,87 × 2,36 m: se cotiza con la referencia HUIL-M-4-E (0,90–0,95 × 2,40 m), …». */
 function avisoMedidaEspecial(r: Extract<Resolucion, { ok: true }>) {
-  const pedida = [r.anchoSolicitado, r.altoSolicitado].filter((n) => n !== null).map(cifra).join(' × ');
-  const referencia = [escalon(r.producto, 'ancho'), escalon(r.producto, 'alto')]
-    .filter((e) => e !== null)
-    .map((e) => (e.exacto ? decimal(e.min) : `${decimal(e.min)}–${decimal(e.max)}`))
-    .join(' × ');
-  return `${r.producto.familia === 'PUERTA' ? 'Medida' : 'Largo'} especial ${pedida} m: se cotiza con la referencia ${r.producto.codigo} (${referencia} m), la siguiente medida del catálogo.`;
+  const pedida = [r.anchoSolicitado, r.altoSolicitado].filter((n) => n !== null).map(metrosTexto).join(' × ');
+  return `${r.producto.familia === 'PUERTA' ? 'Medida' : 'Largo'} especial ${pedida} m: se cotiza con la referencia ${r.producto.codigo} (${medidaReferencia(r.producto)}), la siguiente medida del catálogo.`;
 }
 
 /** Texto breve de las diferencias, para el registro de actividad. */
@@ -264,11 +259,11 @@ export class Servicio {
         }
         s.modelo = nombreCanonicoModelo(res.producto.modelo);
         s.madera = res.producto.madera;
-        if (
-          (res.ajusteAncho === 'siguiente' || res.ajusteAlto === 'siguiente') &&
-          !previas.has(clave(res.producto.codigo, res.anchoSolicitado, res.altoSolicitado))
-        )
+        const k = clave(res.producto.codigo, res.anchoSolicitado, res.altoSolicitado);
+        if ((res.ajusteAncho === 'siguiente' || res.ajusteAlto === 'siguiente') && !previas.has(k)) {
           avisos.push(avisoMedidaEspecial(res));
+          previas.add(k);
+        }
         validos.push({
           producto: {
             ...res.producto,
