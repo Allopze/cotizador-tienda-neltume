@@ -22,6 +22,15 @@ import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { aCentesimas } from '../negocio/cifras';
+import {
+  avisoDescripcionDescartada,
+  claveMedida,
+  descartaDescripcion,
+  fusionarItems,
+  sanearTextos,
+  textoItem,
+  type ProductoItem,
+} from '../negocio/items';
 import type { Cotizacion, Despacho, Mensaje } from '../negocio/estado';
 import {
   cotizar,
@@ -320,19 +329,23 @@ export class Servicio {
     );
   }
 
-  private firma(s: SolicitudItem) {
-    const m = (n: number | null) => {
-      if (n === null) return '';
-      const v = metros(n);
-      return v === null ? `?${n}` : v.toFixed(4);
+  /** Modelo y madera comparables: los del catálogo si el ítem resuelve, así un alias no cuenta como cambio. */
+  private producto(s: SolicitudItem): ProductoItem {
+    const r = resolverItem(this.catalogo, s);
+    return {
+      modelo: normalizar(r.ok ? r.producto.modelo : (s.modelo ?? '')),
+      madera: normalizar(r.ok ? r.producto.madera : (s.madera ?? '')),
     };
+  }
+
+  private firma(s: SolicitudItem) {
     const r = resolverItem(this.catalogo, s);
     if (r.ok)
       return [
         r.producto.codigo,
         r.cantidad,
-        m(s.ancho),
-        m(s.alto),
+        claveMedida(s.ancho),
+        claveMedida(s.alto),
         r.medidaSolicitada ?? '',
         s.tipoMedida ?? '',
         s.descripcion ?? '',
@@ -343,8 +356,8 @@ export class Servicio {
     return [
       normalizar(s.modelo ?? ''),
       normalizar(s.madera ?? ''),
-      m(s.ancho),
-      m(s.alto),
+      claveMedida(s.ancho),
+      claveMedida(s.alto),
       s.medida ? normalizarMedida(s.medida) : '',
       s.tipoMedida ?? '',
       s.descripcion ?? '',
@@ -650,6 +663,7 @@ export class Servicio {
         solicitudes[indice] = { ...solicitudes[indice], cantidad };
       }
       const indicesEditados = new Set<number>();
+      const avisosItems: string[] = [];
       for (const cambio of accion.items ?? []) {
         if (!solicitudes[cambio.indice] || indicesEditados.has(cambio.indice))
           throw new ErrorNoEncontrado('No se encontró el ítem o se repitió su índice.');
@@ -658,9 +672,7 @@ export class Servicio {
         const siguiente = { ...solicitudes[cambio.indice] };
         for (const campo of ['modelo', 'madera', 'medida', 'descripcion', 'observaciones'] as const)
           if (cambios[campo] !== undefined) {
-            siguiente[campo] = cambios[campo] === null
-              ? null
-              : String(cambios[campo]).replace(/\s+/g, ' ').trim().slice(0, campo === 'observaciones' ? 1000 : 300) || null;
+            siguiente[campo] = textoItem(cambios[campo], campo === 'observaciones' ? 1000 : 300);
             if (campo === 'modelo') {
               siguiente.modeloOriginal = null;
               siguiente.coincidenciaModelo = null;
@@ -691,11 +703,16 @@ export class Servicio {
           siguiente.margen = valor ?? null;
           if (valor !== null) siguiente.precioUnitario = null;
         }
+        if (descartaDescripcion(solicitudes[cambio.indice], siguiente, (s) => this.producto(s))) {
+          siguiente.descripcion = null;
+          avisosItems.push(avisoDescripcionDescartada(cambio.indice + 1));
+        }
         solicitudes[cambio.indice] = siguiente;
       }
-      const { cliente, avisos } = accion.cliente
+      const { cliente, avisos: avisosCliente } = accion.cliente
         ? sanearCliente(accion.cliente, q.cliente)
         : { cliente: q.cliente, avisos: [] as string[] };
+      const avisos = [...avisosItems, ...avisosCliente];
       const descuento = accion.descuento ?? q.descuento,
         flete = accion.flete ?? (accion.despacho?.valor === undefined ? q.flete : accion.despacho.valor ?? 0);
       const reglas = q.reglas ?? REGLAS;
@@ -1207,6 +1224,7 @@ export class Servicio {
 
   private aplicarModificacion(base: Cotizacion, cambios: ModificacionCotizacion) {
     const items = structuredClone(base.solicitudes);
+    const descartados: SolicitudItem[] = [];
     const actualizar = cambios.items ?? [];
     const quitar = cambios.quitar ?? [];
     const actualizarIndices = new Set<number>();
@@ -1226,16 +1244,25 @@ export class Servicio {
       )
         return null;
       actualizarIndices.add(cambio.indice);
-      items[cambio.indice] = { ...items[cambio.indice], ...cambio.cambios };
+      const siguiente = { ...items[cambio.indice], ...sanearTextos(cambio.cambios) };
+      if (descartaDescripcion(items[cambio.indice], siguiente, (s) => this.producto(s))) {
+        siguiente.descripcion = null;
+        descartados.push(siguiente);
+      }
+      items[cambio.indice] = siguiente;
     }
     for (const indice of quitar) {
       if (indice >= items.length || quitarIndices.has(indice) || actualizarIndices.has(indice)) return null;
       quitarIndices.add(indice);
     }
     for (const indice of [...quitarIndices].sort((a, b) => b - a)) items.splice(indice, 1);
-    items.push(...(cambios.agregar ?? []));
+    items.push(...(cambios.agregar ?? []).map(sanearTextos));
     if (items.length > 100) return null;
-    return { items, cliente: { ...base.cliente, ...(cambios.cliente ?? {}) } };
+    return {
+      items,
+      cliente: { ...base.cliente, ...(cambios.cliente ?? {}) },
+      avisos: descartados.map((d) => avisoDescripcionDescartada(items.indexOf(d) + 1)),
+    };
   }
 
   private async chat(accion: Extract<Accion, { tipo: 'chat' }>): Promise<Resultado> {
@@ -1367,11 +1394,18 @@ export class Servicio {
           },
         };
       }
-      let propuesta: { items: SolicitudItem[]; cliente: Partial<Cliente> };
+      let propuesta: { items: SolicitudItem[]; cliente: Partial<Cliente>; avisos: string[] };
       if (res.name === 'actualizar_cotizacion') {
         if (modo === 'modificacion_anterior') return responder(NO_ENTENDI);
+        // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q.
+        const { items, descartadas } = fusionarItems(
+          q.solicitudes,
+          res.input.items.map(sanearTextos),
+          (s) => this.producto(s),
+        );
         propuesta = {
-          items: res.input.items,
+          items,
+          avisos: descartadas.map((i) => avisoDescripcionDescartada(i + 1)),
           cliente: {
             ...res.input.cliente,
             giro: res.input.cliente.giro === undefined ? q.cliente.giro : res.input.cliente.giro,
@@ -1391,7 +1425,7 @@ export class Servicio {
         );
       const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
-      const avisos = [...avisosItems, ...avisosCliente];
+      const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];
       const extra = avisos.length ? { avisos } : {};
       if (q === nuevo && !solicitudes.length && Object.values(cliente).every((v) => v === null))
         return responder(

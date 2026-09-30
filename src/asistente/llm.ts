@@ -12,13 +12,18 @@ import {
 } from './esquemas';
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { EstadoCotizacion, Mensaje } from '../negocio/estado';
+/** Lo que la IA ve de cada ítem: textos y medidas, nunca precios ni márgenes. */
+export type ItemContexto = Pick<
+  SolicitudItem,
+  'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'cantidad' | 'tipoMedida' | 'descripcion' | 'observaciones'
+>;
 export interface ContextoLLM {
   mensaje: string;
   modo: 'cotizacion_nueva' | 'modificacion_anterior';
   referencia: { numero: number | null; estado: EstadoCotizacion } | null;
   /** Últimos turnos, solo texto: permite responder a una pregunta previa del asistente. */
   historial: Mensaje[];
-  borrador: { items: SolicitudItem[]; cliente: Cliente };
+  borrador: { items: ItemContexto[]; cliente: Cliente };
   modelos: string[];
   maderas: string[];
   aliasModelos: Record<string, string[]>;
@@ -39,7 +44,7 @@ export const SYSTEM = `Eres el asistente interno de cotizaciones de Neltume para
 Tu única función es extraer datos. Nunca calculas, solicitas ni mencionas precios, descuentos, costos o márgenes.
 Llama exactamente una herramienta. En modo cotizacion_nueva, actualizar_cotizacion devuelve TODOS los ítems y datos del cliente después de aplicar el mensaje al borrador: conserva los datos previos, agrega, corrige o quita lo solicitado.
 En modo modificacion_anterior, usa modificar_cotizacion y devuelve solo cambios: items usa índices desde 0 y cada entrada contiene indice + cambios con los campos que sí cambian; agregar añade ítems, quitar elimina índices y cliente incluye solo los campos que cambian. Los índices corresponden al orden de borrador.items antes de aplicar los cambios. Omite los campos no mencionados; null significa borrarlos explícitamente. Si no puedes identificar con seguridad el ítem, usa responder para preguntar cuál. No devuelvas la lista completa en este modo.
-En actualizar_cotizacion, para datos nuevos no indicados usa null. Nunca adivines cantidad, madera ni medidas. "Una" significa cantidad 1.
+En actualizar_cotizacion, para datos nuevos no indicados usa null. Cada ítem del borrador puede traer tipoMedida, descripcion y observaciones que escribió la persona: en los ítems que se conservan repite tal cual su modelo, madera, medidas y esos tres campos, salvo que el mensaje pida cambiarlos. Nunca adivines cantidad, madera ni medidas. "Una" significa cantidad 1.
 Convierte a metros: 80×210 es ancho 0.80 y alto 2.10; acepta coma decimal. Si el texto dice medida de hoja o de vano, devuelve tipoMedida "hoja" o "vano". Si no lo dice, devuelve null; nunca supongas cuál es.
 Los accesorios MARCO, PIEZAS T, ENDOLADO, GUARDAPOLVO y PILASTRA usan medida + alto (= largo); ancho null. "4" en marcos significa medida "2x4". No completes medidas o cantidades ausentes.
 Datos del cliente: nombre, rut, giro (actividad comercial de la empresa), telefono, direccion, comuna y proyecto; no los inventes.
@@ -86,6 +91,9 @@ export function contextoSeguro(
         alto: i.alto,
         medida: i.medida,
         cantidad: i.cantidad,
+        tipoMedida: i.tipoMedida ?? null,
+        descripcion: i.descripcion ?? null,
+        observaciones: i.observaciones ?? null,
       })),
       cliente: {
         nombre: cliente.nombre,
