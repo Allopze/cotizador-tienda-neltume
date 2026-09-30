@@ -29,8 +29,9 @@ import {
   claveMedida,
   descartarDelProducto,
   fusionarItems,
+  reiniciarOrigenModelo,
   sanearTextos,
-  textoItem,
+  textoCampo,
   type Descartes,
   type ProductoItem,
 } from '../negocio/items';
@@ -674,11 +675,8 @@ export class Servicio {
         const siguiente = { ...solicitudes[cambio.indice] };
         for (const campo of ['modelo', 'madera', 'medida', 'descripcion', 'observaciones'] as const)
           if (cambios[campo] !== undefined) {
-            siguiente[campo] = textoItem(cambios[campo], campo === 'observaciones' ? 1000 : 300);
-            if (campo === 'modelo') {
-              siguiente.modeloOriginal = null;
-              siguiente.coincidenciaModelo = null;
-            }
+            siguiente[campo] = textoCampo(campo, cambios[campo]);
+            if (campo === 'modelo') reiniciarOrigenModelo(siguiente);
           }
         if (cambios.tipoMedida !== undefined) {
           if (cambios.tipoMedida !== null && !['hoja', 'vano', 'no_especificado'].includes(cambios.tipoMedida))
@@ -705,7 +703,11 @@ export class Servicio {
           siguiente.margen = valor ?? null;
           if (valor !== null) siguiente.precioUnitario = null;
         }
-        const descartes = descartarDelProducto(solicitudes[cambio.indice], siguiente, (s) => this.producto(s));
+        const anterior = solicitudes[cambio.indice];
+        const descartes = descartarDelProducto(anterior, siguiente, {
+          antes: this.producto(anterior),
+          despues: this.producto(siguiente),
+        });
         if (descartes) avisosItems.push(avisoProductoCambiado(cambio.indice + 1, descartes));
         solicitudes[cambio.indice] = siguiente;
       }
@@ -1245,11 +1247,12 @@ export class Servicio {
         return null;
       actualizarIndices.add(cambio.indice);
       const siguiente = { ...items[cambio.indice], ...sanearTextos(cambio.cambios) };
-      if (cambio.cambios.modelo !== undefined) {
-        siguiente.modeloOriginal = null;
-        siguiente.coincidenciaModelo = null;
-      }
-      const descartes = descartarDelProducto(items[cambio.indice], siguiente, (s) => this.producto(s));
+      if (cambio.cambios.modelo !== undefined) reiniciarOrigenModelo(siguiente);
+      const anterior = items[cambio.indice];
+      const descartes = descartarDelProducto(anterior, siguiente, {
+        antes: this.producto(anterior),
+        despues: this.producto(siguiente),
+      });
       if (descartes) descartados.push([siguiente, descartes]);
       items[cambio.indice] = siguiente;
     }

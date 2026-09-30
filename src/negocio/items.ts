@@ -6,19 +6,25 @@ export interface ProductoItem {
   modelo: string;
   madera: string;
 }
-export type ClaveProducto = (s: SolicitudItem) => ProductoItem;
+type IdentidadProducto = (s: SolicitudItem) => ProductoItem;
 
 const MAX_TEXTO = { modelo: 300, madera: 300, medida: 300, descripcion: 300, observaciones: 1000 } as const;
 
-/** Espacios colapsados y recortados; un texto vacío queda null. */
-export const textoItem = (valor: string | null | undefined, max: number) =>
-  valor?.replace(/\s+/g, ' ').trim().slice(0, max) || null;
+/** Espacios colapsados y recortados al largo del campo; un texto vacío queda null. */
+export const textoCampo = (campo: keyof typeof MAX_TEXTO, valor: string | null | undefined) =>
+  valor?.replace(/\s+/g, ' ').trim().slice(0, MAX_TEXTO[campo]) || null;
+
+/** El origen del modelo (alias o coincidencia posible) deja de valer si el modelo cambia; recalcular lo deduce de nuevo. */
+export function reiniciarOrigenModelo(item: SolicitudItem) {
+  item.modeloOriginal = null;
+  item.coincidenciaModelo = null;
+}
 
 /** Mismo saneamiento que la edición directa para los textos de un ítem; un campo ausente sigue ausente. */
 export function sanearTextos<T extends Partial<SolicitudItem>>(item: T): T {
   const limpio: Partial<SolicitudItem> = { ...item };
   for (const campo of Object.keys(MAX_TEXTO) as (keyof typeof MAX_TEXTO)[])
-    if (limpio[campo] !== undefined) limpio[campo] = textoItem(limpio[campo], MAX_TEXTO[campo]);
+    if (limpio[campo] !== undefined) limpio[campo] = textoCampo(campo, limpio[campo]);
   return limpio as T;
 }
 
@@ -27,7 +33,7 @@ export const claveMedida = (n: number | null) => {
   const v = metros(n);
   return v === null ? `?${n}` : v.toFixed(4);
 };
-const claveMedidas = (s: SolicitudItem) =>
+const medidasDelItem = (s: SolicitudItem) =>
   [claveMedida(s.ancho), claveMedida(s.alto), s.medida ? normalizarMedida(s.medida) : ''].join('|');
 
 /** Cambia el producto solo si un modelo o madera que había pasa a ser otro: un valor que falta, antes o después, no cuenta. */
@@ -44,8 +50,12 @@ export interface Descartes {
  * La descripción de documento y el precio unitario manual eran del producto anterior: si cambia el modelo o la
  * madera se quitan de `despues`, salvo que el mismo cambio traiga otro valor. Devuelve lo descartado, o null.
  */
-export function descartarDelProducto(antes: SolicitudItem, despues: SolicitudItem, producto: ClaveProducto): Descartes | null {
-  if (!cambioDeProducto(producto(antes), producto(despues))) return null;
+export function descartarDelProducto(
+  antes: SolicitudItem,
+  despues: SolicitudItem,
+  producto: { antes: ProductoItem; despues: ProductoItem },
+): Descartes | null {
+  if (!cambioDeProducto(producto.antes, producto.despues)) return null;
   const descartes = {
     descripcion: !!antes.descripcion && despues.descripcion === antes.descripcion,
     precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario,
@@ -66,22 +76,20 @@ export const avisoProductoCambiado = (numero: number, { descripcion, precio }: D
 
 /**
  * Devuelve los ítems que propone la IA con las ediciones manuales del ítem anterior que corresponde. La IA no ve
- * margen ni precio, y deja en null lo que no cambia. Orden de emparejamiento, cada ítem nuevo con uno anterior libre:
- * misma posición e identidad (modelo, madera y medidas); misma identidad en otra posición; misma posición con las
- * medidas cambiadas o completadas; misma posición con otro modelo o madera pero las mismas medidas (ahí la descripción
- * y el precio manual se descartan, con aviso). Sin pareja es un ítem nuevo y no hereda nada.
+ * margen ni precio, y deja en null lo que no cambia. Sin pareja, el ítem es nuevo y no hereda nada.
  */
-export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[], producto: ClaveProducto) {
-  const pp = previos.map(producto),
-    pn = nuevos.map(producto),
-    mp = previos.map(claveMedidas),
-    mn = nuevos.map(claveMedidas);
+export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[], identidad: IdentidadProducto) {
+  const productoPrevio = previos.map(identidad),
+    productoNuevo = nuevos.map(identidad),
+    medidasPrevias = previos.map(medidasDelItem),
+    medidasNuevas = nuevos.map(medidasDelItem);
   const pareja = new Map<number, number>(),
     usados = new Set<number>();
-  const emparejar = (enOtraPosicion: boolean, aceptar: (i: number, j: number) => boolean) => {
+  // Cada ítem nuevo sin pareja se busca entre los anteriores libres, en su posición o en cualquiera.
+  const emparejar = (posicion: 'misma' | 'cualquiera', aceptar: (nuevo: number, previo: number) => boolean) => {
     for (const i of nuevos.keys()) {
       if (pareja.has(i)) continue;
-      const candidatos = enOtraPosicion ? [...previos.keys()] : i < previos.length ? [i] : [];
+      const candidatos = posicion === 'cualquiera' ? [...previos.keys()] : i < previos.length ? [i] : [];
       const j = candidatos.find((c) => !usados.has(c) && aceptar(i, c));
       if (j === undefined) continue;
       pareja.set(i, j);
@@ -89,23 +97,33 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
     }
   };
   const mismaIdentidad = (i: number, j: number) =>
-    pn[i].modelo === pp[j].modelo && pn[i].madera === pp[j].madera && mn[i] === mp[j];
-  emparejar(false, mismaIdentidad);
-  emparejar(true, mismaIdentidad);
-  emparejar(false, (i, j) => !cambioDeProducto(pp[j], pn[i]));
-  emparejar(false, (i, j) => mn[i] === mp[j]);
+    productoNuevo[i].modelo === productoPrevio[j].modelo &&
+    productoNuevo[i].madera === productoPrevio[j].madera &&
+    medidasNuevas[i] === medidasPrevias[j];
+  // 1. Misma posición y misma identidad (modelo, madera y medidas).
+  emparejar('misma', mismaIdentidad);
+  // 2. Misma identidad en otra posición: la lista se reordenó o se insertó un ítem.
+  emparejar('cualquiera', mismaIdentidad);
+  // 3. Misma posición con las medidas cambiadas, o con un modelo o madera completado.
+  emparejar('misma', (i, j) => !cambioDeProducto(productoPrevio[j], productoNuevo[i]));
+  // 4. Misma posición con otro modelo o madera pero las mismas medidas: hereda, salvo descripción y precio manual.
+  emparejar('misma', (i, j) => medidasNuevas[i] === medidasPrevias[j]);
   const avisos: string[] = [];
   const items = nuevos.map((nuevo, i) => {
     const j = pareja.get(i);
     if (j === undefined) {
       // Sin pareja no hereda nada, pero la IA puede repetir la descripción del ítem que había en su posición.
       const item = { ...nuevo };
-      const descartes = i < previos.length ? descartarDelProducto(previos[i], item, producto) : null;
+      const descartes =
+        i < previos.length
+          ? descartarDelProducto(previos[i], item, { antes: productoPrevio[i], despues: productoNuevo[i] })
+          : null;
       if (!descartes) return nuevo;
       avisos.push(avisoProductoCambiado(i + 1, descartes));
       return item;
     }
     const previo = previos[j];
+    const mismoModelo = productoPrevio[j].modelo !== '' && productoPrevio[j].modelo === productoNuevo[i].modelo;
     const item: SolicitudItem = {
       ...nuevo,
       margen: previo.margen ?? null,
@@ -113,8 +131,12 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       tipoMedida: nuevo.tipoMedida ?? previo.tipoMedida ?? null,
       descripcion: nuevo.descripcion ?? previo.descripcion ?? null,
       observaciones: nuevo.observaciones ?? previo.observaciones ?? null,
+      // La IA no ve cómo se interpretó el modelo: se conserva mientras el modelo sea el mismo.
+      ...(mismoModelo
+        ? { modeloOriginal: previo.modeloOriginal ?? null, coincidenciaModelo: previo.coincidenciaModelo ?? null }
+        : {}),
     };
-    const descartes = descartarDelProducto(previo, item, producto);
+    const descartes = descartarDelProducto(previo, item, { antes: productoPrevio[j], despues: productoNuevo[i] });
     if (descartes) avisos.push(avisoProductoCambiado(i + 1, descartes));
     return item;
   });
