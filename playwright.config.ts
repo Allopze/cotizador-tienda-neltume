@@ -9,10 +9,15 @@ process.env.NELTUME_DATA_DIR = dataE2E;
 process.env.NELTUME_DB_PATH = dbE2E;
 export default defineConfig({
   testDir: 'tests',
-  testMatch: '**/*.e2e.ts',
   fullyParallel: false,
   workers: 1,
   timeout: 60000,
+  // La aceptación emite cotizaciones y notas: corre al final para no mover los correlativos que otras
+  // pruebas esperan (la primera cotización es la 323 y la primera nota, la 1).
+  projects: [
+    { name: 'flujos', testMatch: '**/*.e2e.ts', testIgnore: '**/aceptacion.e2e.ts' },
+    { name: 'aceptacion', testMatch: '**/aceptacion.e2e.ts', dependencies: ['flujos'] },
+  ],
   use: {
     baseURL: 'http://127.0.0.1:3100',
     headless: true,

@@ -176,6 +176,8 @@ Incluye los ocho oráculos de precios (neto $4.523.269, IVA $859.421, total $5.3
 
 El E2E recorre los cinco pasos secuencialmente, con respuestas fijas del adaptador, descarga ambos PDF y extrae su texto para verificar títulos, referencias, totales y precios de fábrica. Comprueba persistencia tras recargar y ancho móvil. Las respuestas fijas solo se activan con **ambas** variables internas `NELTUME_TEST_MODE=1` y `NELTUME_LLM=fijo`; el navegador no puede seleccionarlas.
 
+`tests/aceptacion.e2e.ts` recorre el escenario de aceptación completo sobre el catálogo del E2E: «Cotiza 3 puertas Huilo Huilo en Mara de 83,5 x 236 medida vano para Juan Pérez.» (referencia HUIL-M-3-E, siguiente medida del catálogo, precio = fábrica × 1,55), descripción de documento y margen de línea editados a mano, emisión y PDF del cliente, aprobación, anticipo del 50 %, nota de pedido a precio de fábrica, producción, saldo, despacho con transportista y destino, operación completada y rastro de actividad tras recargar. Emite cotizaciones y notas, así que `playwright.config.ts` lo corre al final, como proyecto `aceptacion` que depende de `flujos`; para correrlo solo, sobre una base ya preparada: `npx playwright test --project=aceptacion --no-deps`.
+
 ## Límites y diferencias documentadas
 
 - Se usó un lector selectivo de XML en lugar de `exceljs` para mantener la restricción de no leer las columnas H–N. Las tablas auxiliares sí se obtienen del archivo.

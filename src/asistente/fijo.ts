@@ -43,6 +43,15 @@ export class LLMFijo implements LLM {
         medida: '2x4',
         cantidad: 3,
       };
+    else if (/Huilo Huilo en Mara de 83,5 x 236 medida vano/i.test(c.mensaje))
+      // Caso de aceptación: la IA real convierte 83,5 × 236 cm a metros y reconoce «medida vano».
+      return {
+        name: 'actualizar_cotizacion',
+        input: {
+          items: [{ ...inicial, madera: 'MARA', ancho: 0.835, alto: 2.36, tipoMedida: 'vano' }],
+          cliente: { ...clienteVacio(), nombre: 'Juan Pérez' },
+        },
+      };
     else if (/\bPillo\b/i.test(c.mensaje))
       // Como la IA real: un nombre dudoso se conserva tal cual; el servidor decide si pide confirmarlo.
       return {
