@@ -1,10 +1,20 @@
 'use client';
 import { useEffect, useState, type RefObject } from 'react';
-import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
+import {
+  despachoEditable,
+  esEditable,
+  etiquetaComercial,
+  etiquetaEstado,
+  etiquetaFacturacion,
+  etiquetaOperativo,
+  pagoAnulable,
+  type Cotizacion,
+} from '@/negocio/estado';
 import { descripcionLinea, margenProducto, pesos, porcentaje } from '@/negocio/precios';
 import { leerPesos } from '@/negocio/cifras';
+import { fechaLocal } from '@/negocio/vigencia';
 import { CampoEditable } from './campo-editable';
-import type { CambiosEdicion } from './contrato';
+import type { CambiosEdicion, Despacho } from './contrato';
 import {
   ETIQUETA_CAMPO,
   SIN_CLIENTE,
@@ -33,6 +43,10 @@ export interface AccionesPanel {
   anular: () => void;
   /** Guarda cambios directos; `campo` identifica qué control muestra «Guardando…». */
   editar: (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
+  /** Datos de despacho de una cotización aprobada (antes de aprobar se editan con `editar`). */
+  despacho: (cambios: Despacho, campo: string) => Promise<boolean>;
+  /** Anula un pago registrado por error, previa confirmación. */
+  anularPago: (pagoId: string) => Promise<boolean>;
   descargar: (archivo: string) => void;
   copiar: () => void;
   flujo: (accion: Record<string, unknown>) => Promise<boolean>;
@@ -97,8 +111,11 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
   const [montoPago, setMontoPago] = useState('');
-  const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
+  const [fechaPago, setFechaPago] = useState(() => fechaLocal(new Date()));
   const [observacionPago, setObservacionPago] = useState('');
+  const [tipoFactura, setTipoFactura] = useState<'factura' | 'boleta'>('factura');
+  const [numeroFactura, setNumeroFactura] = useState('');
+  const [fechaFactura, setFechaFactura] = useState(() => fechaLocal(new Date()));
   const [comentario, setComentario] = useState('');
   const [transportistas, setTransportistas] = useState(['Starken', 'Transportes Paredes', 'Ignacio', 'Otro']);
   useEffect(() => {
@@ -150,6 +167,14 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
   const operacionActual = actual.estadoOperativo ?? (actual.nota ? 'pedido_generado' : 'sin_pedido');
   const estadoComercial = actual.estadoComercial ?? (actual.estado === 'emitida' ? 'enviada' : 'pendiente');
   const pagoMinimoNP = Math.ceil(actual.montos.total * 0.5);
+  const aprobada = estado === 'aprobada';
+  const puedeAnularPago = pagoAnulable(actual);
+  // Desde la aprobación y hasta registrar el despacho, los datos logísticos se editan sin crear revisión.
+  const editaDespacho = editable || (despachoEditable(actual) && !ocupado);
+  const guardarDespacho = (cambios: Despacho, campo: string) =>
+    editable ? acciones.editar({ despacho: cambios }, campo) : acciones.despacho(cambios, campo);
+  const transportista = actual.despacho?.transporte ?? '';
+  const sinTransportista = !transportista.trim() || transportista.trim().toLowerCase() === 'otro';
   async function registrarPago(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const monto = leerPesos(montoPago);
@@ -158,6 +183,20 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
       setMontoPago('');
       setObservacionPago('');
     }
+  }
+  async function marcarFacturada(evento: React.FormEvent<HTMLFormElement>) {
+    evento.preventDefault();
+    if (ocupado) return;
+    if (
+      await acciones.flujo({
+        tipo: 'facturacion',
+        estado: 'facturada',
+        tipoDocumento: tipoFactura,
+        identificadorExterno: numeroFactura.trim() || null,
+        fecha: fechaFactura || null,
+      })
+    )
+      setNumeroFactura('');
   }
   async function guardarComentario(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -235,7 +274,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           );
         })}
       </div>
-      {(editable || actual.observaciones || actual.despacho) && (
+      {(editable || actual.observaciones || editaDespacho || actual.despacho) && (
         <div className="quote-custom-fields">
           {(editable || actual.observaciones) && (
             <CampoEditable
@@ -250,35 +289,35 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               guardar={(v) => acciones.editar({ observaciones: v || null }, 'observaciones')}
             />
           )}
-          {(editable || actual.despacho) && (
+          {(editaDespacho || actual.despacho) && (
             <div className="quote-dispatch-fields">
               <span className="campo-etiqueta">Despacho</span>
               <CampoEditable
                 etiqueta="Destino"
                 valor={actual.despacho?.destino ?? ''}
                 mostrar={actual.despacho?.destino || 'Agregar comuna o destino'}
-                editable={editable}
+                editable={editaDespacho}
                 discreto
                 guardando={guardando === 'despacho.destino'}
                 maxLength={300}
-                guardar={(v) => acciones.editar({ despacho: { destino: v || null } }, 'despacho.destino')}
+                guardar={(v) => guardarDespacho({ destino: v || null }, 'despacho.destino')}
               />
               <CampoEditable
                 etiqueta="Dirección de despacho"
                 valor={actual.despacho?.direccion ?? ''}
                 mostrar={actual.despacho?.direccion || 'Agregar dirección'}
-                editable={editable}
+                editable={editaDespacho}
                 discreto
                 guardando={guardando === 'despacho.direccion'}
                 maxLength={300}
-                guardar={(v) => acciones.editar({ despacho: { direccion: v || null } }, 'despacho.direccion')}
+                guardar={(v) => guardarDespacho({ direccion: v || null }, 'despacho.direccion')}
               />
               <label className="ia-field item-select-field">
                 <span>Transportista</span>
                 <select
                   value={transportistas.includes(actual.despacho?.transporte ?? '') ? actual.despacho?.transporte ?? '' : actual.despacho?.transporte ? '__otro__' : ''}
-                  onChange={(e) => void acciones.editar({ despacho: { transporte: e.target.value === '__otro__' ? actual.despacho?.transporte ?? '' : e.target.value || null } }, 'despacho.transporte')}
-                  disabled={!editable || ocupado}
+                  onChange={(e) => void guardarDespacho({ transporte: e.target.value === '__otro__' ? actual.despacho?.transporte ?? '' : e.target.value || null }, 'despacho.transporte')}
+                  disabled={!editaDespacho || ocupado}
                 >
                   <option value="">Seleccionar transportista</option>
                   {transportistas.map((nombre) => <option key={nombre} value={nombre}>{nombre}</option>)}
@@ -290,11 +329,11 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                   etiqueta="Especificar transportista"
                   valor={actual.despacho?.transporte === 'Otro' ? '' : actual.despacho?.transporte ?? ''}
                   mostrar={actual.despacho?.transporte === 'Otro' ? 'Especificar transportista' : actual.despacho?.transporte ?? ''}
-                  editable={editable}
+                  editable={editaDespacho}
                   discreto
                   guardando={guardando === 'despacho.transporte'}
                   maxLength={120}
-                  guardar={(v) => acciones.editar({ despacho: { transporte: v || null } }, 'despacho.transporte')}
+                  guardar={(v) => guardarDespacho({ transporte: v || null }, 'despacho.transporte')}
                 />
               )}
               <CampoEditable
@@ -313,11 +352,11 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                 etiqueta="Entrega comprometida"
                 valor={actual.despacho?.entregaComprometida ?? ''}
                 mostrar={actual.despacho?.entregaComprometida || 'Agregar fecha o compromiso'}
-                editable={editable}
+                editable={editaDespacho}
                 discreto
                 guardando={guardando === 'despacho.entregaComprometida'}
                 maxLength={120}
-                guardar={(v) => acciones.editar({ despacho: { entregaComprometida: v || null } }, 'despacho.entregaComprometida')}
+                guardar={(v) => guardarDespacho({ entregaComprometida: v || null }, 'despacho.entregaComprometida')}
               />
             </div>
           )}
@@ -692,33 +731,56 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           <div className="workflow-heading">
             <div>
               <p className="eyebrow">SEGUIMIENTO DE LA OPERACIÓN</p>
-              <h3 id="seguimiento-title">{pesos(pagado)} pagado · {pesos(saldo)} pendiente</h3>
+              <h3 id="seguimiento-title">
+                {aprobada || pagado > 0 ? `${pesos(pagado)} pagado · ${pesos(saldo)} pendiente` : 'Esperando la aprobación del cliente'}
+              </h3>
             </div>
-            <span className="status">{porcentaje(porcentajePagado)} pagado</span>
+            {(aprobada || pagado > 0) && <span className="status">{porcentaje(porcentajePagado)} pagado</span>}
           </div>
           <div className="workflow-states">
-            <span>Comercial: <strong>{estadoComercial}</strong></span>
-            <span>Operación: <strong>{operacionActual.replaceAll('_', ' ')}</strong></span>
-            <span>Facturación: <strong>{actual.facturacion?.estado ?? 'pendiente'}</strong></span>
+            <span>Comercial: <strong>{etiquetaComercial[estadoComercial]}</strong></span>
+            <span>Operación: <strong>{etiquetaOperativo[operacionActual]}</strong></span>
+            {aprobada && <span>Facturación: <strong>{etiquetaFacturacion(actual.facturacion)}</strong></span>}
           </div>
           {estado === 'emitida' && (
             <div className="workflow-actions">
               {estadoComercial !== 'seguimiento' && <button type="button" className="button secondary small" disabled={ocupado} onClick={() => void acciones.flujo({ tipo: 'comercial', estado: 'seguimiento' })}>Marcar seguimiento</button>}
               <button type="button" className="button secondary small" disabled={ocupado} onClick={() => void acciones.flujo({ tipo: 'comercial', estado: 'rechazada' })}>Marcar rechazada</button>
+              <p className="muted">Los pagos se registran cuando el cliente aprueba la cotización.</p>
             </div>
           )}
-          <form className="workflow-payment" onSubmit={registrarPago}>
-            <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input inputMode="numeric" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
-            <label className="ia-field"><span>Fecha del pago</span><input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} disabled={ocupado || saldo <= 0} /></label>
-            <label className="ia-field"><span>Observación</span><input value={observacionPago} onChange={(e) => setObservacionPago(e.target.value)} maxLength={500} placeholder="Transferencia, anticipo…" disabled={ocupado || saldo <= 0} /></label>
-            <button type="submit" className="button secondary" disabled={ocupado || saldo <= 0 || leerPesos(montoPago) <= 0}>Registrar pago</button>
-          </form>
+          {aprobada && (
+            <form className="workflow-payment" onSubmit={registrarPago}>
+              <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input inputMode="numeric" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
+              <label className="ia-field"><span>Fecha del pago</span><input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} disabled={ocupado || saldo <= 0} /></label>
+              <label className="ia-field"><span>Observación</span><input value={observacionPago} onChange={(e) => setObservacionPago(e.target.value)} maxLength={500} placeholder="Transferencia, anticipo…" disabled={ocupado || saldo <= 0} /></label>
+              <button type="submit" className="button secondary" disabled={ocupado || saldo <= 0 || leerPesos(montoPago) <= 0}>Registrar pago</button>
+            </form>
+          )}
           {pagosRegistrados.length > 0 && (
             <ul className="workflow-ledger">
-              {pagosRegistrados.map((p) => <li key={p.id}><span>{fechaLarga(p.fecha)}{p.observacion ? ` · ${p.observacion}` : ''}</span><strong>{pesos(p.monto)}</strong></li>)}
+              {pagosRegistrados.map((p) => (
+                <li key={p.id}>
+                  <span>{fechaLarga(p.fecha)}{p.observacion ? ` · ${p.observacion}` : ''}</span>
+                  <span className="workflow-ledger-monto">
+                    <strong>{pesos(p.monto)}</strong>
+                    {puedeAnularPago && (
+                      <button
+                        type="button"
+                        className="button secondary small"
+                        disabled={ocupado}
+                        aria-label={`Anular el pago de ${pesos(p.monto)} del ${fechaLarga(p.fecha)}`}
+                        onClick={() => void acciones.anularPago(p.id)}
+                      >
+                        Anular
+                      </button>
+                    )}
+                  </span>
+                </li>
+              ))}
             </ul>
           )}
-          {actual.estado === 'aprobada' && !actual.nota && (
+          {aprobada && !actual.nota && (
             <div className="workflow-actions">
               <p className="muted">Nota de pedido disponible desde {pesos(pagoMinimoNP)} (50 %).</p>
               <button type="button" className="button primary" disabled={ocupado || pagado < pagoMinimoNP} onClick={() => void acciones.flujo({ tipo: 'generar_nota' })}>Generar nota de pedido</button>
@@ -730,9 +792,34 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               {operacionActual === 'en_produccion' && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('produccion_terminada')}>Marcar producción terminada</button>}
               {operacionActual === 'produccion_terminada' && pagado < actual.montos.total && <p className="muted">La producción terminó. Registra el saldo antes de habilitar el despacho.</p>}
               {(operacionActual === 'pagada' || operacionActual === 'produccion_terminada') && pagado >= actual.montos.total && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('lista_despacho')}>Marcar lista para despacho</button>}
-              {operacionActual === 'lista_despacho' && <button type="button" className="button primary" disabled={ocupado} onClick={() => void operar('despachada', { despacho: actual.despacho ?? {} })}>Registrar despacho</button>}
+              {operacionActual === 'lista_despacho' && <button type="button" className="button primary" disabled={ocupado || sinTransportista} onClick={() => void operar('despachada')}>Registrar despacho</button>}
+              {operacionActual === 'lista_despacho' && sinTransportista && <p className="muted">Indica el transportista en «Despacho» para registrar el despacho.</p>}
               {operacionActual === 'despachada' && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('completada')}>Completar operación</button>}
             </div>
+          )}
+          {aprobada && (
+            actual.facturacion?.estado === 'facturada' ? (
+              <div className="workflow-actions">
+                <p>
+                  <strong>{etiquetaFacturacion(actual.facturacion)}</strong>
+                  {actual.facturacion.fecha ? ` · ${fechaLarga(actual.facturacion.fecha)}` : ''}
+                </p>
+                <button type="button" className="button secondary small" disabled={ocupado} onClick={() => void acciones.flujo({ tipo: 'facturacion', estado: 'pendiente' })}>Volver a pendiente</button>
+              </div>
+            ) : (
+              <form className="workflow-payment" onSubmit={marcarFacturada}>
+                <label className="ia-field">
+                  <span>Documento</span>
+                  <select value={tipoFactura} onChange={(e) => setTipoFactura(e.target.value as 'factura' | 'boleta')} disabled={ocupado}>
+                    <option value="factura">Factura</option>
+                    <option value="boleta">Boleta</option>
+                  </select>
+                </label>
+                <label className="ia-field"><span>N° o identificador externo</span><input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} maxLength={120} placeholder="Ej. 1234" disabled={ocupado} /></label>
+                <label className="ia-field"><span>Fecha de emisión</span><input type="date" value={fechaFactura} onChange={(e) => setFechaFactura(e.target.value)} disabled={ocupado} /></label>
+                <button type="submit" className="button secondary" disabled={ocupado}>Marcar como facturada</button>
+              </form>
+            )
           )}
           <form className="workflow-comment" onSubmit={guardarComentario}>
             <label className="ia-field"><span>Nota interna</span><textarea value={comentario} onChange={(e) => setComentario(e.target.value)} rows={2} maxLength={2000} placeholder="Seguimiento, acuerdos o instrucciones internas" disabled={ocupado} /></label>

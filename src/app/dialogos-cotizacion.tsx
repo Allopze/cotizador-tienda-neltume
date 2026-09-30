@@ -291,3 +291,84 @@ function FormAnulacion({
     </form>
   );
 }
+
+interface DatosAnulacionPago {
+  monto: string;
+  fecha: string;
+}
+/** Anular un pago registrado por error: motivo opcional; el monto vuelve al saldo y queda en la actividad. */
+export function useAnulacionPago() {
+  const [pendiente, setPendiente] = useState<
+    (DatosAnulacionPago & { resolver: (r: { motivo: string } | null) => void }) | null
+  >(null);
+  const pedir = useCallback(
+    (datos: DatosAnulacionPago) =>
+      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ ...datos, resolver })),
+    [],
+  );
+  const cancelar = useRef<HTMLButtonElement>(null);
+  const cerrar = (r: { motivo: string } | null) => {
+    pendiente?.resolver(r);
+    setPendiente(null);
+  };
+  const elemento = (
+    <Dialogo
+      abierto={!!pendiente}
+      alCerrar={() => cerrar(null)}
+      titulo="Anular el pago"
+      eyebrow="ANULAR PAGO"
+      className="dialogo-confirmacion"
+      focoInicial={cancelar}
+      alerta
+    >
+      {pendiente && <FormAnulacionPago datos={pendiente} responder={cerrar} cancelar={cancelar} />}
+    </Dialogo>
+  );
+  return [pedir, elemento] as const;
+}
+function FormAnulacionPago({
+  datos,
+  responder,
+  cancelar,
+}: {
+  datos: DatosAnulacionPago;
+  responder: (r: { motivo: string } | null) => void;
+  cancelar: RefObject<HTMLButtonElement | null>;
+}) {
+  const [motivo, setMotivo] = useState('');
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        responder({ motivo: motivo.trim() });
+      }}
+    >
+      <div className="dialogo-mensaje">
+        <p>
+          Se quitará el pago de <strong>{datos.monto}</strong> del {datos.fecha} y ese monto volverá al saldo
+          pendiente. Queda registrado en la actividad.
+        </p>
+      </div>
+      <div className="dialogo-campos">
+        <label className="ia-field">
+          <span>Motivo (opcional)</span>
+          <textarea
+            value={motivo}
+            onChange={(e) => setMotivo(e.target.value)}
+            maxLength={300}
+            rows={2}
+            placeholder="Ej. monto mal ingresado"
+          />
+        </label>
+      </div>
+      <div className="dialogo-acciones">
+        <button ref={cancelar} type="button" className="button secondary" onClick={() => responder(null)}>
+          Cancelar
+        </button>
+        <button type="submit" className="button peligro">
+          Anular pago
+        </button>
+      </div>
+    </form>
+  );
+}

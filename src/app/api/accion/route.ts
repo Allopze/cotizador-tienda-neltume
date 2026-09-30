@@ -156,6 +156,18 @@ const accionSchema = z.discriminatedUnion('tipo', [
     monto: z.number().int().positive().max(100_000_000), fecha: z.iso.date().optional(),
     observacion: z.string().max(500).nullable().optional(),
   }).strict(),
+  z.object({
+    tipo: z.literal('anular_pago'), id: z.uuid(), actualizada: version,
+    pagoId: z.string().min(1).max(100), motivo: z.string().max(300).optional(),
+  }).strict(),
+  z.object({
+    tipo: z.literal('despacho'), id: z.uuid(), actualizada: version,
+    despacho: z.object({
+      direccion: texto(300), transporte: texto(120), entregaComprometida: texto(120), destino: texto(300),
+      // Se acepta para responder con un motivo claro si alguien intenta cambiar el flete de una emitida.
+      valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
+    }).strict(),
+  }).strict(),
   z.object({ tipo: z.literal('comentario'), id: z.uuid(), actualizada: version, texto: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ tipo: z.literal('comercial'), id: z.uuid(), actualizada: version, estado: z.enum(['seguimiento', 'rechazada']) }).strict(),
   z.object({ tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version }).strict(),
@@ -170,7 +182,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
   z.object({
     tipo: z.literal('facturacion'), id: z.uuid(), actualizada: version,
     estado: z.enum(['pendiente', 'facturada']), tipoDocumento: z.enum(['factura', 'boleta']).nullable().optional(),
-    identificadorExterno: z.string().max(120).nullable().optional(), fecha: z.iso.datetime().nullable().optional(),
+    identificadorExterno: z.string().max(120).nullable().optional(),
+    fecha: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
   }).strict(),
 ]);
 const fecha = z.iso.date();

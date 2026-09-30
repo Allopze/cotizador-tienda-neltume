@@ -184,10 +184,13 @@ describe('flujo persistido de venta y producción', () => {
     await paso('produccion_terminada');
     expect(q.estadoOperativo).toBe('pagada');
     await paso('lista_despacho');
+    // Registrar el despacho exige transportista; los datos logísticos se guardan con la cotización aprobada.
+    await expect(servicio.ejecutar({ tipo: 'operacion', id: q.id, actualizada: q.actualizada, paso: 'despachada' })).rejects.toThrow(/transportista/);
+    q = (await servicio.ejecutar({ tipo: 'despacho', id: q.id, actualizada: q.actualizada, despacho: { transporte: 'Starken', destino: 'Temuco' } })).cotizacion;
     await paso('despachada');
     await paso('completada');
     q = new Almacen(dir).obtener(q.id)!;
     expect([q.estadoOperativo, q.pagos?.length, q.comentariosInternos?.[0]?.texto]).toEqual(['completada', 3, 'Coordinar despacho con cliente']);
-    expect(almacen.eventos(q.id).map((e) => e.tipo)).toEqual(expect.arrayContaining(['emitida', 'aprobada', 'pago_registrado', 'nota_generada', 'produccion', 'produccion_terminada', 'lista_despacho', 'despachada', 'completada', 'comentario']));
+    expect(almacen.eventos(q.id).map((e) => e.tipo)).toEqual(expect.arrayContaining(['emitida', 'aprobada', 'pago_registrado', 'nota_generada', 'produccion', 'produccion_terminada', 'lista_despacho', 'despacho_actualizado', 'despachada', 'completada', 'comentario']));
   });
 });

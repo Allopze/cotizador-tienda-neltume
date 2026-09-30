@@ -10,8 +10,8 @@ import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
 import { useConfirmacion } from './dialogo';
-import { useAnulacion, useAprobacion, useEmision } from './dialogos-cotizacion';
-import type { CambiosEdicion, Detalle, Resultado } from './contrato';
+import { useAnulacion, useAnulacionPago, useAprobacion, useEmision } from './dialogos-cotizacion';
+import type { CambiosEdicion, Despacho as CambiosDespacho, Detalle, Resultado } from './contrato';
 import {
   SIN_CLIENTE,
   comportamientoScroll,
@@ -93,6 +93,7 @@ export function Cotizador({
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirAprobacion, dialogoAprobacion] = useAprobacion();
   const [pedirAnulacion, dialogoAnulacion] = useAnulacion();
+  const [pedirAnulacionPago, dialogoAnulacionPago] = useAnulacionPago();
   const [pedirEmision, dialogoEmision] = useEmision();
   const mensajes = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
@@ -602,6 +603,30 @@ export function Cotizador({
       )
         avisar('exito', `Cotización ${numeroCotizacion(q.numero)} anulada.`, { clave: 'operacion' });
     },
+    async anularPago(pagoId) {
+      const q = actual;
+      const pago = q?.pagos?.find((p) => p.id === pagoId);
+      if (!q || !pago || ocupado) return false;
+      const datos = await pedirAnulacionPago({ monto: pesos(pago.monto), fecha: fechaLarga(pago.fecha) });
+      if (!datos) return false;
+      const ok = await ejecutar(
+        'workflow',
+        { tipo: 'anular_pago', pagoId, ...versionDe(q), ...(datos.motivo ? { motivo: datos.motivo } : {}) },
+        q,
+      );
+      if (ok) avisar('exito', `Pago de ${pesos(pago.monto)} anulado.`, { clave: 'operacion' });
+      return ok;
+    },
+    async despacho(cambios: CambiosDespacho, campo: string) {
+      const q = actual;
+      if (!q || ocupado) return false;
+      setGuardando(campo);
+      try {
+        return await ejecutar('workflow', { tipo: 'despacho', despacho: cambios, ...versionDe(q) }, q);
+      } finally {
+        setGuardando(null);
+      }
+    },
     async editar(cambios: CambiosEdicion, campo: string) {
       const q = actual;
       if (!q || ocupado) return false;
@@ -1100,6 +1125,7 @@ export function Cotizador({
       {confirmacion}
       {dialogoAprobacion}
       {dialogoAnulacion}
+      {dialogoAnulacionPago}
       {dialogoEmision}
     </div>
   );
