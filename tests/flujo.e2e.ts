@@ -69,8 +69,8 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   // Una puerta sin tipo de medida sugiere la observación; con un clic queda escrita y ya no se ofrece.
   const rectificar = 'Rectificar si la medida corresponde a hoja o vano.';
   await expect(panel.getByText(rectificar, { exact: true })).toHaveCount(1);
-  await panel.getByRole('button', { name: 'Agregar como observación' }).click();
-  await expect(panel.getByRole('button', { name: 'Agregar como observación' })).toHaveCount(0);
+  await panel.getByRole('button', { name: /^Agregar como observación al ítem 1: / }).click();
+  await expect(panel.getByRole('button', { name: /^Agregar como observación al ítem 1: / })).toHaveCount(0);
   await expect(panel.getByText(rectificar, { exact: true })).toHaveCount(2);
   const descarga = page.waitForEvent('download');
   await emitir();

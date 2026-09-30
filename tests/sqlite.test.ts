@@ -9,7 +9,6 @@ import { cotizar } from '../src/negocio/precios';
 import { Almacen, guardarEstadoCompleto } from '../src/servidor/almacen';
 import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
 import { migrarJsonASqlite } from '../src/servidor/migracion-sqlite';
-import { descripcionLegible } from '../src/servidor/pdf';
 import { completarEstadoLegado } from '../src/servidor/persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 
@@ -147,14 +146,38 @@ describe('Persistencia SQLite', () => {
     const db = abrirBaseDatos(rutaDb, { cachear: false, permitirJsonLegado: true });
     guardarEstadoCompleto(db, completarEstadoLegado(estadoFixture()) as Estado);
     const RECTIFICAR = 'Rectificar si la medida corresponde a hoja o vano.';
+    const MEZCLADA = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT';
+    const MAYUSCULAS = 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT';
+    // Copia la primera línea de la cotización emitida como la línea `indice` (y su solicitud con esa observación).
+    const agregarLinea = (indice: number, observacionSolicitud: string) => {
+      for (const tabla of ['cotizacion_lineas', 'nota_lineas']) {
+        const cols = (db.pragma(`table_info(${tabla})`) as { name: string }[]).map((c) => c.name);
+        db.exec(`
+          INSERT INTO ${tabla} (${cols.join(', ')})
+          SELECT ${cols.map((c) => (c === 'orden' || c === 'indice' ? indice : c)).join(', ')}
+          FROM ${tabla} WHERE cotizacion_id = 'cotizacion-emitida' AND orden = 0`);
+      }
+      db.prepare(
+        `INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, observaciones)
+         VALUES ('cotizacion-emitida', ?, 'MOLCO', 'pino', 80, 2, NULL, 3, ?)`,
+      ).run(indice, observacionSolicitud);
+    };
+    agregarLinea(1, '   ');
+    agregarLinea(2, '');
     // Estado de una base en v11: líneas con el modelo canónico y la descripción ya reemplazada, sin la columna nueva.
     db.exec(`
-      UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT' WHERE cotizacion_id = 'cotizacion-emitida';
-      UPDATE nota_lineas SET modelo = 'Huilo Huilo', descripcion = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT' WHERE cotizacion_id = 'cotizacion-emitida';
+      UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = '${MEZCLADA}' WHERE cotizacion_id = 'cotizacion-emitida';
+      UPDATE nota_lineas SET modelo = 'Huilo Huilo', descripcion = '${MEZCLADA}' WHERE cotizacion_id = 'cotizacion-emitida';
       UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = 'Puerta Huilo Huilo reforzada' WHERE cotizacion_id = 'revision-emitida';
-      UPDATE cotizacion_lineas SET indice = 0, observaciones = '${RECTIFICAR}';
-      UPDATE nota_lineas SET indice = 0, observaciones = '${RECTIFICAR}';
+      UPDATE cotizacion_lineas SET indice = orden, observaciones = '${RECTIFICAR}';
+      UPDATE nota_lineas SET indice = orden, observaciones = '${RECTIFICAR}';
       UPDATE solicitudes SET observaciones = '${RECTIFICAR}' WHERE cotizacion_id = 'revision-emitida';
+      INSERT INTO productos_catalogo (codigo, orden, modelo, modelo_normalizado, familia, madera, medida, ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen) VALUES
+        ('HUIL-M-3-A', 0, 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'MARA', '0,80 A 0,85', 0.8, 0.85, 2.4, 100000, '${MEZCLADA}', 1),
+        ('HUIL-M-3-B', 1, 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'MARA', '0,90 A 0,95', 0.9, 0.95, 2.4, 100000, 'Puerta Huilo Huilo reforzada', 2),
+        ('MOL-M-3-A', 2, 'MOLCO', 'MOLCO', 'PUERTA', 'MARA', '0,80 A 0,85', 0.8, 0.85, 2.4, 100000, 'MOLCO MARA 0,80 A 0,85 MT X 2,4 MT', 3);
+      INSERT INTO productos_adicionales (codigo, modelo, modelo_normalizado, familia, madera, medida, ancho_min, ancho_max, largo, precio_neto, descripcion, creada)
+        VALUES ('IA-1', 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'MARA', '1,00 A 1,05', 1, 1.05, 2.4, 100000, 'Huilo Huilo MARA 1,00 A 1,05 MT X 2,4 MT', '2026-01-01T00:00:00.000Z');
       ALTER TABLE cotizacion_lineas DROP COLUMN descripcion_documento;
       ALTER TABLE nota_lineas DROP COLUMN descripcion_documento;
       PRAGMA user_version = 11;
@@ -165,26 +188,35 @@ describe('Persistencia SQLite', () => {
     try {
       expect(migrada.pragma('user_version', { simple: true })).toBe(12);
       const descripciones = (tabla: string) =>
-        migrada.prepare(`SELECT cotizacion_id AS id, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id`).all();
+        migrada.prepare(`SELECT cotizacion_id AS id, orden, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id, orden`).all();
       expect(descripciones('cotizacion_lineas')).toEqual([
-        { id: 'cotizacion-emitida', descripcion: 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT', documento: null },
+        ...[0, 1, 2].map((orden) => ({ id: 'cotizacion-emitida', orden, descripcion: MAYUSCULAS, documento: null })),
         // Lo escrito a mano (con minúsculas) no se toca.
-        { id: 'revision-emitida', descripcion: 'Puerta Huilo Huilo reforzada', documento: null },
+        { id: 'revision-emitida', orden: 0, descripcion: 'Puerta Huilo Huilo reforzada', documento: null },
       ]);
-      expect(descripciones('nota_lineas')).toEqual([
-        { id: 'cotizacion-emitida', descripcion: 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT', documento: null },
+      expect(descripciones('nota_lineas').map((l) => (l as { descripcion: string }).descripcion)).toEqual([MAYUSCULAS, MAYUSCULAS, MAYUSCULAS]);
+      // El catálogo importado con la versión intermedia del importador también vuelve a mayúsculas.
+      const catalogo = (tabla: string) =>
+        migrada.prepare(`SELECT codigo, descripcion FROM ${tabla} ORDER BY codigo`).all();
+      expect(catalogo('productos_catalogo')).toEqual([
+        { codigo: 'HUIL-M-3-A', descripcion: MAYUSCULAS },
+        { codigo: 'HUIL-M-3-B', descripcion: 'Puerta Huilo Huilo reforzada' },
+        { codigo: 'MOL-M-3-A', descripcion: 'MOLCO MARA 0,80 A 0,85 MT X 2,4 MT' },
       ]);
-      // La observación que el sistema agregaba sola se borra; la que la persona escribió (está en su solicitud) se conserva.
+      expect(catalogo('productos_adicionales')).toEqual([{ codigo: 'IA-1', descripcion: 'HUILO HUILO MARA 1,00 A 1,05 MT X 2,4 MT' }]);
+      // La observación que el sistema agregaba sola se borra (solicitud sin observación, vacía o en blanco);
+      // la que la persona escribió (está en su solicitud) se conserva.
       const observaciones = (tabla: string) =>
-        migrada.prepare(`SELECT cotizacion_id AS id, observaciones FROM ${tabla} ORDER BY cotizacion_id`).all();
+        migrada.prepare(`SELECT cotizacion_id AS id, orden, observaciones FROM ${tabla} ORDER BY cotizacion_id, orden`).all();
       expect(observaciones('cotizacion_lineas')).toEqual([
-        { id: 'cotizacion-emitida', observaciones: null },
-        { id: 'revision-emitida', observaciones: RECTIFICAR },
+        ...[0, 1, 2].map((orden) => ({ id: 'cotizacion-emitida', orden, observaciones: null })),
+        { id: 'revision-emitida', orden: 0, observaciones: RECTIFICAR },
       ]);
-      expect(observaciones('nota_lineas')).toEqual([{ id: 'cotizacion-emitida', observaciones: null }]);
-      expect(descripcionLegible('HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT')).toBe('Huilo Huilo Mara 0,80 a 0,85 m × 2,4 m');
+      expect(observaciones('nota_lineas').every((l) => (l as { observaciones: string | null }).observaciones === null)).toBe(true);
       const { cotizaciones } = await new Almacen(dir, rutaDb).leer();
-      expect(cotizaciones.flatMap((q) => q.montos.lineas.map((l) => l.descripcionDocumento))).toEqual([null, null]);
+      const lineas = cotizaciones.flatMap((q) => q.montos.lineas);
+      expect(lineas.length).toBeGreaterThan(0);
+      expect(lineas.every((l) => l.descripcionDocumento === null)).toBe(true);
     } finally {
       migrada.close();
       cerrarBaseDatos(rutaDb);

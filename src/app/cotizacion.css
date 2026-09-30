@@ -134,7 +134,8 @@
 .panel-aviso p {
   flex: 1 1 240px;
 }
-.panel-aviso .button {
+.panel-aviso .button,
+.aviso-medida .button {
   background: var(--surface);
   border-color: var(--line-strong);
 }
@@ -193,10 +194,6 @@
   color: var(--amber-text);
   font-size: var(--fs-xs);
   line-height: 1.4;
-}
-.aviso-medida .button {
-  background: var(--surface);
-  border-color: var(--line-strong);
 }
 .item-editables {
   display: flex;

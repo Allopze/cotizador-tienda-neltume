@@ -98,6 +98,9 @@ export interface Linea {
   altoSolicitado: number | null;
   medidaSolicitada: string | null;
 }
+/** Lo que muestran los documentos y el panel: la descripción escrita por la persona o, si no hay, la del catálogo. */
+export const descripcionLinea = (l: Pick<Linea, 'producto' | 'descripcionDocumento'>) =>
+  l.descripcionDocumento || l.producto.descripcion;
 export interface Montos {
   lineas: Linea[];
   /** Suma de líneas antes de descuento y flete. */

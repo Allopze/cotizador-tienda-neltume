@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { resolverItem } from '../src/catalogo/resolver';
 import { nombreCanonicoModelo } from '../src/catalogo/configuracion';
 import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
-import { cotizar, MARGENES_INICIALES, REGLAS } from '../src/negocio/precios';
+import { cotizar, descripcionLinea, MARGENES_INICIALES, REGLAS } from '../src/negocio/precios';
 import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 
@@ -91,6 +91,9 @@ describe('descripción de documento y observaciones de línea', () => {
     expect(linea.precioUnitario).toBe(155_000);
     expect(linea.producto.descripcion).toBe(puerta().descripcion);
     expect(linea.descripcionDocumento).toBe('Puerta prepintada especial');
+    expect(descripcionLinea(linea)).toBe('Puerta prepintada especial');
+    expect(descripcionLinea({ ...linea, descripcionDocumento: '' })).toBe(puerta().descripcion);
+    expect(descripcionLinea({ ...linea, descripcionDocumento: null })).toBe(puerta().descripcion);
     expect(cotizar([{ producto: puerta(), cantidad: 1, descripcionDocumento: '  ' }], reglas).lineas[0].descripcionDocumento).toBeNull();
   });
 

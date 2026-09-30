@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import type { Cotizacion, Despacho } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
-import { pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
+import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { fechaChilena } from '../negocio/vigencia';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { chromiumPath } from './chromium';
@@ -184,7 +184,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
       nota && `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`,
       l.observaciones && `Observación: ${l.observaciones}`,
     ];
-    return `${esc(descripcionLegible(l.descripcionDocumento ?? l.producto.descripcion))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}`;
+    return `${esc(descripcionLegible(descripcionLinea(l)))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}`;
   };
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
     @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}

@@ -1,7 +1,7 @@
 import type { KeyboardEvent } from 'react';
 import { ajusteMedida, medidaReferencia, metrosTexto } from '@/catalogo/escalones';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
-import { pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
+import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
 
@@ -172,7 +172,7 @@ export function resumenTexto(q: Cotizacion) {
   const c = q.cliente;
   const lineas = q.montos.lineas.map(
     (l) =>
-      `• ${l.cantidad} × ${l.descripcionDocumento ?? l.producto.descripcion} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
+      `• ${l.cantidad} × ${nombreProducto(descripcionLinea(l))} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
   );
   return [
     `Cotización ${numeroCotizacion(q.numero)}`,

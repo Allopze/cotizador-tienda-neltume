@@ -202,33 +202,27 @@ function crearEsquema(db: Database.Database) {
   if (version < 12)
     db.transaction(() => {
       // v12: la descripción del documento va aparte de la del producto de catálogo. Además se deshace el
-      // REPLACE de v11 sobre las descripciones de línea (en el catálogo están en mayúsculas); solo donde el
-      // resto del texto sigue en mayúsculas, para no tocar lo que alguien escribió a mano. También se borra la
-      // observación «Rectificar…» que el sistema agregaba sola: solo si la solicitud de esa línea no tiene
-      // observación, es decir, si nadie la escribió.
+      // REPLACE de v11 sobre las descripciones (en el catálogo están en mayúsculas), también en el catálogo
+      // importado con la versión intermedia del importador; solo donde el resto del texto sigue en mayúsculas,
+      // para no tocar lo que alguien escribió a mano. También se borra la observación «Rectificar…» que el
+      // sistema agregaba sola: solo si la solicitud de esa línea no tiene observación, es decir, si nadie la escribió.
+      const revertirHuiloHuilo = (tabla: string) => `
+        UPDATE ${tabla} SET descripcion = REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO')
+          WHERE modelo = 'Huilo Huilo' AND INSTR(descripcion, 'Huilo Huilo') > 0
+            AND REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO') = UPPER(descripcion);`;
+      const limpiarRectificar = (tabla: string) => `
+        UPDATE ${tabla} SET observaciones = NULL
+          WHERE observaciones = 'Rectificar si la medida corresponde a hoja o vano.'
+            AND EXISTS (
+              SELECT 1 FROM solicitudes s
+              WHERE s.cotizacion_id = ${tabla}.cotizacion_id AND s.orden = ${tabla}.indice
+                AND TRIM(COALESCE(s.observaciones, '')) = ''
+            );`;
       db.exec(`
         ALTER TABLE cotizacion_lineas ADD COLUMN descripcion_documento TEXT;
         ALTER TABLE nota_lineas ADD COLUMN descripcion_documento TEXT;
-        UPDATE cotizacion_lineas SET descripcion = REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO')
-          WHERE modelo = 'Huilo Huilo' AND INSTR(descripcion, 'Huilo Huilo') > 0
-            AND REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO') = UPPER(descripcion);
-        UPDATE nota_lineas SET descripcion = REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO')
-          WHERE modelo = 'Huilo Huilo' AND INSTR(descripcion, 'Huilo Huilo') > 0
-            AND REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO') = UPPER(descripcion);
-        UPDATE cotizacion_lineas SET observaciones = NULL
-          WHERE observaciones = 'Rectificar si la medida corresponde a hoja o vano.'
-            AND EXISTS (
-              SELECT 1 FROM solicitudes s
-              WHERE s.cotizacion_id = cotizacion_lineas.cotizacion_id AND s.orden = cotizacion_lineas.indice
-                AND s.observaciones IS NULL
-            );
-        UPDATE nota_lineas SET observaciones = NULL
-          WHERE observaciones = 'Rectificar si la medida corresponde a hoja o vano.'
-            AND EXISTS (
-              SELECT 1 FROM solicitudes s
-              WHERE s.cotizacion_id = nota_lineas.cotizacion_id AND s.orden = nota_lineas.indice
-                AND s.observaciones IS NULL
-            );
+        ${['cotizacion_lineas', 'nota_lineas', 'productos_catalogo', 'productos_adicionales'].map(revertirHuiloHuilo).join('')}
+        ${['cotizacion_lineas', 'nota_lineas'].map(limpiarRectificar).join('')}
         PRAGMA user_version = 12;
       `);
     }).immediate();

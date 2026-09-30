@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState, type RefObject } from 'react';
 import { esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
-import { margenProducto, pesos, porcentaje } from '@/negocio/precios';
+import { descripcionLinea, margenProducto, pesos, porcentaje } from '@/negocio/precios';
 import { leerPesos } from '@/negocio/cifras';
 import { CampoEditable } from './campo-editable';
 import type { CambiosEdicion } from './contrato';
@@ -57,7 +57,7 @@ export function lineaDe(q: Cotizacion, i: number) {
 export const descripcionItem = (q: Cotizacion, i: number) => {
   const { linea } = lineaDe(q, i);
   return nombreProducto(
-    linea?.descripcionDocumento || linea?.producto.descripcion || q.solicitudes[i]?.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir',
+    (linea && descripcionLinea(linea)) || q.solicitudes[i]?.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir',
   );
 };
 /** Frase que el panel sugiere agregar a las puertas sin tipo de medida; la escribe la persona, no el sistema. */
@@ -372,6 +372,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                               <button
                                 type="button"
                                 className="button secondary small"
+                                aria-label={`Agregar como observación al ítem ${i + 1}: ${descripcion}`}
                                 onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { observaciones: [s.observaciones, RECTIFICAR_MEDIDA].filter(Boolean).join(' ') } }] }, `item.${i}.observaciones`)}
                               >
                                 Agregar como observación
