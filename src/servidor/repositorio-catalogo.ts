@@ -1,5 +1,8 @@
+import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/resolver';
+import { escalon, escalonesSeTocan } from '../catalogo/escalones';
+import { ETIQUETA_ORIGEN, type OrigenCatalogo } from '../catalogo/origenes';
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
@@ -85,9 +88,70 @@ const convertirProducto = (p: FilaProducto): Producto => ({
 const claveProducto = (producto: Pick<Producto, 'modelo' | 'madera' | 'medida' | 'largo'>) =>
   `${normalizar(producto.modelo)}|${normalizar(producto.madera)}|${normalizarMedida(producto.medida)}|${Math.round(producto.largo * 1_000_000)}`;
 
-/** Una importación que deja menos de esta fracción de los productos anteriores exige `forzar`. */
+/** Una importación que deja menos de esta fracción de los productos anteriores de su origen exige `forzar`. */
 export const MINIMO_PRODUCTOS_CONSERVADOS = 0.9;
 
+/**
+ * Posición global de un producto al listar: primero la planilla principal, luego las demás planillas y al
+ * final los agregados a mano. `orden` es único solo dentro de su origen, así que se combina con el origen.
+ */
+const POSICION_PLANILLA = `(CASE origen WHEN 'principal' THEN 0 WHEN 'enchapadas' THEN 1 ELSE 2 END) * 1000000000 + orden`;
+const POSICION_MANUAL = '3000000000 + rowid';
+const COLUMNAS_PRODUCTO = `codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
+               largo, precio_neto, descripcion, fila_origen`;
+
+const lista = (items: string[], max = 5) =>
+  items.slice(0, max).join(', ') + (items.length > max ? ` y ${items.length - max} más` : '');
+
+/** Fecha de la última importación y huella de todas las planillas juntas; se recalculan en cada importación. */
+function actualizarMetadata(db: Database.Database, origen: OrigenCatalogo, catalogo: Catalogo, fecha: string) {
+  db.prepare(
+    `
+    INSERT INTO catalogo_origenes (origen, fuente, sha256, fecha, cantidad_productos)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(origen) DO UPDATE SET
+      fuente = excluded.fuente,
+      sha256 = excluded.sha256,
+      fecha = excluded.fecha,
+      cantidad_productos = excluded.cantidad_productos
+  `,
+  ).run(origen, catalogo.fuente, catalogo.sha256, fecha, catalogo.productos.length);
+  const origenes = db
+    .prepare(
+      `SELECT origen, fuente, sha256 FROM catalogo_origenes
+       ORDER BY CASE origen WHEN 'principal' THEN 0 ELSE 1 END, origen`,
+    )
+    .all() as { origen: string; fuente: string; sha256: string }[];
+  // Con una sola planilla la huella es la suya (igual que antes de haber varias); con varias, la de todas.
+  const sha256 =
+    origenes.length === 1
+      ? origenes[0].sha256
+      : createHash('sha256')
+          .update(origenes.map((o) => `${o.origen}:${o.sha256}`).join('\n'))
+          .digest('hex');
+  const cantidad = db
+    .prepare(
+      'SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n',
+    )
+    .get() as { n: number };
+  db.prepare(
+    `
+    INSERT INTO catalogo_meta (id, fuente, sha256, fecha, cantidad_productos)
+    VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET
+      fuente = excluded.fuente,
+      sha256 = excluded.sha256,
+      fecha = excluded.fecha,
+      cantidad_productos = excluded.cantidad_productos
+  `,
+  ).run(origenes.map((o) => o.fuente).join(' + '), sha256, fecha, cantidad.n);
+}
+
+/**
+ * Guarda los productos de una planilla: reemplaza solo los de su origen (`catalogo.origen`, por defecto la
+ * principal) y deja los de otras planillas y los agregados a mano como estaban. El control del 90 % también
+ * es por origen. Todo ocurre en una transacción: si algo falla, no cambia nada.
+ */
 export function guardarCatalogo(
   db: Database.Database,
   catalogo: Catalogo,
@@ -95,13 +159,14 @@ export function guardarCatalogo(
   { forzar = false }: { forzar?: boolean } = {},
 ) {
   if (!catalogo.productos.length) throw new Error('El catálogo no puede estar vacío.');
+  const origen = catalogo.origen ?? 'principal';
   const configuracionValidada = validarConfiguracionCatalogo(configuracion);
   const insertar = db.prepare(`
     INSERT INTO productos_catalogo (
-      codigo, orden, modelo, modelo_normalizado, familia, tipo, madera, medida,
+      codigo, origen, orden, modelo, modelo_normalizado, familia, tipo, madera, medida,
       ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
     ) VALUES (
-      @codigo, @orden, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida,
+      @codigo, @origen, @orden, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida,
       @ancho_min, @ancho_max, @alto_min, @alto_max, @largo, @precio_neto, @descripcion, @fila_origen
     )
   `);
@@ -111,15 +176,31 @@ export function guardarCatalogo(
     const fecha = new Date(
       Math.max(Date.parse(catalogo.fecha), metaAnterior ? Date.parse(metaAnterior.fecha) + 1 : 0),
     ).toISOString();
-    const anteriores = (db.prepare('SELECT COUNT(*) AS n FROM productos_catalogo').get() as { n: number }).n;
+    const anteriores = (
+      db.prepare('SELECT COUNT(*) AS n FROM productos_catalogo WHERE origen = ?').get(origen) as { n: number }
+    ).n;
     if (!forzar && catalogo.productos.length < anteriores * MINIMO_PRODUCTOS_CONSERVADOS)
       throw new Error(
-        `La planilla trae ${catalogo.productos.length} productos y el catálogo actual tiene ${anteriores}. Si la reducción es intencional, repite la importación con --forzar; el catálogo no se modificó.`,
+        `La planilla trae ${catalogo.productos.length} productos y el catálogo actual tiene ${anteriores}${origen === 'principal' ? '' : ` de la ${ETIQUETA_ORIGEN[origen].toLowerCase()}`}. Si la reducción es intencional, repite la importación con --forzar; el catálogo no se modificó.`,
       );
-    db.prepare('DELETE FROM productos_catalogo').run();
+    db.prepare('DELETE FROM productos_catalogo WHERE origen = ?').run(origen);
+    // Un código o producto que ya tiene otra planilla no se puede repetir: se avisa antes de que lo rechace SQLite.
+    const deOtras = db
+      .prepare('SELECT codigo, modelo, madera, medida, largo FROM productos_catalogo')
+      .all() as Pick<Producto, 'codigo' | 'modelo' | 'madera' | 'medida' | 'largo'>[];
+    const codigosOtras = new Set(deOtras.map((p) => p.codigo.toUpperCase()));
+    const clavesOtras = new Set(deOtras.map(claveProducto));
+    const repetidos = catalogo.productos.filter(
+      (p) => codigosOtras.has(p.codigo.toUpperCase()) || clavesOtras.has(claveProducto(p)),
+    );
+    if (repetidos.length)
+      throw new Error(
+        `La planilla repite ${repetidos.length} código(s) o producto(s) de otra planilla ya importada: ${lista(repetidos.map((p) => p.codigo))}; el catálogo no se modificó.`,
+      );
     catalogo.productos.forEach((p, orden) =>
       insertar.run({
         codigo: p.codigo,
+        origen,
         orden,
         modelo: nombreCanonicoModelo(p.modelo),
         modelo_normalizado: normalizar(p.modelo),
@@ -148,22 +229,7 @@ export function guardarCatalogo(
       )
     )
       throw new Error('La planilla repite un código o producto agregado manualmente.');
-    const cantidad = db
-      .prepare(
-        'SELECT (SELECT COUNT(*) FROM productos_catalogo) + (SELECT COUNT(*) FROM productos_adicionales) AS n',
-      )
-      .get() as { n: number };
-    db.prepare(
-      `
-      INSERT INTO catalogo_meta (id, fuente, sha256, fecha, cantidad_productos)
-      VALUES (1, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
-        fuente = excluded.fuente,
-        sha256 = excluded.sha256,
-        fecha = excluded.fecha,
-        cantidad_productos = excluded.cantidad_productos
-    `,
-    ).run(catalogo.fuente, catalogo.sha256, fecha, cantidad.n);
+    actualizarMetadata(db, origen, catalogo, fecha);
     db.prepare(
       `
       INSERT INTO catalogo_configuracion (id, configuracion_json) VALUES (1, ?)
@@ -204,6 +270,24 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       : null;
   }
 
+  /** Última importación de una planilla; null si nunca se importó. */
+  metadataOrigen(origen: OrigenCatalogo) {
+    const fila = this.db
+      .prepare('SELECT fuente, sha256, fecha, cantidad_productos FROM catalogo_origenes WHERE origen = ?')
+      .get(origen) as { fuente: string; sha256: string; fecha: string; cantidad_productos: number } | undefined;
+    return fila
+      ? { fuente: fila.fuente, sha256: fila.sha256, fecha: fila.fecha, cantidadProductos: fila.cantidad_productos }
+      : null;
+  }
+
+  /** Cuántos productos tiene cada planilla importada. */
+  conteoPorOrigen(): Partial<Record<OrigenCatalogo, number>> {
+    const filas = this.db
+      .prepare('SELECT origen, COUNT(*) AS n FROM productos_catalogo GROUP BY origen')
+      .all() as { origen: OrigenCatalogo; n: number }[];
+    return Object.fromEntries(filas.map((f) => [f.origen, f.n]));
+  }
+
   get version(): string | null {
     const metadata = this.metadata;
     return metadata ? `${metadata.sha256}:${metadata.fecha}` : null;
@@ -223,10 +307,10 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       .prepare(
         `
         SELECT modelo FROM (
-          SELECT modelo, orden AS orden, 0 AS fuente FROM productos_catalogo
+          SELECT modelo, ${POSICION_PLANILLA} AS posicion FROM productos_catalogo
           UNION ALL
-          SELECT modelo, rowid AS orden, 1 AS fuente FROM productos_adicionales
-        ) GROUP BY modelo ORDER BY MIN(fuente), MIN(orden)
+          SELECT modelo, ${POSICION_MANUAL} AS posicion FROM productos_adicionales
+        ) GROUP BY modelo ORDER BY MIN(posicion)
       `,
       )
       .all()
@@ -237,32 +321,25 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     const filas = this.db
       .prepare(
         `
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
-               largo, precio_neto, descripcion, fila_origen
+        SELECT ${COLUMNAS_PRODUCTO}
         FROM (
-          SELECT 0 AS fuente, orden, codigo, modelo, familia, tipo, madera, medida,
-                 ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
+          SELECT ${POSICION_PLANILLA} AS posicion, ${COLUMNAS_PRODUCTO}
           FROM productos_catalogo
           UNION ALL
-          SELECT 1 AS fuente, rowid AS orden, codigo, modelo, familia, tipo, madera, medida,
-                 ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
+          SELECT ${POSICION_MANUAL} AS posicion, ${COLUMNAS_PRODUCTO}
           FROM productos_adicionales
-        ) ORDER BY fuente, orden
+        ) ORDER BY posicion
       `,
       )
       .all() as FilaProducto[];
     return filas.map(convertirProducto);
   }
 
-  /** Productos que proceden de la última planilla; excluye las altas manuales. */
-  importados() {
+  /** Productos de la última importación de una planilla; excluye las otras planillas y las altas manuales. */
+  importados(origen: OrigenCatalogo) {
     const filas = this.db
-      .prepare(
-        `SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
-                largo, precio_neto, descripcion, fila_origen
-         FROM productos_catalogo ORDER BY orden`,
-      )
-      .all() as FilaProducto[];
+      .prepare(`SELECT ${COLUMNAS_PRODUCTO} FROM productos_catalogo WHERE origen = ? ORDER BY orden`)
+      .all(origen) as FilaProducto[];
     return filas.map(convertirProducto);
   }
 
@@ -271,10 +348,10 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       .prepare(
         `
         SELECT madera FROM (
-          SELECT madera, orden AS orden, 0 AS fuente FROM productos_catalogo
+          SELECT madera, ${POSICION_PLANILLA} AS posicion FROM productos_catalogo
           UNION ALL
-          SELECT madera, rowid AS orden, 1 AS fuente FROM productos_adicionales
-        ) GROUP BY madera ORDER BY MIN(fuente), MIN(orden)
+          SELECT madera, ${POSICION_MANUAL} AS posicion FROM productos_adicionales
+        ) GROUP BY madera ORDER BY MIN(posicion)
       `,
       )
       .all()
@@ -319,18 +396,15 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     const filas = this.db
       .prepare(
         `
-        SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
-               largo, precio_neto, descripcion, fila_origen
+        SELECT ${COLUMNAS_PRODUCTO}
         FROM (
-          SELECT modelo_normalizado, 0 AS fuente, orden, codigo, modelo, familia, tipo, madera,
-                 medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
+          SELECT modelo_normalizado, ${POSICION_PLANILLA} AS posicion, ${COLUMNAS_PRODUCTO}
           FROM productos_catalogo
           UNION ALL
-          SELECT modelo_normalizado, 1 AS fuente, rowid AS orden, codigo, modelo, familia, tipo, madera,
-                 medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
+          SELECT modelo_normalizado, ${POSICION_MANUAL} AS posicion, ${COLUMNAS_PRODUCTO}
           FROM productos_adicionales
         ) WHERE modelo_normalizado = ?
-        ORDER BY fuente, orden
+        ORDER BY posicion
       `,
       )
       .all(modeloNormalizado) as FilaProducto[];
@@ -375,13 +449,13 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
   /** Puerta del mismo modelo, madera y alto cuyo rango de ancho se cruza con el propuesto. */
   rangoSuperpuesto(producto: Producto, excluirCodigo?: string) {
     if (producto.familia !== 'PUERTA') return null;
+    const alto = escalon(producto, 'alto');
     return (
       this.productosDeModelo(normalizar(producto.modelo)).find(
         (p) =>
           p.codigo !== excluirCodigo &&
           normalizar(p.madera) === normalizar(producto.madera) &&
-          (p.altoMin ?? p.largo - 0.005) <= (producto.altoMax ?? producto.largo + 0.005) &&
-          (p.altoMax ?? p.largo + 0.005) >= (producto.altoMin ?? producto.largo - 0.005) &&
+          escalonesSeTocan(escalon(p, 'alto'), alto) &&
           traslapan(p, producto),
       ) ?? null
     );
@@ -447,7 +521,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         `
         SELECT 'planilla' AS fuente, NULL AS creada, NULL AS creada_por, NULL AS actualizada,
                codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto,
-               descripcion, fila_origen, orden AS orden_fuente
+               descripcion, fila_origen, ${POSICION_PLANILLA} AS orden_fuente
         FROM productos_catalogo
         UNION ALL
         SELECT 'manual' AS fuente, creada, creada_por, actualizada,

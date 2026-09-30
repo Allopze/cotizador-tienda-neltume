@@ -1,5 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises';
-import { importar } from '../src/catalogo/importar';
+import { importarPlanilla } from '../src/catalogo/planilla';
+import { ETIQUETA_ORIGEN } from '../src/catalogo/origenes';
 import { leerConfiguracionCatalogo } from '../src/catalogo/configuracion-archivo';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { guardarCatalogo } from '../src/servidor/repositorio-catalogo';
@@ -12,14 +13,16 @@ const ruta =
   'datos-privados/COTIZADOR_2026.xlsx';
 try {
   const configuracion = await leerConfiguracionCatalogo();
-  const r = await importar(ruta, configuracion);
+  // La planilla se reconoce por su forma; cada una reemplaza solo sus propios productos.
+  const r = await importarPlanilla(ruta, configuracion);
+  const reporte = r.origen === 'principal' ? 'data/reporte-importacion.md' : `data/reporte-importacion-${r.origen}.md`;
   await mkdir('data', { recursive: true });
   await mkdir('public', { recursive: true });
-  guardarCatalogo(abrirBaseDatos(), r.catalogo, configuracion, { forzar });
-  await writeFile('data/reporte-importacion.md', r.reporte);
+  guardarCatalogo(abrirBaseDatos(), r.catalogo, r.configuracion, { forzar });
+  await writeFile(reporte, r.reporte);
   if (r.logo) await writeFile('public/logo-neltume.svg', r.logo);
   console.log(
-    `${r.catalogo.productos.length} productos; ${r.incidencias.filter((i) => i.accion === 'correccion').length} correcciones; ${r.incidencias.filter((i) => i.accion === 'exclusion').length} exclusiones. Reporte: data/reporte-importacion.md`,
+    `${ETIQUETA_ORIGEN[r.origen]}: ${r.catalogo.productos.length} productos; ${r.incidencias.filter((i) => i.accion === 'correccion').length} correcciones; ${r.incidencias.filter((i) => i.accion === 'exclusion').length} exclusiones. Reporte: ${reporte}`,
   );
 } catch (error) {
   console.error(

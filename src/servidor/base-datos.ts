@@ -6,7 +6,7 @@ import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 12;
+const VERSION_ESQUEMA = 15;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -224,6 +224,65 @@ function crearEsquema(db: Database.Database) {
         ${['cotizacion_lineas', 'nota_lineas', 'productos_catalogo', 'productos_adicionales'].map(revertirHuiloHuilo).join('')}
         ${['cotizacion_lineas', 'nota_lineas'].map(limpiarRectificar).join('')}
         PRAGMA user_version = 12;
+      `);
+    }).immediate();
+  if (version < 15)
+    db.transaction(() => {
+      // v15: cada planilla de precios es un origen del catálogo. Importar una reemplaza solo sus productos,
+      // así que `orden` pasa a ser único por origen (se reconstruye la tabla para quitar el UNIQUE global) y
+      // los metadatos de la última importación se guardan por origen. Lo existente queda como 'principal'.
+      const tieneOrigen = (db.pragma('table_info(productos_catalogo)') as { name: string }[]).some(
+        (columna) => columna.name === 'origen',
+      );
+      if (!tieneOrigen)
+        db.exec(`
+          CREATE TABLE productos_catalogo_v15 (
+            codigo TEXT PRIMARY KEY,
+            origen TEXT NOT NULL DEFAULT 'principal',
+            orden INTEGER NOT NULL CHECK (orden >= 0),
+            modelo TEXT NOT NULL,
+            modelo_normalizado TEXT NOT NULL,
+            familia TEXT NOT NULL CHECK (familia IN ('PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA')),
+            tipo TEXT,
+            madera TEXT NOT NULL,
+            medida TEXT NOT NULL,
+            ancho_min REAL,
+            ancho_max REAL,
+            alto_min REAL,
+            alto_max REAL,
+            largo REAL NOT NULL,
+            precio_neto REAL NOT NULL CHECK (precio_neto > 0),
+            descripcion TEXT NOT NULL,
+            fila_origen INTEGER NOT NULL,
+            UNIQUE (origen, orden),
+            UNIQUE (modelo, madera, medida, largo)
+          );
+          INSERT INTO productos_catalogo_v15 (
+            codigo, origen, orden, modelo, modelo_normalizado, familia, tipo, madera, medida,
+            ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
+          )
+          SELECT codigo, 'principal', orden, modelo, modelo_normalizado, familia, tipo, madera, medida,
+                 ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
+          FROM productos_catalogo;
+          DROP TABLE productos_catalogo;
+          ALTER TABLE productos_catalogo_v15 RENAME TO productos_catalogo;
+          CREATE INDEX idx_producto_modelo ON productos_catalogo(modelo_normalizado, orden);
+          CREATE INDEX idx_producto_modelo_madera ON productos_catalogo(modelo_normalizado, madera, orden);
+          CREATE INDEX idx_producto_modelo_medida_largo
+            ON productos_catalogo(modelo_normalizado, medida, largo, orden);
+        `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS catalogo_origenes (
+          origen TEXT PRIMARY KEY,
+          fuente TEXT NOT NULL,
+          sha256 TEXT NOT NULL,
+          fecha TEXT NOT NULL,
+          cantidad_productos INTEGER NOT NULL CHECK (cantidad_productos >= 0)
+        );
+        INSERT OR IGNORE INTO catalogo_origenes (origen, fuente, sha256, fecha, cantidad_productos)
+          SELECT 'principal', fuente, sha256, fecha, (SELECT COUNT(*) FROM productos_catalogo)
+          FROM catalogo_meta WHERE id = 1;
+        PRAGMA user_version = 15;
       `);
     }).immediate();
 }

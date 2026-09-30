@@ -186,7 +186,7 @@ describe('Persistencia SQLite', () => {
 
     const migrada = abrirBaseDatos(rutaDb, { cachear: false });
     try {
-      expect(migrada.pragma('user_version', { simple: true })).toBe(12);
+      expect(migrada.pragma('user_version', { simple: true })).toBe(15);
       const descripciones = (tabla: string) =>
         migrada.prepare(`SELECT cotizacion_id AS id, orden, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id, orden`).all();
       expect(descripciones('cotizacion_lineas')).toEqual([

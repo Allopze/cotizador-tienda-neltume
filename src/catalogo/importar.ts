@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { basename } from 'node:path';
-import { abrirXlsx, type Hoja } from './xlsx';
+import { abrirXlsx, type Hoja, type Xlsx } from './xlsx';
 import {
   normalizarCatalogo,
   nombreCanonicoModelo,
@@ -9,18 +9,18 @@ import {
   type ConfiguracionCatalogo,
 } from './configuracion';
 import type { Catalogo, Producto } from './tipos';
-import { esKit } from './escalones';
-const decimal = (v: unknown) => String(v).replace('.', ',');
+import { esKit, esSetDeMarco } from './escalones';
+export const decimal = (v: unknown) => String(v).replace('.', ',');
 const limpio = (v: unknown) =>
   String(v ?? '')
     .trim()
     .toUpperCase();
-const num = (v: unknown) => Math.round(Number(v) * 10000) / 10000;
+export const num = (v: unknown) => Math.round(Number(v) * 10000) / 10000;
 const DATOS_INVALIDOS = 'Datos incompletos o precio neto/IVA inconsistente.';
 /** Tolerancia de filas inválidas antes de rechazar la planilla completa. */
-const MAX_FILAS_INVALIDAS = 5,
+export const MAX_FILAS_INVALIDAS = 5,
   MAX_PROPORCION_INVALIDAS = 0.01;
-const lista = (items: string[], max = 10) =>
+export const lista = (items: string[], max = 10) =>
   items.slice(0, max).join(', ') + (items.length > max ? ` y ${items.length - max} más` : '');
 /** La planilla no es apta para reemplazar el catálogo; no se escribe nada. */
 export class ErrorImportacion extends Error {
@@ -33,6 +33,8 @@ export interface Incidencia {
   fila: number;
   accion: 'correccion' | 'exclusion';
   detalle: string;
+  /** Hoja de la fila, en las planillas con varias hojas de productos. */
+  hoja?: string;
 }
 export function descripcion(p: Producto) {
   const base = `${p.modelo.toUpperCase()} ${p.madera === 'RAULI' ? 'RAULÍ' : p.madera} ${p.familia === 'PUERTA' ? p.medida.split(' A ').map((v) => {
@@ -44,11 +46,13 @@ export function descripcion(p: Producto) {
   const alto = altoMin === altoMax ? decimal(p.largo) : `${decimal(altoMin)} A ${decimal(altoMax)}`;
   if (p.familia === 'PUERTA') return `${base} MT X ${alto} MT`;
   if (p.familia === 'MOLDURA') return `${base} CM X ${decimal(p.largo)} MT`;
+  // Los sets de marco Pino Finger se miden en mm y llevan su largo aunque sean kit.
+  if (esSetDeMarco(p)) return `${base} MM SET X ${decimal(p.largo)} MT`;
   return esKit(p) ? `${base} PULG KIT` : `${base} PULG X ${decimal(p.largo)} MT`;
 }
-export async function importar(ruta: string, configEntrada?: ConfiguracionCatalogo) {
+export async function importar(ruta: string, configEntrada?: ConfiguracionCatalogo, abierto?: Xlsx) {
   const configuracion = validarConfiguracionCatalogo(configEntrada ?? {});
-  const x = await abrirXlsx(ruta);
+  const x = abierto ?? (await abrirXlsx(ruta));
   const precio = x.leer(
     'Precio',
     (c, r) => r >= 4 && ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'O', 'P'].includes(c),
