@@ -4,6 +4,11 @@ import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 
 interface ProductoBreve { codigo: string; descripcion: string; precioNeto?: number }
 interface Preview {
+  /** Planilla detectada por la forma del libro: cada una reemplaza solo sus productos. */
+  origen: string;
+  etiquetaOrigen: string;
+  /** Las otras planillas ya importadas, que esta importación no toca. */
+  sinModificar: { origen: string; etiqueta: string; productos: number }[];
   sha256: string;
   baseSha256: string | null;
   fuente: string;
@@ -15,10 +20,11 @@ interface Preview {
     sinCambios: ProductoBreve[];
     eliminados: ProductoBreve[];
   };
-  incidencias: { fila: number; accion: 'correccion' | 'exclusion'; detalle: string }[];
+  incidencias: { fila: number; hoja?: string; accion: 'correccion' | 'exclusion'; detalle: string }[];
   erroresPlantilla: string[];
 }
 
+const cantidad = (n: number) => new Intl.NumberFormat('es-CL').format(n);
 const pesos = (n: number) => '$' + new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(n);
 
 export function ImportarCatalogo() {
@@ -36,7 +42,7 @@ export function ImportarCatalogo() {
     evento.preventDefault();
     if (!archivo || ocupado) return;
     if (accion === 'confirmar' && preview) {
-      const resumen = `Excel: ${preview.fuente}\nNuevos: ${preview.conteos.nuevos}\nModificados: ${preview.conteos.modificados}\nSin cambios: ${preview.conteos.sinCambios}\nEliminados: ${preview.conteos.eliminados}\n\n¿Aplicar esta versión del catálogo?`;
+      const resumen = `Excel: ${preview.fuente}\n${preview.etiquetaOrigen}\nNuevos: ${preview.conteos.nuevos}\nModificados: ${preview.conteos.modificados}\nSin cambios: ${preview.conteos.sinCambios}\nEliminados: ${preview.conteos.eliminados}\n\n¿Aplicar esta versión de la planilla? Los demás productos del catálogo no cambian.`;
       if (!window.confirm(resumen)) return;
     }
     setOcupado(true);
@@ -50,8 +56,8 @@ export function ImportarCatalogo() {
         body.set('sha256', preview.sha256);
         body.set('baseSha256', preview.baseSha256 ?? '');
         body.set('forzar', String(requiereForzar && forzarConfirmado));
-        const resultado = await pedirJSON<{ importado: true; fuente: string; conteos: Preview['conteos'] }>('/api/catalogo/importar', { method: 'POST', body });
-        setMensaje(`Catálogo actualizado desde ${resultado.fuente}: ${resultado.conteos.nuevos} productos nuevos, ${resultado.conteos.modificados} modificados y ${resultado.conteos.eliminados} retirados.`);
+        const resultado = await pedirJSON<{ importado: true; fuente: string; etiquetaOrigen: string; conteos: Preview['conteos'] }>('/api/catalogo/importar', { method: 'POST', body });
+        setMensaje(`${resultado.etiquetaOrigen} actualizada desde ${resultado.fuente}: ${resultado.conteos.nuevos} productos nuevos, ${resultado.conteos.modificados} modificados y ${resultado.conteos.eliminados} retirados.`);
         setPreview(null);
         setArchivo(null);
         setForzarConfirmado(false);
@@ -69,7 +75,7 @@ export function ImportarCatalogo() {
 
   return (
     <div className="catalog-import">
-      <p className="catalog-modal-intro">El catálogo vigente se conserva hasta que revises la comparación y confirmes el cambio.</p>
+      <p className="catalog-modal-intro">El catálogo vigente se conserva hasta que revises la comparación y confirmes el cambio. Sube la planilla de puertas sólidas o la de enchapadas, prepintadas y marcos finger: se reconoce sola y cada una reemplaza únicamente sus propios productos.</p>
       <form onSubmit={(e) => void enviar(e, 'previsualizar')}>
         <label className="ia-field">
           <span>Planilla de precios Excel (.xlsx, máximo 20 MB)</span>
@@ -82,7 +88,8 @@ export function ImportarCatalogo() {
       {preview && (
         <section className="catalog-import-preview" aria-labelledby="import-preview-title">
           <h3 id="import-preview-title">Vista previa · {preview.fuente}</h3>
-          <p>{preview.totalProductos} productos en la planilla.</p>
+          <p>Formato detectado: <strong>{preview.etiquetaOrigen}</strong>. {preview.totalProductos} productos en la planilla.</p>
+          <p>Solo se reemplazan los productos de esta planilla. No se modifican {preview.sinModificar.map((o) => `la ${o.etiqueta.toLowerCase()} (${o.productos ? `${cantidad(o.productos)} productos` : 'aún sin importar'})`).join(' ni ')} ni los productos agregados a mano.</p>
           <div className="import-counts">
             <span><strong>{preview.conteos.nuevos}</strong> Nuevos</span>
             <span><strong>{preview.conteos.modificados}</strong> Modificados</span>
@@ -97,7 +104,7 @@ export function ImportarCatalogo() {
             {preview.productos.modificados.length > 0 && <div><h4>Modificados</h4><ul>{preview.productos.modificados.map((p) => <li key={p.codigo}>{p.codigo} · {p.anterior.descripcion} → {p.nuevo.descripcion} · {pesos(p.anterior.precioNeto ?? 0)} → {pesos(p.nuevo.precioNeto ?? 0)}</li>)}</ul></div>}
             {preview.productos.eliminados.length > 0 && <div><h4>Eliminados</h4><ul>{preview.productos.eliminados.map((p) => <li key={p.codigo}>{p.codigo} · {p.descripcion}</li>)}</ul></div>}
           </div>
-          {preview.incidencias.length > 0 && <details><summary>Incidencias de la importación ({preview.incidencias.length})</summary><ul>{preview.incidencias.slice(0, 50).map((i, n) => <li key={`${i.fila}-${n}`}>Fila {i.fila}: {i.detalle}</li>)}</ul></details>}
+          {preview.incidencias.length > 0 && <details><summary>Incidencias de la importación ({preview.incidencias.length})</summary><ul>{preview.incidencias.slice(0, 50).map((i, n) => <li key={`${i.hoja ?? ''}-${i.fila}-${n}`}>{i.hoja ? `${i.hoja.trim()} · ` : ''}Fila {i.fila}: {i.detalle}</li>)}</ul></details>}
           <div className="ia-actions">
             <button type="button" className="button secondary" disabled={ocupado} onClick={() => { setPreview(null); setForzarConfirmado(false); }}>Descartar vista previa</button>
             <button type="button" className="button primary" disabled={ocupado || (requiereForzar && !forzarConfirmado)} onClick={(e) => void enviar(e as unknown as FormEvent, 'confirmar')}>{ocupado ? 'Aplicando…' : 'Confirmar e importar'}</button>

@@ -40,7 +40,11 @@ export function pregunta(r: Rechazo, modelo: string | null) {
       return `Hay más de un producto de ${nombre} que coincide con esas medidas: ${r.disponibles.join('; ')}. ¿Cuál necesitas?`;
     case 'medida_no_disponible': {
       const valor = typeof r.valor === 'number' ? `${metrosTexto(r.valor)} m` : r.valor;
-      const inicio = `${nombre} no viene en ${valor} de ${r.campo === 'alto' ? 'alto o largo' : r.campo}.`;
+      const campo = r.campo === 'alto' ? 'alto o largo' : r.campo;
+      const inicio = `${nombre} no viene en ${valor} de ${campo}.`;
+      // Con una sola medida no hay tramo que describir.
+      if (r.rango && Math.abs(r.rango.max - r.rango.min) < 1e-9)
+        return `${inicio} Solo se cotiza ${metrosTexto(r.rango.min)} m de ${campo}.`;
       // Entre escalones se cotiza la siguiente medida: se informa el tramo, no una lista cerrada.
       return r.rango
         ? `${inicio} Se cotizan ${r.campo === 'ancho' ? 'anchos' : 'altos o largos'} entre ${metrosTexto(r.rango.min)} y ${metrosTexto(r.rango.max)} m; las medidas intermedias usan la siguiente medida del catálogo.`

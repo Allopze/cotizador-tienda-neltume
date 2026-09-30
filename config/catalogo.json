@@ -3,7 +3,27 @@
     { "nombre": "PINO OREGON", "codigo": "O", "alias": ["PINO", "OREGON"] },
     { "nombre": "LENGA", "codigo": "L", "alias": [] },
     { "nombre": "MARA", "codigo": "M", "alias": [] },
-    { "nombre": "RAULI", "codigo": "R", "alias": ["RAULÍ"] }
+    { "nombre": "RAULI", "codigo": "R", "alias": ["RAULÍ"] },
+    { "nombre": "PREPINTADA", "codigo": "PP", "alias": ["PREPINTADO", "PREPINTADAS", "PREPINTADOS"] },
+    {
+      "nombre": "MARA ENCHAPADA",
+      "codigo": "EM",
+      "alias": ["ENCHAPADA", "ENCHAPADO", "MARA ENCHAPADO", "ENCHAPADA MARA", "ENCHAPADA EN MARA", "ENCHAPADO EN MARA", "ENCHAPE MARA", "ENCHAPE EN MARA"]
+    },
+    { "nombre": "PINO FINGER", "codigo": "PF", "alias": ["FINGER", "FINGER JOINT", "PINO FINGER DESNUDO", "FINGER DESNUDO"] },
+    {
+      "nombre": "PINO FINGER ENCHAPADO MARA",
+      "codigo": "FE",
+      "alias": [
+        "PINO FINGER ENCHAPADO",
+        "PINO FINGER ENCHAPADA",
+        "PINO FINGER ENCHAPADO EN MARA",
+        "FINGER ENCHAPADO",
+        "FINGER ENCHAPADA",
+        "FINGER ENCHAPADO MARA",
+        "FINGER ENCHAPADO EN MARA"
+      ]
+    }
   ],
   "familiasPorModelo": {
     "MARCO": "MARCO",

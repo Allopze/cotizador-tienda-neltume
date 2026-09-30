@@ -129,3 +129,4 @@ export async function abrirXlsx(ruta: string) {
   }
   return { bytes, zip, hojas: [...hojas.keys()], leer };
 }
+export type Xlsx = Awaited<ReturnType<typeof abrirXlsx>>;

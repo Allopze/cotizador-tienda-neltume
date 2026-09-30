@@ -42,12 +42,50 @@ export interface ConfiguracionCatalogo {
   aliasPosiblesModelos: Record<string, string[]>;
 }
 
+/**
+ * Terminaciones de la planilla de enchapadas, prepintadas y marcos finger. Cada una es una madera propia:
+ * «Huilo Huilo en Mara» es la puerta sólida y «enchapada en Mara» es MARA ENCHAPADA. «Pino finger» nunca es
+ * PINO OREGON (cuyo alias «pino» solo vale sin «finger»: los alias se comparan enteros).
+ */
+export const MADERAS_ENCHAPADAS: MaderaConfigurada[] = [
+  { nombre: 'PREPINTADA', codigo: 'PP', alias: ['PREPINTADO', 'PREPINTADAS', 'PREPINTADOS'] },
+  {
+    nombre: 'MARA ENCHAPADA',
+    codigo: 'EM',
+    alias: [
+      'ENCHAPADA',
+      'ENCHAPADO',
+      'MARA ENCHAPADO',
+      'ENCHAPADA MARA',
+      'ENCHAPADA EN MARA',
+      'ENCHAPADO EN MARA',
+      'ENCHAPE MARA',
+      'ENCHAPE EN MARA',
+    ],
+  },
+  { nombre: 'PINO FINGER', codigo: 'PF', alias: ['FINGER', 'FINGER JOINT', 'PINO FINGER DESNUDO', 'FINGER DESNUDO'] },
+  {
+    nombre: 'PINO FINGER ENCHAPADO MARA',
+    codigo: 'FE',
+    alias: [
+      'PINO FINGER ENCHAPADO',
+      'PINO FINGER ENCHAPADA',
+      'PINO FINGER ENCHAPADO EN MARA',
+      'FINGER ENCHAPADO',
+      'FINGER ENCHAPADA',
+      'FINGER ENCHAPADO MARA',
+      'FINGER ENCHAPADO EN MARA',
+    ],
+  },
+];
+
 export const CONFIGURACION_CATALOGO_BASE: ConfiguracionCatalogo = {
   maderas: [
     { nombre: 'PINO OREGON', codigo: 'O', alias: ['PINO', 'OREGON'] },
     { nombre: 'LENGA', codigo: 'L', alias: [] },
     { nombre: 'MARA', codigo: 'M', alias: [] },
     { nombre: 'RAULI', codigo: 'R', alias: ['RAULÍ'] },
+    ...structuredClone(MADERAS_ENCHAPADAS),
   ],
   familiasPorModelo: {
     MARCO: 'MARCO',
@@ -143,6 +181,20 @@ export const resolverMaderaConfigurada = (valor: string, configuracion: Configur
     )?.nombre ?? null
   );
 };
+
+/**
+ * Suma las maderas de la planilla de enchapadas que la configuración aún no tenga: una guardada antes de
+ * esa planilla no las trae, y el importador necesita sus códigos. Si chocan con las existentes, falla.
+ */
+export function conMaderasEnchapadas(configuracion: ConfiguracionCatalogo): ConfiguracionCatalogo {
+  const faltan = MADERAS_ENCHAPADAS.filter((m) => resolverMaderaConfigurada(m.nombre, configuracion) !== m.nombre);
+  return faltan.length
+    ? validarConfiguracionCatalogo({
+        ...configuracion,
+        maderas: [...configuracion.maderas, ...structuredClone(faltan)],
+      })
+    : configuracion;
+}
 
 export const resolverModeloConfigurado = (valor: string, configuracion: ConfiguracionCatalogo) => {
   const clave = normalizarCatalogo(valor);

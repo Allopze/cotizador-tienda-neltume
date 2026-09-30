@@ -91,6 +91,8 @@ El contrato completo de `/api/accion` y `/api/catalogo` está descrito en los ti
 
 - `src/catalogo/xlsx.ts`: lectura selectiva del XML de XLSX con `fflate` y `saxes`. No construye un Workbook que materialice costos; solo decodifica valores y fórmulas de celdas permitidas.
 - `src/catalogo/importar.ts`: tablas de `Categorias`, normalización, hipótesis de corrección, duplicados, descripción, SHA-256, catálogo y reporte.
+- `src/catalogo/enchapadas.ts` y `src/catalogo/planilla.ts`: lectura de la planilla de enchapadas, prepintadas y marcos Pino Finger (bloques por hoja, solo columnas B a D) y detección de cuál de las dos planillas es un libro, por la forma de sus hojas.
+- `src/servidor/importacion-catalogo.ts`: vista previa de una importación, comparada solo con los productos de su planilla.
 - `config/catalogo.json`: maderas, códigos para SKU, alias y familias especiales, guardados en SQLite junto con cada importación.
 - `src/catalogo/resolver.ts`: modelos, alias, medidas, rangos y rechazos determinísticos.
 - `src/negocio/precios.ts`: precios, redondeo, IVA y validaciones.
@@ -130,6 +132,15 @@ No hay un panel de administración: el catálogo se mantiene con la planilla y `
 3. Para clasificar un modelo como marco, piezas T o moldura, agrega su familia en `familiasPorModelo`. Los modelos sin entrada se consideran puertas. Las familias disponibles son `PUERTA`, `MARCO`, `PIEZAS_T` y `MOLDURA`.
 4. Si la gente usa nombres alternativos para un modelo, agrégalos en `aliasModelos`, bajo el nombre canónico. Si un nombre solo se parece y puede ser otra cosa (por ejemplo «Pillo»), agrégalo en `aliasPosiblesModelos`: el cotizador no lo sustituye ni se lo envía a la IA como alias; deja el ítem pendiente y pregunta «¿Te refieres a…?» hasta que se confirme el modelo con el botón «Confirmar» del panel. Un modelo real del catálogo siempre gana sobre cualquier alias.
 5. Importa la planilla actualizada con `npm run importar -- ruta.xlsx`. La operación reemplaza productos y configuración juntos en una transacción; si la validación falla, ambos quedan como estaban. Las cotizaciones existentes conservan sus snapshots. La importación se rechaza completa si más de 5 filas (y más del 1 %) de `Precio` tienen datos incompletos o un precio inválido, si un mismo producto aparece dos veces con precios distintos (una repetición idéntica solo se reporta) o si la planilla trae menos del 90 % de los productos del catálogo actual; en este último caso, si la reducción es intencional, repite con `npm run importar -- ruta.xlsx --forzar`.
+
+### Planillas por origen: puertas sólidas y enchapadas
+
+El catálogo se arma con dos planillas, cada una un *origen* de productos:
+
+- **Planilla de puertas sólidas** (`COTIZADOR_2026.xlsx`: hojas `Precio`, `Categorias` y `Cotización`).
+- **Planilla de enchapadas, prepintadas y marcos finger** (`VALORES PUERTAS ENCHAPADAS…xlsx`): una hoja por modelo con bloques «<MODELO> PREPINTADA» y «<MODELO> ENCHAPE EN MARA» (rango de altura × ancho → costo) y la hoja de marcos con sets Pino Finger desnudos y enchapados en Mara. Solo se leen las columnas de medida y **costo «+ IVA»** (neto de fábrica); venta, margen y descuento especial no se leen: el precio sale del costo por el margen de cada categoría (prepintadas 140 %, enchapadas en Mara 75 %, marcos finger desnudos 100 % y enchapados 75 %). Los bloques que no son de estas terminaciones (por ejemplo los sets de endolado MDF) no se importan y quedan en las incidencias. Los productos son las maderas `PREPINTADA`, `MARA ENCHAPADA`, `PINO FINGER` y `PINO FINGER ENCHAPADO MARA`, con códigos estables como `HUIL-EM-085-240` (modelo, madera, ancho en cm y alto máximo en cm) y `MARC-PF-30X70-220` (escuadría en mm y largo en cm).
+
+En **Catálogo → Importar** el formato se reconoce solo y la vista previa compara únicamente con los productos de esa planilla; la otra y los productos agregados a mano no se modifican. El control del 90 % de productos conservados es por planilla, y un código o producto repetido en la otra planilla se rechaza. La versión del catálogo cambia con cada importación de cualquiera de las dos. `npm run importar -- ruta.xlsx` acepta ambas (el reporte de las enchapadas va a `data/reporte-importacion-enchapadas.md`). Al importar las enchapadas, las maderas nuevas se suman a la configuración guardada si no estaban.
 
 Ejemplo de entrada para una madera: `{ "nombre": "ROBLE", "codigo": "RB", "alias": ["ROBLE AMERICANO"] }`. Configuración y catálogo aplicados quedan en la base SQLite; el JSON es la fuente editable para la próxima importación. El cambio de esquema añade esta configuración de forma compatible al abrir una base existente.
 

@@ -1,3 +1,4 @@
+import type { OrigenCatalogo } from './origenes';
 /** Nombre canónico de una madera configurada en config/catalogo.json. */
 export type Madera = string;
 export type Familia = 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA';
@@ -23,6 +24,8 @@ export interface Catalogo {
   sha256: string;
   fecha: string;
   productos: Producto[];
+  /** Planilla de la que salen los productos; sin indicar, la principal. Cada importación reemplaza solo su origen. */
+  origen?: OrigenCatalogo;
 }
 export interface SolicitudItem {
   modelo: string | null;
