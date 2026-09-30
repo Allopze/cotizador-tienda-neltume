@@ -263,6 +263,21 @@ describe('despacho después de la aprobación', () => {
     expect(t.actual().flete).toBe(25_000);
   });
 
+  it('el valor fijo es el flete emitido aunque el despacho guardado quedara con un valor anterior', async () => {
+    const t = await setup();
+    await t.ir({ tipo: 'editar', despacho: { destino: 'Osorno' } });
+    expect(t.actual().despacho?.valor).toBe(0);
+    // Cambiar solo el flete no toca el despacho guardado: su valor queda atrasado hasta aprobar.
+    await t.ir({ tipo: 'editar', flete: 25_000 });
+    expect(t.actual().despacho?.valor).toBe(0);
+    await t.emitida();
+    await t.ir({ tipo: 'aprobar' });
+    expect(t.actual().despacho).toMatchObject({ destino: 'Osorno', valor: 25_000 });
+    await expect(t.intentar({ tipo: 'despacho', despacho: { valor: 0 } })).rejects.toThrow(/quedó fijo/);
+    await t.ir({ tipo: 'despacho', despacho: { valor: 25_000, transporte: 'Starken' } });
+    expect(t.recargada().despacho).toMatchObject({ transporte: 'Starken', valor: 25_000 });
+  });
+
   it('aprobar tampoco admite un valor de despacho distinto del flete emitido', async () => {
     const t = await setup();
     await t.ir({ tipo: 'editar', flete: 25_000 });

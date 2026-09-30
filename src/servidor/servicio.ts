@@ -984,13 +984,13 @@ export class Servicio {
           { vence: q.vence },
         );
       const despacho = accion.despacho ?? q.despacho ?? {};
-      this.exigirValorDespachoFijo(q, despacho.valor);
+      this.exigirValorDespachoFijo(q, accion.despacho?.valor);
       q.despacho = {
         direccion: despacho.direccion ?? q.despacho?.direccion ?? null,
         transporte: despacho.transporte ?? q.despacho?.transporte ?? null,
         entregaComprometida: despacho.entregaComprometida ?? q.despacho?.entregaComprometida ?? null,
         destino: despacho.destino ?? q.despacho?.destino ?? null,
-        valor: despacho.valor ?? q.despacho?.valor ?? q.flete,
+        valor: q.flete,
       };
       q.estado = 'aprobada';
       q.estadoComercial = 'aprobada';
@@ -1116,10 +1116,9 @@ export class Servicio {
 
   /** El valor del despacho es el flete de la cotización emitida: no se cambia sin emitir otra revisión. */
   private exigirValorDespachoFijo(q: Cotizacion, valor: number | null | undefined) {
-    const vigente = q.despacho?.valor ?? q.flete;
-    if (valor !== undefined && (valor ?? 0) !== vigente)
+    if (valor !== undefined && (valor ?? 0) !== q.flete)
       throw new ErrorConflicto(
-        `El valor del despacho (${pesos(vigente)} neto) quedó fijo al emitir la cotización y no se puede cambiar. Crea una revisión para modificarlo.`,
+        `El valor del despacho (${pesos(q.flete)} neto) quedó fijo al emitir la cotización y no se puede cambiar. Crea una revisión para modificarlo.`,
         'no_editable',
       );
   }
@@ -1132,7 +1131,7 @@ export class Servicio {
       transporte: q.despacho?.transporte ?? null,
       entregaComprometida: q.despacho?.entregaComprometida ?? null,
       destino: q.despacho?.destino ?? null,
-      valor: q.despacho?.valor ?? q.flete,
+      valor: q.flete,
     };
     const detalle: string[] = [];
     for (const [campo, etiqueta, largo] of CAMPOS_DESPACHO) {
