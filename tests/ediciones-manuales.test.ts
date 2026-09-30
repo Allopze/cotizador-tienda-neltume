@@ -100,6 +100,28 @@ describe('el chat conserva las ediciones manuales', () => {
     expect(JSON.stringify(visto)).not.toMatch(/margen|precio|150000/);
   });
 
+  it('el origen alias del modelo sobrevive a un turno que solo cambia la cantidad, y no a un cambio de modelo', async () => {
+    const { q, chat } = await preparar(item({ modelo: 'PANGIPULLI' }));
+    expect(q.solicitudes[0]).toMatchObject({ modelo: 'PANGUIPULLI', modeloOriginal: 'PANGIPULLI', coincidenciaModelo: 'alias' });
+    const segundo = item({ modelo: 'PANGUIPULLI', ancho: 0.85 });
+    const cantidad = await chat(q, lista(item({ modelo: 'PANGUIPULLI', cantidad: 5 }), segundo));
+    expect(cantidad.cotizacion.solicitudes[0]).toMatchObject({ cantidad: 5, modeloOriginal: 'PANGIPULLI', coincidenciaModelo: 'alias' });
+    const otro = await chat(cantidad.cotizacion, lista(item({ modelo: 'MOLCO', cantidad: 5 }), segundo));
+    expect(otro.cotizacion.solicitudes[0]).toMatchObject({ modelo: 'MOLCO', coincidenciaModelo: 'canonico' });
+    expect(otro.cotizacion.solicitudes[0].modeloOriginal ?? null).toBeNull();
+  });
+
+  it('reenviar la misma lista sobre ítems con margen y precio manual no cambia nada', async () => {
+    const { q, servicio, chat } = await preparar();
+    const emitida = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
+    const r = await chat(emitida, lista(item(), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
+    expect(r.cotizacion.id).toBe(emitida.id);
+    expect(r.cotizacion.historial.at(-1)?.texto).toContain('No hay cambios');
+    expect(r.cotizacion.solicitudes).toEqual(emitida.solicitudes);
+    expect(r.cotizacion.solicitudes[0]).toMatchObject({ margen: 0.3 });
+    expect(r.cotizacion.solicitudes[1]).toMatchObject({ precioUnitario: 150_000 });
+  });
+
   it('la pareja se busca por identidad aunque la lista cambie de orden', async () => {
     const { q, chat } = await preparar();
     const r = await chat(q, lista(
@@ -341,13 +363,35 @@ describe('un ítem incompleto con un alias de modelo', () => {
     expect(r.avisos).toBeUndefined();
   });
 
-  it('lista completa: completar la madera, con el nombre canónico o con el alias, no descarta nada', async () => {
-    for (const modelo of ['PANGUIPULLI', 'PANGIPULLI']) {
-      const { q, chat } = await incompleto();
-      const r = await chat(q, lista(item({ modelo, madera: 'LENGA' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
-      expect(r.cotizacion.solicitudes[0]).toMatchObject(CONSERVA);
-      expect(r.avisos).toBeUndefined();
-    }
+  it.each(['PANGUIPULLI', 'PANGIPULLI'])('lista completa: completar la madera devolviendo %s no descarta nada', async (modelo) => {
+    const { q, chat } = await incompleto();
+    const r = await chat(q, lista(item({ modelo, madera: 'LENGA' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
+    expect(r.cotizacion.solicitudes[0]).toMatchObject(CONSERVA);
+    expect(r.avisos).toBeUndefined();
+  });
+});
+
+describe('un valor vacío no es un cambio de producto', () => {
+  it('lista completa: que la IA devuelva madera null no descarta la descripción ni el precio', async () => {
+    const { q, chat } = await preparar();
+    const r = await chat(q, lista(item({ madera: null }), item({ modelo: 'PANGUIPULLI', madera: null, ancho: 0.85 })));
+    const [a, b] = r.cotizacion.solicitudes;
+    expect(a).toMatchObject({ ...EDICIONES, madera: null });
+    expect(b).toMatchObject({ precioUnitario: 150_000, observaciones: 'Entrega en obra', madera: null });
+    expect(r.avisos).toBeUndefined();
+  });
+
+  it('modificación parcial y edición directa: dejar la madera en null tampoco', async () => {
+    const { q, servicio, modificar } = await preparar();
+    const parcial = await modificar(q, cambiar(0, { madera: null }));
+    expect(parcial.cotizacion.solicitudes[0]).toMatchObject({ ...EDICIONES, madera: null });
+    expect(parcial.avisos).toBeUndefined();
+    const directa = await servicio.ejecutar({
+      tipo: 'editar', id: parcial.cotizacion.id, actualizada: parcial.cotizacion.actualizada,
+      items: [{ indice: 1, cambios: { madera: null } }],
+    });
+    expect(directa.cotizacion.solicitudes[1]).toMatchObject({ precioUnitario: 150_000, madera: null });
+    expect(directa.avisos).toBeUndefined();
   });
 });
 

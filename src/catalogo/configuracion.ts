@@ -23,6 +23,7 @@ const configuracionParcialSchema = z
     maderas: z.array(maderaSchema).min(1).optional(),
     familiasPorModelo: z.record(z.string(), z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'])).optional(),
     aliasModelos: z.record(z.string(), z.array(z.string().trim().min(1))).optional(),
+    aliasPosiblesModelos: z.record(z.string(), z.array(z.string().trim().min(1))).optional(),
   })
   .strict();
 
@@ -35,7 +36,10 @@ export interface MaderaConfigurada {
 export interface ConfiguracionCatalogo {
   maderas: MaderaConfigurada[];
   familiasPorModelo: Record<string, Familia>;
+  /** Alias seguros: se normalizan al modelo canónico sin preguntar. */
   aliasModelos: Record<string, string[]>;
+  /** Alias dudosos: nunca se sustituyen solos; el ítem queda pendiente hasta que la persona confirma el modelo. */
+  aliasPosiblesModelos: Record<string, string[]>;
 }
 
 export const CONFIGURACION_CATALOGO_BASE: ConfiguracionCatalogo = {
@@ -53,19 +57,40 @@ export const CONFIGURACION_CATALOGO_BASE: ConfiguracionCatalogo = {
     PILASTRA: 'MOLDURA',
   },
   aliasModelos: {
-    'HUILO HUILO': ['HUILO', 'HUILA', 'WILLO', 'WILLOW', 'PILLO', 'HUILO HUILA', 'WILLOW WILLOW'],
+    'HUILO HUILO': ['HUILO', 'HUILA', 'WILLO', 'WILLOW', 'HUILO HUILA', 'WILLOW WILLOW'],
     PANGUIPULLI: ['PANGIPULLI'],
+  },
+  aliasPosiblesModelos: {
+    'HUILO HUILO': ['PILLO'],
   },
 };
 
+/** Suma alias por modelo sin duplicar; un modelo con otra grafía (mayúsculas, tildes) conserva la clave original. */
+function fusionarAlias(base: Record<string, string[]>, extra: Record<string, string[]> = {}) {
+  const fusion: Record<string, string[]> = { ...base };
+  for (const [modelo, aliases] of Object.entries(extra)) {
+    const existente = Object.keys(fusion).find((clave) => normalizarCatalogo(clave) === normalizarCatalogo(modelo));
+    const clave = existente ?? modelo;
+    fusion[clave] = [...new Set([...(fusion[clave] ?? []), ...aliases])];
+  }
+  return fusion;
+}
+
 export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatalogo {
   const entrada = configuracionParcialSchema.parse(valor);
-  const aliasModelos: Record<string, string[]> = { ...CONFIGURACION_CATALOGO_BASE.aliasModelos };
-  for (const [modelo, aliases] of Object.entries(entrada.aliasModelos ?? {})) {
-    const existente = Object.keys(aliasModelos).find((clave) => normalizarCatalogo(clave) === normalizarCatalogo(modelo));
-    const clave = existente ?? modelo;
-    aliasModelos[clave] = [...new Set([...(aliasModelos[clave] ?? []), ...aliases])];
-  }
+  const aliasPosiblesModelos = fusionarAlias(CONFIGURACION_CATALOGO_BASE.aliasPosiblesModelos, entrada.aliasPosiblesModelos);
+  // Un alias dudoso manda sobre el seguro del mismo modelo: así una configuración guardada antes de
+  // separarlos (con «Pillo» como alias seguro) no vuelve a sustituirlo sin preguntar.
+  const aliasModelos = Object.fromEntries(
+    Object.entries(fusionarAlias(CONFIGURACION_CATALOGO_BASE.aliasModelos, entrada.aliasModelos)).map(([modelo, aliases]) => {
+      const dudosos = new Set(
+        Object.entries(aliasPosiblesModelos)
+          .filter(([otro]) => normalizarCatalogo(otro) === normalizarCatalogo(modelo))
+          .flatMap(([, valores]) => valores.map(normalizarCatalogo)),
+      );
+      return [modelo, aliases.filter((alias) => !dudosos.has(normalizarCatalogo(alias)))];
+    }),
+  );
   const configuracion: ConfiguracionCatalogo = {
     maderas: entrada.maderas ?? structuredClone(CONFIGURACION_CATALOGO_BASE.maderas),
     familiasPorModelo: {
@@ -73,6 +98,7 @@ export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatal
       ...entrada.familiasPorModelo,
     },
     aliasModelos,
+    aliasPosiblesModelos,
   };
 
   const codigos = new Set<string>();
@@ -89,9 +115,13 @@ export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatal
       nombresYMaderas.set(clave, madera.nombre);
     }
   }
-  for (const [modelo, aliases] of Object.entries(configuracion.aliasModelos)) {
+  const todos = [
+    ...Object.entries(configuracion.aliasModelos),
+    ...Object.entries(configuracion.aliasPosiblesModelos),
+  ];
+  for (const [modelo, aliases] of todos) {
     for (const alias of aliases) {
-      const conflicto = Object.entries(configuracion.aliasModelos).find(
+      const conflicto = todos.find(
         ([otro, otros]) =>
           normalizarCatalogo(otro) !== normalizarCatalogo(modelo) &&
           otros.some((valor) => normalizarCatalogo(valor) === normalizarCatalogo(alias)),
@@ -121,6 +151,16 @@ export const resolverModeloConfigurado = (valor: string, configuracion: Configur
       normalizarCatalogo(modelo) === clave || aliases.some((alias) => normalizarCatalogo(alias) === clave),
   );
   return entrada?.[0] ?? valor;
+};
+
+/** Modelo al que podría referirse un alias dudoso; null si el valor no figura entre ellos. */
+export const resolverModeloPosibleConfigurado = (valor: string, configuracion: ConfiguracionCatalogo) => {
+  const clave = normalizarCatalogo(valor);
+  return (
+    Object.entries(configuracion.aliasPosiblesModelos).find(([, aliases]) =>
+      aliases.some((alias) => normalizarCatalogo(alias) === clave),
+    )?.[0] ?? null
+  );
 };
 
 export const aliasMaderasConfiguradas = (configuracion: ConfiguracionCatalogo) =>

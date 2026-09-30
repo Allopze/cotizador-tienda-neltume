@@ -38,6 +38,7 @@ export interface SolicitudItem {
   descripcion?: string | null;
   observaciones?: string | null;
   modeloOriginal?: string | null;
+  /** 'posible' ya no se produce: queda solo para borradores antiguos; hoy un alias dudoso deja el ítem pendiente. */
   coincidenciaModelo?: 'canonico' | 'alias' | 'posible' | null;
 }
 export interface Cliente {

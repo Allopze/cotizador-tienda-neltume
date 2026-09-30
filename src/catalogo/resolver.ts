@@ -3,9 +3,11 @@ import { ajusteMedida, enEscalon, escalon, esKit, LARGO_PIEZA, vieneEnKit, type 
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
+  nombreCanonicoModelo,
   normalizarCatalogo,
   resolverMaderaConfigurada,
   resolverModeloConfigurado,
+  resolverModeloPosibleConfigurado,
 } from './configuracion';
 export const normalizar = normalizarCatalogo;
 /** Rango físico admisible para anchos y altos de puertas y largos de accesorios, en metros. */
@@ -25,6 +27,8 @@ export const normalizarMedida = (s: string) =>
 export type Rechazo =
   | { tipo: 'faltan_datos'; campos: string[]; disponibles: Record<string, string[]> }
   | { tipo: 'modelo_desconocido'; valor: string; disponibles: string[] }
+  /** El nombre se parece a un modelo, pero no basta para cotizarlo: hay que confirmar `sugerido`. */
+  | { tipo: 'modelo_posible'; valor: string; sugerido: string; disponibles: string[] }
   | { tipo: 'madera_desconocida'; valor: string; disponibles: string[] }
   | { tipo: 'madera_no_disponible'; valor: string; disponibles: string[] }
   | {
@@ -43,8 +47,8 @@ export type Resolucion =
       ok: true;
       producto: Producto;
       cantidad: number;
-      /** Indica si el nombre de entrada ya era canónico o se resolvió mediante alias. */
-      coincidenciaModelo: 'canonico' | 'alias' | 'posible';
+      /** Indica si el nombre de entrada ya era canónico o se resolvió mediante un alias seguro. */
+      coincidenciaModelo: 'canonico' | 'alias';
       /** Medidas pedidas, ya en metros o en forma canónica. */
       anchoSolicitado: number | null;
       altoSolicitado: number | null;
@@ -60,6 +64,7 @@ export interface FuenteCatalogo {
   productosDeModelo(modeloNormalizado: string): Producto[];
   resolverMadera?(valor: string): string | null;
   resolverModelo?(valor: string): string;
+  resolverModeloPosible?(valor: string): string | null;
   aliasMaderas?(): Record<string, string[]>;
   aliasModelos?(): Record<string, string[]>;
 }
@@ -97,25 +102,35 @@ function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
   const productos = candidatos.filter(({ e }) => Math.abs(e.min - siguiente) < 1e-9).map(({ p }) => p);
   return { productos, rango };
 }
-/** Un nombre canónico existente siempre gana frente al alias de otro modelo (p. ej. «Pillo»). */
+/**
+ * Un nombre canónico existente siempre gana frente a cualquier alias (p. ej. «Pillo» si fuera un modelo real).
+ * Después un alias seguro se normaliza al modelo. Un alias dudoso nunca sustituye: `posible` trae el modelo
+ * del catálogo que se sugiere confirmar, y `modelo` queda como vino.
+ */
 export function modeloDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
   const canonico = modelosCatalogo(catalogo).find((m) => normalizar(m) === normalizar(valor));
+  if (canonico !== undefined) return { modelo: canonico, canonico: true, posible: null };
   const modelo =
-    canonico ??
-    ('productos' in catalogo
+    'productos' in catalogo
       ? resolverModeloConfigurado(valor, CONFIGURACION_CATALOGO_BASE)
-      : (catalogo.resolverModelo?.(valor) ?? valor));
-  return { modelo, canonico: canonico !== undefined };
+      : (catalogo.resolverModelo?.(valor) ?? valor);
+  if (normalizar(modelo) !== normalizar(valor)) return { modelo, canonico: false, posible: null };
+  const sugerido =
+    'productos' in catalogo
+      ? resolverModeloPosibleConfigurado(valor, CONFIGURACION_CATALOGO_BASE)
+      : (catalogo.resolverModeloPosible?.(valor) ?? null);
+  const posible = sugerido ? (modelosCatalogo(catalogo).find((m) => normalizar(m) === normalizar(sugerido)) ?? null) : null;
+  return { modelo, canonico: false, posible };
 }
 /** Madera canónica para un nombre o alias; null si el catálogo no la conoce. */
 export function maderaDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
-  return 'productos' in catalogo
-    ? (resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE) ??
-        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
-        null)
-    : (catalogo.resolverMadera?.(valor) ??
-        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
-        null);
+  const configurada =
+    'productos' in catalogo
+      ? resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE)
+      : catalogo.resolverMadera?.(valor);
+  return (
+    configurada ?? maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ?? null
+  );
 }
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
@@ -137,8 +152,12 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       campos: ['modelo'],
       disponibles: { modelo: modelosCatalogo(catalogo) },
     });
-  const { modelo, canonico } = modeloDelCatalogo(catalogo, s.modelo);
-  const coincidenciaModelo = canonico ? 'canonico' : normalizar(s.modelo) === 'PILLO' ? 'posible' : 'alias';
+  const { modelo, canonico, posible } = modeloDelCatalogo(catalogo, s.modelo);
+  if (posible) {
+    const sugerido = nombreCanonicoModelo(posible);
+    return no({ tipo: 'modelo_posible', valor: s.modelo, sugerido, disponibles: [sugerido] });
+  }
+  const coincidenciaModelo = canonico ? 'canonico' : 'alias';
   let opciones =
     'productos' in catalogo
       ? catalogo.productos.filter((p) => normalizar(p.modelo) === normalizar(modelo))
