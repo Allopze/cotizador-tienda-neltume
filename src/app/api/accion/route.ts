@@ -137,6 +137,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
         .optional(),
       descuento: z.number().min(0).max(100).optional(),
       flete: z.number().int().min(0).max(100_000_000).optional(),
+      margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
       observaciones: z.string().max(2000).nullable().optional(),
       despacho: z
         .object({

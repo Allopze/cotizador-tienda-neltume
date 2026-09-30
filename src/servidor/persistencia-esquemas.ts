@@ -130,6 +130,8 @@ export const cotizacionSchema = z.looseObject({
   vence: z.string().nullable(),
   descuento: z.number().min(0).max(100),
   flete: z.number().int().nonnegative(),
+  /** Margen especial de toda la cotización (fracción); ausente o null usa el de cada categoría. */
+  margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
   observaciones: z.string().nullable().optional(),
   despacho: z
     .object({
@@ -148,10 +150,13 @@ export const cotizacionSchema = z.looseObject({
       margenes: z.object({
         puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
         puertas_solidas_oregon: z.number().finite().min(0).max(5),
+        // Categorías posteriores a la primera versión: las cotizaciones congeladas antes no las traen.
+        puertas_solidas_rauli: z.number().finite().min(0).max(5).optional(),
         puertas_prepintadas: z.number().finite().min(0).max(5),
         puertas_enchapadas_mara: z.number().finite().min(0).max(5),
         marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
         marcos_finger_enchapados: z.number().finite().min(0).max(5),
+        accesorios_madera_solida: z.number().finite().min(0).max(5).optional(),
         otros: z.number().finite().min(0).max(5),
       }).strict().optional(),
     })
@@ -250,6 +255,7 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         vence: fechaEmision ? calcularVence(fechaEmision) : null,
         descuento: 0,
         flete: 0,
+        margenCotizacion: null,
         observaciones: null,
         despacho: null,
         reglas: REGLAS,

@@ -6,7 +6,8 @@ import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 15;
+/** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
+export const VERSION_ESQUEMA = 14;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -226,9 +227,19 @@ function crearEsquema(db: Database.Database) {
         PRAGMA user_version = 12;
       `);
     }).immediate();
-  if (version < 15)
+  if (version < 13)
     db.transaction(() => {
-      // v15: cada planilla de precios es un origen del catálogo. Importar una reemplaza solo sus productos,
+      // v13: margen especial de toda la cotización (fracción; NULL = el de cada categoría). Las reglas
+      // congeladas de las cotizaciones existentes quedan como están: sin las categorías nuevas, esas
+      // usan su propio `otros`.
+      db.exec(`
+        ALTER TABLE cotizaciones ADD COLUMN margen_cotizacion REAL;
+        PRAGMA user_version = 13;
+      `);
+    }).immediate();
+  if (version < 14)
+    db.transaction(() => {
+      // v14: cada planilla de precios es un origen del catálogo. Importar una reemplaza solo sus productos,
       // así que `orden` pasa a ser único por origen (se reconstruye la tabla para quitar el UNIQUE global) y
       // los metadatos de la última importación se guardan por origen. Lo existente queda como 'principal'.
       const tieneOrigen = (db.pragma('table_info(productos_catalogo)') as { name: string }[]).some(
@@ -236,7 +247,7 @@ function crearEsquema(db: Database.Database) {
       );
       if (!tieneOrigen)
         db.exec(`
-          CREATE TABLE productos_catalogo_v15 (
+          CREATE TABLE productos_catalogo_v14 (
             codigo TEXT PRIMARY KEY,
             origen TEXT NOT NULL DEFAULT 'principal',
             orden INTEGER NOT NULL CHECK (orden >= 0),
@@ -257,7 +268,7 @@ function crearEsquema(db: Database.Database) {
             UNIQUE (origen, orden),
             UNIQUE (modelo, madera, medida, largo)
           );
-          INSERT INTO productos_catalogo_v15 (
+          INSERT INTO productos_catalogo_v14 (
             codigo, origen, orden, modelo, modelo_normalizado, familia, tipo, madera, medida,
             ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
           )
@@ -265,7 +276,7 @@ function crearEsquema(db: Database.Database) {
                  ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto, descripcion, fila_origen
           FROM productos_catalogo;
           DROP TABLE productos_catalogo;
-          ALTER TABLE productos_catalogo_v15 RENAME TO productos_catalogo;
+          ALTER TABLE productos_catalogo_v14 RENAME TO productos_catalogo;
           CREATE INDEX idx_producto_modelo ON productos_catalogo(modelo_normalizado, orden);
           CREATE INDEX idx_producto_modelo_madera ON productos_catalogo(modelo_normalizado, madera, orden);
           CREATE INDEX idx_producto_modelo_medida_largo
@@ -282,7 +293,7 @@ function crearEsquema(db: Database.Database) {
         INSERT OR IGNORE INTO catalogo_origenes (origen, fuente, sha256, fecha, cantidad_productos)
           SELECT 'principal', fuente, sha256, fecha, (SELECT COUNT(*) FROM productos_catalogo)
           FROM catalogo_meta WHERE id = 1;
-        PRAGMA user_version = 15;
+        PRAGMA user_version = 14;
       `);
     }).immediate();
 }

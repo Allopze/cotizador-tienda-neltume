@@ -466,6 +466,10 @@
     padding-top: 10px;
     gap: 6px;
   }
+  .pantalla-completa .margen-cotizacion {
+    margin-top: 8px;
+    padding-top: 8px;
+  }
   .pantalla-completa .review-note {
     margin: 10px 0 0;
     text-align: left;

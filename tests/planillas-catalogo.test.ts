@@ -16,7 +16,7 @@ import {
 import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipos';
 import { MARGENES_INICIALES } from '../src/negocio/precios';
 import { Almacen } from '../src/servidor/almacen';
-import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
+import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { analizarPlanilla } from '../src/servidor/importacion-catalogo';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { Servicio } from '../src/servidor/servicio';
@@ -417,7 +417,7 @@ describe('maderas de la planilla y configuración guardada', () => {
   });
 });
 
-describe('migración a v15: productos por origen', () => {
+describe('migración a v14: productos por origen', () => {
   it('las bases anteriores quedan como «principal», con su orden y metadatos', async () => {
     const { ruta, db } = await base();
     guardarCatalogo(db, principal());
@@ -426,7 +426,7 @@ describe('migración a v15: productos por origen', () => {
       sha256: string;
       fecha: string;
     };
-    // Forma de una base en v12: sin la columna origen, con orden único global y sin catalogo_origenes.
+    // Forma de una base en v13: sin la columna origen, con orden único global y sin catalogo_origenes.
     db.exec(`
       DROP TABLE productos_catalogo;
       DROP TABLE catalogo_origenes;
@@ -440,11 +440,12 @@ describe('migración a v15: productos por origen', () => {
       INSERT INTO productos_catalogo (codigo, orden, modelo, modelo_normalizado, familia, madera, medida, ancho_min, ancho_max, largo, precio_neto, descripcion, fila_origen)
         VALUES ('A-1', 0, 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'MARA', '0,80 A 0,85', 0.8, 0.85, 2.4, 100000, 'A', 4),
                ('A-2', 1, 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'LENGA', '0,80 A 0,85', 0.8, 0.85, 2.4, 100000, 'B', 5);
-      PRAGMA user_version = 12;
+      PRAGMA user_version = 13;
     `);
     cerrarBaseDatos(ruta);
     const migrada = abrirBaseDatos(ruta);
-    expect(migrada.pragma('user_version', { simple: true })).toBe(15);
+    expect(migrada.pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
+    expect(VERSION_ESQUEMA).toBeGreaterThanOrEqual(14);
     const r = new RepositorioCatalogoSqlite(migrada);
     expect(r.importados('principal').map((p) => p.codigo)).toEqual(['A-1', 'A-2']);
     expect(r.conteoPorOrigen()).toEqual({ principal: 2 });

@@ -16,6 +16,8 @@ interface Props {
   min?: number;
   max?: number;
   paso?: number;
+  /** Teclado de los dispositivos táctiles en un campo de texto que recibe cifras (p. ej. «12,5»). */
+  modoEntrada?: 'decimal' | 'numeric';
   maxLength?: number;
   sufijo?: string;
   /** Oculta la etiqueta visible (p. ej. dentro de una tabla). */
@@ -37,6 +39,7 @@ export function CampoEditable({
   min,
   max,
   paso,
+  modoEntrada,
   maxLength = 300,
   sufijo,
   etiquetaOculta,
@@ -155,7 +158,7 @@ export function CampoEditable({
             }}
             id={id}
             type={tipo}
-            inputMode={tipo === 'number' ? (paso === 1 ? 'numeric' : 'decimal') : undefined}
+            inputMode={modoEntrada ?? (tipo === 'number' ? (paso === 1 ? 'numeric' : 'decimal') : undefined)}
             min={min}
             max={max}
             step={paso}
