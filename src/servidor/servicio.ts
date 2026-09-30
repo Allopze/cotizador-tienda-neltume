@@ -9,8 +9,10 @@ import { contextoSeguro, type LLM } from '../asistente/llm';
 import {
   aliasMaderasCatalogo,
   aliasModelosCatalogo,
+  maderaDelCatalogo,
   maderasCatalogo,
   metros,
+  modeloDelCatalogo,
   modelosCatalogo,
   normalizar,
   normalizarMedida,
@@ -330,12 +332,11 @@ export class Servicio {
     );
   }
 
-  /** Modelo y madera comparables: los del catálogo si el ítem resuelve, así un alias no cuenta como cambio. */
+  /** Modelo y madera comparables: los del catálogo aunque el ítem esté incompleto, así un alias no cuenta como cambio. */
   private producto(s: SolicitudItem): ProductoItem {
-    const r = resolverItem(this.catalogo, s);
     return {
-      modelo: normalizar(r.ok ? r.producto.modelo : (s.modelo ?? '')),
-      madera: normalizar(r.ok ? r.producto.madera : (s.madera ?? '')),
+      modelo: s.modelo ? normalizar(modeloDelCatalogo(this.catalogo, s.modelo).modelo) : '',
+      madera: s.madera ? normalizar(maderaDelCatalogo(this.catalogo, s.madera) ?? s.madera) : '',
     };
   }
 

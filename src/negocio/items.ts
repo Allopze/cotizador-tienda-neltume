@@ -97,7 +97,14 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
   const avisos: string[] = [];
   const items = nuevos.map((nuevo, i) => {
     const j = pareja.get(i);
-    if (j === undefined) return nuevo;
+    if (j === undefined) {
+      // Sin pareja no hereda nada, pero la IA puede repetir la descripción del ítem que había en su posición.
+      const item = { ...nuevo };
+      const descartes = i < previos.length ? descartarDelProducto(previos[i], item, producto) : null;
+      if (!descartes) return nuevo;
+      avisos.push(avisoProductoCambiado(i + 1, descartes));
+      return item;
+    }
     const previo = previos[j];
     const item: SolicitudItem = {
       ...nuevo,

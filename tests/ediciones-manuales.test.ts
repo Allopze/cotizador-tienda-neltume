@@ -20,7 +20,7 @@ const puerta = (codigo: string, modelo: string, madera: string): Producto => ({
 });
 const catalogo: Catalogo = {
   fuente: 'test', sha256: 'test', fecha: '2026-01-01',
-  productos: [puerta('MOL-O', 'MOLCO', 'PINO OREGON'), puerta('PAN-O', 'PANGUIPULLI', 'PINO OREGON'), puerta('MOL-L', 'MOLCO', 'LENGA')],
+  productos: [puerta('MOL-O', 'MOLCO', 'PINO OREGON'), puerta('PAN-O', 'PANGUIPULLI', 'PINO OREGON'), puerta('MOL-L', 'MOLCO', 'LENGA'), puerta('PAN-L', 'PANGUIPULLI', 'LENGA')],
 };
 const item = (extra: Partial<SolicitudItem> = {}): SolicitudItem => ({
   modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 3, ...extra,
@@ -199,6 +199,24 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
     expect(r.avisos).toEqual([avisoProductoCambiado(2, AMBOS)]);
   });
 
+  it('lista completa: un ítem distinto en la misma posición que repite la descripción anterior la pierde con aviso', async () => {
+    const { q, chat } = await preparar();
+    // Cambian madera y medidas a la vez: no hay pareja, pero la IA copió la descripción del ítem que estaba ahí.
+    const r = await chat(q, lista(item({ madera: 'LENGA', ancho: 0.85, descripcion: 'Puerta especial' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
+    const [nuevo, b] = r.cotizacion.solicitudes;
+    expect([nuevo.descripcion ?? null, nuevo.margen ?? null, nuevo.precioUnitario ?? null, nuevo.observaciones ?? null]).toEqual([null, null, null, null]);
+    expect(b).toMatchObject({ precioUnitario: 150_000 });
+    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION)]);
+  });
+
+  it('lista completa: un ítem distinto en la misma posición con una descripción nueva la conserva', async () => {
+    const { q, chat } = await preparar();
+    const r = await chat(q, lista(item({ madera: 'LENGA', ancho: 0.85, descripcion: 'Puerta en lenga' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
+    expect(r.cotizacion.solicitudes[0]).toMatchObject({ madera: 'LENGA', descripcion: 'Puerta en lenga' });
+    expect(r.cotizacion.solicitudes[0].margen ?? null).toBeNull();
+    expect(r.avisos).toBeUndefined();
+  });
+
   it('lista completa: una descripción nueva pedida en el mismo mensaje se respeta', async () => {
     const { q, chat } = await preparar();
     const r = await chat(q, lista(item({ modelo: 'PANGUIPULLI', descripcion: '  Puerta   Panguipulli enchapada ' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
@@ -287,6 +305,49 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
     });
     expect(r.cotizacion.solicitudes[1]).toMatchObject({ modelo: 'MOLCO', precioUnitario: 120_000 });
     expect(r.avisos).toBeUndefined();
+  });
+});
+
+describe('un ítem incompleto con un alias de modelo', () => {
+  // «PANGIPULLI» es alias de PANGUIPULLI y sin madera el ítem no se resuelve: se guarda tal como se escribió.
+  async function incompleto() {
+    const base = await preparar(item({ modelo: 'PANGIPULLI', madera: null }));
+    const q = (
+      await base.servicio.ejecutar({
+        tipo: 'editar', id: base.q.id, actualizada: base.q.actualizada,
+        items: [{ indice: 0, cambios: { precioUnitario: 120_000 } }],
+      })
+    ).cotizacion;
+    expect(q.solicitudes[0]).toMatchObject({ modelo: 'PANGIPULLI', madera: null, descripcion: 'Puerta especial', precioUnitario: 120_000 });
+    return { ...base, q };
+  }
+  const CONSERVA = { modelo: 'PANGUIPULLI', madera: 'LENGA', descripcion: 'Puerta especial', precioUnitario: 120_000, observaciones: 'Confirmar apertura' };
+
+  it('edición directa: completar la madera no descarta la descripción ni el precio; otro modelo sí', async () => {
+    const editar = ({ q, servicio }: Awaited<ReturnType<typeof incompleto>>, cambios: Record<string, unknown>) =>
+      servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, items: [{ indice: 0, cambios }] });
+    const completa = await editar(await incompleto(), { madera: 'LENGA' });
+    expect(completa.cotizacion.solicitudes[0]).toMatchObject(CONSERVA);
+    expect(completa.avisos).toBeUndefined();
+    const otro = await editar(await incompleto(), { modelo: 'MOLCO' });
+    expect(otro.cotizacion.solicitudes[0]).toMatchObject({ modelo: 'MOLCO', descripcion: null, precioUnitario: null });
+    expect(otro.avisos).toEqual([avisoProductoCambiado(1, AMBOS)]);
+  });
+
+  it('modificación parcial: completar la madera no descarta la descripción ni el precio', async () => {
+    const { q, modificar } = await incompleto();
+    const r = await modificar(q, cambiar(0, { madera: 'LENGA' }));
+    expect(r.cotizacion.solicitudes[0]).toMatchObject(CONSERVA);
+    expect(r.avisos).toBeUndefined();
+  });
+
+  it('lista completa: completar la madera, con el nombre canónico o con el alias, no descarta nada', async () => {
+    for (const modelo of ['PANGUIPULLI', 'PANGIPULLI']) {
+      const { q, chat } = await incompleto();
+      const r = await chat(q, lista(item({ modelo, madera: 'LENGA' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
+      expect(r.cotizacion.solicitudes[0]).toMatchObject(CONSERVA);
+      expect(r.avisos).toBeUndefined();
+    }
   });
 });
 

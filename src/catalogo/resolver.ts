@@ -97,6 +97,26 @@ function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
   const productos = candidatos.filter(({ e }) => Math.abs(e.min - siguiente) < 1e-9).map(({ p }) => p);
   return { productos, rango };
 }
+/** Un nombre canónico existente siempre gana frente al alias de otro modelo (p. ej. «Pillo»). */
+export function modeloDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
+  const canonico = modelosCatalogo(catalogo).find((m) => normalizar(m) === normalizar(valor));
+  const modelo =
+    canonico ??
+    ('productos' in catalogo
+      ? resolverModeloConfigurado(valor, CONFIGURACION_CATALOGO_BASE)
+      : (catalogo.resolverModelo?.(valor) ?? valor));
+  return { modelo, canonico: canonico !== undefined };
+}
+/** Madera canónica para un nombre o alias; null si el catálogo no la conoce. */
+export function maderaDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
+  return 'productos' in catalogo
+    ? (resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE) ??
+        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
+        null)
+    : (catalogo.resolverMadera?.(valor) ??
+        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
+        null);
+}
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
     modelo: entrada.modelo ?? null,
@@ -117,14 +137,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       campos: ['modelo'],
       disponibles: { modelo: modelosCatalogo(catalogo) },
     });
-  const disponiblesModelos = modelosCatalogo(catalogo);
-  // Un nombre canónico existente siempre gana frente al alias de otro modelo (p. ej. «Pillo»).
-  const canonico = disponiblesModelos.find((m) => normalizar(m) === normalizar(s.modelo!));
-  const modelo = canonico ?? (
-    'productos' in catalogo
-      ? resolverModeloConfigurado(s.modelo, CONFIGURACION_CATALOGO_BASE)
-      : (catalogo.resolverModelo?.(s.modelo) ?? s.modelo)
-  );
+  const { modelo, canonico } = modeloDelCatalogo(catalogo, s.modelo);
   const coincidenciaModelo = canonico ? 'canonico' : normalizar(s.modelo) === 'PILLO' ? 'posible' : 'alias';
   let opciones =
     'productos' in catalogo
@@ -134,15 +147,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     return no({ tipo: 'modelo_desconocido', valor: s.modelo, disponibles: modelosCatalogo(catalogo) });
   const familia = opciones[0].familia,
     puerta = familia === 'PUERTA';
-  const madera = s.madera
-    ? 'productos' in catalogo
-      ? (resolverMaderaConfigurada(s.madera, CONFIGURACION_CATALOGO_BASE) ??
-        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(s.madera!)) ??
-        null)
-      : (catalogo.resolverMadera?.(s.madera) ??
-        maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(s.madera!)) ??
-        null)
-    : null;
+  const madera = s.madera ? maderaDelCatalogo(catalogo, s.madera) : null;
   if (s.madera && !madera)
     return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: unicos(opciones, 'madera') });
   if (madera) {
