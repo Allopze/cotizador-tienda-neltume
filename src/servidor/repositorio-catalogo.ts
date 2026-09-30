@@ -6,6 +6,7 @@ import {
   nombreCanonicoModelo,
   resolverMaderaConfigurada,
   resolverModeloConfigurado,
+  resolverModeloPosibleConfigurado,
   validarConfiguracionCatalogo,
   type ConfiguracionCatalogo,
 } from '../catalogo/configuracion';
@@ -290,6 +291,10 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   resolverModelo(valor: string) {
     return resolverModeloConfigurado(valor, this.configuracion);
+  }
+
+  resolverModeloPosible(valor: string) {
+    return resolverModeloPosibleConfigurado(valor, this.configuracion);
   }
 
   aliasMaderas() {

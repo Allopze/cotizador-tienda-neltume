@@ -43,14 +43,19 @@ describe('rangos de catálogo y confianza del modelo', () => {
     if (!fuera.ok) expect(fuera.rechazo.tipo).toBe('medida_no_disponible');
   });
 
-  it('normaliza variantes Huilo Huilo y conserva coincidencias posibles como tales', () => {
+  it('normaliza variantes seguras de Huilo Huilo; una coincidencia posible queda pendiente hasta confirmarla', () => {
     expect(nombreCanonicoModelo('HUILO HUILO')).toBe('Huilo Huilo');
-    for (const alias of ['Huilo', 'Huila', 'Willo', 'Willow', 'Huilo Huila']) {
+    for (const alias of ['Huilo', 'Huila', 'Willo', 'Willow', 'Huilo Huila', 'Willow Willow']) {
       const resultado = resolverItem(catalogo, { modelo: alias, madera: 'Mara', ancho: 83, alto: 236, cantidad: 1 });
       expect(resultado.ok && resultado.coincidenciaModelo).toBe('alias');
     }
     const posible = resolverItem(catalogo, { modelo: 'Pillo', madera: 'Mara', ancho: 83, alto: 236, cantidad: 1 });
-    expect(posible.ok && posible.coincidenciaModelo).toBe('posible');
+    expect(posible).toEqual({
+      ok: false,
+      rechazo: { tipo: 'modelo_posible', valor: 'Pillo', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'] },
+    });
+    const confirmado = resolverItem(catalogo, { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83, alto: 236, cantidad: 1 });
+    expect(confirmado.ok && [confirmado.producto.codigo, confirmado.coincidenciaModelo]).toEqual(['HUI-M-3-A', 'canonico']);
     const catalogoConPillo = { ...catalogo, productos: [puerta({ codigo: 'PIL-M-3-A', modelo: 'Pillo' }), puerta()] };
     const canonico = resolverItem(catalogoConPillo, { modelo: 'Pillo', madera: 'Mara', ancho: 83, alto: 236, cantidad: 1 });
     expect(canonico.ok && [canonico.producto.codigo, canonico.coincidenciaModelo]).toEqual(['PIL-M-3-A', 'canonico']);

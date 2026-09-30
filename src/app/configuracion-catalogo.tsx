@@ -12,6 +12,7 @@ interface Configuracion {
   maderas: Madera[];
   familiasPorModelo: Record<string, Familia>;
   aliasModelos: Record<string, string[]>;
+  aliasPosiblesModelos: Record<string, string[]>;
 }
 /** Fila en edición: los alias se guardan como texto para poder escribir comas mientras se escribe. */
 interface MaderaEdit {
@@ -35,11 +36,63 @@ const partirAlias = (texto: string) =>
     .map((valor) => valor.trim())
     .filter(Boolean);
 
+const aliasPorModelo = (filas: ModeloEdit[]) =>
+  Object.fromEntries(filas.filter((m) => m.modelo.trim()).map((m) => [m.modelo.trim(), partirAlias(m.aliasTexto)]));
+
+/** Editor de «modelo → alias»: el mismo para los alias seguros y para los que piden confirmación. */
+function GrupoAlias({
+  titulo,
+  ayuda,
+  filas,
+  setFilas,
+  editable,
+}: {
+  titulo: string;
+  ayuda: string;
+  filas: ModeloEdit[];
+  setFilas: (cambio: (actual: ModeloEdit[]) => ModeloEdit[]) => void;
+  editable: boolean;
+}) {
+  return (
+    <fieldset className="config-grupo" disabled={!editable}>
+      <legend>{titulo}</legend>
+      <p className="catalog-modal-intro">{ayuda}</p>
+      {filas.map((fila, indice) => (
+        <div className="config-editor-fila" key={indice}>
+          <label className="ia-field">
+            <span>Modelo</span>
+            <input
+              value={fila.modelo}
+              onChange={(e) => setFilas((actual) => actual.map((m, i) => (i === indice ? { ...m, modelo: e.target.value } : m)))}
+              maxLength={80}
+            />
+          </label>
+          <label className="ia-field">
+            <span>Alias (separados por coma)</span>
+            <input
+              value={fila.aliasTexto}
+              onChange={(e) => setFilas((actual) => actual.map((m, i) => (i === indice ? { ...m, aliasTexto: e.target.value } : m)))}
+              maxLength={200}
+            />
+          </label>
+          <button type="button" className="button secondary small" onClick={() => setFilas((actual) => actual.filter((_, i) => i !== indice))}>
+            Quitar
+          </button>
+        </div>
+      ))}
+      <button type="button" className="button secondary small" onClick={() => setFilas((actual) => [...actual, { modelo: '', aliasTexto: '' }])}>
+        Agregar modelo
+      </button>
+    </fieldset>
+  );
+}
+
 export function ConfiguracionCatalogo() {
   const [configuracion, setConfiguracion] = useState<Configuracion | null>(null);
   const [maderas, setMaderas] = useState<MaderaEdit[]>([]);
   const [familias, setFamilias] = useState<FamiliaEdit[]>([]);
   const [modelos, setModelos] = useState<ModeloEdit[]>([]);
+  const [posibles, setPosibles] = useState<ModeloEdit[]>([]);
   const [puedeEditar, setPuedeEditar] = useState(false);
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
@@ -49,6 +102,7 @@ export function ConfiguracionCatalogo() {
     setMaderas(config.maderas.map((m) => ({ nombre: m.nombre, codigo: m.codigo, aliasTexto: m.alias.join(', ') })));
     setFamilias(Object.entries(config.familiasPorModelo).map(([modelo, familia]) => ({ modelo, familia })));
     setModelos(Object.entries(config.aliasModelos).map(([modelo, alias]) => ({ modelo, aliasTexto: alias.join(', ') })));
+    setPosibles(Object.entries(config.aliasPosiblesModelos).map(([modelo, alias]) => ({ modelo, aliasTexto: alias.join(', ') })));
   };
 
   useEffect(() => {
@@ -69,7 +123,8 @@ export function ConfiguracionCatalogo() {
     return {
       maderas: maderas.map((m) => ({ nombre: m.nombre.trim(), codigo: m.codigo.trim(), alias: partirAlias(m.aliasTexto) })),
       familiasPorModelo: Object.fromEntries(familias.filter((f) => f.modelo.trim()).map((f) => [f.modelo.trim(), f.familia])),
-      aliasModelos: Object.fromEntries(modelos.filter((m) => m.modelo.trim()).map((m) => [m.modelo.trim(), partirAlias(m.aliasTexto)])),
+      aliasModelos: aliasPorModelo(modelos),
+      aliasPosiblesModelos: aliasPorModelo(posibles),
     };
   }
 
@@ -177,35 +232,21 @@ export function ConfiguracionCatalogo() {
         </button>
       </fieldset>
 
-      <fieldset className="config-grupo" disabled={!editable}>
-        <legend>Alias por modelo</legend>
-        {modelos.map((fila, indice) => (
-          <div className="config-editor-fila" key={indice}>
-            <label className="ia-field">
-              <span>Modelo</span>
-              <input
-                value={fila.modelo}
-                onChange={(e) => setModelos((actual) => actual.map((m, i) => (i === indice ? { ...m, modelo: e.target.value } : m)))}
-                maxLength={80}
-              />
-            </label>
-            <label className="ia-field">
-              <span>Alias (separados por coma)</span>
-              <input
-                value={fila.aliasTexto}
-                onChange={(e) => setModelos((actual) => actual.map((m, i) => (i === indice ? { ...m, aliasTexto: e.target.value } : m)))}
-                maxLength={200}
-              />
-            </label>
-            <button type="button" className="button secondary small" onClick={() => setModelos((actual) => actual.filter((_, i) => i !== indice))}>
-              Quitar
-            </button>
-          </div>
-        ))}
-        <button type="button" className="button secondary small" onClick={() => setModelos((actual) => [...actual, { modelo: '', aliasTexto: '' }])}>
-          Agregar modelo
-        </button>
-      </fieldset>
+      <GrupoAlias
+        titulo="Alias por modelo"
+        ayuda="Se normalizan al modelo sin preguntar."
+        filas={modelos}
+        setFilas={setModelos}
+        editable={editable}
+      />
+
+      <GrupoAlias
+        titulo="Alias posibles por modelo"
+        ayuda="Nunca se sustituyen solos: el ítem queda pendiente hasta confirmar el modelo."
+        filas={posibles}
+        setFilas={setPosibles}
+        editable={editable}
+      />
 
       {error && <p className="catalog-error" role="alert">{error}</p>}
       {!puedeEditar ? (

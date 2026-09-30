@@ -43,6 +43,15 @@ export class LLMFijo implements LLM {
         medida: '2x4',
         cantidad: 3,
       };
+    else if (/\bPillo\b/i.test(c.mensaje))
+      // Como la IA real: un nombre dudoso se conserva tal cual; el servidor decide si pide confirmarlo.
+      return {
+        name: 'actualizar_cotizacion',
+        input: {
+          items: [{ ...inicial, modelo: 'Pillo' }],
+          cliente: { ...clienteVacio(), nombre: 'Juan Pérez', comuna: 'Temuco' },
+        },
+      };
     else if (/Huilo Huilo/i.test(c.mensaje))
       return {
         name: 'actualizar_cotizacion',

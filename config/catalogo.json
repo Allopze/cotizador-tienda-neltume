@@ -13,7 +13,10 @@
     "PILASTRA": "MOLDURA"
   },
   "aliasModelos": {
-    "HUILO HUILO": ["HUILO", "HUILA", "WILLO", "WILLOW", "PILLO", "HUILO HUILA", "WILLOW WILLOW"],
+    "HUILO HUILO": ["HUILO", "HUILA", "WILLO", "WILLOW", "HUILO HUILA", "WILLOW WILLOW"],
     "PANGUIPULLI": ["PANGIPULLI"]
+  },
+  "aliasPosiblesModelos": {
+    "HUILO HUILO": ["PILLO"]
   }
 }
