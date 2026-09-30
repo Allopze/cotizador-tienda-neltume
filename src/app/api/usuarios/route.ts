@@ -10,7 +10,7 @@ const nuevaCuentaSchema = z
   .object({
     nombre: z.string().trim().min(1).max(120),
     email: z.string().trim().toLowerCase().email().max(254),
-    password: z.string().min(12).max(128),
+    password: z.string().min(8).max(128),
   })
   .strict();
 
@@ -20,7 +20,7 @@ const accionUsuarioSchema = z.discriminatedUnion('accion', [
   z.object({ accion: z.literal('editar'), id: z.string().min(1), nombre: z.string().trim().min(1).max(120), email: z.string().trim().toLowerCase().email().max(254) }).strict(),
   z.object({ accion: z.literal('activar'), id: z.string().min(1) }).strict(),
   z.object({ accion: z.literal('desactivar'), id: z.string().min(1) }).strict(),
-  z.object({ accion: z.literal('restablecer-clave'), id: z.string().min(1), password: z.string().min(12).max(128) }).strict(),
+  z.object({ accion: z.literal('restablecer-clave'), id: z.string().min(1), password: z.string().min(8).max(128) }).strict(),
 ]);
 
 async function listarUsuarios() {

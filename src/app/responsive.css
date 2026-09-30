@@ -491,24 +491,6 @@
     margin-top: 10px;
     padding-top: 8px;
   }
-  .manual-editor {
-    grid-template-columns: 1fr;
-    min-width: 250px;
-  }
-  .manual-editor-wide {
-    grid-column: auto;
-  }
-  .logo-configuracion {
-    grid-template-columns: 1fr;
-  }
-  .logo-configuracion-acciones,
-  .logo-configuracion-vista {
-    grid-column: auto;
-    justify-self: start;
-  }
-  .feriado-form {
-    grid-template-columns: 1fr;
-  }
 }
 @media (prefers-reduced-motion: reduce) {
   *,
@@ -549,6 +531,33 @@
   .history-duplicar {
     justify-self: end;
     margin: 0 12px 14px;
+  }
+  /*
+   * Formularios de Ajustes y del catálogo: una sola columna. Estas reglas vivían en el bloque de
+   * pantalla completa de escritorio, así que en el teléfono el formulario de feriados conservaba sus
+   * tres columnas (mínimos de 150 y 200 px) y desbordaba la página.
+   */
+  .feriado-form {
+    grid-template-columns: 1fr;
+  }
+  .feriado-form .button {
+    justify-self: start;
+  }
+  .logo-configuracion {
+    grid-template-columns: 1fr;
+  }
+  .logo-configuracion-acciones,
+  .logo-configuracion-vista {
+    grid-column: auto;
+    justify-self: start;
+  }
+  /* El editor de la fila lleva 380 px de mínimo para la tabla de escritorio: en la tarjeta estorba. */
+  .manual-editor {
+    grid-template-columns: 1fr;
+    min-width: 0;
+  }
+  .manual-editor-wide {
+    grid-column: auto;
   }
 }
 @media (pointer: coarse) {

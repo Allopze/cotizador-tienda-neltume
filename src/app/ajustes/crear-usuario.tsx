@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react';
 import type { TipoAviso } from '../avisos';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 
-const MINIMO = 12;
+const MINIMO = 8;
 const MAXIMO = 128;
 
 interface Props {

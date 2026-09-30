@@ -411,9 +411,10 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   /**
    * Lista productos de ambas fuentes para su mantenimiento. La búsqueda se hace sobre los atributos
-   * legibles y se limita para que una instalación con miles de filas no bloquee la pantalla.
+   * legibles y el resultado se limita para que una instalación con miles de filas no bloquee la
+   * pantalla; `total` es cuántas coincidieron antes del tope, para poder decirlo en la interfaz.
    */
-  listarAdministrables(busqueda = '', limite = 300): ProductoAdministrable[] {
+  listarAdministrables(busqueda = '', limite = 300): { productos: ProductoAdministrable[]; total: number } {
     const filas = this.db
       .prepare(
         `
@@ -437,7 +438,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       orden_fuente: number;
     })[];
     const termino = normalizar(busqueda.trim());
-    return filas
+    const coinciden = filas
       .map((f) => ({
         ...convertirProducto(f),
         fuente: f.fuente,
@@ -449,8 +450,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         termino
           ? normalizar(`${p.codigo} ${p.modelo} ${p.madera} ${p.medida} ${p.descripcion}`).includes(termino)
           : true,
-      )
-      .slice(0, Math.max(1, Math.min(limite, 500)));
+      );
+    return { productos: coinciden.slice(0, Math.max(1, Math.min(limite, 500))), total: coinciden.length };
   }
 
   private manual(codigo: string) {

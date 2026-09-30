@@ -311,6 +311,9 @@ h1 {
     border-bottom: 1px solid var(--line);
     overflow-x: auto;
     scrollbar-width: none;
+    /* Con cuatro secciones las últimas quedan fuera de vista: el borde se desvanece y las anuncia,
+       igual que la cabecera y los filtros del historial. */
+    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
   }
   .secciones-nav ul {
     display: flex;

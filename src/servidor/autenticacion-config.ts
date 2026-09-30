@@ -138,7 +138,7 @@ export function opcionesAutenticacion(
       enabled: true,
       disableSignUp: true,
       requireEmailVerification: false,
-      minPasswordLength: 12,
+      minPasswordLength: 8,
       maxPasswordLength: 128,
     },
     session: {

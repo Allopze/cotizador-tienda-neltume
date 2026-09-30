@@ -4,7 +4,7 @@ import type { TipoAviso } from './avisos';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 // Mismos límites que Better Auth (minPasswordLength / maxPasswordLength en autenticacion-config).
-const MINIMO = 12,
+const MINIMO = 8,
   MAXIMO = 128;
 
 interface Props {

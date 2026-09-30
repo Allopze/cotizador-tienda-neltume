@@ -2,25 +2,60 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
+type Familia = 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA';
+interface Madera {
+  nombre: string;
+  codigo: string;
+  alias: string[];
+}
 interface Configuracion {
-  maderas: { nombre: string; codigo: string; alias: string[] }[];
-  familiasPorModelo: Record<string, 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA'>;
+  maderas: Madera[];
+  familiasPorModelo: Record<string, Familia>;
   aliasModelos: Record<string, string[]>;
 }
+/** Fila en edición: los alias se guardan como texto para poder escribir comas mientras se escribe. */
+interface MaderaEdit {
+  nombre: string;
+  codigo: string;
+  aliasTexto: string;
+}
+interface FamiliaEdit {
+  modelo: string;
+  familia: Familia;
+}
+interface ModeloEdit {
+  modelo: string;
+  aliasTexto: string;
+}
+
+const FAMILIAS: Familia[] = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'];
+const partirAlias = (texto: string) =>
+  texto
+    .split(',')
+    .map((valor) => valor.trim())
+    .filter(Boolean);
 
 export function ConfiguracionCatalogo() {
   const [configuracion, setConfiguracion] = useState<Configuracion | null>(null);
-  const [texto, setTexto] = useState('');
+  const [maderas, setMaderas] = useState<MaderaEdit[]>([]);
+  const [familias, setFamilias] = useState<FamiliaEdit[]>([]);
+  const [modelos, setModelos] = useState<ModeloEdit[]>([]);
   const [puedeEditar, setPuedeEditar] = useState(false);
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
+
+  const aplicar = (config: Configuracion) => {
+    setConfiguracion(config);
+    setMaderas(config.maderas.map((m) => ({ nombre: m.nombre, codigo: m.codigo, aliasTexto: m.alias.join(', ') })));
+    setFamilias(Object.entries(config.familiasPorModelo).map(([modelo, familia]) => ({ modelo, familia })));
+    setModelos(Object.entries(config.aliasModelos).map(([modelo, alias]) => ({ modelo, aliasTexto: alias.join(', ') })));
+  };
 
   useEffect(() => {
     const control = new AbortController();
     pedirJSON<{ configuracion: Configuracion; puedeEditar: boolean }>('/api/catalogo-configuracion', { signal: control.signal, cache: 'no-store' }).then(
       (data) => {
-        setConfiguracion(data.configuracion);
-        setTexto(JSON.stringify(data.configuracion, null, 2));
+        aplicar(data.configuracion);
         setPuedeEditar(data.puedeEditar);
       },
       (causa) => {
@@ -30,22 +65,26 @@ export function ConfiguracionCatalogo() {
     return () => control.abort();
   }, []);
 
+  function borrador(): Configuracion {
+    return {
+      maderas: maderas.map((m) => ({ nombre: m.nombre.trim(), codigo: m.codigo.trim(), alias: partirAlias(m.aliasTexto) })),
+      familiasPorModelo: Object.fromEntries(familias.filter((f) => f.modelo.trim()).map((f) => [f.modelo.trim(), f.familia])),
+      aliasModelos: Object.fromEntries(modelos.filter((m) => m.modelo.trim()).map((m) => [m.modelo.trim(), partirAlias(m.aliasTexto)])),
+    };
+  }
+
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
     if (!puedeEditar || ocupado) return;
-    let valor: Configuracion;
-    try {
-      valor = JSON.parse(texto) as Configuracion;
-    } catch {
-      setError('La configuración debe ser JSON válido.');
+    if (!maderas.length) {
+      setError('Debe quedar al menos una madera.');
       return;
     }
     setOcupado(true);
     setError('');
     try {
-      const data = await pedirJSON<{ configuracion: Configuracion }>('/api/catalogo-configuracion', { json: valor });
-      setConfiguracion(data.configuracion);
-      setTexto(JSON.stringify(data.configuracion, null, 2));
+      const data = await pedirJSON<{ configuracion: Configuracion }>('/api/catalogo-configuracion', { json: borrador() });
+      aplicar(data.configuracion);
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
     } finally {
@@ -54,22 +93,138 @@ export function ConfiguracionCatalogo() {
   }
 
   if (!configuracion) return <p className="catalog-modal-intro">{error || 'Cargando configuración…'}</p>;
+
+  const cambiarMadera = (indice: number, cambio: Partial<MaderaEdit>) =>
+    setMaderas((actual) => actual.map((m, i) => (i === indice ? { ...m, ...cambio } : m)));
+  const editable = puedeEditar && !ocupado;
+
   return (
     <form onSubmit={guardar}>
       <p className="catalog-modal-intro">
         Edita nombres y alias de maderas, familias y alias de modelos sin tocar el archivo de configuración. El servidor valida duplicados antes de guardar.
       </p>
-      <label className="ia-field">
-        <span>Configuración del catálogo (JSON)</span>
-        <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={20} spellCheck={false} disabled={!puedeEditar || ocupado} />
-      </label>
+
+      <fieldset className="config-grupo" disabled={!editable}>
+        <legend>Maderas</legend>
+        {maderas.map((madera, indice) => (
+          <div className="config-editor-fila" key={indice}>
+            <label className="ia-field">
+              <span>Nombre</span>
+              <input value={madera.nombre} onChange={(e) => cambiarMadera(indice, { nombre: e.target.value })} maxLength={80} />
+            </label>
+            <label className="ia-field">
+              <span>Código</span>
+              <input value={madera.codigo} onChange={(e) => cambiarMadera(indice, { codigo: e.target.value })} maxLength={10} />
+            </label>
+            <label className="ia-field">
+              <span>Alias (separados por coma)</span>
+              <input value={madera.aliasTexto} onChange={(e) => cambiarMadera(indice, { aliasTexto: e.target.value })} maxLength={200} placeholder="Ej. PINO, OREGON" />
+            </label>
+            <button
+              type="button"
+              className="button secondary small"
+              onClick={() => setMaderas((actual) => actual.filter((_, i) => i !== indice))}
+            >
+              Quitar
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="button secondary small"
+          onClick={() => setMaderas((actual) => [...actual, { nombre: '', codigo: '', aliasTexto: '' }])}
+        >
+          Agregar madera
+        </button>
+      </fieldset>
+
+      <fieldset className="config-grupo" disabled={!editable}>
+        <legend>Familia por modelo</legend>
+        {familias.map((fila, indice) => (
+          <div className="config-editor-fila" key={indice}>
+            <label className="ia-field">
+              <span>Modelo</span>
+              <input
+                value={fila.modelo}
+                onChange={(e) => setFamilias((actual) => actual.map((f, i) => (i === indice ? { ...f, modelo: e.target.value } : f)))}
+                maxLength={80}
+              />
+            </label>
+            <label className="ia-field">
+              <span>Familia</span>
+              <select
+                value={fila.familia}
+                onChange={(e) =>
+                  setFamilias((actual) => actual.map((f, i) => (i === indice ? { ...f, familia: e.target.value as Familia } : f)))
+                }
+              >
+                {FAMILIAS.map((familia) => (
+                  <option key={familia}>{familia}</option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="button secondary small" onClick={() => setFamilias((actual) => actual.filter((_, i) => i !== indice))}>
+              Quitar
+            </button>
+          </div>
+        ))}
+        <button
+          type="button"
+          className="button secondary small"
+          onClick={() => setFamilias((actual) => [...actual, { modelo: '', familia: 'PUERTA' }])}
+        >
+          Agregar modelo
+        </button>
+      </fieldset>
+
+      <fieldset className="config-grupo" disabled={!editable}>
+        <legend>Alias por modelo</legend>
+        {modelos.map((fila, indice) => (
+          <div className="config-editor-fila" key={indice}>
+            <label className="ia-field">
+              <span>Modelo</span>
+              <input
+                value={fila.modelo}
+                onChange={(e) => setModelos((actual) => actual.map((m, i) => (i === indice ? { ...m, modelo: e.target.value } : m)))}
+                maxLength={80}
+              />
+            </label>
+            <label className="ia-field">
+              <span>Alias (separados por coma)</span>
+              <input
+                value={fila.aliasTexto}
+                onChange={(e) => setModelos((actual) => actual.map((m, i) => (i === indice ? { ...m, aliasTexto: e.target.value } : m)))}
+                maxLength={200}
+              />
+            </label>
+            <button type="button" className="button secondary small" onClick={() => setModelos((actual) => actual.filter((_, i) => i !== indice))}>
+              Quitar
+            </button>
+          </div>
+        ))}
+        <button type="button" className="button secondary small" onClick={() => setModelos((actual) => [...actual, { modelo: '', aliasTexto: '' }])}>
+          Agregar modelo
+        </button>
+      </fieldset>
+
       {error && <p className="catalog-error" role="alert">{error}</p>}
-      {!puedeEditar ? <p className="ia-permiso">Solo quien administra el cotizador puede cambiar esta configuración.</p> : (
+      {!puedeEditar ? (
+        <p className="ia-permiso">Solo quien administra el cotizador puede cambiar esta configuración.</p>
+      ) : (
         <div className="ia-actions">
-          <button type="button" className="button secondary" onClick={() => setTexto(JSON.stringify(configuracion, null, 2))} disabled={ocupado}>Descartar cambios</button>
-          <button type="submit" className="button primary" disabled={ocupado}>{ocupado ? 'Guardando…' : 'Guardar configuración'}</button>
+          <button type="button" className="button secondary" onClick={() => aplicar(configuracion)} disabled={ocupado}>
+            Descartar cambios
+          </button>
+          <button type="submit" className="button primary" disabled={ocupado}>
+            {ocupado ? 'Guardando…' : 'Guardar configuración'}
+          </button>
         </div>
       )}
+
+      <details className="config-json">
+        <summary>Ver la configuración como JSON</summary>
+        <pre>{JSON.stringify(borrador(), null, 2)}</pre>
+      </details>
     </form>
   );
 }

@@ -90,8 +90,8 @@ async function principal() {
 
   if (comando === 'crear') {
     if (existente) throw new Error('Ya existe una cuenta con ese correo.');
-    const clave = await pedirClave('Contraseña (mínimo 12 caracteres): ');
-    if (clave.length < 12) throw new Error('La contraseña debe tener al menos 12 caracteres.');
+    const clave = await pedirClave('Contraseña (mínimo 8 caracteres): ');
+    if (clave.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.');
     const usuarioNuevo = await context.internalAdapter.createUser(
       {
         email: email.data,
@@ -150,8 +150,8 @@ async function principal() {
     return;
   }
 
-  const clave = await pedirClave('Nueva contraseña (mínimo 12 caracteres): ');
-  if (clave.length < 12) throw new Error('La contraseña debe tener al menos 12 caracteres.');
+  const clave = await pedirClave('Nueva contraseña (mínimo 8 caracteres): ');
+  if (clave.length < 8) throw new Error('La contraseña debe tener al menos 8 caracteres.');
   const hash = await context.password.hash(clave);
   if (await context.internalAdapter.findCredentialAccount(usuario.id)) {
     await context.internalAdapter.updatePassword(usuario.id, hash);

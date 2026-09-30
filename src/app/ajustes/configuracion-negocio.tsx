@@ -130,7 +130,16 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
           <p className="muted">Sube un SVG seguro de hasta 48 KB. Si lo quitas, se usa el logo publicado por defecto.</p>
         </div>
         <div className="logo-configuracion-acciones">
-          <input type="file" accept="image/svg+xml,.svg" onChange={(e) => void seleccionarLogo(e)} disabled={!editable || ocupado} />
+          {/* La etiqueta nombra al control y le da el aspecto del resto de los botones del formulario. */}
+          <label className="button secondary small archivo-campo">
+            Seleccionar logo
+            <input
+              type="file"
+              accept="image/svg+xml,.svg"
+              onChange={(e) => void seleccionarLogo(e)}
+              disabled={!editable || ocupado}
+            />
+          </label>
           {borrador.empresa.logoSvg && <button type="button" className="button secondary small" onClick={() => setBorrador({ ...borrador, empresa: { ...borrador.empresa, logoSvg: null } })} disabled={!editable || ocupado}>Usar logo predeterminado</button>}
         </div>
         {logoError && <p className="catalog-error" role="alert">{logoError}</p>}

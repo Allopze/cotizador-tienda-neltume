@@ -1,6 +1,6 @@
 # Taste
 - Communicates in Spanish (Chilean) and expects replies in Spanish; product copy, UI labels and error messages should also be in Spanish. Confidence: 0.85
-- Wants findings turned into actual fixes, not just a report — after an audit, expects the agent to proceed with implementation of all findings. Confidence: 0.75
+- Wants findings turned into actual fixes, not just a report — after an audit, expects the agent to proceed with implementation of all findings (explicitly asked to fix every finding, not a subset). Confidence: 0.9
 - Expects audits/analyses to be grounded in the actual source code, not only screenshots or visual inspection. Confidence: 0.6
 - Asks whether skills/tooling were used to improve answer quality — values the agent leveraging available skills/agents for a thorough job. Confidence: 0.45
 - Dislikes unnecessary scrolling: screens (e.g. catalog) should fit without scroll unless the content genuinely justifies it; repeated this complaint after a first round of fixes. Confidence: 0.85

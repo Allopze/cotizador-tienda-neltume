@@ -21,21 +21,33 @@ const inicial = (p: ProductoAdministrable): Campos => ({
 
 export function GestionManuales() {
   const [productos, setProductos] = useState<ProductoAdministrable[]>([]);
+  const [total, setTotal] = useState(0);
   const [busqueda, setBusqueda] = useState('');
   const [editando, setEditando] = useState<string | null>(null);
   const [campos, setCampos] = useState<Campos | null>(null);
-  const [cargando, setCargando] = useState(true);
+  const [cargando, setCargando] = useState(false);
   const [ocupado, setOcupado] = useState('');
   const [error, setError] = useState('');
+  const termino = busqueda.trim();
 
   const cargar = useCallback(async () => {
+    const q = busqueda.trim();
+    // Sin término no se lista: el catálogo tiene miles de productos y volcarlos todos no ayuda a
+    // encontrar el que se quiere corregir.
+    if (!q) {
+      setProductos([]);
+      setTotal(0);
+      setCargando(false);
+      return;
+    }
     setCargando(true);
     try {
-      const data = await pedirJSON<{ productos: ProductoAdministrable[] }>('/api/catalogo', {
-        json: { tipo: 'listar_productos', ...(busqueda.trim() ? { q: busqueda.trim() } : {}) },
+      const data = await pedirJSON<{ productos: ProductoAdministrable[]; total: number }>('/api/catalogo', {
+        json: { tipo: 'listar_productos', q },
         method: 'POST',
       });
       setProductos(data.productos);
+      setTotal(data.total);
       setError('');
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
@@ -97,7 +109,19 @@ export function GestionManuales() {
         <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder="Ej. MOL-O-3-A o MOLCO" />
       </label>
       {error && <p className="catalog-error" role="alert">{error} <button type="button" className="link" onClick={() => void cargar()}>Reintentar</button></p>}
-      {!productos.length ? <p className="muted">No se encontraron productos.</p> : (
+      {cargando && <p className="muted">Buscando productos…</p>}
+      {!cargando && !termino && (
+        <p className="muted">Escribe un código, modelo, madera o medida para encontrar el producto que quieres corregir.</p>
+      )}
+      {!cargando && termino && !productos.length && <p className="muted">No se encontraron productos.</p>}
+      {!cargando && termino && productos.length > 0 && (
+        <p className="muted" aria-live="polite">
+          {total > productos.length
+            ? `Mostrando ${productos.length} de ${total} productos: afina la búsqueda para ver el resto.`
+            : `${total} producto${total === 1 ? '' : 's'}.`}
+        </p>
+      )}
+      {!cargando && productos.length > 0 && (
         <div className="catalogo-lista">
           <table>
             <thead><tr><th>PRODUCTO / CÓDIGO</th><th>ATRIBUTOS</th><th>PRECIO NETO</th><th><span className="sr-only">Acciones</span></th></tr></thead>

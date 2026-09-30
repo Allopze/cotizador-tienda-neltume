@@ -164,7 +164,7 @@ export async function POST(req: Request) {
     if (peticion.tipo === 'listar_manuales')
       return Response.json({ productos: catalogo.listarManuales() }, { headers: sinCache });
     if (peticion.tipo === 'listar_productos')
-      return Response.json({ productos: catalogo.listarAdministrables(peticion.q) }, { headers: sinCache });
+      return Response.json(catalogo.listarAdministrables(peticion.q), { headers: sinCache });
     if (peticion.tipo === 'editar')
       return Response.json(
         { producto: catalogo.editarProducto(peticion.codigo, peticion.cambios) },

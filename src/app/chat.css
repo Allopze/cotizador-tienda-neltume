@@ -445,9 +445,40 @@ p + .pregunta-opciones {
   border: 1px solid var(--line-soft);
   background: var(--surface);
 }
+/*
+ * Selector de archivo con aspecto de botón. El control nativo no se puede etiquetar ni estilizar y su
+ * ancho mínimo intrínseco (el nombre del archivo) desbordaba la columna en pantalla angosta.
+ */
+.archivo-campo {
+  position: relative;
+  cursor: pointer;
+}
+.archivo-campo input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* El foco lo recibe el control oculto: el anillo se dibuja sobre la etiqueta que lo envuelve. */
+.archivo-campo:has(input:focus-visible) {
+  outline: 2px solid var(--warm);
+  outline-offset: 4px;
+}
+.archivo-campo:has(input:disabled) {
+  cursor: not-allowed;
+  background: var(--disabled-bg);
+  border-color: var(--disabled-bg);
+  color: var(--muted);
+}
 .feriado-form {
   display: grid;
-  grid-template-columns: minmax(150px, 0.5fr) minmax(200px, 1fr) auto;
+  /* Sin mínimos: una columna con mínimo fijo desborda el ancho disponible cuando la pantalla aprieta. */
+  grid-template-columns: minmax(0, 0.5fr) minmax(0, 1fr) auto;
   align-items: end;
   gap: 10px 14px;
   margin: 16px 0;
@@ -470,6 +501,53 @@ p + .pregunta-opciones {
 }
 .feriado-fila small {
   color: var(--muted);
+}
+/* Configuración del catálogo: cada lista se edita por filas, sin escribir JSON. */
+.config-grupo {
+  margin: 20px 0 0;
+  padding: 0;
+  border: 0;
+}
+.config-grupo legend {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.config-editor-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px 14px;
+  margin-bottom: 12px;
+}
+.config-editor-fila .ia-field {
+  flex: 1 1 200px;
+}
+.config-grupo > .button {
+  margin-bottom: 4px;
+}
+.config-json {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+.config-json summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.config-json pre {
+  max-height: 320px;
+  max-width: 720px;
+  margin-top: 10px;
+  padding: 12px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
 }
 .catalog-chat {
   max-height: 265px;
@@ -834,6 +912,17 @@ p + .pregunta-opciones {
 }
 .ia-field input:focus-visible {
   outline-offset: 1px;
+}
+/* Mismo cuerpo que los campos de texto, con la tipografía de la interfaz. */
+.ia-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
 }
 .ia-model-selector {
   position: relative;

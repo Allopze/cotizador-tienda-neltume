@@ -689,6 +689,17 @@ td small {
     text-align: right;
     font-weight: 600;
   }
+  /* La fila de usuario lleva tres acciones: ocupan el ancho y se envuelven, en vez de apilarse
+     alineadas a la derecha una por línea. */
+  .usuarios-admin .catalogo-lista td:last-child {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 6px;
+    margin-top: 4px;
+    text-align: left;
+  }
 }
 .vencida-texto {
   color: var(--pending);
