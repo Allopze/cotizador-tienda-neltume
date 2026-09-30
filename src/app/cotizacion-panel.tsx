@@ -351,7 +351,10 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                   const { pendiente, linea } = lineaDe(actual, i);
                   const medida = linea && medidaPedida(linea);
                   const descripcion = descripcionItem(actual, i);
-                  const posible = pendiente?.rechazo.tipo === 'modelo_posible' ? pendiente.rechazo : null;
+                  const posible =
+                    pendiente?.rechazo.tipo === 'modelo_posible'
+                      ? { pregunta: pendiente.pregunta, sugerido: pendiente.rechazo.sugerido }
+                      : null;
                   return (
                     <tr key={i} className={pendiente ? 'pending' : ''}>
                       <td>
@@ -368,7 +371,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
                         {editable && posible && (
                           <div className="aviso-medida" role="note">
-                            <span>{pendiente?.pregunta}</span>
+                            <span>{posible.pregunta}</span>
                             <button
                               type="button"
                               className="button secondary small"

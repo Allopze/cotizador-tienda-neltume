@@ -163,6 +163,7 @@ describe('la IA no normaliza alias posibles', () => {
 
   it('la instrucción pide conservar los nombres dudosos tal como se escribieron', () => {
     expect(SYSTEM).toMatch(/no figura en el contexto o te deja dudas, conserva el texto tal como lo escribió/);
+    expect(SYSTEM).toMatch(/preguntó «¿Te refieres a X\?» y el mensaje lo confirma, usa X como modelo de ese ítem/);
   });
 
   it('el servicio envía a la IA alias seguros y no los posibles', async () => {
