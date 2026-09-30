@@ -213,8 +213,6 @@ describe('Plantillas', () => {
     expect(descripcionLegible('HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2,1 MT')).toBe(
       'Huilo Huilo Pino Oregon 0,80 a 0,85 m × 2,1 m',
     );
-    expect(descripcionLegible('Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT')).toBe('Huilo Huilo Mara 0,80 a 0,85 m × 2,4 m');
-    expect(descripcionLegible('Puerta Huilo Huilo reforzada')).toBe('Puerta Huilo Huilo reforzada');
     expect(descripcionLegible('MARCO PINO OREGON 2X4 PULG KIT')).toBe('Marco Pino Oregon 2x4 pulg. kit');
     expect(descripcionLegible('Puerta especial de raulí')).toBe('Puerta especial de raulí');
     const marco: Producto = { ...puerta, codigo: 'MAR-O-2X4-B', familia: 'MARCO', medida: '2X4', largo: 2.1 };

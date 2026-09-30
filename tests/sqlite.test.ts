@@ -141,16 +141,20 @@ describe('Persistencia SQLite', () => {
     expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
   });
 
-  it('la migración a v12 separa la descripción del documento y deshace el REPLACE de v11 en las líneas', async () => {
+  it('la migración a v12 separa la descripción del documento, deshace el REPLACE de v11 y limpia la observación automática', async () => {
     const dir = await temp();
     const rutaDb = join(dir, 'cotizador.sqlite');
     const db = abrirBaseDatos(rutaDb, { cachear: false, permitirJsonLegado: true });
     guardarEstadoCompleto(db, completarEstadoLegado(estadoFixture()) as Estado);
+    const RECTIFICAR = 'Rectificar si la medida corresponde a hoja o vano.';
     // Estado de una base en v11: líneas con el modelo canónico y la descripción ya reemplazada, sin la columna nueva.
     db.exec(`
       UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT' WHERE cotizacion_id = 'cotizacion-emitida';
       UPDATE nota_lineas SET modelo = 'Huilo Huilo', descripcion = 'Huilo Huilo MARA 0,80 A 0,85 MT X 2,4 MT' WHERE cotizacion_id = 'cotizacion-emitida';
       UPDATE cotizacion_lineas SET modelo = 'Huilo Huilo', descripcion = 'Puerta Huilo Huilo reforzada' WHERE cotizacion_id = 'revision-emitida';
+      UPDATE cotizacion_lineas SET indice = 0, observaciones = '${RECTIFICAR}';
+      UPDATE nota_lineas SET indice = 0, observaciones = '${RECTIFICAR}';
+      UPDATE solicitudes SET observaciones = '${RECTIFICAR}' WHERE cotizacion_id = 'revision-emitida';
       ALTER TABLE cotizacion_lineas DROP COLUMN descripcion_documento;
       ALTER TABLE nota_lineas DROP COLUMN descripcion_documento;
       PRAGMA user_version = 11;
@@ -170,6 +174,14 @@ describe('Persistencia SQLite', () => {
       expect(descripciones('nota_lineas')).toEqual([
         { id: 'cotizacion-emitida', descripcion: 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT', documento: null },
       ]);
+      // La observación que el sistema agregaba sola se borra; la que la persona escribió (está en su solicitud) se conserva.
+      const observaciones = (tabla: string) =>
+        migrada.prepare(`SELECT cotizacion_id AS id, observaciones FROM ${tabla} ORDER BY cotizacion_id`).all();
+      expect(observaciones('cotizacion_lineas')).toEqual([
+        { id: 'cotizacion-emitida', observaciones: null },
+        { id: 'revision-emitida', observaciones: RECTIFICAR },
+      ]);
+      expect(observaciones('nota_lineas')).toEqual([{ id: 'cotizacion-emitida', observaciones: null }]);
       expect(descripcionLegible('HUILO HUILO MARA 0,80 A 0,85 MT X 2,4 MT')).toBe('Huilo Huilo Mara 0,80 a 0,85 m × 2,4 m');
       const { cotizaciones } = await new Almacen(dir, rutaDb).leer();
       expect(cotizaciones.flatMap((q) => q.montos.lineas.map((l) => l.descripcionDocumento))).toEqual([null, null]);

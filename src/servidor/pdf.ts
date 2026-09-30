@@ -50,11 +50,10 @@ const UNIDADES: Record<string, string> = { mt: 'm', mts: 'm', cm: 'cm', pulg: 'p
 
 /**
  * Las descripciones de la planilla vienen en mayúsculas; en el documento se leen mejor con mayúscula
- * inicial y unidades normalizadas. Las escritas a mano (con minúsculas) se respetan tal cual. El nombre
- * canónico «Huilo Huilo» no cuenta como minúsculas: el importador lo deja así dentro de una descripción en mayúsculas.
+ * inicial y unidades normalizadas. Las escritas a mano (con minúsculas) se respetan tal cual.
  */
 export function descripcionLegible(texto: string) {
-  if (/\p{Ll}/u.test(texto.replaceAll('Huilo Huilo', ''))) return texto;
+  if (/\p{Ll}/u.test(texto)) return texto;
   return texto
     .toLowerCase()
     .split(/\s+/)

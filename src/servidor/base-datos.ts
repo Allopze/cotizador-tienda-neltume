@@ -203,7 +203,9 @@ function crearEsquema(db: Database.Database) {
     db.transaction(() => {
       // v12: la descripción del documento va aparte de la del producto de catálogo. Además se deshace el
       // REPLACE de v11 sobre las descripciones de línea (en el catálogo están en mayúsculas); solo donde el
-      // resto del texto sigue en mayúsculas, para no tocar lo que alguien escribió a mano.
+      // resto del texto sigue en mayúsculas, para no tocar lo que alguien escribió a mano. También se borra la
+      // observación «Rectificar…» que el sistema agregaba sola: solo si la solicitud de esa línea no tiene
+      // observación, es decir, si nadie la escribió.
       db.exec(`
         ALTER TABLE cotizacion_lineas ADD COLUMN descripcion_documento TEXT;
         ALTER TABLE nota_lineas ADD COLUMN descripcion_documento TEXT;
@@ -213,6 +215,20 @@ function crearEsquema(db: Database.Database) {
         UPDATE nota_lineas SET descripcion = REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO')
           WHERE modelo = 'Huilo Huilo' AND INSTR(descripcion, 'Huilo Huilo') > 0
             AND REPLACE(descripcion, 'Huilo Huilo', 'HUILO HUILO') = UPPER(descripcion);
+        UPDATE cotizacion_lineas SET observaciones = NULL
+          WHERE observaciones = 'Rectificar si la medida corresponde a hoja o vano.'
+            AND EXISTS (
+              SELECT 1 FROM solicitudes s
+              WHERE s.cotizacion_id = cotizacion_lineas.cotizacion_id AND s.orden = cotizacion_lineas.indice
+                AND s.observaciones IS NULL
+            );
+        UPDATE nota_lineas SET observaciones = NULL
+          WHERE observaciones = 'Rectificar si la medida corresponde a hoja o vano.'
+            AND EXISTS (
+              SELECT 1 FROM solicitudes s
+              WHERE s.cotizacion_id = nota_lineas.cotizacion_id AND s.orden = nota_lineas.indice
+                AND s.observaciones IS NULL
+            );
         PRAGMA user_version = 12;
       `);
     }).immediate();

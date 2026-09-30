@@ -3,7 +3,7 @@ import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
-import { ErrorImportacion, importar } from '../src/catalogo/importar';
+import { descripcion, ErrorImportacion, importar } from '../src/catalogo/importar';
 import { resolverItem } from '../src/catalogo/resolver';
 import { cotizar } from '../src/negocio/precios';
 import type { SolicitudItem, Producto } from '../src/catalogo/tipos';
@@ -74,6 +74,17 @@ const referencias: [SolicitudItem, string, number, number, number][] = [
     401392,
   ],
 ];
+describe('descripción de catálogo', () => {
+  it('escribe el modelo en mayúsculas aunque el producto guarde su nombre canónico', () => {
+    const huilo: Producto = {
+      codigo: 'HUIL-M-3-A', modelo: 'Huilo Huilo', familia: 'PUERTA', tipo: 'PUERTA SÓLIDA', madera: 'MARA',
+      medida: '0,80 A 0,85', anchoMin: 0.8, anchoMax: 0.85, largo: 2.4, precioNeto: 100_000, descripcion: '', filaOrigen: 1,
+    };
+    expect(descripcion(huilo)).toBe('HUILO HUILO MARA 0,8 A 0,85 MT X 2,4 MT');
+    expect(descripcion({ ...huilo, modelo: 'MOLCO' })).toBe('MOLCO MARA 0,8 A 0,85 MT X 2,4 MT');
+  });
+});
+
 describe('Flujo secuencial sobre la planilla real', () => {
   it('importa → corrige → resuelve → cotiza todos los valores de referencia y rechazos', async () => {
     const ruta = process.env.NELTUME_PLANILLA ?? 'datos-privados/COTIZADOR_2026.xlsx';
@@ -111,6 +122,11 @@ describe('Flujo secuencial sobre la planilla real', () => {
       'filaOrigen',
     ].sort();
     for (const p of r.catalogo.productos) expect(Object.keys(p).sort()).toEqual(permitidos);
+    // Las descripciones de catálogo van siempre en mayúsculas, aunque el modelo quede con su nombre canónico.
+    expect(r.catalogo.productos.filter((p) => /\p{Ll}/u.test(p.descripcion))).toEqual([]);
+    const huilo = r.catalogo.productos.filter((p) => p.modelo === 'Huilo Huilo');
+    expect(huilo.length).toBeGreaterThan(0);
+    for (const p of huilo) expect(p.descripcion).toMatch(/^HUILO HUILO /);
     expect(new Set(r.catalogo.productos.map((p) => p.codigo)).size).toBe(8772);
     expect(
       new Set(r.catalogo.productos.map((p) => `${p.modelo}|${p.madera}|${p.medida}|${p.largo}`)).size,

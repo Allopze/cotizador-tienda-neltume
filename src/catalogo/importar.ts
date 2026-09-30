@@ -35,7 +35,7 @@ export interface Incidencia {
   detalle: string;
 }
 export function descripcion(p: Producto) {
-  const base = `${p.modelo} ${p.madera === 'RAULI' ? 'RAULÍ' : p.madera} ${p.familia === 'PUERTA' ? p.medida.split(' A ').map((v) => {
+  const base = `${p.modelo.toUpperCase()} ${p.madera === 'RAULI' ? 'RAULÍ' : p.madera} ${p.familia === 'PUERTA' ? p.medida.split(' A ').map((v) => {
     const n = Number(v.replace(',', '.'));
     return decimal(n > 10 ? n / 100 : n);
   }).join(' A ') : p.medida}`;

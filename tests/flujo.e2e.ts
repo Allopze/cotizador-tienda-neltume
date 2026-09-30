@@ -81,7 +81,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   expect(contenido).not.toMatch(/precio de lista|ajuste|25 %/i);
   // El cliente no ve la referencia interna ni un tipo de medida sin definir; la observación escrita sí.
   expect(contenido).not.toMatch(/Referencia de catálogo|No especificado/);
-  expect(contenido).toContain('Huilo Huilo Pino Oregon');
+  expect(contenido).toContain('Huilo Huilo Pino Oregon 0,8 a 0,85 m × 2,1 m');
   expect(contenido).toContain(`Observación: ${rectificar}`);
   // La aprobación se registra primero; la nota queda habilitada después del anticipo del 50 %.
   await page.getByRole('button', { name: 'Registrar aprobación del cliente' }).click();
