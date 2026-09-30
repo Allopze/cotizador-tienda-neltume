@@ -23,7 +23,7 @@ import {
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
-import { aCentesimas } from '../negocio/cifras';
+import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
 import {
   avisoProductoCambiado,
   claveMedida,
@@ -198,7 +198,7 @@ export function textoCambios(c: CambiosCotizacion | undefined, extras: string[] 
 }
 const porcentajeTexto = (n: number) => `${String(n).replace('.', ',')} %`;
 /** Margen (fracción) como porcentaje legible: 0,42 → «42 %»; sin el ruido binario de 0,07 × 100. */
-const margenTexto = (m: number) => porcentajeTexto(Math.round(m * 10000) / 100);
+const margenTexto = (m: number) => porcentajeTexto(margenAPorcentaje(m));
 const ESTANDAR_CATEGORIA = 'estándar de categoría';
 
 export class Servicio {
@@ -717,7 +717,8 @@ export class Servicio {
           const valor = cambios.margen;
           if (valor !== null && !margenValido(valor))
             throw new ErrorUsuario('El margen debe ser un porcentaje entre -50 % y 500 %, con hasta dos decimales.');
-          siguiente.margen = valor ?? null;
+          // Guardado sin el error binario de un porcentaje dividido por 100 (0,07 llega como 0,07000000000000001).
+          siguiente.margen = valor === null ? null : redondearMargen(valor);
           if (valor !== null) siguiente.precioUnitario = null;
         }
         const anterior = solicitudes[cambio.indice];
@@ -747,8 +748,7 @@ export class Servicio {
         throw new ErrorUsuario(
           'El margen especial de la cotización debe ser un porcentaje entre -50 % y 500 %, con hasta dos decimales.',
         );
-      // Sin el error binario de dividir un porcentaje por 100 (0,07 llega como 0,07000000000000001).
-      const margenCotizacion = margenPedido === null ? null : Math.round(margenPedido * 10000) / 10000;
+      const margenCotizacion = margenPedido === null ? null : redondearMargen(margenPedido);
       const extra = avisos.length ? { avisos } : {};
       const descuentoNuevo = aCentesimas(descuento);
       const observaciones =
@@ -817,11 +817,12 @@ export class Servicio {
         // `antes` y no `q.solicitudes`: en un borrador `destino` es `q` y sus ítems ya son los nuevos.
         const anterior = antes[cambio.indice];
         if (!anterior) continue;
-        if (cambio.cambios.margen !== undefined && cambio.cambios.margen !== (anterior.margen ?? null)) {
+        const margenLinea = solicitudes[cambio.indice].margen ?? null;
+        if (cambio.cambios.margen !== undefined && margenLinea !== (anterior.margen ?? null)) {
           const linea = q.montos.lineas.find((l) => l.indice === cambio.indice);
           const margenAnterior = linea ? margenTexto(linea.margen ?? 0) : 'sin resolver';
           const sinMargenPropio = margenCotizacion === null ? ESTANDAR_CATEGORIA : 'margen especial de la cotización';
-          const margenNuevo = cambio.cambios.margen === null ? sinMargenPropio : margenTexto(cambio.cambios.margen);
+          const margenNuevo = margenLinea === null ? sinMargenPropio : margenTexto(margenLinea);
           extras.push(`Margen de ${this.describir(anterior)}: ${margenAnterior} → ${margenNuevo}`);
         }
         if (cambio.cambios.precioUnitario !== undefined && cambio.cambios.precioUnitario !== anterior.precioUnitario)

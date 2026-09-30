@@ -38,13 +38,27 @@ export const leerPorcentaje = (texto: string) => {
   return /^\d+(?:\.\d+)?$/.test(limpio) ? Number(limpio) : NaN;
 };
 
-/** Porcentaje con signo opcional («-10», «−10,5 %»), para márgenes que pueden ser negativos. */
+/**
+ * Porcentaje con signo opcional («-10», «−10,5 %»), para márgenes que pueden ser negativos. Sin ningún
+ * dígito («-», «%», «- %») no es un número: NaN, nunca 0.
+ */
 export const leerPorcentajeConSigno = (texto: string) => {
   const limpio = texto.trim();
-  const negativo = /^[-−]/.test(limpio);
-  const n = leerPorcentaje(negativo ? limpio.slice(1) : limpio);
+  const negativo = /^[-\u2212]/.test(limpio);
+  const cuerpo = negativo ? limpio.slice(1) : limpio;
+  if (!/\d/.test(cuerpo)) return Number.NaN;
+  const n = leerPorcentaje(cuerpo);
   return negativo ? -n : n;
 };
+
+/** Mensaje de error de un margen escrito en porcentaje (−50 %…500 %, dos decimales), o null si es válido. */
+export function errorMargenTexto(texto: string): string | null {
+  const n = leerPorcentajeConSigno(texto);
+  if (Number.isNaN(n)) return 'Escribe un número.';
+  if (n < -50 || n > 500) return 'El margen debe estar entre -50 y 500 %.';
+  if (!conDosDecimales(n)) return 'Usa como máximo dos decimales.';
+  return null;
+}
 
 /** Hasta dos decimales, tolerando el error binario de coma flotante (2,3 × 100 = 229,999…). */
 export const conDosDecimales = (n: number) =>
@@ -52,3 +66,10 @@ export const conDosDecimales = (n: number) =>
 
 /** Redondea a centésimas para guardar porcentajes sin arrastrar error binario. */
 export const aCentesimas = (n: number) => Math.round(n * 100) / 100;
+
+/** Margen (fracción) a cuatro decimales, sin el error binario de dividir un porcentaje por 100 (7 / 100). */
+export const redondearMargen = (margen: number) => Math.round(margen * 10000) / 10000 + 0;
+/** Porcentaje escrito por una persona → margen como fracción para guardar: 42 → 0,42. */
+export const porcentajeAMargen = (porcentaje: number) => redondearMargen(porcentaje / 100);
+/** Margen (fracción) → porcentaje sin ruido binario: 0,07 → 7 (no 7,000000000000001). */
+export const margenAPorcentaje = (margen: number) => Math.round(margen * 10000) / 100 + 0;

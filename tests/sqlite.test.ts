@@ -7,7 +7,7 @@ import { resolverItem } from '../src/catalogo/resolver';
 import { estadoInicial, type Cotizacion, type Estado } from '../src/negocio/estado';
 import { cotizar } from '../src/negocio/precios';
 import { Almacen, guardarEstadoCompleto } from '../src/servidor/almacen';
-import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
+import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { migrarJsonASqlite } from '../src/servidor/migracion-sqlite';
 import { completarEstadoLegado } from '../src/servidor/persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
@@ -187,8 +187,8 @@ describe('Persistencia SQLite', () => {
 
     const migrada = abrirBaseDatos(rutaDb, { cachear: false });
     try {
-      // Llega a la versión vigente del esquema (las migraciones posteriores a v12 tienen sus propias pruebas).
-      expect(migrada.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(12);
+      // Pasa por v12 y sigue hasta la versión vigente del esquema (las posteriores tienen sus propias pruebas).
+      expect(migrada.pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
       const descripciones = (tabla: string) =>
         migrada.prepare(`SELECT cotizacion_id AS id, orden, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id, orden`).all();
       expect(descripciones('cotizacion_lineas')).toEqual([

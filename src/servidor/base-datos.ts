@@ -6,7 +6,8 @@ import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
-const VERSION_ESQUEMA = 13;
+/** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
+export const VERSION_ESQUEMA = 13;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {

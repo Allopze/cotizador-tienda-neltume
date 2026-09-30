@@ -39,7 +39,7 @@ export const MARGENES_INICIALES: MargenesCategoria = {
   puertas_enchapadas_mara: 0.75,
   marcos_finger_sin_enchape: 1,
   marcos_finger_enchapados: 0.75,
-  // Marcos, molduras y piezas T de Lenga, Mara, Pino Oregón o Raulí.
+  // Marcos, molduras y piezas T de madera sólida (ni enchapados, ni prepintados, ni finger).
   accesorios_madera_solida: 0.25,
   // Último recurso: conserva el ajuste histórico para lo que ninguna categoría describe.
   otros: 0.25,
@@ -218,8 +218,6 @@ export function cotizar(
 const textoNormalizado = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 
-const MADERAS_SOLIDAS = new Set(['LENGA', 'MARA', 'OREGON', 'PINO OREGON', 'RAULI']);
-
 /**
  * Categoría de margen de un producto de catálogo. Solo mira el producto, nunca la descripción escrita
  * para el documento. El orden importa: «MARA ENCHAPADA» es enchapada, jamás Mara sólida.
@@ -241,11 +239,10 @@ export function categoriaMargen(producto: Producto): CategoriaMargen {
     const enchapado = /ENCHAP/.test(contexto) && !/SIN\s*ENCHAP|DESNUD/.test(contexto);
     return enchapado ? 'marcos_finger_enchapados' : 'marcos_finger_sin_enchape';
   }
-  if (
-    (producto.familia === 'MARCO' || producto.familia === 'MOLDURA' || producto.familia === 'PIEZAS_T') &&
-    MADERAS_SOLIDAS.has(madera)
-  )
-    return 'accesorios_madera_solida';
+  // Marcos, molduras y piezas T: madera sólida salvo que el producto sea enchapado, prepintado o finger.
+  // Una madera nueva del catálogo (p. ej. Cedro) es sólida sin tocar esta regla.
+  if (producto.familia === 'MARCO' || producto.familia === 'MOLDURA' || producto.familia === 'PIEZAS_T')
+    return /ENCHAP|PREPINT|FINGER/.test(contexto) ? 'otros' : 'accesorios_madera_solida';
   return 'otros';
 }
 

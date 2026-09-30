@@ -3,7 +3,13 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
-import { leerPorcentajeConSigno } from '../src/negocio/cifras';
+import {
+  errorMargenTexto,
+  leerPorcentajeConSigno,
+  margenAPorcentaje,
+  porcentajeAMargen,
+  redondearMargen,
+} from '../src/negocio/cifras';
 import {
   categoriaMargen,
   cotizar,
@@ -15,7 +21,7 @@ import {
   type CategoriaMargen,
 } from '../src/negocio/precios';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
-import { abrirBaseDatos } from '../src/servidor/base-datos';
+import { abrirBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import {
   configuracionNegocioSchema,
   guardarConfiguracionNegocio,
@@ -60,15 +66,18 @@ describe('categorías de margen', () => {
     expect(categoria(producto({ madera: 'CEDRO' }))).toBe('otros');
   });
 
-  it('marcos, molduras y piezas T de madera sólida son accesorios; otra madera cae en «otros»', () => {
+  it('marcos, molduras y piezas T son de madera sólida salvo que sean enchapados, prepintados o finger', () => {
+    // Regla negativa: una madera nueva del catálogo (Cedro) es sólida sin tocar el código.
     for (const familia of ['MARCO', 'MOLDURA', 'PIEZAS_T'] as const)
-      for (const madera of ['LENGA', 'MARA', 'PINO OREGON', 'RAULI'])
+      for (const madera of ['LENGA', 'MARA', 'PINO OREGON', 'RAULI', 'CEDRO'])
         expect(categoria(accesorio(familia, madera))).toBe('accesorios_madera_solida');
-    expect(categoria(accesorio('MARCO', 'CEDRO'))).toBe('otros');
-    // Un marco enchapado o prepintado no es de madera sólida.
+    // Un accesorio enchapado, prepintado o finger (salvo el marco finger, que tiene sus categorías) cae en «otros».
     expect(categoria(accesorio('MARCO', 'MARA ENCHAPADA'))).toBe('otros');
+    expect(categoria(accesorio('PIEZAS_T', 'MARA', { tipo: 'PIEZAS T ENCHAPADAS' }))).toBe('otros');
     expect(categoria(accesorio('MOLDURA', 'PREPINTADA'))).toBe('otros');
+    expect(categoria(accesorio('MARCO', 'MARA', { descripcion: 'MARCO MARA PREPINTADO 2X4' }))).toBe('otros');
     expect(categoria(accesorio('MOLDURA', 'PINO FINGER'))).toBe('otros');
+    expect(categoria(accesorio('PIEZAS_T', 'PINO FINGER ENCHAPADO MARA'))).toBe('otros');
   });
 
   it('el marco Pino Finger es desnudo salvo que el producto diga «enchapado»', () => {
@@ -106,7 +115,8 @@ describe('categorías de margen', () => {
       [accesorio('MARCO', 'PINO FINGER ENCHAPADO MARA'), 'marcos_finger_enchapados', 0.75],
       [accesorio('MARCO', 'RAULI'), 'accesorios_madera_solida', 0.25],
       [accesorio('PIEZAS_T', 'PINO OREGON'), 'accesorios_madera_solida', 0.25],
-      [accesorio('MARCO', 'CEDRO'), 'otros', 0.25],
+      [accesorio('MARCO', 'CEDRO'), 'accesorios_madera_solida', 0.25],
+      [accesorio('MARCO', 'MARA ENCHAPADA'), 'otros', 0.25],
     ];
     for (const [p, esperada, margen] of casos) {
       expect(categoriaMargen(p)).toBe(esperada);
@@ -251,6 +261,42 @@ describe('lectura del margen escrito en el formulario', () => {
     expect(Number.isNaN(leerPorcentajeConSigno('abc'))).toBe(true);
     expect(Number.isNaN(leerPorcentajeConSigno('--3'))).toBe(true);
   });
+
+  it('sin ningún dígito no es un número: nunca se lee como 0 % (precio de fábrica)', () => {
+    for (const texto of ['-', '\u2212', '- %', '%', ' % ', '-%', '\u2212 %', '', '  ', ',', '-,']) {
+      expect(Number.isNaN(leerPorcentajeConSigno(texto)), JSON.stringify(texto)).toBe(true);
+      expect(errorMargenTexto(texto), JSON.stringify(texto)).toBe('Escribe un número.');
+    }
+    // El cero escrito de verdad sí es válido.
+    expect(leerPorcentajeConSigno('0')).toBe(0);
+    expect(leerPorcentajeConSigno('-0')).toBe(-0);
+    expect(errorMargenTexto('0')).toBeNull();
+  });
+
+  it('valida rango y decimales con un mensaje, y los acepta en el límite', () => {
+    expect(errorMargenTexto('42')).toBeNull();
+    expect(errorMargenTexto('-50')).toBeNull();
+    expect(errorMargenTexto('500')).toBeNull();
+    expect(errorMargenTexto('12,34 %')).toBeNull();
+    expect(errorMargenTexto('-50,01')).toMatch(/entre -50 y 500/);
+    expect(errorMargenTexto('500,01')).toMatch(/entre -50 y 500/);
+    expect(errorMargenTexto('600')).toMatch(/entre -50 y 500/);
+    expect(errorMargenTexto('1'.repeat(400))).toMatch(/entre -50 y 500/);
+    expect(errorMargenTexto('12,345')).toBe('Usa como máximo dos decimales.');
+    expect(errorMargenTexto('abc')).toBe('Escribe un número.');
+  });
+
+  it('convierte porcentaje y fracción sin ruido binario', () => {
+    expect(porcentajeAMargen(7)).toBe(0.07);
+    expect(porcentajeAMargen(57)).toBe(0.57);
+    expect(porcentajeAMargen(14)).toBe(0.14);
+    expect(porcentajeAMargen(-10.5)).toBe(-0.105);
+    expect(Object.is(porcentajeAMargen(-0), 0)).toBe(true);
+    expect(redondearMargen(0.07000000000000001)).toBe(0.07);
+    expect(margenAPorcentaje(0.07)).toBe(7);
+    expect(margenAPorcentaje(0.5699999999999999)).toBe(57);
+    expect(margenAPorcentaje(0.2345)).toBe(23.45);
+  });
 });
 
 const dirs: string[] = [];
@@ -359,6 +405,18 @@ describe('margen especial de la cotización en el servicio', () => {
     expect(t.detalles().at(-1)).toContain('42 % → 7 %');
   });
 
+  it('guarda el margen de una línea sin ruido binario y repetirlo no deja otra línea de registro', async () => {
+    const t = await preparar();
+    await t.editar({ items: [{ indice: 0, cambios: { margen: 0.07000000000000001 } }] });
+    expect(t.q.solicitudes[0].margen).toBe(0.07);
+    expect(t.precios()[0]).toBe(107_000);
+    expect(t.detalles().at(-1)).toContain('55 % → 7 %');
+    await t.editar({ items: [{ indice: 0, cambios: { margen: 0.07000000000000001 } }] });
+    await t.editar({ items: [{ indice: 0, cambios: { margen: 0.07 } }] });
+    expect(t.detalles().filter((d) => d?.includes('Margen de '))).toHaveLength(1);
+    expect(t.q.solicitudes[0].margen).toBe(0.07);
+  });
+
   it('valida el rango y los decimales, y una edición rechazada no toca la cotización', async () => {
     const t = await preparar();
     const version = t.q.actualizada;
@@ -431,7 +489,6 @@ describe('margen especial de la cotización en el servicio', () => {
     expect(revision.montos.lineas.map((l) => l.precioUnitario)).toEqual([130_000, 130_000]);
     expect(new Almacen(t.dir).obtener(emitida.id)).toMatchObject({ margenCotizacion: 0.42 });
     expect(new Almacen(t.dir).obtener(emitida.id)!.montos.lineas.map((l) => l.precioUnitario)).toEqual([142_000, 142_000]);
-    // Con la revisión abierta, repetir el mismo valor sobre la emitida (otro margen) choca; el mismo contenido la reutiliza.
     const copia = (await t.servicio.ejecutar({ tipo: 'duplicar', id: emitida.id })).cotizacion;
     expect(copia).toMatchObject({ estado: 'borrador', margenCotizacion: 0.42 });
     expect(copia.montos.lineas.map((l) => l.precioUnitario)).toEqual([142_000, 142_000]);
@@ -481,7 +538,7 @@ describe('margen especial de la cotización en el servicio', () => {
 
     const migrada = abrirBaseDatos(ruta, { cachear: false });
     try {
-      expect(migrada.pragma('user_version', { simple: true })).toBeGreaterThanOrEqual(13);
+      expect(migrada.pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
       const columnas = (migrada.pragma('table_info(cotizaciones)') as { name: string }[]).map((c) => c.name);
       expect(columnas).toContain('margen_cotizacion');
       expect(migrada.prepare('SELECT margen_cotizacion AS m FROM cotizaciones WHERE id = ?').get(t.q.id)).toEqual({ m: null });
