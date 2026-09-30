@@ -24,6 +24,7 @@ import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
+import { contarPuertas, descuentoAutomatico, textoPuertas } from '../negocio/descuento-cantidad';
 import {
   avisoProductoCambiado,
   claveMedida,
@@ -112,7 +113,10 @@ export type Accion =
         indice: number;
         cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones'>>;
       }[];
+      /** Fija el descuento (%) a mano: deja de seguir al descuento por cantidad. */
       descuento?: number;
+      /** Vuelve al descuento por cantidad que corresponde a las puertas de la cotización. */
+      descuentoAutomatico?: true;
       flete?: number;
       /** Margen especial de toda la cotización (fracción); null vuelve al margen de cada categoría. */
       margenCotizacion?: number | null;
@@ -213,6 +217,28 @@ export function textoCambios(c: CambiosCotizacion | undefined, extras: string[] 
   return partes.length ? partes.join(' · ') : null;
 }
 const porcentajeTexto = (n: number) => `${String(n).replace('.', ',')} %`;
+type DescuentoGuardado = { descuento: number; manual: boolean };
+const descuentoDe = (q: Cotizacion): DescuentoGuardado => ({ descuento: q.descuento, manual: q.descuentoManual ?? false });
+/**
+ * Lo que cambió del descuento, para la actividad: el del tramo por cantidad (con las puertas que lo
+ * explican), el fijado a mano o el automático restaurado. Vacío si nada cambió.
+ */
+function cambioDescuento(antes: DescuentoGuardado, q: Cotizacion): string[] {
+  const { descuento, manual } = descuentoDe(q);
+  if (antes.descuento === descuento && antes.manual === manual) return [];
+  const a = porcentajeTexto(antes.descuento),
+    b = porcentajeTexto(descuento),
+    puertas = textoPuertas(contarPuertas(q.montos.lineas));
+  // Sin tramos no hay otro modo: todo descuento es de una persona y «manual» no aclara nada.
+  if (manual) return [`Descuento ${a} → ${b}${q.reglas?.descuentosPorCantidad?.length ? ' (manual)' : ''}`];
+  if (antes.manual)
+    return [
+      antes.descuento === descuento
+        ? `Descuento automático restaurado: ${b}`
+        : `Descuento automático restaurado: ${a} → ${b} (${puertas})`,
+    ];
+  return [`Descuento por cantidad ${a} → ${b} (${puertas})`];
+}
 const limpiarTexto = (valor: unknown, max: number) =>
   typeof valor === 'string' ? valor.replace(/\s+/g, ' ').trim().slice(0, max) || null : null;
 /** Fecha elegida por la persona (YYYY-MM-DD) como mediodía UTC, para que no cambie de día al mostrarla. */
@@ -282,6 +308,7 @@ export class Servicio {
       fechaEmision: null,
       vence: null,
       descuento: 0,
+      descuentoManual: false,
       flete: 0,
       margenCotizacion: null,
       observaciones: null,
@@ -352,8 +379,11 @@ export class Servicio {
         });
       } else q.incompletos.push({ indice, rechazo: res.rechazo, pregunta: pregunta(res.rechazo, s.modelo) });
     }
+    const reglas = q.reglas ?? REGLAS;
+    // El descuento por cantidad sigue a las puertas valorizadas (sin ellas no hay descuento); uno fijado a mano no se toca.
+    if (!q.descuentoManual) q.descuento = descuentoAutomatico(reglas, contarPuertas(validos));
     q.montos = validos.length
-      ? cotizar(validos, q.reglas ?? REGLAS, {
+      ? cotizar(validos, reglas, {
           descuento: q.descuento,
           flete: q.flete,
           margenCotizacion: q.margenCotizacion ?? null,
@@ -452,6 +482,7 @@ export class Servicio {
     return (
       this.sinCambios(a, b.solicitudes, b.cliente) &&
       a.descuento === b.descuento &&
+      (a.descuentoManual ?? false) === (b.descuentoManual ?? false) &&
       a.flete === b.flete &&
       (a.margenCotizacion ?? null) === (b.margenCotizacion ?? null) &&
       a.observaciones === b.observaciones &&
@@ -631,11 +662,17 @@ export class Servicio {
           if (!q.solicitudes[accion.indice]) throw new ErrorNoEncontrado('No se encontró el ítem.');
           const antes = structuredClone(q.solicitudes);
           const destino = this.abrirEdicion(q, u);
+          const descuentoAntes = descuentoDe(destino);
           destino.solicitudes.splice(accion.indice, 1);
           this.recalcular(destino);
           u.guardar(destino);
           const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
-          u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios));
+          u.registrarEvento(
+            destino.id,
+            'modificada',
+            this.autor,
+            textoCambios(cambios, cambioDescuento(descuentoAntes, destino)),
+          );
           return { cotizacion: destino, ...(cambios ? { cambios } : {}) };
         });
       case 'editar':
@@ -646,8 +683,10 @@ export class Servicio {
           const q = this.nueva();
           q.solicitudes = structuredClone(origen.solicitudes);
           q.cliente = structuredClone(origen.cliente);
-          // El descuento y el flete acordados forman parte de lo que se duplica.
+          // El descuento y el flete acordados forman parte de lo que se duplica. Uno automático se recalcula
+          // abajo con los tramos de la copia (congelados al crearla), que pueden ser otros.
           q.descuento = origen.descuento;
+          q.descuentoManual = origen.descuentoManual ?? false;
           q.flete = origen.flete;
           q.margenCotizacion = origen.margenCotizacion ?? null;
           q.observaciones = origen.observaciones;
@@ -664,7 +703,10 @@ export class Servicio {
             q.id,
             'duplicada',
             this.autor,
-            origen.numero ? `Copia de N° ${origen.numero}` : 'Copia de un borrador',
+            [
+              origen.numero ? `Copia de N° ${origen.numero}` : 'Copia de un borrador',
+              ...cambioDescuento(descuentoDe(origen), q),
+            ].join(' · '),
           );
           return { cotizacion: q };
         });
@@ -791,6 +833,15 @@ export class Servicio {
         ? sanearCliente(accion.cliente, q.cliente)
         : { cliente: q.cliente, avisos: [] as string[] };
       const avisos = [...avisosItems, ...avisosCliente];
+      if (accion.descuento !== undefined && accion.descuentoAutomatico)
+        throw new ErrorUsuario('Fija un descuento o restaura el automático, no las dos cosas a la vez.');
+      // Escribir un descuento distinto del actual lo fija a mano (repetir el valor que ya tiene no cambia nada);
+      // restaurarlo vuelve al del tramo por cantidad, que calcula `recalcular`.
+      const descuentoManual = accion.descuentoAutomatico
+        ? false
+        : accion.descuento !== undefined && aCentesimas(accion.descuento) !== q.descuento
+          ? true
+          : (q.descuentoManual ?? false);
       const descuento = accion.descuento ?? q.descuento,
         flete = accion.flete ?? (accion.despacho?.valor === undefined ? q.flete : accion.despacho.valor ?? 0);
       const reglas = q.reglas ?? REGLAS;
@@ -823,6 +874,7 @@ export class Servicio {
         JSON.stringify([solicitudes, cliente, observaciones, despacho]) ===
           JSON.stringify([q.solicitudes, q.cliente, q.observaciones, q.despacho]) &&
         descuentoNuevo === q.descuento &&
+        descuentoManual === (q.descuentoManual ?? false) &&
         flete === q.flete &&
         margenCotizacion === margenAntes
       )
@@ -832,10 +884,8 @@ export class Servicio {
         clienteAntes = destino.cliente;
       destino.solicitudes = solicitudes;
       destino.cliente = cliente;
+      const descuentoAntes = descuentoDe(destino);
       const extras = [
-        ...(descuentoNuevo !== destino.descuento
-          ? [`Descuento ${porcentajeTexto(destino.descuento)} → ${porcentajeTexto(descuentoNuevo)}`]
-          : []),
         ...(flete !== destino.flete ? [`Flete ${pesos(destino.flete)} → ${pesos(flete)}`] : []),
         ...(margenCotizacion !== margenAntes
           ? [
@@ -861,11 +911,13 @@ export class Servicio {
           extras.push(`Precio cliente de ${this.describir(anterior)} actualizado${cambio.cambios.precioUnitario === null ? ' según margen aplicado' : ` a ${pesos(cambio.cambios.precioUnitario)}`}`);
       }
       destino.descuento = descuentoNuevo;
+      destino.descuentoManual = descuentoManual;
       destino.flete = flete;
       destino.margenCotizacion = margenCotizacion;
       destino.observaciones = observaciones;
       destino.despacho = despacho;
       const todos = [...avisos, ...this.recalcular(destino)];
+      extras.unshift(...cambioDescuento(descuentoAntes, destino));
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
       u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, extras));
@@ -897,6 +949,7 @@ export class Servicio {
         // pide confirmar. Al reenviar con la versión nueva ya no hay diferencias y se emite.
         if (avisos.length) {
           q.montos = copia.montos;
+          q.descuento = copia.descuento;
           q.incompletos = [];
           q.actualizada = marca(q.actualizada);
           u.guardar(q);
@@ -1630,6 +1683,7 @@ export class Servicio {
       const antes = q.solicitudes,
         clienteAntes = q.cliente;
       const destino = this.abrirEdicion(q, u);
+      const descuentoAntes = descuentoDe(destino);
       destino.solicitudes = solicitudes;
       destino.cliente = cliente;
       const todos = [...avisos, ...this.recalcular(destino)];
@@ -1647,8 +1701,9 @@ export class Servicio {
       );
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
-      if (destino === nuevo) u.registrarEvento(destino.id, 'creada', this.autor, textoCambios(cambios));
-      else u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios));
+      const detalle = textoCambios(cambios, cambioDescuento(descuentoAntes, destino));
+      if (destino === nuevo) u.registrarEvento(destino.id, 'creada', this.autor, detalle);
+      else u.registrarEvento(destino.id, 'modificada', this.autor, detalle);
       return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
     });
   }

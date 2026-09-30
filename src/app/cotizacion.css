@@ -481,6 +481,20 @@ td small {
 .total-editable .campo.editando {
   flex-wrap: wrap;
 }
+/* Por qué el descuento vale lo que vale (tramo por cantidad o valor manual), bajo la fila editable del descuento. */
+.totals > .descuento-origen {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px 10px;
+  margin: -4px 0 12px;
+  font-size: var(--fs-xs);
+}
+.descuento-origen small {
+  flex-basis: 100%;
+  margin-left: 0;
+}
 /* Margen especial de la cotización: bajo las acciones, en una fila que se envuelve (los totales ya ocupan el alto). */
 .margen-cotizacion {
   display: flex;

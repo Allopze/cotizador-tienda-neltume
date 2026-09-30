@@ -1,11 +1,18 @@
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
+import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-cantidad';
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { abrirBaseDatos } from './base-datos';
 import type { DatosEmpresa } from './empresa';
 
 const texto = (max: number) => z.string().trim().max(max).nullable();
 const TRANSPORTISTAS_INICIALES = ['Starken', 'Transportes Paredes', 'Ignacio', 'Otro'];
+const tramoDescuento = z
+  .object({
+    desdePuertas: z.number({ error: '«Desde» debe ser un número entero de puertas.' }),
+    porcentaje: z.number({ error: 'El porcentaje del tramo debe ser un número.' }),
+  })
+  .strict();
 const logoSvg = z
   .string()
   .max(48_000)
@@ -41,6 +48,14 @@ export const configuracionNegocioSchema = z
         iva: z.number().finite().min(0).max(1),
         vigenciaDiasHabiles: z.number().int().min(0).max(365),
         descuentoMaximo: z.number().finite().min(0).max(100),
+        // Vacío por omisión: una configuración guardada antes de esta regla no aplica descuento por cantidad.
+        // Se guardan de menor a mayor umbral; la validación (umbrales distintos, porcentaje hasta el máximo)
+        // se hace abajo porque depende de `descuentoMaximo`.
+        descuentosPorCantidad: z
+          .array(tramoDescuento)
+          .max(MAX_TRAMOS, `Puedes definir hasta ${MAX_TRAMOS} tramos.`)
+          .default([])
+          .transform(ordenarTramos),
         margenes: z.object({
           puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
           puertas_solidas_oregon: z.number().finite().min(0).max(5),
@@ -54,7 +69,11 @@ export const configuracionNegocioSchema = z
           otros: z.number().finite().min(0).max(5),
         }).strict(),
       })
-      .strict(),
+      .strict()
+      .superRefine((reglas, ctx) => {
+        const problema = errorTramos(reglas.descuentosPorCantidad, reglas.descuentoMaximo);
+        if (problema) ctx.addIssue({ code: 'custom', message: problema, path: ['descuentosPorCantidad'] });
+      }),
   })
   .strict();
 
@@ -83,7 +102,7 @@ export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
       datosBancarios: leerEntorno('NELTUME_DATOS_BANCARIOS'),
       logoSvg: null,
     },
-    reglas: { ...REGLAS, margenes: { ...MARGENES_INICIALES } },
+    reglas: { ...REGLAS, descuentosPorCantidad: [], margenes: { ...MARGENES_INICIALES } },
   };
 }
 

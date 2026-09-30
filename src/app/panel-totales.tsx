@@ -1,7 +1,15 @@
 'use client';
 import type { Cotizacion } from '@/negocio/estado';
 import { conDosDecimales, leerPesos, leerPorcentaje } from '@/negocio/cifras';
-import { pesos, REGLAS } from '@/negocio/precios';
+import {
+  contarPuertas,
+  descuentoAutomatico,
+  siguienteTramo,
+  textoPuertas,
+  textoTramo,
+  tramoAplicable,
+} from '@/negocio/descuento-cantidad';
+import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
 import type { CambiosEdicion } from './contrato';
 import { iva, pct } from './formato';
@@ -11,6 +19,50 @@ interface Props {
   editable: boolean;
   guardando: string | null;
   editar: (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
+}
+
+/**
+ * De dónde sale el descuento cuando la cotización tiene tramos por cantidad: el tramo que corresponde a
+ * sus puertas (y el siguiente por alcanzar) o, si la persona lo fijó, el valor manual con la vuelta al automático.
+ */
+function OrigenDescuento({ actual, editable, guardando, editar }: Props & { actual: Cotizacion }) {
+  const tramos = actual.reglas?.descuentosPorCantidad ?? [];
+  const manual = actual.descuentoManual ?? false;
+  if (!tramos.length || !(editable || manual || actual.descuento > 0)) return null;
+  const puertas = contarPuertas(actual.montos.lineas);
+  const siguiente = siguienteTramo(tramos, puertas);
+  if (manual) {
+    const automatico = descuentoAutomatico(actual.reglas ?? REGLAS, puertas);
+    return (
+      <div className="descuento-origen" data-testid="descuento-origen">
+        <span>Descuento manual: {porcentaje(actual.descuento)}</span>
+        {editable && (
+          <button
+            type="button"
+            className="button secondary small"
+            disabled={guardando === 'descuento'}
+            onClick={() => void editar({ descuentoAutomatico: true }, 'descuento')}
+          >
+            Restaurar automático
+          </button>
+        )}
+        <small>
+          Automático: {automatico ? porcentaje(automatico) : 'sin descuento'} con {textoPuertas(puertas)}
+        </small>
+      </div>
+    );
+  }
+  return (
+    <div className="descuento-origen" data-testid="descuento-origen">
+      <span>
+        Descuento por cantidad:{' '}
+        {tramoAplicable(tramos, puertas)
+          ? `${textoPuertas(puertas)} → ${porcentaje(actual.descuento)}`
+          : `aún no aplica (${textoPuertas(puertas)})`}
+      </span>
+      {siguiente && <small>Siguiente tramo: {textoTramo(siguiente)}</small>}
+    </div>
+  );
 }
 
 /** Totales con descuento (%) y flete (CLP neto) editables. */
@@ -49,6 +101,9 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
             guardar={(v) => editar({ descuento: Math.round(leerPorcentaje(v) * 100) / 100 }, 'descuento')}
           />
         </div>
+      )}
+      {actual && (
+        <OrigenDescuento actual={actual} editable={editable} guardando={guardando} editar={editar} />
       )}
       {(!!m?.flete || editable) && (
         <div className="total-editable">

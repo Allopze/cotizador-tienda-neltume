@@ -3,7 +3,8 @@ import { conDosDecimales } from './cifras';
 /**
  * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
  * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × unitario.
- * 2. subtotal = suma de líneas; descuento = round(subtotal × porcentaje / 100).
+ * 2. subtotal = suma de líneas; descuento = round(subtotal × porcentaje / 100). El porcentaje es el fijado a mano o,
+ *    si no, el del tramo por cantidad de puertas (descuento-cantidad.ts): `cotizar` solo recibe el resultado.
  * 3. neto = subtotal − descuento + flete (el flete ya es neto entero); IVA = round(neto × iva).
  * La nota de pedido usa ajuste 0, sin descuento ni flete.
  */
@@ -14,10 +15,20 @@ export interface ReglasComerciales {
   vigenciaDiasHabiles: number;
   descuentoMaximo: number;
   /**
+   * Descuento automático por cantidad de puertas de la cotización (ver descuento-cantidad.ts). Congelado en
+   * cada cotización; las guardadas antes de esta regla no lo traen y no tienen tramos.
+   */
+  descuentosPorCantidad?: TramoDescuento[];
+  /**
    * Márgenes por categoría, expresados como fracción (0,55 = 55 %). Congelados en cada cotización: los
    * guardados antes de una categoría nueva no la traen y esa categoría usa el `otros` de la propia cotización.
    */
   margenes?: Partial<MargenesCategoria>;
+}
+/** «Desde `desdePuertas` puertas, `porcentaje` % de descuento»; el tramo aplicable es el mayor umbral alcanzado. */
+export interface TramoDescuento {
+  desdePuertas: number;
+  porcentaje: number;
 }
 export type CategoriaMargen =
   | 'puertas_solidas_mara_lenga'

@@ -113,6 +113,12 @@ export interface Cotizacion {
   vence: string | null;
   /** Porcentaje 0–50 aplicado al neto del cliente antes del IVA. */
   descuento: number;
+  /**
+   * La persona fijó el descuento a mano: no cambia con las líneas hasta que restaure el automático. Si es
+   * falso (o falta), `descuento` es el del tramo por cantidad que corresponde a las puertas de la cotización
+   * (0 si sus reglas no tienen tramos).
+   */
+  descuentoManual?: boolean;
   /** Flete neto en pesos enteros; se suma como fila propia. */
   flete: number;
   /**

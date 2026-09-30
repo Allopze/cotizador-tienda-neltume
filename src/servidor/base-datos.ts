@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 14;
+export const VERSION_ESQUEMA = 15;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -295,6 +295,23 @@ function crearEsquema(db: Database.Database) {
           FROM catalogo_meta WHERE id = 1;
         PRAGMA user_version = 14;
       `);
+    }).immediate();
+  if (version < 15)
+    db.transaction(() => {
+      // v15: descuento por cantidad. `descuento_manual` = la persona fijó el descuento (no cambia con las
+      // líneas hasta restaurar el automático). Todo descuento que ya existe lo fijó una persona, así que
+      // esas cotizaciones quedan manuales; con descuento 0 quedan automáticas, y sus reglas congeladas no
+      // tienen tramos, por lo que siguen en 0. Sin reescribir nada más: los tramos viven en `reglas_json`.
+      const tieneColumna = (db.pragma('table_info(cotizaciones)') as { name: string }[]).some(
+        (columna) => columna.name === 'descuento_manual',
+      );
+      if (!tieneColumna)
+        db.exec(`
+          ALTER TABLE cotizaciones ADD COLUMN descuento_manual INTEGER NOT NULL DEFAULT 0
+            CHECK (descuento_manual IN (0, 1));
+          UPDATE cotizaciones SET descuento_manual = 1 WHERE descuento > 0;
+        `);
+      db.exec('PRAGMA user_version = 15;');
     }).immediate();
 }
 

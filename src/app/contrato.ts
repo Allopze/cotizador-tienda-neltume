@@ -56,7 +56,10 @@ export interface CambiosEdicion {
     indice: number;
     cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones'>>;
   }[];
+  /** Fija el descuento a mano: deja de seguir al descuento por cantidad. */
   descuento?: number;
+  /** Restaura el descuento por cantidad (automático). */
+  descuentoAutomatico?: true;
   flete?: number;
   /** Fracción (0,42 = 42 %); null vuelve al margen de cada categoría. */
   margenCotizacion?: number | null;

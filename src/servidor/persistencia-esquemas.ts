@@ -129,6 +129,8 @@ export const cotizacionSchema = z.looseObject({
   origen: z.number().int().nullable().optional(),
   vence: z.string().nullable(),
   descuento: z.number().min(0).max(100),
+  /** Ausente: el descuento de quien lo guardó antes de existir el automático (se deriva al guardar). */
+  descuentoManual: z.boolean().optional(),
   flete: z.number().int().nonnegative(),
   /** Margen especial de toda la cotización (fracción); ausente o null usa el de cada categoría. */
   margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
@@ -147,6 +149,9 @@ export const cotizacionSchema = z.looseObject({
       iva: z.number().finite(),
       vigenciaDiasHabiles: z.number().int().min(0).max(365),
       descuentoMaximo: z.number().min(0).max(100),
+      descuentosPorCantidad: z
+        .array(z.object({ desdePuertas: z.number().int().min(1), porcentaje: z.number().finite().min(0).max(100) }))
+        .optional(),
       margenes: z.object({
         puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
         puertas_solidas_oregon: z.number().finite().min(0).max(5),
@@ -268,6 +273,9 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         reemplazadaPor: null,
         versionCatalogo: null,
         ...q,
+        // Un descuento guardado antes del automático lo fijó una persona (así lo persiste también `guardar`).
+        descuentoManual:
+          typeof q.descuentoManual === 'boolean' ? q.descuentoManual : typeof q.descuento === 'number' && q.descuento > 0,
         estadoComercial:
           typeof q.estadoComercial === 'string'
             ? q.estadoComercial

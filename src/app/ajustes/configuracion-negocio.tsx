@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, type FormEvent } from 'react';
 import Image from 'next/image';
+import { errorTramos, MAX_TRAMOS } from '@/negocio/descuento-cantidad';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 
@@ -18,7 +19,15 @@ interface Empresa {
 }
 interface Configuracion {
   empresa: Empresa;
-  reglas: { ajuste: number; iva: number; vigenciaDiasHabiles: number; descuentoMaximo: number; margenes: Record<string, number> };
+  reglas: {
+    ajuste: number;
+    iva: number;
+    vigenciaDiasHabiles: number;
+    descuentoMaximo: number;
+    /** Puede venir vacío; un campo vacío del formulario se guarda como NaN y se rechaza antes de enviar. */
+    descuentosPorCantidad: { desdePuertas: number; porcentaje: number }[];
+    margenes: Record<string, number>;
+  };
   transportistas: string[];
 }
 interface Estado {
@@ -45,6 +54,8 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [logoError, setLogoError] = useState('');
+  // El aviso de los tramos aparece cuando la persona los toca (o intenta guardar), no al agregar una fila vacía.
+  const [tramosTocados, setTramosTocados] = useState(false);
 
   useEffect(() => {
     const control = new AbortController();
@@ -64,6 +75,16 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
     return <p className="catalog-modal-intro">{error || 'Cargando la configuración comercial…'}</p>;
 
   const editable = estado.puedeEditar;
+  const tramos = borrador.reglas.descuentosPorCantidad ?? [];
+  const errorTramo = errorTramos(tramos, borrador.reglas.descuentoMaximo);
+  const setTramos = (siguiente: typeof tramos) => {
+    setTramosTocados(true);
+    setError('');
+    setBorrador({ ...borrador, reglas: { ...borrador.reglas, descuentosPorCantidad: siguiente } });
+  };
+  const setTramo = (indice: number, cambio: Partial<(typeof tramos)[number]>) =>
+    setTramos(tramos.map((t, i) => (i === indice ? { ...t, ...cambio } : t)));
+  const numero = (texto: string) => (texto.trim() === '' ? Number.NaN : Number(texto));
   const setEmpresa = (campo: keyof Empresa, valor: string) =>
     setBorrador((actual) => (actual ? { ...actual, empresa: { ...actual.empresa, [campo]: valor || null } } : actual));
   const campo = (campoEmpresa: keyof Empresa, etiqueta: string, multilinea = false) => {
@@ -89,12 +110,18 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
     if (!editable || ocupado) return;
+    if (errorTramo) {
+      setTramosTocados(true);
+      setError(errorTramo);
+      return;
+    }
     setOcupado(true);
     setError('');
     try {
       const data = await pedirJSON<Estado>('/api/configuracion-negocio', { json: borrador });
       setEstado(data);
       setBorrador(data.configuracion);
+      setTramosTocados(false);
       avisar('exito', 'Configuración comercial guardada.', { clave: 'configuracion-negocio' });
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
@@ -216,6 +243,72 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
             disabled={!editable || ocupado}
           />
         </label>
+      </div>
+      <div className="tramos-seccion">
+        <h3 className="eyebrow">DESCUENTO POR CANTIDAD</h3>
+        <p className="muted">
+          Descuento automático según el total de puertas de la cotización (marcos, molduras y piezas T no cuentan). Se aplica el
+          tramo más alto alcanzado y nunca supera el descuento máximo; quien cotiza puede cambiarlo en su cotización. Solo rige
+          en las cotizaciones nuevas.
+        </p>
+        {tramos.length === 0 && <p className="muted">Sin tramos: las cotizaciones no llevan descuento por cantidad.</p>}
+        <div className="tramos-descuento">
+          {tramos.map((t, i) => (
+            <div className="tramo-descuento" key={i}>
+              <label className="ia-field">
+                <span>Desde (puertas)</span>
+                <input
+                  type="number"
+                  min={2}
+                  step={1}
+                  aria-label={`Tramo ${i + 1}: desde (puertas)`}
+                  value={Number.isFinite(t.desdePuertas) ? t.desdePuertas : ''}
+                  onChange={(e) => setTramo(i, { desdePuertas: numero(e.target.value) })}
+                  disabled={!editable || ocupado}
+                />
+              </label>
+              <label className="ia-field">
+                <span>Descuento (%)</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={borrador.reglas.descuentoMaximo}
+                  step="0.01"
+                  aria-label={`Tramo ${i + 1}: descuento (%)`}
+                  value={Number.isFinite(t.porcentaje) ? t.porcentaje : ''}
+                  onChange={(e) => setTramo(i, { porcentaje: numero(e.target.value) })}
+                  disabled={!editable || ocupado}
+                />
+              </label>
+              {editable && (
+                <button
+                  type="button"
+                  className="button secondary small"
+                  aria-label={`Quitar el tramo ${i + 1}`}
+                  onClick={() => setTramos(tramos.filter((_, j) => j !== i))}
+                  disabled={ocupado}
+                >
+                  Quitar
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        {editable && (
+          <button
+            type="button"
+            className="button secondary small"
+            onClick={() => setTramos([...tramos, { desdePuertas: Number.NaN, porcentaje: Number.NaN }])}
+            disabled={ocupado || tramos.length >= MAX_TRAMOS}
+          >
+            Agregar tramo
+          </button>
+        )}
+        {tramosTocados && errorTramo && (
+          <p className="catalog-error" role="alert">
+            {errorTramo}
+          </p>
+        )}
       </div>
       <h3 className="eyebrow">TRANSPORTISTAS</h3>
       <label className="ia-field">

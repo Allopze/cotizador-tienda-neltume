@@ -2,6 +2,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { etiquetaDescuento } from '../negocio/descuento-cantidad';
 import type { Cotizacion, Despacho } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
@@ -131,7 +132,12 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const totales = [
     fila('SUBTOTAL', pesos(montos.subtotal)),
     ...(montos.descuento
-      ? [fila(`DESCUENTO ${porcentaje(montos.descuentoPorcentaje)}`, `−${pesos(montos.descuento)}`)]
+      ? [
+          fila(
+            `${etiquetaDescuento({ descuentoManual: q.descuentoManual, reglas }).toUpperCase()} ${porcentaje(montos.descuentoPorcentaje)}`,
+            `−${pesos(montos.descuento)}`,
+          ),
+        ]
       : []),
     ...(montos.flete ? [fila('FLETE', pesos(montos.flete))] : []),
     ...(montos.descuento || montos.flete ? [fila('NETO', pesos(montos.neto))] : []),

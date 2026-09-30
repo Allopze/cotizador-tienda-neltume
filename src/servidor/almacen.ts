@@ -17,7 +17,7 @@ import type {
   TipoEvento,
 } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
-import { REGLAS, type ReglasComerciales } from '../negocio/precios';
+import { REGLAS, type ReglasComerciales, type TramoDescuento } from '../negocio/precios';
 import { calcularVence, estaVencida, inicioDiaSantiago } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
 import { normalizarTexto, textoBusqueda } from './busqueda';
@@ -80,6 +80,7 @@ type FilaCotizacion = {
   origen_numero: number | null;
   vence: string | null;
   descuento: number;
+  descuento_manual: number;
   flete: number;
   margen_cotizacion: number | null;
   creada_por: string | null;
@@ -167,6 +168,22 @@ type FilaNota = {
   anulada: number;
 };
 
+function tramosDesdeJson(valor: unknown): TramoDescuento[] | undefined {
+  if (!Array.isArray(valor)) return undefined;
+  const tramos = valor as Partial<TramoDescuento>[];
+  const validos = tramos.every(
+    (t) =>
+      t !== null &&
+      typeof t === 'object' &&
+      Number.isInteger(t.desdePuertas) &&
+      t.desdePuertas! >= 1 &&
+      Number.isFinite(t.porcentaje) &&
+      t.porcentaje! >= 0 &&
+      t.porcentaje! <= 100,
+  );
+  return validos ? tramos.map((t) => ({ desdePuertas: t.desdePuertas!, porcentaje: t.porcentaje! })) : undefined;
+}
+
 function reglasDesdeJson(valor: string | null): ReglasComerciales {
   if (!valor) return { ...REGLAS };
   try {
@@ -178,11 +195,14 @@ function reglasDesdeJson(valor: string | null): ReglasComerciales {
       Number.isFinite(r.descuentoMaximo)
     ) {
       const margenes = r.margenes && typeof r.margenes === 'object' ? r.margenes : undefined;
+      // Una lista ilegible se descarta entera: sin tramos (y no a medias) es lo que tenían las anteriores.
+      const tramos = tramosDesdeJson(r.descuentosPorCantidad);
       return {
         ajuste: r.ajuste!,
         iva: r.iva!,
         vigenciaDiasHabiles: r.vigenciaDiasHabiles!,
         descuentoMaximo: r.descuentoMaximo!,
+        ...(tramos ? { descuentosPorCantidad: tramos } : {}),
         ...(margenes ? { margenes } : {}),
       };
     }
@@ -348,6 +368,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           pdf: f.pdf,
           vence: f.vence ?? (f.fecha_emision ? calcularVence(f.fecha_emision, reglas.vigenciaDiasHabiles) : null),
           descuento: f.descuento,
+          descuentoManual: !!f.descuento_manual,
           flete: f.flete,
           margenCotizacion: f.margen_cotizacion ?? null,
           observaciones: f.observaciones ?? null,
@@ -517,7 +538,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut, cliente_giro,
       cliente_telefono, cliente_direccion, cliente_comuna, cliente_comuna_normalizada,
       cliente_proyecto, cliente_proyecto_normalizado, creada, actualizada, pdf, fecha_emision,
-      fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, flete, margen_cotizacion, creada_por, emitida_por,
+      fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, descuento_manual, flete, margen_cotizacion, creada_por, emitida_por,
       aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda,
       observaciones, despacho_direccion, despacho_transporte, despacho_entrega, reglas_json,
       estado_comercial, estado_operativo, despacho_destino, despacho_valor,
@@ -526,7 +547,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
       @cliente_telefono, @cliente_direccion, @cliente_comuna, @cliente_comuna_normalizada,
       @cliente_proyecto, @cliente_proyecto_normalizado, @creada, @actualizada, @pdf, @fecha_emision,
-      @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @flete, @margen_cotizacion, @creada_por, @emitida_por,
+      @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @descuento_manual, @flete, @margen_cotizacion, @creada_por, @emitida_por,
       @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda,
       @observaciones, @despacho_direccion, @despacho_transporte, @despacho_entrega, @reglas_json,
       @estado_comercial, @estado_operativo, @despacho_destino, @despacho_valor,
@@ -553,6 +574,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       origen_ausente = excluded.origen_ausente,
       vence = excluded.vence,
       descuento = excluded.descuento,
+      descuento_manual = excluded.descuento_manual,
       flete = excluded.flete,
       margen_cotizacion = excluded.margen_cotizacion,
       creada_por = excluded.creada_por,
@@ -602,6 +624,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     origen_ausente: Number(origenAusente),
     vence: q.vence,
     descuento: q.descuento,
+    // Sin el dato (estado anterior al descuento automático) lo que ya había fue fijado por una persona.
+    descuento_manual: Number(q.descuentoManual ?? q.descuento > 0),
     flete: q.flete,
     margen_cotizacion: q.margenCotizacion ?? null,
     creada_por: q.creadaPor,

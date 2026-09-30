@@ -1,5 +1,6 @@
 import type { KeyboardEvent } from 'react';
 import { ajusteMedida, medidaReferencia, metrosTexto } from '@/catalogo/escalones';
+import { etiquetaDescuento } from '@/negocio/descuento-cantidad';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
 import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
 import { estaVencida } from '@/negocio/vigencia';
@@ -206,7 +207,7 @@ export function resumenTexto(q: Cotizacion) {
       ? [
           `Subtotal: ${pesos(q.montos.subtotal)}`,
           ...(q.montos.descuento
-            ? [`Descuento ${pct(q.montos.descuentoPorcentaje)}: −${pesos(q.montos.descuento)}`]
+            ? [`${etiquetaDescuento(q)} ${pct(q.montos.descuentoPorcentaje)}: −${pesos(q.montos.descuento)}`]
             : []),
           ...(q.montos.flete ? [`Flete: ${pesos(q.montos.flete)}`] : []),
         ]

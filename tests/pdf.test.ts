@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clienteVacio, type Producto } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
-import { cotizar, montosVacios } from '../src/negocio/precios';
+import { cotizar, montosVacios, REGLAS, type ReglasComerciales } from '../src/negocio/precios';
 import { cerrarBaseDatos } from '../src/servidor/base-datos';
 
 const navegador = vi.hoisted(() => ({ demora: 0, cerrado: 0 }));
@@ -122,6 +122,31 @@ describe('Plantillas', () => {
     expect(html).toMatch(/FLETE<\/span><b>\$15\.000/);
     expect(html).toContain('Incluye flete por despacho');
     expect(html).not.toContain('Flete por despacho</td>');
+  });
+
+  it('el descuento se rotula «por cantidad» solo si lo aplicó un tramo, y el cliente nunca ve márgenes', async () => {
+    await aislarBaseDatos();
+    const reglas = { ...REGLAS, descuentosPorCantidad: [{ desdePuertas: 10, porcentaje: 5 }] };
+    const montos = cotizar([{ producto: puerta, cantidad: 10 }], reglas, { descuento: 5 });
+    const pdf = async (q: Partial<Cotizacion>, reglasDocumento: ReglasComerciales = reglas) =>
+      textoVisible(
+        await plantilla(
+          { ...cotizacion(), descuento: 5, reglas: reglasDocumento, ...q },
+          {
+            tipo: 'cotizacion', numero: 325, montos, fecha: '2026-09-28T12:00:00.000Z', vence: '2026-10-12',
+            reglas: reglasDocumento,
+          },
+        ),
+      );
+    const automatico = await pdf({ descuentoManual: false });
+    expect(automatico).toMatch(/DESCUENTO POR CANTIDAD 5 %\s+−\$/);
+    const manual = await pdf({ descuentoManual: true });
+    expect(manual).toMatch(/DESCUENTO 5 %\s+−\$/);
+    expect(manual).not.toContain('POR CANTIDAD');
+    // Sin tramos en las reglas (cotizaciones anteriores) sigue igual.
+    const anterior = await pdf({ descuentoManual: false }, REGLAS);
+    expect(anterior).toMatch(/DESCUENTO 5 %\s+−\$/);
+    for (const texto of [automatico, manual, anterior]) expect(texto).not.toMatch(/margen/i);
   });
 
   it('la nota imprime giro, despacho, transporte y quién aprobó', async () => {
