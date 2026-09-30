@@ -29,6 +29,17 @@ const clienteParcial = z
     proyecto: texto(300),
   })
   .strict();
+/** Datos logísticos: los mismos en aprobar, editar, despacho y el paso «despachada». */
+const despachoSchema = z
+  .object({
+    direccion: texto(300),
+    transporte: texto(120),
+    entregaComprometida: texto(120),
+    destino: texto(300),
+    // Se acepta aunque esté fijo desde la emisión: así el servicio responde con el motivo y no un 400 genérico.
+    valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
+  })
+  .strict();
 const accionSchema = z.discriminatedUnion('tipo', [
   z
     .object({
@@ -75,16 +86,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       id: z.uuid(),
       actualizada: version,
       confirmarVencida: z.boolean().optional(),
-      despacho: z
-        .object({
-          direccion: z.string().max(300).nullable().optional(),
-          transporte: z.string().max(120).nullable().optional(),
-          entregaComprometida: z.string().max(120).nullable().optional(),
-          destino: z.string().max(300).nullable().optional(),
-          valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
-        })
-        .strict()
-        .optional(),
+      despacho: despachoSchema.optional(),
     })
     .strict(),
   z.object({ tipo: z.literal('duplicar'), id: z.uuid() }).strict(),
@@ -139,17 +141,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       flete: z.number().int().min(0).max(100_000_000).optional(),
       margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
       observaciones: z.string().max(2000).nullable().optional(),
-      despacho: z
-        .object({
-          direccion: z.string().max(300).nullable().optional(),
-          transporte: z.string().max(120).nullable().optional(),
-          entregaComprometida: z.string().max(120).nullable().optional(),
-          destino: z.string().max(300).nullable().optional(),
-          valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
-        })
-        .strict()
-        .nullable()
-        .optional(),
+      despacho: despachoSchema.nullable().optional(),
     })
     .strict(),
   z.object({
@@ -157,21 +149,27 @@ const accionSchema = z.discriminatedUnion('tipo', [
     monto: z.number().int().positive().max(100_000_000), fecha: z.iso.date().optional(),
     observacion: z.string().max(500).nullable().optional(),
   }).strict(),
+  z.object({
+    tipo: z.literal('anular_pago'), id: z.uuid(), actualizada: version,
+    pagoId: z.string().min(1).max(100), motivo: z.string().max(300).optional(),
+  }).strict(),
+  z.object({
+    tipo: z.literal('despacho'), id: z.uuid(), actualizada: version,
+    despacho: despachoSchema,
+  }).strict(),
   z.object({ tipo: z.literal('comentario'), id: z.uuid(), actualizada: version, texto: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ tipo: z.literal('comercial'), id: z.uuid(), actualizada: version, estado: z.enum(['seguimiento', 'rechazada']) }).strict(),
   z.object({ tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version }).strict(),
   z.object({
     tipo: z.literal('operacion'), id: z.uuid(), actualizada: version,
     paso: z.enum(['iniciar_produccion', 'produccion_terminada', 'lista_despacho', 'despachada', 'completada']),
-    despacho: z.object({
-      direccion: texto(300), transporte: texto(120), entregaComprometida: texto(120), destino: texto(300),
-      valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
-    }).strict().optional(),
+    despacho: despachoSchema.optional(),
   }).strict(),
   z.object({
     tipo: z.literal('facturacion'), id: z.uuid(), actualizada: version,
     estado: z.enum(['pendiente', 'facturada']), tipoDocumento: z.enum(['factura', 'boleta']).nullable().optional(),
-    identificadorExterno: z.string().max(120).nullable().optional(), fecha: z.iso.datetime().nullable().optional(),
+    identificadorExterno: z.string().max(120).nullable().optional(),
+    fecha: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
   }).strict(),
 ]);
 const fecha = z.iso.date();

@@ -26,6 +26,14 @@ export interface Despacho {
   valor?: number | null;
 }
 export type EstadoComercial = 'pendiente' | 'enviada' | 'seguimiento' | 'aprobada' | 'rechazada' | 'vendida';
+export const etiquetaComercial: Record<EstadoComercial, string> = {
+  pendiente: 'Pendiente',
+  enviada: 'Enviada',
+  seguimiento: 'En seguimiento',
+  aprobada: 'Aprobada',
+  rechazada: 'Rechazada / cancelada',
+  vendida: 'Vendida',
+};
 export type EstadoOperativo =
   | 'sin_pedido'
   | 'anticipo_pagado'
@@ -37,6 +45,18 @@ export type EstadoOperativo =
   | 'lista_despacho'
   | 'despachada'
   | 'completada';
+export const etiquetaOperativo: Record<EstadoOperativo, string> = {
+  sin_pedido: 'Sin nota de pedido',
+  anticipo_pagado: '50 % pagado',
+  pedido_generado: 'Nota de pedido generada',
+  en_produccion: 'En producción',
+  produccion_terminada: 'Producción terminada',
+  saldo_pendiente: 'Saldo pendiente',
+  pagada: '100 % pagado',
+  lista_despacho: 'Lista para despacho',
+  despachada: 'Despachada',
+  completada: 'Completada',
+};
 export interface Pago {
   id: string;
   fecha: string;
@@ -55,6 +75,12 @@ export interface Facturacion {
   tipo: 'factura' | 'boleta' | null;
   identificadorExterno: string | null;
   fecha: string | null;
+}
+/** «Pendiente de facturación» o «Facturada · Factura N° 123». */
+export function etiquetaFacturacion(f: Facturacion | undefined) {
+  if (f?.estado !== 'facturada') return 'Pendiente de facturación';
+  const documento = f.tipo === 'boleta' ? 'Boleta' : 'Factura';
+  return `Facturada · ${documento}${f.identificadorExterno ? ` N° ${f.identificadorExterno}` : ''}`;
 }
 export interface NotaPedido {
   numero: number;
@@ -119,6 +145,18 @@ export interface Cotizacion {
   comentariosInternos?: ComentarioInterno[];
   facturacion?: Facturacion;
 }
+/** Anticipo que habilita la nota de pedido y la producción: la mitad del total, redondeada hacia arriba. */
+export const anticipoMinimo = (total: number) => Math.ceil(total * 0.5);
+/** «Otro» solo indica que falta el nombre: no identifica a quien lleva el pedido. */
+export const sinTransportista = (transporte: string | null | undefined) =>
+  !transporte?.trim() || transporte.trim().toLowerCase() === 'otro';
+type FaseOperativa = Pick<Cotizacion, 'estado' | 'estadoOperativo'>;
+/** Un pago se anula mientras la operación no llegue a «Lista para despacho» (ahí el saldo ya está pagado). */
+export const pagoAnulable = (q: FaseOperativa) =>
+  q.estado === 'aprobada' && !['lista_despacho', 'despachada', 'completada'].includes(q.estadoOperativo ?? '');
+/** Con la cotización aprobada, los datos de despacho se editan hasta registrar el despacho. */
+export const despachoEditable = (q: FaseOperativa) =>
+  q.estado === 'aprobada' && !['despachada', 'completada'].includes(q.estadoOperativo ?? '');
 /** Fila del listado: sin historial, solicitudes ni líneas. */
 export interface ResumenCotizacion {
   id: string;
@@ -180,6 +218,8 @@ export type TipoEvento =
   | 'reemplazada'
   | 'desvinculada'
   | 'pago_registrado'
+  | 'pago_anulado'
+  | 'despacho_actualizado'
   | 'comentario'
   | 'seguimiento'
   | 'produccion'
@@ -200,6 +240,8 @@ export const etiquetaEvento: Record<TipoEvento, string> = {
   reemplazada: 'Reemplazada',
   desvinculada: 'Queda como cotización nueva',
   pago_registrado: 'Pago registrado',
+  pago_anulado: 'Pago anulado',
+  despacho_actualizado: 'Despacho actualizado',
   comentario: 'Comentario interno',
   seguimiento: 'Seguimiento actualizado',
   produccion: 'Producción iniciada',

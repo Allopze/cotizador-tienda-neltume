@@ -8,6 +8,7 @@ import type {
   Cotizacion,
   ComentarioInterno,
   Estado,
+  EstadoComercial,
   EstadoCotizacion,
   EventoCotizacion,
   Mensaje,
@@ -227,6 +228,10 @@ const lineaDesdeFila = (l: FilaLinea): Linea => ({
   margenPersonalizado: !!l.margen_personalizado,
 });
 
+/** Una cotización anulada es siempre «rechazada»: también las que se anularon antes de fijarlo al anular. */
+const estadoComercialGuardado = (estado: EstadoCotizacion, comercial: EstadoComercial): EstadoComercial =>
+  estado === 'anulada' ? 'rechazada' : comercial;
+
 function agrupar<T extends { cotizacion_id: string }>(filas: T[]) {
   const mapa = new Map<string, T[]>();
   for (const fila of filas) {
@@ -278,7 +283,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     const lineas = hijos<FilaLinea>(`SELECT * FROM cotizacion_lineas $FILTRO ORDER BY cotizacion_id, orden`);
     const notas = hijos<FilaNota>(`SELECT * FROM notas_pedido $FILTRO`);
     const lineasNota = hijos<FilaLinea>(`SELECT * FROM nota_lineas $FILTRO ORDER BY cotizacion_id, orden`);
-    const pagos = hijos<FilaPago>(`SELECT cotizacion_id, id, fecha, monto, observacion, usuario FROM pagos $FILTRO ORDER BY fecha, id`);
+    // Los pagos del mismo día salen en el orden en que se registraron (rowid), no en el de su id aleatorio.
+    const pagos = hijos<FilaPago>(`SELECT cotizacion_id, id, fecha, monto, observacion, usuario FROM pagos $FILTRO ORDER BY fecha, rowid`);
     const comentarios = hijos<FilaComentario>(`SELECT cotizacion_id, id, fecha, texto, usuario FROM comentarios_internos $FILTRO ORDER BY fecha, id`);
 
     const resultado: Cotizacion[] = [];
@@ -365,7 +371,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           reemplazadaPor: f.reemplazada_por,
           versionCatalogo: f.version_catalogo,
           nota: null,
-          estadoComercial: f.estado_comercial,
+          estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
           estadoOperativo: f.estado_operativo ?? (f.estado === 'aprobada' ? 'pedido_generado' : 'sin_pedido'),
           pagos: pagos.get(f.id) ?? [],
           comentariosInternos: comentarios.get(f.id) ?? [],
@@ -1203,7 +1209,7 @@ export class Almacen {
             f.nota_numero === null
               ? null
               : { numero: f.nota_numero, pdf: f.nota_pdf!, fecha: f.nota_fecha!, anulada: !!f.nota_anulada },
-          estadoComercial: f.estado_comercial,
+          estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
           estadoOperativo: f.estado_operativo ?? 'sin_pedido',
           pagado: f.pagado,
           saldoPendiente: Math.max(0, (f.total ?? 0) - f.pagado),

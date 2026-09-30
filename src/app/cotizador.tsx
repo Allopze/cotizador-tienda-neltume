@@ -1,7 +1,7 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { esEditable, etiquetaEstado, type Cotizacion, type Despacho, type Mensaje } from '@/negocio/estado';
+import { anticipoMinimo, esEditable, etiquetaEstado, type Cotizacion, type Despacho, type Mensaje } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
@@ -10,8 +10,8 @@ import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
 import { useConfirmacion } from './dialogo';
-import { useAnulacion, useAprobacion, useEmision } from './dialogos-cotizacion';
-import type { CambiosEdicion, Detalle, Resultado } from './contrato';
+import { useAnulacion, useAnulacionPago, useAprobacion, useEmision } from './dialogos-cotizacion';
+import type { CambiosEdicion, Despacho as CambiosDespacho, Detalle, Resultado } from './contrato';
 import {
   SIN_CLIENTE,
   comportamientoScroll,
@@ -93,6 +93,7 @@ export function Cotizador({
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirAprobacion, dialogoAprobacion] = useAprobacion();
   const [pedirAnulacion, dialogoAnulacion] = useAnulacion();
+  const [pedirAnulacionPago, dialogoAnulacionPago] = useAnulacionPago();
   const [pedirEmision, dialogoEmision] = useEmision();
   const mensajes = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
@@ -602,6 +603,43 @@ export function Cotizador({
       )
         avisar('exito', `Cotización ${numeroCotizacion(q.numero)} anulada.`, { clave: 'operacion' });
     },
+    async anularPago(pagoId) {
+      const q = actual;
+      const pago = q?.pagos?.find((p) => p.id === pagoId);
+      if (!q || !pago || ocupado) return false;
+      // Con la nota ya generada, quedar bajo el 50 % frena la producción hasta volver a registrar el anticipo.
+      const restante = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0) - pago.monto;
+      const minimo = anticipoMinimo(q.montos.total);
+      const frenaProduccion =
+        !!q.nota && ['pedido_generado', 'en_produccion'].includes(q.estadoOperativo ?? '') && restante < minimo;
+      const datos = await pedirAnulacionPago({
+        monto: pesos(pago.monto),
+        fecha: fechaLarga(pago.fecha),
+        ...(frenaProduccion
+          ? {
+              aviso: `La nota de pedido ya está generada y quedarían ${pesos(restante)} pagados, menos del 50 % (${pesos(minimo)}): la producción no podrá ${q.estadoOperativo === 'pedido_generado' ? 'iniciarse' : 'terminarse'} hasta volver a registrar el anticipo.`,
+            }
+          : {}),
+      });
+      if (!datos) return false;
+      const ok = await ejecutar(
+        'workflow',
+        { tipo: 'anular_pago', pagoId, ...versionDe(q), ...(datos.motivo ? { motivo: datos.motivo } : {}) },
+        q,
+      );
+      if (ok) avisar('exito', `Pago de ${pesos(pago.monto)} anulado.`, { clave: 'operacion' });
+      return ok;
+    },
+    async despacho(cambios: CambiosDespacho, campo: string) {
+      const q = actual;
+      if (!q || ocupado) return false;
+      setGuardando(campo);
+      try {
+        return await ejecutar('workflow', { tipo: 'despacho', despacho: cambios, ...versionDe(q) }, q);
+      } finally {
+        setGuardando(null);
+      }
+    },
     async editar(cambios: CambiosEdicion, campo: string) {
       const q = actual;
       if (!q || ocupado) return false;
@@ -1100,6 +1138,7 @@ export function Cotizador({
       {confirmacion}
       {dialogoAprobacion}
       {dialogoAnulacion}
+      {dialogoAnulacionPago}
       {dialogoEmision}
     </div>
   );

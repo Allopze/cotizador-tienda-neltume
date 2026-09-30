@@ -826,6 +826,7 @@ td small {
   font-size: var(--fs-xs);
 }
 .workflow-payment input,
+.workflow-payment select,
 .workflow-comment textarea {
   min-height: 38px;
   width: 100%;
@@ -851,6 +852,12 @@ td small {
 .workflow-ledger strong {
   flex: none;
   color: var(--ink);
+}
+.workflow-ledger-monto {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 10px;
 }
 .workflow-actions {
   justify-content: flex-start;

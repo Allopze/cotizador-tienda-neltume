@@ -1,12 +1,18 @@
 'use client';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { etiquetaEstado, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
+import {
+  etiquetaComercial,
+  etiquetaEstado,
+  etiquetaOperativo,
+  type EstadoCotizacion,
+  type ResumenCotizacion,
+} from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { Listado } from './contrato';
 import { EncabezadoPagina } from './encabezado-pagina';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
-import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
+import { SIN_CLIENTE, SIN_NUMERO, estadoPago, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
 import { esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
 import { Actividad } from './actividad';
 
@@ -313,6 +319,7 @@ function Fila({
 }) {
   const autor = q.anuladaPor ?? q.aprobadaPor ?? q.emitidaPor ?? q.creadaPor;
   const vencida = q.vencida && q.estado === 'emitida';
+  const pago = estadoPago(q);
   return (
     <li>
       {/* Enlace y no botón: abre la cotización en el cotizador (también en otra pestaña). */}
@@ -345,9 +352,9 @@ function Fila({
         <span className="history-estado">
           <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
           {vencida && <span className="status vencida">Vencida</span>}
-          <small>{q.estadoComercial ?? (q.estado === 'emitida' ? 'enviada' : q.estado)}</small>
-          {q.nota && <small>{q.estadoOperativo?.replaceAll('_', ' ') ?? 'pedido generado'}</small>}
-          <small>Pago {Math.round(q.porcentajePagado ?? 0)}% · {pesos(q.pagado ?? 0)}</small>
+          <small>{etiquetaComercial[q.estadoComercial ?? (q.estado === 'emitida' ? 'enviada' : 'pendiente')]}</small>
+          {q.nota && <small>{etiquetaOperativo[q.estadoOperativo ?? 'pedido_generado']}</small>}
+          {pago && <small>{pago}{q.pagado ? ` · ${pesos(q.pagado)}` : ''}</small>}
         </span>
         <strong>{pesos(q.total)}</strong>
         <span aria-hidden>›</span>

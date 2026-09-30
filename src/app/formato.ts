@@ -44,6 +44,18 @@ export function validez(q: Pick<Cotizacion, 'vence' | 'reglas'> | null) {
 export const vencida = (q: Pick<Cotizacion, 'estado' | 'vence'> | null) =>
   q?.estado === 'emitida' && estaVencida(q.vence);
 
+/**
+ * Estado de pago de una fila del listado: «Sin pagos», «Pago 50 %» o «Pagada». Un borrador o una cotización
+ * anulada o reemplazada no tiene pagos que mostrar.
+ */
+export function estadoPago(q: Pick<ResumenCotizacion, 'estado' | 'pagado' | 'total' | 'porcentajePagado'>) {
+  if (q.estado !== 'emitida' && q.estado !== 'aprobada') return null;
+  const pagado = q.pagado ?? 0;
+  if (pagado <= 0) return 'Sin pagos';
+  if (q.total > 0 && pagado >= q.total) return 'Pagada';
+  return `Pago ${Math.min(99, Math.max(1, Math.round(q.porcentajePagado ?? 0)))} %`;
+}
+
 const MINUSCULAS = new Set(['de', 'del', 'en', 'con', 'y', 'la', 'el']);
 const ACENTOS: [RegExp, string][] = [
   [/\bOregon\b/g, 'Oregón'],
