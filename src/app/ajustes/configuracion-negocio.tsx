@@ -30,11 +30,13 @@ const vacío = (v: string | null) => v ?? '';
 const ETIQUETAS_MARGEN: [string, string][] = [
   ['puertas_solidas_mara_lenga', 'Puertas sólidas Mara / Lenga'],
   ['puertas_solidas_oregon', 'Puertas sólidas Pino Oregón'],
+  ['puertas_solidas_rauli', 'Puertas sólidas Raulí'],
   ['puertas_prepintadas', 'Puertas prepintadas'],
   ['puertas_enchapadas_mara', 'Puertas enchapadas Mara'],
   ['marcos_finger_sin_enchape', 'Marcos Pino Finger sin enchape'],
   ['marcos_finger_enchapados', 'Marcos Pino Finger enchapados'],
-  ['otros', 'Otros productos'],
+  ['accesorios_madera_solida', 'Marcos, molduras y piezas T de madera sólida'],
+  ['otros', 'Otros productos (último recurso)'],
 ];
 
 export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number }) {
@@ -166,7 +168,7 @@ export function ConfiguracionNegocio({ avisar }: { avisar: (tipo: TipoAviso, tex
               min={0}
               max={500}
               step="0.01"
-              value={Number(borrador.reglas.margenes?.[clave] ?? 0) * 100}
+              value={Number((Number(borrador.reglas.margenes?.[clave] ?? 0) * 100).toFixed(2))}
               onChange={(e) => setBorrador({
                 ...borrador,
                 reglas: {

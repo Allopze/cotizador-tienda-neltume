@@ -10,7 +10,7 @@ import {
   pagoAnulable,
   type Cotizacion,
 } from '@/negocio/estado';
-import { descripcionLinea, margenProducto, pesos, porcentaje } from '@/negocio/precios';
+import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
 import { leerPesos } from '@/negocio/cifras';
 import { fechaLocal } from '@/negocio/vigencia';
 import { CampoEditable } from './campo-editable';
@@ -28,6 +28,7 @@ import {
   validez,
   vencida,
 } from './formato';
+import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
 import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales } from './panel-totales';
 import { pedirJSON } from './solicitud';
@@ -150,7 +151,8 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
       </section>
     );
   const puedeModificar = actual?.estado !== 'emitida' || modificando === actual.id;
-  const editable = !!actual && esEditable(actual) && puedeModificar && !ocupado;
+  const admiteCambios = !!actual && esEditable(actual) && puedeModificar;
+  const editable = admiteCambios && !ocupado;
   const conItems = !!actual?.montos.lineas.length;
   const listo = conItems && !actual.incompletos.length;
   const estado = actual.estado;
@@ -400,7 +402,10 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         <strong>{descripcion}</strong>
                         <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
                         {linea && <small>{referenciaCatalogo(linea)}</small>}
-                        {linea?.margenPersonalizado && <small className="margen-manual">Margen manual: {porcentaje((linea.margen ?? 0) * 100)}</small>}
+                        {/* Con la cotización editable, el margen se ve (y se cambia) en el bloque de edición de la línea. */}
+                        {!editable && linea && textoMargenLinea(actual, linea) && (
+                          <small className="margen-manual">{textoMargenLinea(actual, linea)}</small>
+                        )}
                         {s.modeloOriginal && s.coincidenciaModelo && (
                           <small className={`match-confidence ${s.coincidenciaModelo}`}>
                             {s.coincidenciaModelo === 'alias' ? 'Normalizado desde' : 'Revisar posible coincidencia'}: {s.modeloOriginal}
@@ -438,7 +443,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                         )}
                         {editable && (
                           <div className="item-editables">
-                            {linea && <small className="precio-trazabilidad">Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} → margen {porcentaje((linea.margen ?? 0) * 100)} → cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}</small>}
+                            {linea && <small className="precio-trazabilidad">Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} → cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}</small>}
                             <CampoEditable
                               etiqueta="Descripción para el documento"
                               valor={s.descripcion ?? ''}
@@ -534,26 +539,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                               guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { observaciones: v || null } }] }, `item.${i}.observaciones`)}
                             />
                             {linea && (
-                              <label className="ia-field item-select-field">
-                                <span>Margen aplicado{linea.margenPersonalizado ? ' · modificado manualmente' : ' · estándar de categoría'}</span>
-                                <input
-                                  key={`${actual.actualizada}-${i}-margen`}
-                                  type="number"
-                                  min={-50}
-                                  max={500}
-                                  step="0.01"
-                                  defaultValue={Number(((linea.margen ?? margenProducto(linea.producto, actual.reglas ?? { ajuste: 0.25 })) * 100).toFixed(2))}
-                                  disabled={!editable || ocupado}
-                                  readOnly={!editable}
-                                  onBlur={(e) => {
-                                    const nuevo = Number(e.currentTarget.value);
-                                    const vigente = (linea.margen ?? margenProducto(linea.producto, actual.reglas ?? { ajuste: 0.25 })) * 100;
-                                    if (Number.isFinite(nuevo) && Math.abs(nuevo - vigente) >= 0.001)
-                                      void acciones.editar({ items: [{ indice: i, cambios: { margen: nuevo / 100 } }] }, `item.${i}.margen`);
-                                  }}
-                                />
-                                <small>Estándar de categoría: {porcentaje(margenProducto(linea.producto, actual.reglas ?? { ajuste: 0.25 }))}</small>
-                              </label>
+                              <MargenLinea actual={actual} linea={linea} indice={i} editable={editable} editar={acciones.editar} />
                             )}
                           </div>
                         )}
@@ -699,6 +685,13 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
               </p>
             )}
           </div>
+          <MargenCotizacion
+            actual={actual}
+            admiteCambios={admiteCambios}
+            editable={editable}
+            guardando={guardando}
+            editar={acciones.editar}
+          />
           {actual && (actual.pdf || actual.nota) && (
             <div className="quote-docs">
               {actual.pdf && (

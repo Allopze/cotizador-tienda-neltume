@@ -7,7 +7,7 @@ import { resolverItem } from '../src/catalogo/resolver';
 import { estadoInicial, type Cotizacion, type Estado } from '../src/negocio/estado';
 import { cotizar } from '../src/negocio/precios';
 import { Almacen, guardarEstadoCompleto } from '../src/servidor/almacen';
-import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
+import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { migrarJsonASqlite } from '../src/servidor/migracion-sqlite';
 import { completarEstadoLegado } from '../src/servidor/persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
@@ -180,13 +180,15 @@ describe('Persistencia SQLite', () => {
         VALUES ('IA-1', 'Huilo Huilo', 'HUILOHUILO', 'PUERTA', 'MARA', '1,00 A 1,05', 1, 1.05, 2.4, 100000, 'Huilo Huilo MARA 1,00 A 1,05 MT X 2,4 MT', '2026-01-01T00:00:00.000Z');
       ALTER TABLE cotizacion_lineas DROP COLUMN descripcion_documento;
       ALTER TABLE nota_lineas DROP COLUMN descripcion_documento;
+      ALTER TABLE cotizaciones DROP COLUMN margen_cotizacion;
       PRAGMA user_version = 11;
     `);
     db.close();
 
     const migrada = abrirBaseDatos(rutaDb, { cachear: false });
     try {
-      expect(migrada.pragma('user_version', { simple: true })).toBe(12);
+      // Pasa por v12 y sigue hasta la versión vigente del esquema (las posteriores tienen sus propias pruebas).
+      expect(migrada.pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
       const descripciones = (tabla: string) =>
         migrada.prepare(`SELECT cotizacion_id AS id, orden, descripcion, descripcion_documento AS documento FROM ${tabla} ORDER BY cotizacion_id, orden`).all();
       expect(descripciones('cotizacion_lineas')).toEqual([

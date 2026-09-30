@@ -115,6 +115,12 @@ export interface Cotizacion {
   descuento: number;
   /** Flete neto en pesos enteros; se suma como fila propia. */
   flete: number;
+  /**
+   * Margen especial de toda la cotización, como fracción (0,42 = 42 %). Pasa por encima del margen de la
+   * categoría y por debajo del de cada línea; null (o ausente) usa el de cada categoría. La nota de pedido
+   * no lo usa: se calcula a precio de fábrica.
+   */
+  margenCotizacion?: number | null;
   /** Texto comercial o instrucciones que deben acompañar al documento. */
   observaciones?: string | null;
   /** Datos de despacho que se pueden preparar antes de aprobar. */
