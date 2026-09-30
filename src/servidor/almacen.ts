@@ -17,12 +17,13 @@ import type {
   TipoEvento,
 } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
-import { REGLAS, type ReglasComerciales, type TramoDescuento } from '../negocio/precios';
+import { descuentoEsManual } from '../negocio/descuento-cantidad';
+import { REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { calcularVence, estaVencida, inicioDiaSantiago } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
 import { normalizarTexto, textoBusqueda } from './busqueda';
 import { ErrorConflicto, ErrorUsuario, registrarError } from './errores';
-import { cotizacionSchema, estadoPersistidoSchema } from './persistencia-esquemas';
+import { cotizacionSchema, estadoPersistidoSchema, tramosDescuentoSchema } from './persistencia-esquemas';
 
 export { directorioDatos };
 
@@ -168,22 +169,6 @@ type FilaNota = {
   anulada: number;
 };
 
-function tramosDesdeJson(valor: unknown): TramoDescuento[] | undefined {
-  if (!Array.isArray(valor)) return undefined;
-  const tramos = valor as Partial<TramoDescuento>[];
-  const validos = tramos.every(
-    (t) =>
-      t !== null &&
-      typeof t === 'object' &&
-      Number.isInteger(t.desdePuertas) &&
-      t.desdePuertas! >= 1 &&
-      Number.isFinite(t.porcentaje) &&
-      t.porcentaje! >= 0 &&
-      t.porcentaje! <= 100,
-  );
-  return validos ? tramos.map((t) => ({ desdePuertas: t.desdePuertas!, porcentaje: t.porcentaje! })) : undefined;
-}
-
 function reglasDesdeJson(valor: string | null): ReglasComerciales {
   if (!valor) return { ...REGLAS };
   try {
@@ -196,13 +181,13 @@ function reglasDesdeJson(valor: string | null): ReglasComerciales {
     ) {
       const margenes = r.margenes && typeof r.margenes === 'object' ? r.margenes : undefined;
       // Una lista ilegible se descarta entera: sin tramos (y no a medias) es lo que tenían las anteriores.
-      const tramos = tramosDesdeJson(r.descuentosPorCantidad);
+      const tramos = tramosDescuentoSchema.safeParse(r.descuentosPorCantidad);
       return {
         ajuste: r.ajuste!,
         iva: r.iva!,
         vigenciaDiasHabiles: r.vigenciaDiasHabiles!,
         descuentoMaximo: r.descuentoMaximo!,
-        ...(tramos ? { descuentosPorCantidad: tramos } : {}),
+        ...(tramos.success ? { descuentosPorCantidad: tramos.data } : {}),
         ...(margenes ? { margenes } : {}),
       };
     }
@@ -625,7 +610,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     vence: q.vence,
     descuento: q.descuento,
     // Sin el dato (estado anterior al descuento automático) lo que ya había fue fijado por una persona.
-    descuento_manual: Number(q.descuentoManual ?? q.descuento > 0),
+    descuento_manual: Number(descuentoEsManual(q)),
     flete: q.flete,
     margen_cotizacion: q.margenCotizacion ?? null,
     creada_por: q.creadaPor,

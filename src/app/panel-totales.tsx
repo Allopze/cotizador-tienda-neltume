@@ -4,6 +4,7 @@ import { conDosDecimales, leerPesos, leerPorcentaje } from '@/negocio/cifras';
 import {
   contarPuertas,
   descuentoAutomatico,
+  descuentoEsManual,
   siguienteTramo,
   textoPuertas,
   textoTramo,
@@ -23,44 +24,47 @@ interface Props {
 
 /**
  * De dónde sale el descuento cuando la cotización tiene tramos por cantidad: el tramo que corresponde a
- * sus puertas (y el siguiente por alcanzar) o, si la persona lo fijó, el valor manual con la vuelta al automático.
+ * sus puertas (y el siguiente por alcanzar) o, si la persona lo fijó, el valor manual con la vuelta al
+ * automático. Se muestra bajo la fila del descuento, con su misma visibilidad; es una región en vivo
+ * porque cambia sola al editar las cantidades.
  */
 function OrigenDescuento({ actual, editable, guardando, editar }: Props & { actual: Cotizacion }) {
   const tramos = actual.reglas?.descuentosPorCantidad ?? [];
-  const manual = actual.descuentoManual ?? false;
-  if (!tramos.length || !(editable || manual || actual.descuento > 0)) return null;
+  if (!tramos.length) return null;
   const puertas = contarPuertas(actual.montos.lineas);
   const siguiente = siguienteTramo(tramos, puertas);
-  if (manual) {
-    const automatico = descuentoAutomatico(actual.reglas ?? REGLAS, puertas);
-    return (
-      <div className="descuento-origen" data-testid="descuento-origen">
-        <span>Descuento manual: {porcentaje(actual.descuento)}</span>
-        {editable && (
-          <button
-            type="button"
-            className="button secondary small"
-            disabled={guardando === 'descuento'}
-            onClick={() => void editar({ descuentoAutomatico: true }, 'descuento')}
-          >
-            Restaurar automático
-          </button>
-        )}
-        <small>
-          Automático: {automatico ? porcentaje(automatico) : 'sin descuento'} con {textoPuertas(puertas)}
-        </small>
-      </div>
-    );
-  }
+  const manual = descuentoEsManual(actual);
+  const automatico = manual ? descuentoAutomatico(actual.reglas ?? REGLAS, puertas) : 0;
   return (
-    <div className="descuento-origen" data-testid="descuento-origen">
-      <span>
-        Descuento por cantidad:{' '}
-        {tramoAplicable(tramos, puertas)
-          ? `${textoPuertas(puertas)} → ${porcentaje(actual.descuento)}`
-          : `aún no aplica (${textoPuertas(puertas)})`}
-      </span>
-      {siguiente && <small>Siguiente tramo: {textoTramo(siguiente)}</small>}
+    <div className="descuento-origen" data-testid="descuento-origen" aria-live="polite">
+      {manual ? (
+        <>
+          <span>Descuento manual: {porcentaje(actual.descuento)}</span>
+          {editable && (
+            <button
+              type="button"
+              className="button secondary small"
+              disabled={guardando === 'descuento'}
+              onClick={() => void editar({ descuentoAutomatico: true }, 'descuento')}
+            >
+              Restaurar automático
+            </button>
+          )}
+          <small>
+            Automático: {automatico ? porcentaje(automatico) : 'sin descuento'} con {textoPuertas(puertas)}
+          </small>
+        </>
+      ) : (
+        <>
+          <span>
+            Descuento por cantidad:{' '}
+            {tramoAplicable(tramos, puertas)
+              ? `${textoPuertas(puertas)} → ${porcentaje(actual.descuento)}`
+              : `aún no aplica (${textoPuertas(puertas)})`}
+          </span>
+          {siguiente && <small>Siguiente tramo: {textoTramo(siguiente)}</small>}
+        </>
+      )}
     </div>
   );
 }
@@ -78,32 +82,34 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
         </div>
       )}
       {(!!m?.descuento || editable) && (
-        <div className="total-editable">
-          <CampoEditable
-            etiqueta="Descuento"
-            valor={String(actual?.descuento ?? 0).replace('.', ',')}
-            mostrar={
-              m?.descuento ? `${pct(m.descuentoPorcentaje)} · −${pesos(m.descuento)}` : 'Sin descuento'
-            }
-            editable={editable}
-            discreto
-            guardando={guardando === 'descuento'}
-            tipo="text"
-            sufijo="%"
-            validar={(v) => {
-              const n = leerPorcentaje(v);
-              const maximo = actual?.reglas?.descuentoMaximo ?? REGLAS.descuentoMaximo;
-              if (!Number.isFinite(n) || n < 0 || n > maximo)
-                return `El descuento debe estar entre 0 y ${maximo}%.`;
-              if (!conDosDecimales(n)) return 'Usa como máximo dos decimales.';
-              return null;
-            }}
-            guardar={(v) => editar({ descuento: Math.round(leerPorcentaje(v) * 100) / 100 }, 'descuento')}
-          />
-        </div>
-      )}
-      {actual && (
-        <OrigenDescuento actual={actual} editable={editable} guardando={guardando} editar={editar} />
+        <>
+          <div className="total-editable">
+            <CampoEditable
+              etiqueta="Descuento"
+              valor={String(actual?.descuento ?? 0).replace('.', ',')}
+              mostrar={
+                m?.descuento ? `${pct(m.descuentoPorcentaje)} · −${pesos(m.descuento)}` : 'Sin descuento'
+              }
+              editable={editable}
+              discreto
+              guardando={guardando === 'descuento'}
+              tipo="text"
+              sufijo="%"
+              validar={(v) => {
+                const n = leerPorcentaje(v);
+                const maximo = actual?.reglas?.descuentoMaximo ?? REGLAS.descuentoMaximo;
+                if (!Number.isFinite(n) || n < 0 || n > maximo)
+                  return `El descuento debe estar entre 0 y ${maximo}%.`;
+                if (!conDosDecimales(n)) return 'Usa como máximo dos decimales.';
+                return null;
+              }}
+              guardar={(v) => editar({ descuento: Math.round(leerPorcentaje(v) * 100) / 100 }, 'descuento')}
+            />
+          </div>
+          {actual && (
+            <OrigenDescuento actual={actual} editable={editable} guardando={guardando} editar={editar} />
+          )}
+        </>
       )}
       {(!!m?.flete || editable) && (
         <div className="total-editable">

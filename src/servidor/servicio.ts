@@ -24,7 +24,7 @@ import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
-import { contarPuertas, descuentoAutomatico, textoPuertas } from '../negocio/descuento-cantidad';
+import { contarPuertas, descuentoAutomatico, descuentoEsManual, textoPuertas } from '../negocio/descuento-cantidad';
 import {
   avisoProductoCambiado,
   claveMedida,
@@ -221,7 +221,7 @@ export function textoCambios(c: CambiosCotizacion | undefined, extras: string[] 
 }
 const porcentajeTexto = (n: number) => `${String(n).replace('.', ',')} %`;
 type DescuentoGuardado = { descuento: number; manual: boolean };
-const descuentoDe = (q: Cotizacion): DescuentoGuardado => ({ descuento: q.descuento, manual: q.descuentoManual ?? false });
+const descuentoDe = (q: Cotizacion): DescuentoGuardado => ({ descuento: q.descuento, manual: descuentoEsManual(q) });
 /**
  * Lo que cambió del descuento, para la actividad: el del tramo por cantidad (con las puertas que lo
  * explican), el fijado a mano o el automático restaurado. Vacío si nada cambió.
@@ -384,7 +384,7 @@ export class Servicio {
     }
     const reglas = q.reglas ?? REGLAS;
     // El descuento por cantidad sigue a las puertas valorizadas (sin ellas no hay descuento); uno fijado a mano no se toca.
-    if (!q.descuentoManual) q.descuento = descuentoAutomatico(reglas, contarPuertas(validos));
+    if (!descuentoEsManual(q)) q.descuento = descuentoAutomatico(reglas, contarPuertas(validos));
     q.montos = validos.length
       ? cotizar(validos, reglas, {
           descuento: q.descuento,
@@ -485,7 +485,7 @@ export class Servicio {
     return (
       this.sinCambios(a, b.solicitudes, b.cliente) &&
       a.descuento === b.descuento &&
-      (a.descuentoManual ?? false) === (b.descuentoManual ?? false) &&
+      descuentoEsManual(a) === descuentoEsManual(b) &&
       a.flete === b.flete &&
       (a.margenCotizacion ?? null) === (b.margenCotizacion ?? null) &&
       a.observaciones === b.observaciones &&
@@ -689,7 +689,7 @@ export class Servicio {
           // El descuento y el flete acordados forman parte de lo que se duplica. Uno automático se recalcula
           // abajo con los tramos de la copia (congelados al crearla), que pueden ser otros.
           q.descuento = origen.descuento;
-          q.descuentoManual = origen.descuentoManual ?? false;
+          q.descuentoManual = descuentoEsManual(origen);
           q.flete = origen.flete;
           q.margenCotizacion = origen.margenCotizacion ?? null;
           q.observaciones = origen.observaciones;
@@ -844,7 +844,7 @@ export class Servicio {
         ? false
         : accion.descuento !== undefined && aCentesimas(accion.descuento) !== q.descuento
           ? true
-          : (q.descuentoManual ?? false);
+          : descuentoEsManual(q);
       const descuento = accion.descuento ?? q.descuento,
         flete = accion.flete ?? (accion.despacho?.valor === undefined ? q.flete : accion.despacho.valor ?? 0);
       const reglas = q.reglas ?? REGLAS;
@@ -887,7 +887,7 @@ export class Servicio {
         JSON.stringify([solicitudes, cliente, observaciones, despacho]) ===
           JSON.stringify([q.solicitudes, q.cliente, q.observaciones, q.despacho]) &&
         descuentoNuevo === q.descuento &&
-        descuentoManual === (q.descuentoManual ?? false) &&
+        descuentoManual === descuentoEsManual(q) &&
         flete === q.flete &&
         margenCotizacion === margenAntes
       )

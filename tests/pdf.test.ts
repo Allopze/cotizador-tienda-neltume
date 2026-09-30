@@ -139,7 +139,8 @@ describe('Plantillas', () => {
         ),
       );
     const automatico = await pdf({ descuentoManual: false });
-    expect(automatico).toMatch(/DESCUENTO POR CANTIDAD 5 %\s+−\$/);
+    expect(automatico).toMatch(/DESC\. POR CANTIDAD 5 %\s+−\$/);
+    expect(automatico).not.toContain('DESCUENTO POR CANTIDAD');
     const manual = await pdf({ descuentoManual: true });
     expect(manual).toMatch(/DESCUENTO 5 %\s+−\$/);
     expect(manual).not.toContain('POR CANTIDAD');

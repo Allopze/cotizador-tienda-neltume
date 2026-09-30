@@ -3,16 +3,11 @@ import { z } from 'zod';
 import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-cantidad';
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { abrirBaseDatos } from './base-datos';
+import { tramoDescuentoSchema } from './persistencia-esquemas';
 import type { DatosEmpresa } from './empresa';
 
 const texto = (max: number) => z.string().trim().max(max).nullable();
 const TRANSPORTISTAS_INICIALES = ['Starken', 'Transportes Paredes', 'Ignacio', 'Otro'];
-const tramoDescuento = z
-  .object({
-    desdePuertas: z.number({ error: '«Desde» debe ser un número entero de puertas.' }),
-    porcentaje: z.number({ error: 'El porcentaje del tramo debe ser un número.' }),
-  })
-  .strict();
 const logoSvg = z
   .string()
   .max(48_000)
@@ -52,7 +47,7 @@ export const configuracionNegocioSchema = z
         // Se guardan de menor a mayor umbral; la validación (umbrales distintos, porcentaje hasta el máximo)
         // se hace abajo porque depende de `descuentoMaximo`.
         descuentosPorCantidad: z
-          .array(tramoDescuento)
+          .array(tramoDescuentoSchema.strict())
           .max(MAX_TRAMOS, `Puedes definir hasta ${MAX_TRAMOS} tramos.`)
           .default([])
           .transform(ordenarTramos),

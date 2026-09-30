@@ -1,6 +1,22 @@
 import { z } from 'zod';
+import { descuentoEsManual, MAX_DESDE_PUERTAS } from '../negocio/descuento-cantidad';
 import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
+
+const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
+/**
+ * Tramo del descuento por cantidad: el mismo al configurarlo en Ajustes, al congelarlo en las reglas de una
+ * cotización y al leerlo de la base. Solo fija tipos y rangos gruesos; lo demás (umbral mínimo, máximo de la
+ * configuración, umbrales distintos) lo valida `errorTramos`, con mensajes para la persona.
+ */
+export const tramoDescuentoSchema = z.object({
+  desdePuertas: z.number({ error: MENSAJE_DESDE }).int(MENSAJE_DESDE).min(1, MENSAJE_DESDE).max(MAX_DESDE_PUERTAS, MENSAJE_DESDE),
+  porcentaje: z
+    .number({ error: 'El porcentaje del tramo debe ser un número.' })
+    .min(0, 'El porcentaje del tramo debe ser mayor que 0.')
+    .max(100, 'El porcentaje de un tramo no puede superar 100 %.'),
+});
+export const tramosDescuentoSchema = z.array(tramoDescuentoSchema);
 
 const clienteSchema = z.object({
   nombre: z.string().nullable(),
@@ -149,9 +165,7 @@ export const cotizacionSchema = z.looseObject({
       iva: z.number().finite(),
       vigenciaDiasHabiles: z.number().int().min(0).max(365),
       descuentoMaximo: z.number().min(0).max(100),
-      descuentosPorCantidad: z
-        .array(z.object({ desdePuertas: z.number().int().min(1), porcentaje: z.number().finite().min(0).max(100) }))
-        .optional(),
+      descuentosPorCantidad: tramosDescuentoSchema.optional(),
       margenes: z.object({
         puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
         puertas_solidas_oregon: z.number().finite().min(0).max(5),
@@ -274,8 +288,10 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         versionCatalogo: null,
         ...q,
         // Un descuento guardado antes del automático lo fijó una persona (así lo persiste también `guardar`).
-        descuentoManual:
-          typeof q.descuentoManual === 'boolean' ? q.descuentoManual : typeof q.descuento === 'number' && q.descuento > 0,
+        descuentoManual: descuentoEsManual({
+          descuento: typeof q.descuento === 'number' ? q.descuento : undefined,
+          descuentoManual: typeof q.descuentoManual === 'boolean' ? q.descuentoManual : undefined,
+        }),
         estadoComercial:
           typeof q.estadoComercial === 'string'
             ? q.estadoComercial

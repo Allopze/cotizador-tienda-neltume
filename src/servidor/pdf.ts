@@ -134,7 +134,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     ...(montos.descuento
       ? [
           fila(
-            `${etiquetaDescuento({ descuentoManual: q.descuentoManual, reglas }).toUpperCase()} ${porcentaje(montos.descuentoPorcentaje)}`,
+            `${etiquetaDescuento({ descuento: q.descuento, descuentoManual: q.descuentoManual, reglas }, { corta: true }).toUpperCase()} ${porcentaje(montos.descuentoPorcentaje)}`,
             `−${pesos(montos.descuento)}`,
           ),
         ]
