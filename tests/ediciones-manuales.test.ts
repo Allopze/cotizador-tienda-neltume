@@ -351,6 +351,30 @@ describe('un ítem incompleto con un alias de modelo', () => {
   });
 });
 
+describe('un valor vacío no es un cambio de producto', () => {
+  it('lista completa: que la IA devuelva madera null no descarta la descripción ni el precio', async () => {
+    const { q, chat } = await preparar();
+    const r = await chat(q, lista(item({ madera: null }), item({ modelo: 'PANGUIPULLI', madera: null, ancho: 0.85 })));
+    const [a, b] = r.cotizacion.solicitudes;
+    expect(a).toMatchObject({ ...EDICIONES, madera: null });
+    expect(b).toMatchObject({ precioUnitario: 150_000, observaciones: 'Entrega en obra', madera: null });
+    expect(r.avisos).toBeUndefined();
+  });
+
+  it('modificación parcial y edición directa: dejar la madera en null tampoco', async () => {
+    const { q, servicio, modificar } = await preparar();
+    const parcial = await modificar(q, cambiar(0, { madera: null }));
+    expect(parcial.cotizacion.solicitudes[0]).toMatchObject({ ...EDICIONES, madera: null });
+    expect(parcial.avisos).toBeUndefined();
+    const directa = await servicio.ejecutar({
+      tipo: 'editar', id: parcial.cotizacion.id, actualizada: parcial.cotizacion.actualizada,
+      items: [{ indice: 1, cambios: { madera: null } }],
+    });
+    expect(directa.cotizacion.solicitudes[1]).toMatchObject({ precioUnitario: 150_000, madera: null });
+    expect(directa.avisos).toBeUndefined();
+  });
+});
+
 describe('textos de la IA', () => {
   it('los textos vacíos o en blanco se guardan como null y los demás sin espacios sobrantes', async () => {
     const { servicio, llm } = await preparar();

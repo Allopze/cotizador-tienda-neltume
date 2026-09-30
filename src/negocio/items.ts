@@ -30,10 +30,10 @@ export const claveMedida = (n: number | null) => {
 const claveMedidas = (s: SolicitudItem) =>
   [claveMedida(s.ancho), claveMedida(s.alto), s.medida ? normalizarMedida(s.medida) : ''].join('|');
 
-/** Cambia el producto si un modelo o madera que el ítem ya tenía pasa a ser otro (completar un dato faltante no cuenta). */
+/** Cambia el producto solo si un modelo o madera que había pasa a ser otro: un valor que falta, antes o después, no cuenta. */
 const cambioDeProducto = (antes: ProductoItem, despues: ProductoItem) =>
-  (antes.modelo !== '' && antes.modelo !== despues.modelo) ||
-  (antes.madera !== '' && antes.madera !== despues.madera);
+  (antes.modelo !== '' && despues.modelo !== '' && antes.modelo !== despues.modelo) ||
+  (antes.madera !== '' && despues.madera !== '' && antes.madera !== despues.madera);
 
 export interface Descartes {
   descripcion: boolean;
