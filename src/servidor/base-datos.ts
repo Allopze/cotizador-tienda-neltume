@@ -120,7 +120,8 @@ function crearEsquema(db: Database.Database) {
     }).immediate();
   if (version < 10)
     db.transaction(() => {
-      // v10: feriados adicionales definidos por la empresa; la sincronización automática no los borra.
+      // v10: feriados adicionales definidos por la empresa. Ya no se usan (los feriados son solo automáticos);
+      // la tabla se conserva para no borrar datos de instalaciones existentes.
       db.exec(`
         CREATE TABLE IF NOT EXISTS feriados_manuales (
           fecha TEXT PRIMARY KEY,
@@ -773,7 +774,7 @@ export function abrirBaseDatos(
     registrarFeriadosExternos(
       (
         nueva
-          .prepare('SELECT fecha FROM feriados UNION ALL SELECT fecha FROM feriados_manuales')
+          .prepare('SELECT fecha FROM feriados')
           .all() as { fecha: string }[]
       ).map((f) => f.fecha),
     );

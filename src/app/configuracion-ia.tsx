@@ -13,6 +13,7 @@ import type { ModeloCommandCode } from '@/asistente/modelos-commandcode';
 import { useConfirmacion } from './dialogo';
 import type { TipoAviso } from './avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
+import { AccionesGuardar, useAvisarCambios } from './ajustes/borrador';
 
 export interface EstadoAjustes {
   ajustes: AjustesIA;
@@ -33,11 +34,13 @@ interface Props {
   reintentar: () => void;
   guardado: (estado: EstadoAjustes) => void;
   avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
+  /** Avisa si el modelo elegido aún no se guarda. */
+  alCambiar?: (sucio: boolean) => void;
 }
 
 /** Sección «Asistente» de la configuración: modelo del asistente y estado de su clave. */
-export function ConfiguracionIA({ estado, errorCarga, reintentar, guardado, avisar }: Props) {
-  if (estado) return <Formulario estado={estado} guardado={guardado} avisar={avisar} />;
+export function ConfiguracionIA({ estado, errorCarga, reintentar, guardado, avisar, alCambiar }: Props) {
+  if (estado) return <Formulario estado={estado} guardado={guardado} avisar={avisar} alCambiar={alCambiar} />;
   if (errorCarga)
     return (
       <div className="catalog-error" role="alert">
@@ -58,7 +61,8 @@ function Formulario({
   estado,
   guardado,
   avisar,
-}: Pick<Props, 'guardado' | 'avisar'> & { estado: EstadoAjustes }) {
+  alCambiar,
+}: Pick<Props, 'guardado' | 'avisar' | 'alCambiar'> & { estado: EstadoAjustes }) {
   const campo = useRef<HTMLButtonElement>(null);
   const [borrador, setBorrador] = useState<AjustesIA>(() => structuredClone(estado.ajustes));
   const [ocupado, setOcupado] = useState(false);
@@ -72,6 +76,7 @@ function Formulario({
   const [confirmar, dialogoConfirmacion] = useConfirmacion();
   const editable = estado.puedeEditar !== false;
   const cambiado = borrador.commandcode.modelo !== estado.ajustes.commandcode.modelo;
+  useAvisarCambios(cambiado, alCambiar);
 
   useEffect(() => {
     const controlador = new AbortController();
@@ -198,7 +203,7 @@ function Formulario({
           <p id="ia-nota" className={`ia-status ${estado.commandcodeClave ? 'ok' : 'falta'}`}>
             {estado.commandcodeClave
               ? estado.commandcodeClaveFuente === 'entorno'
-                ? '✓ El asistente usa la clave definida en CMD_API_KEY.'
+                ? '✓ El asistente usa la clave definida en el servidor.'
                 : '✓ El asistente tiene su clave API configurada en Ajustes.'
               : 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.'}
           </p>
@@ -210,19 +215,11 @@ function Formulario({
           </p>
         )}
         {editable && (
-          <div className="ia-actions">
-            <button
-              type="button"
-              className="button secondary"
-              onClick={() => setBorrador(structuredClone(estado.ajustes))}
-              disabled={ocupado || guardandoApiKey || !cambiado}
-            >
-              Descartar cambios
-            </button>
-            <button type="submit" className="button primary" disabled={ocupado || guardandoApiKey || !cambiado}>
-              {ocupado ? 'Guardando…' : 'Guardar'}
-            </button>
-          </div>
+          <AccionesGuardar
+            sucio={cambiado}
+            ocupado={ocupado || guardandoApiKey}
+            descartar={() => setBorrador(structuredClone(estado.ajustes))}
+          />
         )}
       </form>
 
@@ -233,7 +230,7 @@ function Formulario({
           </h3>
           <p className="catalog-modal-intro">
             {estado.commandcodeClaveFuente === 'entorno'
-              ? 'Hay una clave activa en CMD_API_KEY. Al guardar otra aquí, se reemplazará.'
+              ? 'El asistente usa una clave definida en el servidor. Si guardas otra aquí, se usará esta en su lugar.'
               : 'La clave se guarda cifrada en este cotizador y no vuelve a mostrarse.'}
           </p>
           <form onSubmit={guardarApiKey} aria-label="Configurar clave API de CommandCode">

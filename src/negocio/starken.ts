@@ -1,5 +1,6 @@
 import type { Familia } from '../catalogo/tipos';
 import type { ProductoDespacho } from './envios';
+import { estimarUnidad } from './peso-estimado';
 import { pesos } from './precios';
 
 // Lógica pura de la integración con Starken (sin red ni base de datos): la comparten el servidor, que
@@ -34,7 +35,10 @@ export const ETIQUETA_FAMILIA: Record<Familia, string> = {
   MOLDURA: 'Molduras',
   PIEZAS_T: 'Piezas T',
 };
-/** Peso por unidad (kg) y grosor (cm) de una familia. El catálogo no trae pesos: los define la empresa. */
+/**
+ * Peso por unidad (kg) y grosor (cm) de una familia, medidos por la empresa. Opcionales: sin ellos, el peso y las
+ * medidas embaladas de cada producto se estiman (ver peso-estimado.ts).
+ */
 export interface ParametrosFamilia {
   kg: number | null;
   espesorCm: number | null;
@@ -76,12 +80,14 @@ export interface Bulto {
   unidades: Partial<Record<Familia, number>>;
   /** Líneas de la cotización: cada una es un bulto (una pila de unidades iguales). */
   bultos: number;
+  /** Alguna línea usó el peso y las medidas estimados (con embalaje) en vez de los definidos en Ajustes. */
+  estimado: boolean;
 }
 export type ResultadoBulto =
   | { ok: true; bulto: Bulto }
   | {
       ok: false;
-      motivo: 'sin_productos' | 'sin_parametros' | 'sin_medidas';
+      motivo: 'sin_productos' | 'sin_medidas';
       familias: Familia[];
       mensaje: string;
     };
@@ -89,32 +95,34 @@ export type ResultadoBulto =
 /** Topes de lo que se acepta como peso por unidad (kg) y espesor (cm); los usan el formulario y el servidor. */
 export const MAX_KG_UNIDAD = 2000;
 export const MAX_ESPESOR_CM = 300;
-export const MENSAJE_SIN_PARAMETROS = 'Configura peso y espesor en Ajustes';
 const enCm = (metros: number) => Math.round(metros * 10000) / 100;
 const redondear = (n: number) => Math.round(n * 100) / 100;
 const mayor = (...valores: (number | null | undefined)[]) =>
   valores.reduce<number>((m, v) => (typeof v === 'number' && Number.isFinite(v) && v > m ? v : m), 0);
 
-/** Familias de las líneas que no tienen peso y grosor configurados. */
-export function familiasSinParametros(
-  productos: readonly Pick<ProductoDespacho, 'producto'>[],
-  parametros: Partial<Record<Familia, Partial<ParametrosFamilia>>> | null | undefined,
-): Familia[] {
-  const usadas = new Set(productos.map((p) => p.producto.familia));
-  return FAMILIAS_ENVIO.filter((f) => usadas.has(f) && !parametrosCompletos(parametros?.[f]));
-}
-
 /**
- * Medidas de una unidad en cm. Puertas: ancho y alto mayores entre la medida pedida y la de la referencia del
- * catálogo. Marcos, molduras y piezas T: el largo es la medida mayor y la sección se toma cuadrada, del grosor
- * configurado. Sin medidas utilizables devuelve null.
+ * Unidad lista para apilar (cm y kg). Medidas: puertas, el ancho y el alto mayores entre la medida pedida y la de
+ * la referencia del catálogo; marcos, molduras y piezas T, el largo mayor. Con peso y espesor definidos en Ajustes
+ * se usan tal cual (la sección de marcos, molduras y piezas T se toma cuadrada); si no, se estiman con embalaje.
+ * Sin medidas utilizables devuelve null.
  */
-function unidad(p: ProductoDespacho, espesorCm: number) {
+function unidad(p: ProductoDespacho, definidos: ParametrosFamilia | undefined) {
   const { producto } = p;
-  const largo = enCm(mayor(p.altoSolicitado, producto.altoMax, producto.altoMin, producto.largo));
-  if (producto.familia !== 'PUERTA') return largo > 0 ? { ancho: espesorCm, largo } : null;
-  const ancho = enCm(mayor(p.anchoSolicitado, producto.anchoMax, producto.anchoMin));
-  return ancho > 0 && largo > 0 ? { ancho, largo } : null;
+  const largoCm = enCm(mayor(p.altoSolicitado, producto.altoMax, producto.altoMin, producto.largo));
+  const anchoCm =
+    producto.familia === 'PUERTA' ? enCm(mayor(p.anchoSolicitado, producto.anchoMax, producto.anchoMin)) : 0;
+  if (largoCm <= 0 || (producto.familia === 'PUERTA' && anchoCm <= 0)) return null;
+  if (definidos && parametrosCompletos(definidos)) {
+    const { kg, espesorCm } = definidos as { kg: number; espesorCm: number };
+    return {
+      espesor: espesorCm,
+      ancho: producto.familia === 'PUERTA' ? anchoCm : espesorCm,
+      largo: largoCm,
+      kg,
+      estimado: false,
+    };
+  }
+  return { ...estimarUnidad(producto, { anchoCm, largoCm }), estimado: true };
 }
 
 export function calcularBulto(
@@ -129,24 +137,29 @@ export function calcularBulto(
       familias: [],
       mensaje: 'La cotización no tiene productos para despachar.',
     };
-  const faltan = familiasSinParametros(lineas, parametros);
-  if (faltan.length)
-    return { ok: false, motivo: 'sin_parametros', familias: faltan, mensaje: MENSAJE_SIN_PARAMETROS };
-  const bulto: Bulto = { alto: 0, ancho: 0, largo: 0, kilos: 0, unidades: {}, bultos: lineas.length };
+  const bulto: Bulto = {
+    alto: 0,
+    ancho: 0,
+    largo: 0,
+    kilos: 0,
+    unidades: {},
+    bultos: lineas.length,
+    estimado: false,
+  };
   for (const l of lineas) {
-    const { kg, espesorCm } = parametros![l.producto.familia] as { kg: number; espesorCm: number };
-    const medidas = unidad(l, espesorCm);
-    if (!medidas)
+    const u = unidad(l, parametros?.[l.producto.familia] as ParametrosFamilia | undefined);
+    if (!u)
       return {
         ok: false,
         motivo: 'sin_medidas',
         familias: [l.producto.familia],
         mensaje: `Falta la medida de ${l.producto.codigo} para calcular el bulto.`,
       };
-    bulto.alto += l.cantidad * espesorCm;
-    bulto.ancho = Math.max(bulto.ancho, medidas.ancho);
-    bulto.largo = Math.max(bulto.largo, medidas.largo);
-    bulto.kilos += l.cantidad * kg;
+    bulto.alto += l.cantidad * u.espesor;
+    bulto.ancho = Math.max(bulto.ancho, u.ancho);
+    bulto.largo = Math.max(bulto.largo, u.largo);
+    bulto.kilos += l.cantidad * u.kg;
+    bulto.estimado ||= u.estimado;
     bulto.unidades[l.producto.familia] = (bulto.unidades[l.producto.familia] ?? 0) + l.cantidad;
   }
   return {
@@ -156,7 +169,8 @@ export function calcularBulto(
       alto: redondear(bulto.alto),
       ancho: redondear(bulto.ancho),
       largo: redondear(bulto.largo),
-      kilos: redondear(bulto.kilos),
+      // Hacia arriba al décimo: un peso estimado no debe quedarse corto por el redondeo.
+      kilos: Math.ceil(Math.round(bulto.kilos * 100) / 10) / 10,
     },
   };
 }
@@ -168,13 +182,16 @@ const NOMBRE_UNIDAD: Record<Familia, [string, string]> = {
   MOLDURA: ['moldura', 'molduras'],
   PIEZAS_T: ['pieza T', 'piezas T'],
 };
-/** «14 puertas · 3 líneas · total 84 × 90 × 240 cm, 420 kg» (grosor apilado × ancho × largo). */
+/**
+ * «14 puertas · 3 líneas · total 84 × 90 × 240 cm, 420 kg» (grosor apilado × ancho × largo); con «(estimado, con
+ * embalaje)» si el peso y las medidas salen de la estimación.
+ */
 export function textoBulto(b: Bulto) {
   const unidades = FAMILIAS_ENVIO.filter((f) => b.unidades[f])
     .map((f) => `${b.unidades[f]} ${NOMBRE_UNIDAD[f][b.unidades[f] === 1 ? 0 : 1]}`)
     .join(', ');
   const lineas = `${b.bultos} ${b.bultos === 1 ? 'línea' : 'líneas'}`;
-  return `${unidades} · ${lineas} · total ${cifra(b.alto)} × ${cifra(b.ancho)} × ${cifra(b.largo)} cm, ${cifra(b.kilos)} kg`;
+  return `${unidades} · ${lineas} · total ${cifra(b.alto)} × ${cifra(b.ancho)} × ${cifra(b.largo)} cm, ${cifra(b.kilos)} kg${b.estimado ? ' (estimado, con embalaje)' : ''}`;
 }
 
 // --- Destino -----------------------------------------------------------------------------------------

@@ -10,8 +10,8 @@ import {
 } from '../negocio/starken';
 import { abrirBaseDatos } from './base-datos';
 
-// Ajustes de Starken que define la empresa: ciudad de origen y, como el catálogo no trae pesos, el peso y el
-// grosor por unidad de cada familia. Vacíos de fábrica: no se inventa ningún peso. Las credenciales NO van aquí.
+// Ajustes de Starken que define la empresa: ciudad de origen y, opcionalmente, el peso y el grosor medidos por
+// unidad de cada familia. Vacíos de fábrica: sin ellos se estiman por producto. Las credenciales NO van aquí.
 
 const CLAVE = 'starken';
 const pesoKg = z

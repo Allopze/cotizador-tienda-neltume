@@ -29,7 +29,7 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
   try {
     fijarTramos([]);
     // La cuenta de prueba no es administradora: ve la sección, pero no puede editarla.
-    await page.goto('/ajustes');
+    await page.goto('/ajustes?seccion=precios');
     await expect(page.getByRole('heading', { name: 'DESCUENTO POR CANTIDAD' })).toBeVisible();
     await expect(
       page.getByText('Sin tramos: las cotizaciones no llevan descuento por cantidad.'),
@@ -38,7 +38,17 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
 
     // Una administradora agrega los tramos, con sus validaciones.
     rol.run('admin', USUARIO_E2E);
-    await page.goto('/ajustes');
+    await page.goto('/ajustes?seccion=precios');
+    // Un campo vacío no se guarda como 0: queda marcado, con el foco, hasta corregirlo o descartar.
+    const ivaCampo = page.getByLabel('IVA (%)');
+    await expect(ivaCampo).toHaveValue('19');
+    await ivaCampo.fill('');
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(ivaCampo).toHaveAttribute('aria-invalid', 'true');
+    await expect(ivaCampo).toBeFocused();
+    await page.getByRole('button', { name: 'Descartar cambios' }).click();
+    await expect(ivaCampo).toHaveValue('19');
+    await expect(ivaCampo).not.toHaveAttribute('aria-invalid', 'true');
     const agregar = page.getByRole('button', { name: 'Agregar tramo' });
     const alerta = page.getByRole('alert').filter({ hasText: /tramo|Desde/ });
     const desde = (n: number) => page.getByLabel(`Tramo ${n}: desde (puertas)`);
@@ -60,7 +70,7 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
     await expect(desde(2)).toHaveAttribute('aria-describedby', /.+/);
     await expect(desde(1)).not.toHaveAttribute('aria-invalid', 'true');
     // Guardar con el problema avisa una sola vez y lleva el foco al campo.
-    await page.getByRole('button', { name: 'Guardar configuración' }).click();
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(alerta).toHaveCount(1);
     await expect(desde(2)).toBeFocused();
     // Corregir el campo con el problema quita el aviso a medida que se escribe; uno nuevo sale al salir de la fila.
@@ -82,8 +92,8 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
     await expect(desde(3)).toHaveCount(0);
     await expect(agregar).toBeFocused();
     await expect(alerta).toHaveCount(0);
-    await page.getByRole('button', { name: 'Guardar configuración' }).click();
-    await expect(aviso.filter({ hasText: 'Configuración comercial guardada.' })).toBeVisible();
+    await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(aviso.filter({ hasText: 'Precios y descuentos guardados.' })).toBeVisible();
     expect(leerConfiguracionNegocio(db).reglas.descuentosPorCantidad).toEqual([
       { desdePuertas: 10, porcentaje: 5 },
       { desdePuertas: 20, porcentaje: 10 },
@@ -96,7 +106,7 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
     rol.run('user', USUARIO_E2E);
   }
   // Sin permiso de administradora ve los tramos guardados, sin poder cambiarlos.
-  await page.goto('/ajustes');
+  await page.goto('/ajustes?seccion=precios');
   await expect(page.getByLabel('Tramo 1: desde (puertas)')).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Quitar el tramo 1' })).toHaveCount(0);
 

@@ -50,40 +50,44 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     await expect(panel.getByText('Starken no está configurado')).toBeVisible();
     await page.unroute('**/api/starken');
 
-    // --- Configurado, pero sin peso ni espesor: desactivado hasta que se definan en Ajustes ---
+    // --- Configurado, pero sin ciudad de origen: desactivado hasta elegirla en Ajustes (los pesos se estiman) ---
     await panel.getByLabel('Transportista').selectOption('');
     await expect(boton).toHaveCount(0);
     await panel.getByLabel('Transportista').selectOption('Starken');
     await expect(boton).toBeDisabled();
-    await expect(panel.getByText('Configura peso y espesor en Ajustes')).toBeVisible();
-    await expect(panel.getByText('(falta: puertas)')).toBeVisible();
+    await expect(panel.getByText('Configura la ciudad de origen de Starken en Ajustes')).toBeVisible();
     await expect(panel.getByTestId('starken-bulto')).toHaveCount(0);
 
     // --- Ajustes: sin ser administradora se ve, pero no se edita ---
+    const formularioStarken = page.getByRole('form', { name: 'Despacho con Starken' });
+    const irAStarken = () =>
+      page.getByRole('navigation', { name: 'Secciones de ajustes' }).getByRole('link', { name: 'Starken' }).click();
     await panel.getByRole('link', { name: 'Abrir Ajustes' }).click();
-    await expect(page.getByRole('heading', { name: 'Despacho con Starken' })).toBeVisible();
+    await expect(page).toHaveURL(/\/ajustes\?seccion=starken$/);
+    await expect(page.getByRole('heading', { name: 'Despacho con Starken', level: 2 })).toBeVisible();
     await expect(page.getByLabel('Puertas: peso por unidad (kg)')).toBeDisabled();
-    await expect(page.getByRole('button', { name: 'Guardar Starken' })).toHaveCount(0);
+    await expect(formularioStarken.getByRole('button', { name: 'Guardar cambios' })).toHaveCount(0);
 
     // --- Una administradora elige el origen y define los pesos, con sus validaciones ---
     rol.run('admin', USUARIO_E2E);
     await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
     await expect(panel).toBeVisible();
     await page.getByRole('link', { name: 'Ajustes', exact: true }).click();
+    await irAStarken();
     const origen = page.getByLabel('Ciudad de origen');
     await expect(origen.locator('option')).toHaveCount(4);
     await origen.selectOption({ label: 'SANTIAGO' });
     const alerta = page.getByRole('alert').filter({ hasText: /peso|Marcos/ });
     await page.getByLabel('Marcos: peso por unidad (kg)').fill('3,5');
-    await page.getByRole('button', { name: 'Guardar Starken' }).click();
+    await formularioStarken.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(alerta).toHaveText('Marcos: completa el peso y el espesor, o deja ambos vacíos.');
     await page.getByLabel('Marcos: peso por unidad (kg)').fill('');
     await page.getByLabel('Puertas: peso por unidad (kg)').fill('veinticinco');
     await page.getByLabel('Puertas: espesor (cm)').fill('4,5');
-    await page.getByRole('button', { name: 'Guardar Starken' }).click();
+    await formularioStarken.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(alerta).toContainText('Puertas: el peso por unidad debe ser un número mayor que cero');
     await page.getByLabel('Puertas: peso por unidad (kg)').fill('25');
-    await page.getByRole('button', { name: 'Guardar Starken' }).click();
+    await formularioStarken.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(
       page.getByRole('status').filter({ hasText: 'Configuración de Starken guardada.' }),
     ).toBeVisible();
@@ -93,6 +97,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     expect(guardada.paquete.MARCO).toEqual({ kg: null, espesorCm: null });
     await page.getByRole('link', { name: 'Historial', exact: true }).click();
     await page.getByRole('link', { name: 'Ajustes', exact: true }).click();
+    await irAStarken();
     await expect(page.getByLabel('Puertas: peso por unidad (kg)')).toHaveValue('25');
     await expect(page.getByLabel('Puertas: espesor (cm)')).toHaveValue('4,5');
     await expect(page.getByLabel('Ciudad de origen')).toHaveValue('1');

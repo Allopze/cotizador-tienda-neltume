@@ -7,7 +7,7 @@ export default async function ConfiguracionPage({
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
   const { seccion } = await searchParams;
-  if (seccion === 'asistente') redirect('/ajustes');
+  if (seccion === 'asistente') redirect('/ajustes?seccion=asistente');
   if (seccion === 'agregar') redirect('/catalogo?seccion=agregar');
   if (seccion === 'manuales') redirect('/catalogo');
   redirect('/catalogo');

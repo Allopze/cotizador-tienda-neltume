@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
 import { estadoFeriados, prepararFeriados, URL_FERIADOS } from '../src/servidor/feriados-sync';
-import { eliminarFeriadoManual, guardarFeriadoManual, listarFeriadosManuales } from '../src/servidor/feriados-manuales';
 import { esFeriado, registrarFeriadosExternos } from '../src/negocio/feriados';
 import { sumarDiasHabiles } from '../src/negocio/vigencia';
 
@@ -103,15 +102,19 @@ describe('sincronización de feriados', () => {
     expect(esFeriado('2026-09-17')).toBe(true);
   });
 
-  it('conserva feriados manuales al sincronizar y los quita de la vigencia al eliminarlos', async () => {
+  it('ignora los feriados manuales de versiones anteriores: los feriados son solo automáticos', async () => {
     const db = await base();
-    guardarFeriadoManual(db, '2026-09-17', 'Fiesta regional');
-    expect(esFeriado('2026-09-17')).toBe(true);
+    db.prepare('INSERT INTO feriados_manuales (fecha, nombre, creada) VALUES (?, ?, ?)').run(
+      '2026-11-13',
+      'Fiesta regional',
+      new Date().toISOString(),
+    );
     await prepararFeriados(db, { ahora, obtener: async () => respuesta(2026), forzar: true });
-    expect(listarFeriadosManuales(db)).toMatchObject([{ fecha: '2026-09-17', nombre: 'Fiesta regional' }]);
-    eliminarFeriadoManual(db, '2026-09-17');
-    expect(listarFeriadosManuales(db)).toEqual([]);
-    registrarFeriadosExternos([]);
-    expect(esFeriado('2026-09-17')).toBe(false);
+    expect(esFeriado('2026-11-13')).toBe(false);
+    expect(estadoFeriados(db).feriados.map((f) => f.fecha)).not.toContain('2026-11-13');
+    const ruta = db.name;
+    cerrarBaseDatos(ruta);
+    abrirBaseDatos(ruta);
+    expect(esFeriado('2026-11-13')).toBe(false);
   });
 });

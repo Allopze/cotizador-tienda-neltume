@@ -82,13 +82,19 @@ test('ajustes y alta conservan sus bloques verticales; las listas cortas no agre
   ]) {
     await page.setViewportSize({ width, height });
     await page.goto('/ajustes');
-    await expect(page.getByRole('heading', { name: 'Asistente' })).toBeVisible();
-    const secciones = page.locator('.ajustes-pagina > section');
-    const finCuenta = await secciones.first().evaluate((elemento) => elemento.getBoundingClientRect().bottom);
-    const inicioAsistente = await secciones
-      .nth(1)
-      .evaluate((elemento) => elemento.getBoundingClientRect().top);
-    expect(inicioAsistente).toBeGreaterThan(finCuenta);
+    await expect(page.getByRole('heading', { name: 'Mi cuenta', level: 2 })).toBeVisible();
+    // La navegación de secciones va a la izquierda del contenido y los campos se apilan.
+    const finNavegacion = await page
+      .getByRole('navigation', { name: 'Secciones de ajustes' })
+      .evaluate((elemento) => elemento.getBoundingClientRect().right);
+    const inicioContenido = await page
+      .locator('.ajustes-pagina')
+      .evaluate((elemento) => elemento.getBoundingClientRect().left);
+    expect(inicioContenido).toBeGreaterThanOrEqual(finNavegacion);
+    const campos = page.locator('.ajustes-pagina .ia-field');
+    const finPrimero = await campos.first().evaluate((elemento) => elemento.getBoundingClientRect().bottom);
+    const inicioSegundo = await campos.nth(1).evaluate((elemento) => elemento.getBoundingClientRect().top);
+    expect(inicioSegundo).toBeGreaterThan(finPrimero);
 
     await page.goto('/historial');
     await page.getByRole('searchbox', { name: 'Buscar cotizaciones' }).fill('sin-resultados-scroll');
@@ -111,9 +117,9 @@ test('ajustes y alta conservan sus bloques verticales; las listas cortas no agre
   }
 
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto('/ajustes');
-  await expect(page.getByRole('heading', { name: 'Contraseña' })).toBeVisible();
-  const estadoAsistente = page.getByText(/El asistente usa la clave definida en CMD_API_KEY/);
+  await page.goto('/ajustes?seccion=asistente');
+  await expect(page.getByRole('heading', { name: 'Asistente', level: 2 })).toBeVisible();
+  const estadoAsistente = page.getByText(/El asistente usa la clave definida en el servidor/);
   await estadoAsistente.scrollIntoViewIfNeeded();
   await expect(estadoAsistente).toBeInViewport();
 

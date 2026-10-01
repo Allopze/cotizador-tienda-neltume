@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type RefObject } from 'react';
+import { Fragment, useEffect, useState, type RefObject } from 'react';
 import { despachoEditable, esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
 import { descripcionLinea, pesos } from '@/negocio/precios';
 import { leerPesos } from '@/negocio/cifras';
@@ -23,6 +23,7 @@ import {
 import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
 import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales } from './panel-totales';
+import { SelectorDesplegable } from './selector-desplegable';
 import { SeguimientoOperacion } from './seguimiento-operacion';
 import { pedirJSON } from './solicitud';
 
@@ -71,7 +72,7 @@ export const descripcionItem = (q: Cotizacion, i: number) => {
 /** Frase que el panel sugiere agregar a las puertas sin tipo de medida; la escribe la persona, no el sistema. */
 const RECTIFICAR_MEDIDA = 'Rectificar si la medida corresponde a hoja o vano.';
 
-const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'proyecto', 'telefono', 'direccion'] as const;
+const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'direccion', 'telefono', 'proyecto'] as const;
 
 function notaEstado(q: Cotizacion | null) {
   if (!q) return 'Revisa antes de compartir; tú decides cuándo emitirla.';
@@ -201,26 +202,36 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           </button>
         </div>
       )}
-      <div className="client">
-        {CAMPOS_CLIENTE.map((campo) => {
-          const valor = actual?.cliente[campo] ?? '';
-          if (actual && !editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
-            return null;
-          return (
-            <CampoEditable
-              key={`${actual?.id}-${actual?.actualizada}-${campo}`}
-              etiqueta={ETIQUETA_CAMPO[campo]}
-              valor={valor}
-              mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
-              editable={editable}
-              discreto
-              guardando={guardando === `cliente.${campo}`}
-              maxLength={300}
-              guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
-            />
-          );
-        })}
-      </div>
+      <section className="quote-client-section" aria-labelledby="cliente-section-title">
+        <div className="quote-section-heading">
+          <div>
+            <p className="eyebrow">DATOS DEL DOCUMENTO</p>
+            <h3 id="cliente-section-title">Cliente y facturación</h3>
+          </div>
+          <p>Contacto y datos comerciales de esta cotización.</p>
+        </div>
+        <div className="client">
+          {CAMPOS_CLIENTE.map((campo) => {
+            const valor = actual?.cliente[campo] ?? '';
+            if (actual && !editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
+              return null;
+            return (
+              <CampoEditable
+                key={`${actual?.id}-${actual?.actualizada}-${campo}`}
+                className={`cliente-campo cliente-${campo}`}
+                etiqueta={ETIQUETA_CAMPO[campo]}
+                valor={valor}
+                mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
+                editable={editable}
+                discreto
+                guardando={guardando === `cliente.${campo}`}
+                maxLength={300}
+                guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
+              />
+            );
+          })}
+        </div>
+      </section>
       {(editable || actual.observaciones || editaDespacho || actual.despacho) && (
         <div className="quote-custom-fields">
           {(editable || actual.observaciones) && (
@@ -259,18 +270,22 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                 maxLength={300}
                 guardar={(v) => guardarDespacho({ direccion: v || null }, 'despacho.direccion')}
               />
-              <label className="ia-field item-select-field">
+              <div className="ia-field item-select-field">
                 <span>Transportista</span>
-                <select
+                <SelectorDesplegable
+                  ariaLabel="Transportista"
                   value={transportistas.includes(actual.despacho?.transporte ?? '') ? actual.despacho?.transporte ?? '' : actual.despacho?.transporte ? '__otro__' : ''}
-                  onChange={(e) => void guardarDespacho({ transporte: e.target.value === '__otro__' ? actual.despacho?.transporte ?? '' : e.target.value || null }, 'despacho.transporte')}
+                  opciones={[
+                    { value: '', label: 'Seleccionar transportista' },
+                    ...transportistas.map((nombre) => ({ value: nombre, label: nombre })),
+                    ...(actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte)
+                      ? [{ value: '__otro__', label: `Otro · ${actual.despacho.transporte}` }]
+                      : []),
+                  ]}
+                  onChange={(valor) => void guardarDespacho({ transporte: valor === '__otro__' ? actual.despacho?.transporte ?? '' : valor || null }, 'despacho.transporte')}
                   disabled={!editaDespacho || ocupado}
-                >
-                  <option value="">Seleccionar transportista</option>
-                  {transportistas.map((nombre) => <option key={nombre} value={nombre}>{nombre}</option>)}
-                  {!!actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte) && <option value="__otro__">Otro · {actual.despacho.transporte}</option>}
-                </select>
-              </label>
+                />
+              </div>
               {(actual.despacho?.transporte === 'Otro' || (!!actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte))) && (
                 <CampoEditable
                   etiqueta="Especificar transportista"
@@ -319,8 +334,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           )}
         </div>
       )}
-      {/* Zona central: la única que se desplaza cuando el pedido es largo; cabecera, cliente, acciones
-          y totales quedan siempre a la vista. */}
+      {/* El detalle mantiene juntos los importes y los campos editables de cada producto. */}
       <div className="quote-cuerpo">
         <div className="items-top">
           <span>Detalle del pedido</span>
@@ -352,220 +366,239 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                       ? { pregunta: pendiente.pregunta, sugerido: pendiente.rechazo.sugerido }
                       : null;
                   return (
-                    <tr key={i} className={pendiente ? 'pending' : ''}>
-                      <td>
-                        <strong>{descripcion}</strong>
-                        <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
-                        {linea && <small>{referenciaCatalogo(linea)}</small>}
-                        {/* Con la cotización editable, el margen se ve (y se cambia) en el bloque de edición de la línea. */}
-                        {!editable && linea && textoMargenLinea(actual, linea) && (
-                          <small className="margen-manual">{textoMargenLinea(actual, linea)}</small>
-                        )}
-                        {s.modeloOriginal && s.coincidenciaModelo && (
-                          <small className={`match-confidence ${s.coincidenciaModelo}`}>
-                            {s.coincidenciaModelo === 'alias' ? 'Normalizado desde' : 'Revisar posible coincidencia'}: {s.modeloOriginal}
-                          </small>
-                        )}
-                        {medida && <small>{medida}</small>}
-                        {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
-                        {editable && posible && (
-                          <div className="aviso-medida" role="note">
-                            <span>{posible.pregunta}</span>
+                    <Fragment key={i}>
+                      <tr className={pendiente ? 'pending' : ''}>
+                        <td>
+                          <strong>{descripcion}</strong>
+                          <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
+                          {linea && <small>{referenciaCatalogo(linea)}</small>}
+                          {/* Con la cotización editable, el margen se ve (y se cambia) en el bloque de edición de la línea. */}
+                          {!editable && linea && textoMargenLinea(actual, linea) && (
+                            <small className="margen-manual">{textoMargenLinea(actual, linea)}</small>
+                          )}
+                          {s.modeloOriginal && s.coincidenciaModelo && (
+                            <small className={`match-confidence ${s.coincidenciaModelo}`}>
+                              {s.coincidenciaModelo === 'alias' ? 'Normalizado desde' : 'Revisar posible coincidencia'}: {s.modeloOriginal}
+                            </small>
+                          )}
+                          {medida && <small>{medida}</small>}
+                          {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
+                        </td>
+                        <td className="celda-cantidad">
+                          <CampoEditable
+                            key={`${actual.actualizada}-${i}`}
+                            etiqueta={`Cantidad de ${descripcion}`}
+                            etiquetaOculta
+                            discreto
+                            valor={s.cantidad === null ? '' : String(s.cantidad)}
+                            mostrar={s.cantidad ?? '—'}
+                            editable={editable}
+                            guardando={guardando === `cantidad.${i}`}
+                            tipo="number"
+                            min={1}
+                            max={10000}
+                            paso={1}
+                            validar={(v) => {
+                              const n = Number(v);
+                              return Number.isInteger(n) && n >= 1 && n <= 10000
+                                ? null
+                                : 'La cantidad debe ser un número entero entre 1 y 10.000.';
+                            }}
+                            guardar={(v) =>
+                              acciones.editar(
+                                { cantidades: [{ indice: i, cantidad: Number(v) }] },
+                                `cantidad.${i}`,
+                              )
+                            }
+                          />
+                        </td>
+                        <td className="celda-monto" data-etiqueta="Unitario">
+                          {linea ? (
+                            <CampoEditable
+                              etiqueta="Precio unitario"
+                              etiquetaOculta
+                              valor={s.precioUnitario === null || s.precioUnitario === undefined ? '' : String(s.precioUnitario)}
+                              mostrar={pesos(linea.precioUnitario)}
+                              editable={editable}
+                              discreto
+                              guardando={guardando === `item.${i}.precioUnitario`}
+                              tipo="text"
+                              sufijo="$"
+                              validar={(v) => {
+                                const n = v ? leerPesos(v) : null;
+                                return n === null || (Number.isSafeInteger(n) && n > 0 && n <= 100_000_000)
+                                  ? null
+                                  : 'El precio debe ser un entero entre $1 y $100.000.000.';
+                              }}
+                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { precioUnitario: v ? leerPesos(v) : null } }] }, `item.${i}.precioUnitario`)}
+                            />
+                          ) : '—'}
+                        </td>
+                        <td className="celda-monto celda-total" data-etiqueta="Total">
+                          {linea ? pesos(linea.total) : '—'}
+                        </td>
+                        {conQuitar && (
+                          <td className="celda-acciones">
                             <button
                               type="button"
-                              className="button secondary small"
-                              aria-label={`Confirmar ${nombreProducto(posible.sugerido)} en el ítem ${i + 1}`}
-                              onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { modelo: posible.sugerido } }] }, `item.${i}.modelo`)}
+                              className="remove"
+                              onClick={() => acciones.quitar(i)}
+                              disabled={!editable}
+                              aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
                             >
-                              Confirmar {nombreProducto(posible.sugerido)}
+                              ×
                             </button>
-                          </div>
+                          </td>
                         )}
-                        {editable && linea?.producto.familia === 'PUERTA' && (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
-                          <div className="aviso-medida" role="note">
-                            <span>{RECTIFICAR_MEDIDA}</span>
-                            {!s.observaciones?.includes(RECTIFICAR_MEDIDA) && (
-                              <button
-                                type="button"
-                                className="button secondary small"
-                                aria-label={`Agregar como observación al ítem ${i + 1}: ${descripcion}`}
-                                onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { observaciones: [s.observaciones, RECTIFICAR_MEDIDA].filter(Boolean).join(' ') } }] }, `item.${i}.observaciones`)}
-                              >
-                                Agregar como observación
-                              </button>
-                            )}
-                          </div>
-                        )}
-                        {editable && (
-                          <div className="item-editables">
-                            {linea && <small className="precio-trazabilidad">Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} → cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}</small>}
-                            <CampoEditable
-                              etiqueta="Descripción para el documento"
-                              valor={s.descripcion ?? ''}
-                              mostrar={s.descripcion || descripcion}
-                              editable={editable}
-                              discreto
-                              maxLength={300}
-                              guardando={guardando === `item.${i}.descripcion`}
-                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { descripcion: v || null } }] }, `item.${i}.descripcion`)}
-                            />
-                            <CampoEditable
-                              etiqueta="Modelo"
-                              etiquetaOculta
-                              valor={s.modelo ?? ''}
-                              mostrar={s.modelo || 'Modelo'}
-                              editable={editable}
-                              discreto
-                              guardando={guardando === `item.${i}.modelo`}
-                              maxLength={300}
-                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { modelo: v || null } }] }, `item.${i}.modelo`)}
-                            />
-                            <CampoEditable
-                              etiqueta="Madera"
-                              etiquetaOculta
-                              valor={s.madera ?? ''}
-                              mostrar={s.madera || 'Madera'}
-                              editable={editable}
-                              discreto
-                              guardando={guardando === `item.${i}.madera`}
-                              maxLength={300}
-                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { madera: v || null } }] }, `item.${i}.madera`)}
-                            />
-                            {linea?.producto.familia === 'PUERTA' ? (
-                              <CampoEditable
-                                etiqueta="Ancho"
-                                etiquetaOculta
-                                valor={s.ancho === null ? '' : String(s.ancho)}
-                                mostrar={s.ancho ?? 'Ancho'}
-                                editable={editable}
-                                discreto
-                                tipo="number"
-                                paso={0.01}
-                                guardando={guardando === `item.${i}.ancho`}
-                                validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un ancho válido.')}
-                                guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { ancho: v ? Number(v) : null } }] }, `item.${i}.ancho`)}
-                              />
-                            ) : (
-                              <CampoEditable
-                                etiqueta="Medida"
-                                etiquetaOculta
-                                valor={s.medida ?? ''}
-                                mostrar={s.medida || 'Medida'}
-                                editable={editable}
-                                discreto
-                                guardando={guardando === `item.${i}.medida`}
-                                maxLength={300}
-                                guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { medida: v || null } }] }, `item.${i}.medida`)}
-                              />
-                            )}
-                            <CampoEditable
-                              etiqueta="Alto / largo"
-                              etiquetaOculta
-                              valor={s.alto === null ? '' : String(s.alto)}
-                              mostrar={s.alto ?? 'Alto / largo'}
-                              editable={editable}
-                              discreto
-                              tipo="number"
-                              paso={0.01}
-                              guardando={guardando === `item.${i}.alto`}
-                              validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un alto válido.')}
-                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { alto: v ? Number(v) : null } }] }, `item.${i}.alto`)}
-                            />
-                            <label className="ia-field item-select-field">
-                              <span>La medida corresponde a</span>
-                              <select
-                                value={s.tipoMedida ?? 'no_especificado'}
-                                onChange={(e) => void acciones.editar({ items: [{ indice: i, cambios: { tipoMedida: e.target.value as 'hoja' | 'vano' | 'no_especificado' } }] }, `item.${i}.tipoMedida`)}
-                                disabled={!editable || ocupado}
-                              >
-                                <option value="no_especificado">No especificado</option>
-                                <option value="hoja">Hoja</option>
-                                <option value="vano">Vano</option>
-                              </select>
-                            </label>
-                            <CampoEditable
-                              etiqueta="Observación del producto"
-                              valor={s.observaciones ?? ''}
-                              mostrar={s.observaciones || 'Agregar observación (ej. confirmar sentido de apertura)'}
-                              editable={editable}
-                              discreto
-                              maxLength={500}
-                              guardando={guardando === `item.${i}.observaciones`}
-                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { observaciones: v || null } }] }, `item.${i}.observaciones`)}
-                            />
-                            {linea && (
-                              <MargenLinea actual={actual} linea={linea} indice={i} editable={editable} editar={acciones.editar} />
-                            )}
-                          </div>
-                        )}
-                      </td>
-                      <td className="celda-cantidad">
-                        <CampoEditable
-                          key={`${actual.actualizada}-${i}`}
-                          etiqueta={`Cantidad de ${descripcion}`}
-                          etiquetaOculta
-                          discreto
-                          valor={s.cantidad === null ? '' : String(s.cantidad)}
-                          mostrar={s.cantidad ?? '—'}
-                          editable={editable}
-                          guardando={guardando === `cantidad.${i}`}
-                          tipo="number"
-                          min={1}
-                          max={10000}
-                          paso={1}
-                          validar={(v) => {
-                            const n = Number(v);
-                            return Number.isInteger(n) && n >= 1 && n <= 10000
-                              ? null
-                              : 'La cantidad debe ser un número entero entre 1 y 10.000.';
-                          }}
-                          guardar={(v) =>
-                            acciones.editar(
-                              { cantidades: [{ indice: i, cantidad: Number(v) }] },
-                              `cantidad.${i}`,
-                            )
-                          }
-                        />
-                      </td>
-                      <td className="celda-monto" data-etiqueta="Unitario">
-                        {linea ? (
-                          <CampoEditable
-                            etiqueta="Precio unitario"
-                            etiquetaOculta
-                            valor={s.precioUnitario === null || s.precioUnitario === undefined ? '' : String(s.precioUnitario)}
-                            mostrar={pesos(linea.precioUnitario)}
-                            editable={editable}
-                            discreto
-                            guardando={guardando === `item.${i}.precioUnitario`}
-                            tipo="text"
-                            sufijo="$"
-                            validar={(v) => {
-                              const n = v ? leerPesos(v) : null;
-                              return n === null || (Number.isSafeInteger(n) && n > 0 && n <= 100_000_000)
-                                ? null
-                                : 'El precio debe ser un entero entre $1 y $100.000.000.';
-                            }}
-                            guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { precioUnitario: v ? leerPesos(v) : null } }] }, `item.${i}.precioUnitario`)}
-                          />
-                        ) : '—'}
-                      </td>
-                      <td className="celda-monto celda-total" data-etiqueta="Total">
-                        {linea ? pesos(linea.total) : '—'}
-                      </td>
-                      {conQuitar && (
-                        <td className="celda-acciones">
-                          <button
-                            type="button"
-                            className="remove"
-                            onClick={() => acciones.quitar(i)}
-                            disabled={!editable}
-                            aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
-                          >
-                            ×
-                          </button>
-                        </td>
+                      </tr>
+                      {editable && (
+                        <tr className="item-editor-row">
+                          <td className="quote-item-editor-cell" colSpan={conQuitar ? 5 : 4}>
+                            <div className="item-editor" role="group" aria-label={`Datos editables del ítem ${i + 1}`}>
+                              {posible && (
+                                <div className="aviso-medida" role="note">
+                                  <span>{posible.pregunta}</span>
+                                  <button
+                                    type="button"
+                                    className="button secondary small"
+                                    aria-label={`Confirmar ${nombreProducto(posible.sugerido)} en el ítem ${i + 1}`}
+                                    onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { modelo: posible.sugerido } }] }, `item.${i}.modelo`)}
+                                  >
+                                    Confirmar {nombreProducto(posible.sugerido)}
+                                  </button>
+                                </div>
+                              )}
+                              {linea?.producto.familia === 'PUERTA' && (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
+                                <div className="aviso-medida" role="note">
+                                  <span>{RECTIFICAR_MEDIDA}</span>
+                                  {!s.observaciones?.includes(RECTIFICAR_MEDIDA) && (
+                                    <button
+                                      type="button"
+                                      className="button secondary small"
+                                      aria-label={`Agregar como observación al ítem ${i + 1}: ${descripcion}`}
+                                      onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { observaciones: [s.observaciones, RECTIFICAR_MEDIDA].filter(Boolean).join(' ') } }] }, `item.${i}.observaciones`)}
+                                    >
+                                      Agregar como observación
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                              <div className="item-editor-heading">
+                                <strong>Datos del producto</strong>
+                                {linea && (
+                                  <small className="precio-trazabilidad">
+                                    Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} → cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}
+                                  </small>
+                                )}
+                              </div>
+                              <div className="item-editables">
+                                <CampoEditable
+                                  className="item-campo item-campo-descripcion"
+                                  etiqueta="Descripción para el documento"
+                                  valor={s.descripcion ?? ''}
+                                  mostrar={s.descripcion || descripcion}
+                                  editable={editable}
+                                  discreto
+                                  maxLength={300}
+                                  guardando={guardando === `item.${i}.descripcion`}
+                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { descripcion: v || null } }] }, `item.${i}.descripcion`)}
+                                />
+                                <CampoEditable
+                                  className="item-campo"
+                                  etiqueta="Modelo"
+                                  valor={s.modelo ?? ''}
+                                  mostrar={s.modelo || 'Agregar modelo'}
+                                  editable={editable}
+                                  discreto
+                                  guardando={guardando === `item.${i}.modelo`}
+                                  maxLength={300}
+                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { modelo: v || null } }] }, `item.${i}.modelo`)}
+                                />
+                                <CampoEditable
+                                  className="item-campo"
+                                  etiqueta="Madera"
+                                  valor={s.madera ?? ''}
+                                  mostrar={s.madera || 'Agregar madera'}
+                                  editable={editable}
+                                  discreto
+                                  guardando={guardando === `item.${i}.madera`}
+                                  maxLength={300}
+                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { madera: v || null } }] }, `item.${i}.madera`)}
+                                />
+                                {linea?.producto.familia === 'PUERTA' ? (
+                                  <CampoEditable
+                                    className="item-campo"
+                                    etiqueta="Ancho"
+                                    valor={s.ancho === null ? '' : String(s.ancho)}
+                                    mostrar={s.ancho ?? 'Agregar ancho'}
+                                    editable={editable}
+                                    discreto
+                                    tipo="number"
+                                    paso={0.01}
+                                    guardando={guardando === `item.${i}.ancho`}
+                                    validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un ancho válido.')}
+                                    guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { ancho: v ? Number(v) : null } }] }, `item.${i}.ancho`)}
+                                  />
+                                ) : (
+                                  <CampoEditable
+                                    className="item-campo"
+                                    etiqueta="Medida"
+                                    valor={s.medida ?? ''}
+                                    mostrar={s.medida || 'Agregar medida'}
+                                    editable={editable}
+                                    discreto
+                                    guardando={guardando === `item.${i}.medida`}
+                                    maxLength={300}
+                                    guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { medida: v || null } }] }, `item.${i}.medida`)}
+                                  />
+                                )}
+                                <CampoEditable
+                                  className="item-campo"
+                                  etiqueta="Alto / largo"
+                                  valor={s.alto === null ? '' : String(s.alto)}
+                                  mostrar={s.alto ?? 'Agregar alto o largo'}
+                                  editable={editable}
+                                  discreto
+                                  tipo="number"
+                                  paso={0.01}
+                                  guardando={guardando === `item.${i}.alto`}
+                                  validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un alto válido.')}
+                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { alto: v ? Number(v) : null } }] }, `item.${i}.alto`)}
+                                />
+                                <div className="ia-field item-select-field item-campo">
+                                  <span>La medida corresponde a</span>
+                                  <SelectorDesplegable
+                                    ariaLabel={`La medida corresponde a, ítem ${i + 1}`}
+                                    value={s.tipoMedida ?? 'no_especificado'}
+                                    opciones={[
+                                      { value: 'no_especificado', label: 'No especificado' },
+                                      { value: 'hoja', label: 'Hoja' },
+                                      { value: 'vano', label: 'Vano' },
+                                    ]}
+                                    onChange={(valor) => void acciones.editar({ items: [{ indice: i, cambios: { tipoMedida: valor as 'hoja' | 'vano' | 'no_especificado' } }] }, `item.${i}.tipoMedida`)}
+                                    disabled={!editable || ocupado}
+                                  />
+                                </div>
+                                <CampoEditable
+                                  className="item-campo item-campo-observacion"
+                                  etiqueta="Observación del producto"
+                                  valor={s.observaciones ?? ''}
+                                  mostrar={s.observaciones || 'Agregar observación (ej. confirmar sentido de apertura)'}
+                                  editable={editable}
+                                  discreto
+                                  maxLength={500}
+                                  guardando={guardando === `item.${i}.observaciones`}
+                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { observaciones: v || null } }] }, `item.${i}.observaciones`)}
+                                />
+                                {linea && (
+                                  <MargenLinea actual={actual} linea={linea} indice={i} editable={editable} editar={acciones.editar} />
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>

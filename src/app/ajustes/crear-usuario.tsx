@@ -52,7 +52,7 @@ export function CrearUsuario({ avisar }: Props) {
       setAbierto(false);
       avisar(
         'exito',
-        `Cuenta admin creada para ${data.usuario.email}. La persona podrá cambiar su contraseña desde Ajustes.`,
+        `Cuenta creada para ${data.usuario.email}. La persona podrá cambiar su contraseña desde Ajustes.`,
         {
           clave: 'usuarios',
         },
@@ -77,13 +77,13 @@ export function CrearUsuario({ avisar }: Props) {
 
   return (
     <div className="usuarios-admin">
+      <h3 className="eyebrow ajustes-subtitulo">NUEVA CUENTA</h3>
       <p className="catalog-modal-intro">
-        Todas las cuentas tienen rol admin. Define una contraseña inicial; la persona podrá cambiarla desde
-        Ajustes.
+        Define una contraseña inicial; la persona podrá cambiarla desde Ajustes.
       </p>
       {!abierto ? (
-        <button type="button" className="ia-settings-button" onClick={() => setAbierto(true)}>
-          + Crear cuenta admin
+        <button type="button" className="button secondary" onClick={() => setAbierto(true)}>
+          Crear cuenta
         </button>
       ) : (
         <form className="dialogo-campos usuario-crear-form" onSubmit={crear}>
@@ -147,7 +147,7 @@ export function CrearUsuario({ avisar }: Props) {
               Cancelar
             </button>
             <button type="submit" className="button primary" disabled={ocupado}>
-              {ocupado ? 'Creando…' : 'Crear cuenta admin'}
+              {ocupado ? 'Creando…' : 'Crear cuenta'}
             </button>
           </div>
         </form>

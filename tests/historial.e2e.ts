@@ -61,13 +61,16 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   // El asistente tiene su propia pantalla, «Ajustes».
   await page.getByRole('link', { name: 'Ajustes', exact: true }).click();
   await expect(page).toHaveURL(/\/ajustes$/);
-  await expect(page.getByRole('heading', { name: 'Asistente', level: 2 })).toBeVisible();
-  // El cambio de contraseña también vive en «Ajustes» (ya no en el menú de la cabecera).
+  // El cambio de contraseña vive en «Ajustes» (ya no en el menú de la cabecera), en la sección de la cuenta.
+  await expect(page.getByRole('heading', { name: 'Mi cuenta', level: 2 })).toBeVisible();
   await expect(page.getByRole('form', { name: 'Cambiar contraseña' })).toBeVisible();
+  await page.getByRole('navigation', { name: 'Secciones de ajustes' }).getByRole('link', { name: 'Asistente' }).click();
+  await expect(page).toHaveURL(/\/ajustes\?seccion=asistente$/);
+  await expect(page.getByRole('heading', { name: 'Asistente', level: 2 })).toBeVisible();
   await expect(page.getByRole('banner').getByRole('button', { name: 'Cambiar contraseña' })).toHaveCount(0);
   // Los enlaces antiguos a «Catálogo y ajustes» llevan a la pantalla que corresponde.
   await page.goto('/configuracion?seccion=asistente');
-  await expect(page).toHaveURL(/\/ajustes$/);
+  await expect(page).toHaveURL(/\/ajustes\?seccion=asistente$/);
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
   await expect(
     page.getByLabel('Vista previa de la cotización').getByRole('heading', { level: 2 }),

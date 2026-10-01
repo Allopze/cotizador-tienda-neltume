@@ -475,33 +475,6 @@ p + .pregunta-opciones {
   border-color: var(--disabled-bg);
   color: var(--muted);
 }
-.feriado-form {
-  display: grid;
-  /* Sin mínimos: una columna con mínimo fijo desborda el ancho disponible cuando la pantalla aprieta. */
-  grid-template-columns: minmax(0, 0.5fr) minmax(0, 1fr) auto;
-  align-items: end;
-  gap: 10px 14px;
-  margin: 16px 0;
-}
-.feriado-lista {
-  max-width: 680px;
-  border-top: 1px solid var(--line);
-}
-.feriado-fila {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line-soft);
-}
-.feriado-fila span {
-  display: grid;
-  gap: 3px;
-}
-.feriado-fila small {
-  color: var(--muted);
-}
 /* Configuración del catálogo: cada lista se edita por filas, sin escribir JSON. */
 .config-grupo {
   margin: 20px 0 0;

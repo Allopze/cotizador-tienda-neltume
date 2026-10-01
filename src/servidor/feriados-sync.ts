@@ -30,7 +30,7 @@ export const sincronizacionActiva = () => process.env.NELTUME_FERIADOS_SYNC !== 
 /** Carga en memoria los feriados guardados para que los use el cálculo de días hábiles. */
 export function cargarFeriadosGuardados(db: Database.Database) {
   const filas = db
-    .prepare('SELECT fecha FROM feriados UNION ALL SELECT fecha FROM feriados_manuales')
+    .prepare('SELECT fecha FROM feriados')
     .all() as { fecha: string }[];
   registrarFeriadosExternos(filas.map((f) => f.fecha));
 }
@@ -124,9 +124,7 @@ export function estadoFeriados(db: Database.Database) {
       .prepare('SELECT anio, sincronizado, intentado, error FROM feriados_sincronizacion ORDER BY anio')
       .all() as (FilaSincronizacion & { error: string | null })[],
     feriados: db
-      .prepare(
-        'SELECT fecha, nombre FROM feriados UNION ALL SELECT fecha, nombre FROM feriados_manuales ORDER BY fecha',
-      )
+      .prepare('SELECT fecha, nombre FROM feriados ORDER BY fecha')
       .all() as {
       fecha: string;
       nombre: string;

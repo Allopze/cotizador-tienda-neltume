@@ -355,9 +355,9 @@
   }
 }
 /*
- * Cotizador a pantalla completa (escritorio y tablet): la página mide justo el alto de la ventana y no se
- * desplaza. Solo hacen scroll por dentro la conversación y la lista de ítems; cabecera, datos del
- * cliente, acciones y totales quedan siempre a la vista. En pantallas bajas o angostas se apila con scroll.
+ * Cotizador a pantalla completa (escritorio y tablet): la página mide justo el alto de la ventana. La
+ * conversación y la columna de cotización se desplazan por separado; el detalle completo de la cotización
+ * se recorre como una sola columna. En pantallas bajas o angostas el contenido vuelve al scroll de página.
  */
 @media (min-width: 801px) and (min-height: 680px) {
   .pantalla-completa {
@@ -413,8 +413,7 @@
   .pantalla-completa .composer {
     margin-top: 12px;
   }
-  /* Cotización: cabecera y cliente arriba, ítems al medio (con scroll), acciones y totales abajo. Si la
-     ventana es tan baja que no cabe, el propio panel se desplaza: nada queda fuera de alcance. */
+  /* Cotización: el panel puede desplazarse cuando el detalle supera el alto disponible. */
   .pantalla-completa .quote-panel {
     min-height: 0;
     overflow-y: auto;
@@ -536,17 +535,7 @@
     justify-self: end;
     margin: 0 12px 14px;
   }
-  /*
-   * Formularios de Ajustes y del catálogo: una sola columna. Estas reglas vivían en el bloque de
-   * pantalla completa de escritorio, así que en el teléfono el formulario de feriados conservaba sus
-   * tres columnas (mínimos de 150 y 200 px) y desbordaba la página.
-   */
-  .feriado-form {
-    grid-template-columns: 1fr;
-  }
-  .feriado-form .button {
-    justify-self: start;
-  }
+  /* Formularios de Ajustes y del catálogo: una sola columna. */
   .logo-configuracion {
     grid-template-columns: 1fr;
   }

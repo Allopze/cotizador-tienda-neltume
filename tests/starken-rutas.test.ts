@@ -342,7 +342,7 @@ describe('ciudades y cotización de Starken', () => {
       expect((await cotizar({ id: q.id, codigoCiudad: -3 })).status).toBe(400);
       expect((await cotizar('{')).status).toBe(400);
       expect((await cotizar({ id: crypto.randomUUID() })).status).toBe(404);
-      // Sin origen ni pesos en Ajustes no hay bulto que cotizar.
+      // Sin origen en Ajustes no hay envío que cotizar.
       const sinPesos = await cotizar({ id: q.id });
       expect(sinPesos.status).toBe(400);
       expect(await sinPesos.json()).toMatchObject({ codigo: 'starken_sin_parametros' });

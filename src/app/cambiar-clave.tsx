@@ -1,6 +1,7 @@
 'use client';
 import { useRef, useState, type FormEvent } from 'react';
 import type { TipoAviso } from './avisos';
+import { useAvisarCambios } from './ajustes/borrador';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 // Mismos límites que Better Auth (minPasswordLength / maxPasswordLength en autenticacion-config).
@@ -9,10 +10,12 @@ const MINIMO = 8,
 
 interface Props {
   avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
+  /** Avisa si hay algo escrito sin enviar (Ajustes lo marca y pide confirmar al salir). */
+  alCambiar?: (sucio: boolean) => void;
 }
 
 /** Cambio de la contraseña propia (sección de «Ajustes»); cierra las demás sesiones de la cuenta. */
-export function CambiarClave({ avisar }: Props) {
+export function CambiarClave({ avisar, alCambiar }: Props) {
   const [actual, setActual] = useState(''),
     [nueva, setNueva] = useState(''),
     [repetida, setRepetida] = useState('');
@@ -20,6 +23,7 @@ export function CambiarClave({ avisar }: Props) {
   const [ocupado, setOcupado] = useState(false);
   const primera = useRef<HTMLInputElement>(null);
   const escrito = !!(actual || nueva || repetida);
+  useAvisarCambios(escrito, alCambiar);
 
   function limpiar() {
     setActual('');

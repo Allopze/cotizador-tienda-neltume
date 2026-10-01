@@ -13,6 +13,7 @@ import { leerPesos } from '@/negocio/cifras';
 import { pesos, porcentaje } from '@/negocio/precios';
 import { fechaLocal } from '@/negocio/vigencia';
 import { fechaLarga } from './formato';
+import { SelectorDesplegable } from './selector-desplegable';
 
 interface Props {
   actual: Cotizacion;
@@ -158,13 +159,19 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           </div>
         ) : (
           <form className="workflow-payment" onSubmit={marcarFacturada}>
-            <label className="ia-field">
+            <div className="ia-field">
               <span>Documento</span>
-              <select value={tipoFactura} onChange={(e) => setTipoFactura(e.target.value as 'factura' | 'boleta')} disabled={ocupado}>
-                <option value="factura">Factura</option>
-                <option value="boleta">Boleta</option>
-              </select>
-            </label>
+              <SelectorDesplegable
+                ariaLabel="Documento"
+                value={tipoFactura}
+                opciones={[
+                  { value: 'factura', label: 'Factura' },
+                  { value: 'boleta', label: 'Boleta' },
+                ]}
+                onChange={(valor) => setTipoFactura(valor as 'factura' | 'boleta')}
+                disabled={ocupado}
+              />
+            </div>
             <label className="ia-field"><span>N° o identificador externo</span><input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} maxLength={120} placeholder="Ej. 1234" disabled={ocupado} /></label>
             <label className="ia-field"><span>Fecha de emisión</span><input type="date" value={fechaFactura} onChange={(e) => setFechaFactura(e.target.value)} disabled={ocupado} /></label>
             <button type="submit" className="button secondary" disabled={ocupado}>Marcar como facturada</button>

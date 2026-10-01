@@ -6,7 +6,6 @@ import { pesos } from '@/negocio/precios';
 import {
   buscarCiudades,
   calcularBulto,
-  ETIQUETA_FAMILIA,
   textoBulto,
   textoTarifa,
   type CiudadStarken,
@@ -73,7 +72,6 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
           : !estado.configuracion.origen
             ? 'Configura la ciudad de origen de Starken en Ajustes'
             : '';
-  const faltanParametros = !!estado?.disponible && !bulto.ok && bulto.motivo === 'sin_parametros';
   const puedeCotizar = !bloqueo && !ocupado && !cargando;
 
   async function cotizar(codigoCiudad?: number) {
@@ -174,13 +172,10 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
         {bloqueo ? (
           <p className="muted starken-ayuda" id="starken-ayuda">
             {bloqueo}
-            {faltanParametros && !bulto.ok && bulto.familias.length > 0 && (
-              <> (falta: {bulto.familias.map((f) => ETIQUETA_FAMILIA[f].toLowerCase()).join(', ')})</>
-            )}
-            {(faltanParametros || estado?.configuracion.origen === null) && estado?.disponible && (
+            {estado?.configuracion.origen === null && estado.disponible && (
               <>
                 {' '}
-                <Link href="/ajustes">Abrir Ajustes</Link>
+                <Link href="/ajustes?seccion=starken">Abrir Ajustes</Link>
               </>
             )}
           </p>

@@ -14,6 +14,7 @@ import {
 import type { Familia } from '@/catalogo/tipos';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { AccionesGuardar, useAvisarCambios } from './borrador';
 
 type Estado = EstadoStarken & { puedeEditar: boolean };
 type Texto = Record<Familia, { kg: string; espesorCm: string }>;
@@ -42,13 +43,15 @@ function errorFamilia(familia: string, kg: number | null, espesorCm: number | nu
 }
 
 /**
- * Ajustes de Starken: ciudad de origen y, como el catálogo no trae pesos, el peso por unidad y el grosor de cada
- * familia. Vacíos de fábrica: mientras falten, la cotización de despacho no se puede pedir.
+ * Ajustes de Starken: ciudad de origen y, si la empresa los midió, el peso por unidad y el grosor de cada familia.
+ * Vacíos, el peso y las medidas embaladas se estiman por producto (medidas, madera y embalaje).
  */
 export function ConfiguracionStarkenAjustes({
   avisar,
+  alCambiar,
 }: {
   avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
+  alCambiar?: (sucio: boolean) => void;
 }) {
   const [estado, setEstado] = useState<Estado | null>(null);
   const [origen, setOrigen] = useState('');
@@ -57,6 +60,13 @@ export function ConfiguracionStarkenAjustes({
   const [error, setError] = useState('');
   const [errorCiudades, setErrorCiudades] = useState('');
   const [ocupado, setOcupado] = useState(false);
+
+  const sucio =
+    !!estado &&
+    !!textos &&
+    (origen !== (estado.configuracion.origen ? String(estado.configuracion.origen.codigoCiudad) : '') ||
+      JSON.stringify(textos) !== JSON.stringify(aTextos(estado.configuracion)));
+  useAvisarCambios(sucio, alCambiar);
 
   const recibir = (e: Estado) => {
     setEstado(e);
@@ -107,7 +117,7 @@ export function ConfiguracionStarkenAjustes({
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
-    if (!editable || ocupado || !estado || !textos) return;
+    if (!editable || ocupado || !sucio || !estado || !textos) return;
     const paquete = {} as ConfiguracionStarken['paquete'];
     for (const f of FAMILIAS_ENVIO) {
       const kg = leerMedida(textos[f].kg),
@@ -141,15 +151,21 @@ export function ConfiguracionStarkenAjustes({
   return (
     <form onSubmit={guardar} aria-label="Despacho con Starken">
       <p className="catalog-modal-intro">
-        Con Starken se cotiza el despacho desde la cotización, según el bulto que arman las puertas y piezas
-        del pedido. El catálogo no trae pesos: indica el peso y el espesor de una unidad de cada familia. Los
-        marcos, molduras y piezas T se toman con sección cuadrada del espesor indicado. Mientras falten, el
-        botón «Cotizar con Starken» no está disponible.
+        El despacho con Starken se cotiza desde la cotización, con el bulto que arman las piezas del pedido.
+        Deja vacía una familia para que su peso se estime; si ya pesaste una unidad embalada, indícalo aquí.
       </p>
+      <details className="ajustes-detalle">
+        <summary>¿Cómo se estima el bulto?</summary>
+        <p>
+          Sin datos medidos, el peso y las medidas de cada producto se calculan con sus medidas, la densidad de la
+          madera y un embalaje típico (cartón para puertas, film para el resto). Con datos medidos se usan el peso y
+          el espesor indicados; los marcos, molduras y piezas T se toman con sección cuadrada de ese espesor.
+        </p>
+      </details>
       {!estado.disponible && (
         <p className="catalog-error" role="status">
-          {estado.mensaje ?? 'Starken no está configurado'}. Quien administra el servidor debe definir las
-          variables STARKEN_* (ver el README). Mientras tanto puedes guardar los pesos.
+          Starken aún no está conectado a este cotizador; pide a soporte que lo active. Mientras tanto
+          puedes guardar los pesos medidos.
         </p>
       )}
       <label className="ia-field">
@@ -193,6 +209,7 @@ export function ConfiguracionStarkenAjustes({
                 inputMode="decimal"
                 maxLength={8}
                 aria-label={`${ETIQUETA_FAMILIA[f]}: peso por unidad (kg)`}
+                placeholder="Estimado"
                 value={textos[f].kg}
                 onChange={(e) => setTexto(f, 'kg', e.target.value)}
                 disabled={!editable || ocupado}
@@ -204,6 +221,7 @@ export function ConfiguracionStarkenAjustes({
                 inputMode="decimal"
                 maxLength={8}
                 aria-label={`${ETIQUETA_FAMILIA[f]}: espesor (cm)`}
+                placeholder="Estimado"
                 value={textos[f].espesorCm}
                 onChange={(e) => setTexto(f, 'espesorCm', e.target.value)}
                 disabled={!editable || ocupado}
@@ -218,19 +236,14 @@ export function ConfiguracionStarkenAjustes({
         </p>
       )}
       {editable && (
-        <div className="ia-actions">
-          <button
-            type="button"
-            className="button secondary"
-            onClick={() => recibir(estado)}
-            disabled={ocupado}
-          >
-            Descartar cambios
-          </button>
-          <button type="submit" className="button primary" disabled={ocupado}>
-            {ocupado ? 'Guardando…' : 'Guardar Starken'}
-          </button>
-        </div>
+        <AccionesGuardar
+          sucio={sucio}
+          ocupado={ocupado}
+          descartar={() => {
+            setError('');
+            recibir(estado);
+          }}
+        />
       )}
     </form>
   );

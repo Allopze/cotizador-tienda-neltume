@@ -10,10 +10,8 @@ import type { Cotizacion } from '../src/negocio/estado';
 import {
   buscarCiudades,
   calcularBulto,
-  familiasSinParametros,
   IVA_STARKEN,
   leerMedida,
-  MENSAJE_SIN_PARAMETROS,
   netoDesdeIva,
   normalizarNombre,
   parametrosVacios,
@@ -546,7 +544,7 @@ describe('proveedor ShippingProvider de Starken', () => {
     });
   });
 
-  it('sin origen, sin pesos o con un destino dudoso falla con un mensaje claro y sin llamar a tarifas', async () => {
+  it('sin origen o con un destino dudoso falla con un mensaje claro y sin llamar a tarifas', async () => {
     const fetch = vi.fn<Fetch>(async () => json(listaDestino()));
     const falla = async (p: ProveedorStarken, destino: string, productos = [linea(puerta, 1)]) =>
       (await p.calculateShipping(destino, productos).catch((e: unknown) => e)) as ErrorStarken;
@@ -555,8 +553,6 @@ describe('proveedor ShippingProvider de Starken', () => {
       codigo: 'paquete',
       message: 'Configura la ciudad de origen de Starken en Ajustes.',
     });
-    const sinPesos = await falla(new ProveedorStarken(contexto(fetch, parametrosVacios())), 'Temuco');
-    expect(sinPesos).toMatchObject({ codigo: 'paquete', message: MENSAJE_SIN_PARAMETROS });
     const dudoso = await falla(new ProveedorStarken(contexto(fetch)), 'San Pablo');
     expect(dudoso).toMatchObject({ codigo: 'destino' });
     expect(dudoso.message).toContain('OSORNO, RIO NEGRO');
@@ -653,27 +649,52 @@ describe('bulto equivalente', () => {
     });
   });
 
-  it('sin peso y espesor de una familia usada no hay bulto: no se inventan pesos', () => {
-    const vacio = calcularBulto([linea(puerta, 1)], parametrosVacios());
-    expect(vacio).toMatchObject({
-      ok: false,
-      motivo: 'sin_parametros',
-      familias: ['PUERTA'],
-      mensaje: 'Configura peso y espesor en Ajustes',
+  it('sin peso y espesor definidos, estima cada producto con su madera, su tipo y el embalaje', () => {
+    const panel = producto({ ...puerta, codigo: 'PANEL', tipo: 'PUERTA PANEL', madera: 'LENGA' });
+    const r = ok(calcularBulto([linea(panel, 1)], parametrosVacios()));
+    // 0,85 × 2,00 × 0,045 m × 75 % macizo × 560 kg/m³ ≈ 32,1 kg, más el cartón: 5,5 × 89 × 204 cm embalada.
+    expect(r).toMatchObject({ alto: 5.5, ancho: 89, largo: 204, estimado: true });
+    expect(r.kilos).toBeGreaterThan(33);
+    expect(r.kilos).toBeLessThan(36);
+    expect(textoBulto(r)).toMatch(/kg \(estimado, con embalaje\)$/);
+    // Una maciza pesa más que una de tableros de la misma madera y medida.
+    const bloque = producto({ ...panel, codigo: 'BLOQUE', tipo: 'PUERTA BLOQUE' });
+    expect(ok(calcularBulto([linea(bloque, 1)], undefined)).kilos).toBeGreaterThan(r.kilos);
+    // Kit de marco 2×4: dos jambas y un dintel atados; 2X8 pesa cerca del doble.
+    const kit = ok(calcularBulto([linea(marco, 1)], parametrosVacios()));
+    expect(kit.largo).toBeCloseTo(2.1 * 105 + 4, 1);
+    expect(kit.kilos).toBeGreaterThan(8);
+    expect(kit.kilos).toBeLessThan(16);
+    const ancho = producto({ ...marco, codigo: 'MARCO-2X8', medida: '2X8' });
+    expect(ok(calcularBulto([linea(ancho, 1)], parametrosVacios())).kilos).toBeGreaterThan(kit.kilos * 1.8);
+    // Moldura en cm: 12 × 2 cm × 1 m de lenga ≈ 1,3 kg de madera.
+    const moldura = producto({
+      codigo: 'END',
+      familia: 'MOLDURA',
+      madera: 'LENGA',
+      medida: '12X2',
+      largo: 1,
     });
-    // Solo la familia que el pedido usa cuenta, y falta cualquiera de los dos datos.
-    expect(calcularBulto([linea(puerta, 1), linea(marco, 1)], parametros())).toMatchObject({
-      ok: false,
-      familias: ['MARCO'],
+    const m = ok(calcularBulto([linea(moldura, 1)], parametrosVacios()));
+    expect(m.kilos).toBeGreaterThan(1.3);
+    expect(m.kilos).toBeLessThan(2);
+  });
+
+  it('los valores definidos en Ajustes reemplazan la estimación solo en su familia', () => {
+    const r = ok(calcularBulto([linea(puerta, 2), linea(marco, 1)], parametros()));
+    // Puertas: 2 × 6 cm y 2 × 30 kg tal cual; el marco, estimado.
+    expect(r.estimado).toBe(true);
+    expect(r.alto).toBeGreaterThan(12);
+    expect(r.kilos).toBeGreaterThan(60);
+    expect(ok(calcularBulto([linea(puerta, 2)], parametros()))).toMatchObject({
+      alto: 12,
+      kilos: 60,
+      estimado: false,
     });
+    // Con uno solo de los dos datos se estima.
     expect(
-      familiasSinParametros([linea(puerta, 1)], parametros({ MARCO: { kg: null, espesorCm: null } })),
-    ).toEqual([]);
-    expect(calcularBulto([linea(puerta, 1)], parametros({ PUERTA: { kg: 30, espesorCm: null } })).ok).toBe(
-      false,
-    );
-    expect(calcularBulto([linea(puerta, 1)], parametros({ PUERTA: { kg: 0, espesorCm: 6 } })).ok).toBe(false);
-    expect(calcularBulto([linea(puerta, 1)], undefined).ok).toBe(false);
+      ok(calcularBulto([linea(puerta, 1)], parametros({ PUERTA: { kg: 30, espesorCm: null } }))).estimado,
+    ).toBe(true);
   });
 
   it('sin productos, o con cantidades en cero, no hay nada que despachar', () => {
@@ -952,7 +973,7 @@ describe('cotizar el despacho de una cotización con Starken', () => {
     });
   });
 
-  it('sin configurar, sin origen o sin pesos no consulta a Starken', async () => {
+  it('sin configurar o sin origen no consulta a Starken', async () => {
     const { borrador, starken, configuracion, espia } = await setup();
     const q = await borrador();
     await expect(cotizarEnvioStarken(q, undefined, configuracion(), null)).rejects.toMatchObject({
@@ -962,12 +983,6 @@ describe('cotizar el despacho de una cotización con Starken', () => {
     await expect(
       cotizarEnvioStarken(q, undefined, { ...configuracion(), origen: null }, starken),
     ).rejects.toThrow('ciudad de origen');
-    await expect(
-      cotizarEnvioStarken(q, undefined, { ...configuracion(parametrosVacios()) }, starken),
-    ).rejects.toMatchObject({
-      codigo: 'paquete',
-      message: 'Configura peso y espesor en Ajustes',
-    });
     expect(espia).not.toHaveBeenCalled();
   });
 
