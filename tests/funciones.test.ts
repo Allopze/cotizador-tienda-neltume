@@ -10,7 +10,7 @@ import { ErrorIA } from '../src/asistente/errores';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import { resolverItem } from '../src/catalogo/resolver';
 import { CORRELATIVO_COTIZACION, type Cotizacion } from '../src/negocio/estado';
-import { calcularVence, sumarDiasHabiles } from '../src/negocio/vigencia';
+import { calcularVence, fechaLocal, sumarDiasHabiles } from '../src/negocio/vigencia';
 import { normalizarRut } from '../src/negocio/cliente';
 import { plantilla } from '../src/servidor/pdf';
 vi.mock('../src/servidor/pdf', () => ({
@@ -595,7 +595,7 @@ describe('Listado y búsqueda', () => {
     expect(nombres('', { estados: ['emitida'] })).toEqual(['María José']);
     expect(almacen.listar({ porPagina: 2, pagina: 2 }).cotizaciones).toHaveLength(1);
     expect(almacen.listar({ desde: '2099-01-01' }).total).toBe(0);
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = fechaLocal(new Date());
     expect(almacen.listar({ desde: sumarDiasHabiles(hoy, 0), hasta: sumarDiasHabiles(hoy, 1) }).total).toBe(
       3,
     );
