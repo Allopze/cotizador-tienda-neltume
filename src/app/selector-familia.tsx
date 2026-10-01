@@ -35,6 +35,8 @@ export function SelectorFamilia({
     opciones.findIndex(([valor]) => valor === value),
   );
   const listaId = `${id}-opciones`;
+  // Ids por posición: la opción «todas» tiene valor vacío y no deja un id terminado en guion.
+  const opcionId = (indice: number) => `${listaId}-${indice}`;
 
   useEffect(() => {
     if (!abierto) return;
@@ -96,10 +98,12 @@ export function SelectorFamilia({
         ref={trigger}
         type="button"
         className="familia-trigger"
+        role="combobox"
         aria-labelledby={id}
         aria-haspopup="listbox"
         aria-expanded={abierto}
         aria-controls={listaId}
+        aria-activedescendant={abierto ? opcionId(activo) : undefined}
         disabled={disabled}
         onClick={() => (abierto ? cerrar(true) : abrir())}
         onKeyDown={manejarTeclado}
@@ -113,7 +117,7 @@ export function SelectorFamilia({
         <div id={listaId} className="familia-popover" role="listbox" aria-labelledby={id}>
           {opciones.map(([valor, texto], indice) => (
             <div
-              id={`${listaId}-${valor}`}
+              id={opcionId(indice)}
               key={valor}
               className="familia-option"
               role="option"

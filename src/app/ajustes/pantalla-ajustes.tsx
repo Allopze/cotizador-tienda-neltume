@@ -6,6 +6,7 @@ import { ConfiguracionIA, type EstadoAjustes } from '../configuracion-ia';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { useEsCliente } from '../memoria-pantalla';
+import { useAvisoSalida, useSeccionVisible } from '../secciones-pantalla';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { CrearUsuario } from './crear-usuario';
 import { CotizacionesDespacho, DatosEmpresa, PreciosDescuentos, useConfiguracionNegocio } from './configuracion-negocio';
@@ -92,27 +93,8 @@ export function PantallaAjustes({
     [secciones],
   );
   const hayCambios = sucias.size > 0;
-  useEffect(() => {
-    if (!hayCambios) return;
-    const alDescargar = (e: BeforeUnloadEvent) => e.preventDefault();
-    // Los enlaces de la cabecera navegan con Next (sin «beforeunload»): se confirma antes de que actúe el Link.
-    const alClic = (e: globalThis.MouseEvent) => {
-      const enlace = (e.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
-      if (!enlace || e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || enlace.target === '_blank') return;
-      const destino = new URL(enlace.href, location.href);
-      if (destino.origin !== location.origin || destino.pathname === location.pathname) return;
-      if (!window.confirm(AVISO_SALIDA)) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
-    };
-    window.addEventListener('beforeunload', alDescargar);
-    document.addEventListener('click', alClic, true);
-    return () => {
-      window.removeEventListener('beforeunload', alDescargar);
-      document.removeEventListener('click', alClic, true);
-    };
-  }, [hayCambios]);
+  useAvisoSalida(hayCambios, AVISO_SALIDA);
+  useSeccionVisible('Ajustes', actual.titulo);
 
   return (
     <div className="app-shell">
@@ -140,7 +122,9 @@ export function PantallaAjustes({
           </ul>
         </nav>
         <main className="secciones-contenido ajustes-pagina" aria-labelledby="seccion-titulo">
-          <h2 id="seccion-titulo">{actual.encabezado}</h2>
+          <h2 id="seccion-titulo" tabIndex={-1}>
+            {actual.encabezado}
+          </h2>
           {montada('cuenta') && (
             <div hidden={seccion !== 'cuenta'}>
               <CambiarClave avisar={avisar} alCambiar={alCambiar.cuenta} />

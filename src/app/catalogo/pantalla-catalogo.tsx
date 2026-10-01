@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { AltaProducto } from '../alta-producto';
+import { Avisos, useAvisos } from '../avisos';
 import { CatalogoConsulta } from '../catalogo-consulta';
 import { GestionManuales } from '../gestion-manuales';
 import { ConfiguracionCatalogo } from '../configuracion-catalogo';
@@ -8,8 +9,11 @@ import { ImportarCatalogo } from './importar-catalogo';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { useEsCliente, useScrollRecordado } from '../memoria-pantalla';
+import { useAvisoSalida, useSeccionVisible } from '../secciones-pantalla';
 import { pedirJSON } from '../solicitud';
 import { SECCIONES, type Seccion } from './secciones';
+
+const AVISO_SALIDA = 'Hay cambios sin guardar en la configuración del catálogo. ¿Salir de todos modos?';
 
 /** Pantalla «Catálogo»: consultar productos y agregar uno (a mano o con el asistente). */
 export function PantallaCatalogo({
@@ -28,6 +32,11 @@ export function PantallaCatalogo({
   // instancia y se perdería el scroll). Se actualiza la URL con pushState, así el enlace directo y
   // Atrás/Adelante siguen funcionando, y la sección vive en el estado de esta pantalla.
   const [seccion, setSeccion] = useState<Seccion>(inicial);
+  // Si se pidió una sección que no corresponde (o no existe), la URL pasa a nombrar la que se muestra.
+  useEffect(() => {
+    if (new URLSearchParams(location.search).get('seccion') !== (inicial === 'consultar' ? null : inicial))
+      window.history.replaceState(null, '', inicial === 'consultar' ? '/catalogo' : `/catalogo?seccion=${inicial}`);
+  }, [inicial]);
   useEffect(() => {
     const alVolver = () => {
       const pedida = new URLSearchParams(location.search).get('seccion');
@@ -64,6 +73,11 @@ export function PantallaCatalogo({
   if (!visitadas.includes(seccion)) setVisitadas([...visitadas, seccion]);
   const montada = (s: Seccion) => cliente && (s === seccion || visitadas.includes(s));
   const actual = seccionesVisibles.find((s) => s.id === seccion)!;
+  useSeccionVisible('Catálogo', actual.titulo);
+  const { avisos, avisar, cerrar } = useAvisos();
+  // La configuración es la única sección con un borrador largo que se guarda aparte.
+  const [configuracionSucia, setConfiguracionSucia] = useState(false);
+  useAvisoSalida(configuracionSucia, AVISO_SALIDA);
 
   return (
     <div className="app-shell pantalla-catalogo">
@@ -80,13 +94,20 @@ export function PantallaCatalogo({
                   aria-current={s.id === seccion ? 'page' : undefined}
                 >
                   {s.titulo}
+                  {s.id === 'configuracion' && configuracionSucia && (
+                    <span className="seccion-sucia" title="Cambios sin guardar">
+                      <span className="sr-only"> (cambios sin guardar)</span>
+                    </span>
+                  )}
                 </a>
               </li>
             ))}
           </ul>
         </nav>
         <main className="secciones-contenido" aria-labelledby="seccion-titulo">
-          <h2 id="seccion-titulo">{actual.encabezado}</h2>
+          <h2 id="seccion-titulo" tabIndex={-1}>
+            {actual.encabezado}
+          </h2>
           {montada('consultar') && (
             <div hidden={seccion !== 'consultar'}>
               <CatalogoConsulta activa={seccion === 'consultar'} />
@@ -104,12 +125,12 @@ export function PantallaCatalogo({
           )}
           {montada('manuales') && (
             <div hidden={seccion !== 'manuales'}>
-              <GestionManuales />
+              <GestionManuales avisar={avisar} />
             </div>
           )}
           {montada('configuracion') && (
             <div hidden={seccion !== 'configuracion'}>
-              <ConfiguracionCatalogo />
+              <ConfiguracionCatalogo avisar={avisar} cerrarAviso={cerrar} alCambiar={setConfiguracionSucia} />
             </div>
           )}
         </main>
@@ -120,6 +141,7 @@ export function PantallaCatalogo({
         </span>
         <span>Asistente de cotizaciones · Uso interno</span>
       </footer>
+      <Avisos avisos={avisos} cerrar={cerrar} />
     </div>
   );
 }

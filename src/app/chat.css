@@ -408,8 +408,33 @@ p + .pregunta-opciones {
   font: inherit;
   font-size: var(--fs-sm);
 }
-.manual-editor-wide {
+.gestion-manuales td:nth-child(3) {
+  text-align: right;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.gestion-manuales td.celda-acciones {
+  padding: 6px 12px 6px 4px;
+  white-space: nowrap;
+  text-align: right;
+}
+.gestion-manuales td.celda-acciones .button + .button {
+  margin-left: 6px;
+}
+.gestion-editor .alta-campos {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 16px;
+}
+.alta-campo-ancho {
   grid-column: 1 / -1;
+}
+.alta-campo input[aria-invalid='true'],
+.alta-campo:has(> .campo-error) .familia-trigger {
+  border-color: var(--danger);
+}
+.alta-campo small.campo-error {
+  margin-top: 0;
+  color: var(--danger);
 }
 .logo-configuracion {
   display: grid;
@@ -504,6 +529,55 @@ p + .pregunta-opciones {
 .config-grupo > .catalog-modal-intro {
   margin: 0 0 10px;
   font-size: var(--fs-sm);
+}
+/* Los campos de configuración llevan la tipografía de la interfaz, no la monoespaciada de las claves. */
+.config-editor-fila .ia-field input {
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.config-editor-fila .config-campo-corto {
+  flex: 0 1 110px;
+}
+.config-error-fila {
+  flex-basis: 100%;
+  margin-top: -4px;
+}
+/* Barra de guardado fija al pie del panel: el formulario es largo y el botón quedaba fuera de vista. */
+.config-barra {
+  position: sticky;
+  bottom: -30px;
+  z-index: 2;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin: 24px -30px -30px;
+  padding: 12px 30px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.config-barra > p[role='status'] {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.config-barra.sucia > p[role='status'] {
+  color: var(--ink);
+  font-weight: 600;
+}
+.config-barra .catalog-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+.config-barra .ia-actions {
+  margin-top: 0;
+}
+@media (max-width: 800px) {
+  .config-barra {
+    bottom: -24px;
+    margin: 24px -16px -24px;
+    padding: 10px 16px;
+  }
 }
 .config-json {
   margin-top: 24px;

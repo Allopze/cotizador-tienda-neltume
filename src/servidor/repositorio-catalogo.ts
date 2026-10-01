@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/resolver';
+import { coincideBusquedaCatalogo, terminosBusquedaCatalogo, textoBusquedaCatalogo } from './busqueda';
 import { escalon, escalonesSeTocan } from '../catalogo/escalones';
 import { ETIQUETA_ORIGEN, type OrigenCatalogo } from '../catalogo/origenes';
 import {
@@ -538,7 +539,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       actualizada: string | null;
       orden_fuente: number;
     })[];
-    const termino = normalizar(busqueda.trim());
+    const terminos = terminosBusquedaCatalogo(busqueda);
     const coinciden = filas
       .map((f) => ({
         ...convertirProducto(f),
@@ -548,9 +549,10 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         actualizada: f.actualizada,
       }))
       .filter((p) =>
-        termino
-          ? normalizar(`${p.codigo} ${p.modelo} ${p.madera} ${p.medida} ${p.descripcion}`).includes(termino)
-          : true,
+        coincideBusquedaCatalogo(
+          textoBusquedaCatalogo([p.codigo, p.modelo, p.madera, p.tipo, p.medida, p.descripcion]),
+          terminos,
+        ),
       );
     return { productos: coinciden.slice(0, Math.max(1, Math.min(limite, 500))), total: coinciden.length };
   }

@@ -1,0 +1,45 @@
+name: neltume-cotizador
+
+services:
+  cotizador:
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file: .env
+    environment:
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Completa BETTER_AUTH_SECRET en .env}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Completa BETTER_AUTH_URL con tu origen HTTPS en .env}
+      NELTUME_HOSTS: ${NELTUME_HOSTS:?Completa NELTUME_HOSTS con tu dominio en .env}
+      NODE_ENV: production
+      CHROMIUM_PATH: /usr/bin/chromium
+      NELTUME_DATA_DIR: /app/data
+      NELTUME_DB_PATH: /app/data/cotizador.sqlite
+      NELTUME_RESPALDO_DIR: /app/respaldos
+    ports:
+      - '${NELTUME_BIND_IP:-127.0.0.1}:${NELTUME_PORT:-3000}:3000'
+    volumes:
+      - datos:/app/data
+      - respaldos:/app/respaldos
+    shm_size: 256mb
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      retries: 3
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+volumes:
+  datos:
+  respaldos:

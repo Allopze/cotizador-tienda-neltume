@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
+    "deploy": "node scripts/deploy.mjs",
     "start": "next start --hostname 127.0.0.1",
     "importar": "tsx scripts/importar.ts",
     "migrar:sqlite": "tsx scripts/migrar-sqlite.ts",
@@ -32,6 +33,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "saxes": "^6.0.0",
+    "tsx": "^4.20.0",
     "zod": "^4.0.0"
   },
   "devDependencies": {
@@ -47,7 +49,6 @@
     "pdfjs-dist": "^6.3.289",
     "prettier": "^3.9.9",
     "tailwindcss": "^4.0.0",
-    "tsx": "^4.20.0",
     "typescript": "^5.9.0",
     "vitest": "^5.0.2"
   },

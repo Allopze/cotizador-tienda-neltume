@@ -4,7 +4,8 @@ import type { Familia, Producto } from '@/catalogo/tipos';
 import { leerPesos } from '@/negocio/cifras';
 import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
 import { useConfirmacion } from './dialogo';
-import { enterEnvia, nombreProducto } from './formato';
+import { FAMILIAS, etiquetaFamilia } from '@/catalogo/familias';
+import { decimalCampo, enterEnvia, leerMetros, nombreProducto } from './formato';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
@@ -51,19 +52,6 @@ const VACIO: Campos = {
   largo: '',
   precio: '',
 };
-const FAMILIAS: [Familia, string][] = [
-  ['PUERTA', 'Puerta'],
-  ['MARCO', 'Marco'],
-  ['PIEZAS_T', 'Piezas T'],
-  ['MOLDURA', 'Moldura'],
-];
-const decimal = (n: number) => n.toLocaleString('es-CL', { maximumFractionDigits: 4, useGrouping: false });
-/** «0,80», «0.8» u «80» (centímetros) → metros; vacío o ilegible → null. */
-function metros(valor: string, limite: number) {
-  const n = Number(valor.trim().replace(',', '.'));
-  if (!valor.trim() || !Number.isFinite(n)) return null;
-  return n > limite ? n / 100 : n;
-}
 
 /**
  * Alta de un producto al catálogo en una sola pantalla: el formulario es la vía manual y el asistente,
@@ -80,6 +68,8 @@ export function AltaProducto({ asistente }: Props) {
   const [guardado, setGuardado] = useState<Producto | null>(null);
   const [ocupado, setOcupado] = useState<'asistente' | 'revisar' | 'guardar' | null>(null);
   const [error, setError] = useState('');
+  const [errores, setErrores] = useState<Partial<Record<keyof Campos, string>>>({});
+  const formulario = useRef<HTMLFormElement>(null);
   const entrada = useRef<HTMLTextAreaElement>(null),
     listo = useRef<HTMLButtonElement>(null),
     revision = useRef<HTMLDivElement>(null);
@@ -124,6 +114,7 @@ export function AltaProducto({ asistente }: Props) {
   /** Cambiar un dato invalida la propuesta revisada: hay que volver a revisarla. */
   function cambiar(campo: keyof Campos, valor: string) {
     setCampos((c) => ({ ...c, [campo]: valor }));
+    setErrores((e) => ({ ...e, [campo]: undefined }));
     setPropuesta(null);
     setAvisosAlta([]);
   }
@@ -136,10 +127,10 @@ export function AltaProducto({ asistente }: Props) {
       madera: b.madera ?? c.madera,
       tipo: b.tipo ?? c.tipo,
       medida: b.medida ?? c.medida,
-      anchoMin: b.anchoMin !== null ? decimal(b.anchoMin) : c.anchoMin,
-      anchoMax: b.anchoMax !== null ? decimal(b.anchoMax) : c.anchoMax,
-      largo: b.largo !== null ? decimal(b.largo) : c.largo,
-      precio: b.precioNeto !== null ? decimal(b.precioNeto) : c.precio,
+      anchoMin: b.anchoMin !== null ? decimalCampo(b.anchoMin) : c.anchoMin,
+      anchoMax: b.anchoMax !== null ? decimalCampo(b.anchoMax) : c.anchoMax,
+      largo: b.largo !== null ? decimalCampo(b.largo) : c.largo,
+      precio: b.precioNeto !== null ? decimalCampo(b.precioNeto) : c.precio,
     }));
   }
 
@@ -168,6 +159,26 @@ export function AltaProducto({ asistente }: Props) {
     evento.preventDefault();
     if (ocupado || guardado) return;
     const precio = campos.precio.trim() ? leerPesos(campos.precio) : null;
+    // Lo que falta se marca en su campo antes de ir al servidor; el foco va al primero.
+    const faltan: Partial<Record<keyof Campos, string>> = {};
+    if (!campos.familia) faltan.familia = 'Elige la familia.';
+    if (!campos.modelo.trim()) faltan.modelo = 'Escribe el modelo.';
+    if (!campos.madera.trim()) faltan.madera = 'Escribe la madera.';
+    if (puerta) {
+      if (leerMetros(campos.anchoMin, 4) === null) faltan.anchoMin = 'Escribe el ancho mínimo.';
+      if (leerMetros(campos.anchoMax, 4) === null) faltan.anchoMax = 'Escribe el ancho máximo.';
+    } else if (!campos.medida.trim()) faltan.medida = 'Escribe la medida o escuadría.';
+    if (leerMetros(campos.largo, 10) === null) faltan.largo = puerta ? 'Escribe el alto.' : 'Escribe el largo.';
+    if (precio === null || !Number.isFinite(precio) || precio <= 0) faltan.precio = 'Escribe el precio base neto en pesos.';
+    setErrores(faltan);
+    const primero = Object.keys(faltan)[0];
+    if (primero) {
+      setError('');
+      formulario.current
+        ?.querySelector<HTMLElement>(primero === 'familia' ? '.familia-trigger' : `#${CSS.escape(`${uid}-${primero}`)}`)
+        ?.focus();
+      return;
+    }
     setOcupado('revisar');
     setError('');
     try {
@@ -180,9 +191,9 @@ export function AltaProducto({ asistente }: Props) {
           madera: campos.madera.trim() || null,
           tipo: campos.tipo.trim() || null,
           medida: puerta ? null : campos.medida.trim() || null,
-          anchoMin: puerta ? metros(campos.anchoMin, 4) : null,
-          anchoMax: puerta ? metros(campos.anchoMax, 4) : null,
-          largo: metros(campos.largo, 10),
+          anchoMin: puerta ? leerMetros(campos.anchoMin, 4) : null,
+          anchoMax: puerta ? leerMetros(campos.anchoMax, 4) : null,
+          largo: leerMetros(campos.largo, 10),
           precioNeto: precio !== null && Number.isFinite(precio) && precio > 0 ? precio : null,
         },
       });
@@ -203,7 +214,7 @@ export function AltaProducto({ asistente }: Props) {
       titulo: 'Agregar al catálogo',
       mensaje: (
         <p>
-          ¿Agregar «{propuesta.descripcion}» al catálogo con precio neto unitario{' '}
+          ¿Agregar «{propuesta.descripcion}» al catálogo con precio base neto{' '}
           {pesos(propuesta.precioNeto)}? En las cotizaciones se mostrará a{' '}
           {pesos(venta(propuesta.precioNeto))} (neto + {ajuste}).
         </p>
@@ -241,6 +252,7 @@ export function AltaProducto({ asistente }: Props) {
     setPropuesta(null);
     setGuardado(null);
     setError('');
+    setErrores({});
     setAvisosAlta([]);
   }
 
@@ -253,7 +265,10 @@ export function AltaProducto({ asistente }: Props) {
           </span>
           <h3>Producto agregado</h3>
           <p>{nombreProducto(guardado.descripcion)}</p>
-          <small>Código {guardado.codigo} · Precio neto ingresado manualmente.</small>
+          <small>
+            Código {guardado.codigo} ·{' '}
+            {mensajes.length ? 'Completado con el asistente y revisado por ti.' : 'Ingresado a mano.'}
+          </small>
           <button ref={listo} type="button" className="button primary" onClick={reiniciar}>
             Agregar otro producto
           </button>
@@ -277,8 +292,14 @@ export function AltaProducto({ asistente }: Props) {
         inputMode={['anchoMin', 'anchoMax', 'largo', 'precio'].includes(nombre) ? 'decimal' : undefined}
         maxLength={120}
         disabled={!!ocupado}
+        aria-invalid={errores[nombre] ? true : undefined}
+        aria-describedby={errores[nombre] || extra.ayuda ? `${uid}-${nombre}-ayuda` : undefined}
       />
-      {extra.ayuda && <small>{extra.ayuda}</small>}
+      {(errores[nombre] || extra.ayuda) && (
+        <small id={`${uid}-${nombre}-ayuda`} className={errores[nombre] ? 'campo-error' : undefined}>
+          {errores[nombre] ?? extra.ayuda}
+        </small>
+      )}
     </label>
   );
 
@@ -343,7 +364,7 @@ export function AltaProducto({ asistente }: Props) {
         )}
       </section>
 
-      <form className="alta-bloque alta-formulario" onSubmit={revisar} aria-labelledby={`${uid}-datos`}>
+      <form ref={formulario} className="alta-bloque alta-formulario" onSubmit={revisar} noValidate aria-labelledby={`${uid}-datos`}>
         <h3 id={`${uid}-datos`} className="eyebrow">
           DATOS DEL PRODUCTO
         </h3>
@@ -358,6 +379,7 @@ export function AltaProducto({ asistente }: Props) {
               disabled={!!ocupado}
               seleccionar={(familia) => cambiar('familia', familia)}
             />
+            {errores.familia && <small className="campo-error">{errores.familia}</small>}
           </div>
           {campo('modelo', 'Modelo', { placeholder: 'Ej.: Roble' })}
           {campo('madera', 'Madera', { placeholder: 'Ej.: Raulí' })}
@@ -365,27 +387,27 @@ export function AltaProducto({ asistente }: Props) {
           {puerta ? (
             <>
               {campo('anchoMin', 'Ancho mínimo', {
-                placeholder: '0,80',
+                placeholder: 'Ej.: 0,80',
                 ayuda: 'En metros (0,80) o centímetros (80).',
               })}
-              {campo('anchoMax', 'Ancho máximo', { placeholder: '0,85' })}
+              {campo('anchoMax', 'Ancho máximo', { placeholder: 'Ej.: 0,85' })}
               {campo('largo', 'Alto', {
-                placeholder: '2,10',
+                placeholder: 'Ej.: 2,10',
                 ayuda: 'En metros (2,10) o centímetros (210).',
               })}
             </>
           ) : (
             <>
-              {campo('medida', 'Medida o escuadría', { placeholder: '2x4' })}
+              {campo('medida', 'Medida o escuadría', { placeholder: 'Ej.: 2x4' })}
               {campo('largo', 'Largo', {
-                placeholder: '2,10',
+                placeholder: 'Ej.: 2,10',
                 ayuda: 'En metros (2,10) o centímetros (210).',
               })}
             </>
           )}
-          {campo('precio', 'Precio neto unitario', {
-            placeholder: '$145.000',
-            ayuda: 'Sin IVA y sin el ajuste de venta.',
+          {campo('precio', 'Precio base neto', {
+            placeholder: 'Ej.: 145.000',
+            ayuda: 'Sin IVA y sin el margen de venta.',
           })}
         </div>
         <div className="alta-acciones">
@@ -419,10 +441,10 @@ export function AltaProducto({ asistente }: Props) {
             </div>
             <div>
               <dt>Familia</dt>
-              <dd>{FAMILIAS.find(([f]) => f === propuesta.familia)?.[1] ?? propuesta.familia}</dd>
+              <dd>{etiquetaFamilia(propuesta.familia)}</dd>
             </div>
             <div>
-              <dt>Precio neto unitario</dt>
+              <dt>Precio base neto</dt>
               <dd>{pesos(propuesta.precioNeto)}</dd>
             </div>
             <div>

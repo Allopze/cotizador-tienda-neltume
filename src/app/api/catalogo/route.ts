@@ -8,7 +8,12 @@ import { ErrorCatalogo, cargarCatalogo } from '@/servidor/catalogo';
 import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
 import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
 import { ErrorUsuario, registrarError } from '@/servidor/errores';
-import { normalizarTexto } from '@/servidor/busqueda';
+import {
+  coincideBusquedaCatalogo,
+  normalizarTexto,
+  terminosBusquedaCatalogo,
+  textoBusquedaCatalogo,
+} from '@/servidor/busqueda';
 import { leerConfiguracionNegocio } from '@/servidor/configuracion-negocio';
 import type { Producto } from '@/catalogo/tipos';
 import { margenProducto } from '@/negocio/precios';
@@ -80,12 +85,12 @@ export async function GET(req: Request) {
   try {
     const catalogo = await cargarCatalogo();
     const consulta = normalizarTexto(filtros.data.q ?? '');
-    const terminos = consulta.split(' ').filter(Boolean);
+    const terminos = terminosBusquedaCatalogo(filtros.data.q ?? '');
     const manuales = new Set(catalogo.listarManuales().map((p) => p.codigo));
     const coinciden = catalogo.todos().filter((p) => {
       if (filtros.data.familia && p.familia !== filtros.data.familia) return false;
-      const texto = normalizarTexto(`${p.codigo} ${p.modelo} ${p.madera} ${p.tipo ?? ''} ${p.descripcion}`);
-      return terminos.every((t) => texto.includes(t));
+      const texto = textoBusquedaCatalogo([p.codigo, p.modelo, p.madera, p.tipo, p.medida, p.descripcion]);
+      return coincideBusquedaCatalogo(texto, terminos);
     });
     // Orden de lectura, no de código: modelo, madera, alto y luego ancho («CAL-O-1-B» no va tras «CAL-O-9-A»).
     const orden = new Intl.Collator('es-CL', { numeric: true, sensitivity: 'base' });

@@ -1,5 +1,6 @@
 'use client';
-import { useState, type FormEvent } from 'react';
+import { useState, type DragEvent, type FormEvent } from 'react';
+import { useConfirmacion } from '../dialogo';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 
 interface ProductoBreve { codigo: string; descripcion: string; precioNeto?: number }
@@ -24,8 +25,18 @@ interface Preview {
   erroresPlantilla: string[];
 }
 
+const MAXIMO_MB = 20;
 const cantidad = (n: number) => new Intl.NumberFormat('es-CL').format(n);
 const pesos = (n: number) => '$' + new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(n);
+const tamano = (bytes: number) =>
+  bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toLocaleString('es-CL', { maximumFractionDigits: 1 })} MB`;
+/** Diferencia de precio: «+4,2 %», «−1 %». */
+function variacion(anterior = 0, nuevo = 0) {
+  if (!anterior) return '';
+  const pct = ((nuevo - anterior) / anterior) * 100;
+  if (Math.abs(pct) < 0.05) return '';
+  return ` (${pct > 0 ? '+' : '−'}${Math.abs(pct).toLocaleString('es-CL', { maximumFractionDigits: 1 })} %)`;
+}
 
 export function ImportarCatalogo() {
   const [archivo, setArchivo] = useState<File | null>(null);
@@ -33,17 +44,61 @@ export function ImportarCatalogo() {
   const [error, setError] = useState('');
   const [mensaje, setMensaje] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [arrastrando, setArrastrando] = useState(false);
   const [forzarConfirmado, setForzarConfirmado] = useState(false);
   const [inputKey, setInputKey] = useState(0);
+  const [confirmar, confirmacion] = useConfirmacion();
   const cantidadAnterior = preview ? preview.conteos.sinCambios + preview.conteos.modificados + preview.conteos.eliminados : 0;
   const requiereForzar = !!preview && preview.totalProductos < cantidadAnterior * 0.9;
+  const sinCambios = !!preview && preview.conteos.nuevos + preview.conteos.modificados + preview.conteos.eliminados === 0;
 
-  async function enviar(evento: FormEvent, accion: 'previsualizar' | 'confirmar') {
+  function elegir(nuevo: File | null) {
+    setPreview(null);
+    setError('');
+    setMensaje('');
+    setForzarConfirmado(false);
+    if (nuevo && !/\.xlsx$/i.test(nuevo.name)) {
+      setArchivo(null);
+      setError('El archivo debe ser una planilla Excel .xlsx.');
+      return;
+    }
+    if (nuevo && nuevo.size > MAXIMO_MB * 1024 * 1024) {
+      setArchivo(null);
+      setError(`El archivo pesa ${tamano(nuevo.size)}; el máximo es ${MAXIMO_MB} MB.`);
+      return;
+    }
+    setArchivo(nuevo);
+  }
+
+  function soltar(evento: DragEvent<HTMLLabelElement>) {
     evento.preventDefault();
+    setArrastrando(false);
+    if (!ocupado) elegir(evento.dataTransfer.files?.[0] ?? null);
+  }
+
+  async function enviar(evento: FormEvent | null, accion: 'previsualizar' | 'confirmar') {
+    evento?.preventDefault();
     if (!archivo || ocupado) return;
     if (accion === 'confirmar' && preview) {
-      const resumen = `Excel: ${preview.fuente}\n${preview.etiquetaOrigen}\nNuevos: ${preview.conteos.nuevos}\nModificados: ${preview.conteos.modificados}\nSin cambios: ${preview.conteos.sinCambios}\nEliminados: ${preview.conteos.eliminados}\n\n¿Aplicar esta versión de la planilla? Los demás productos del catálogo no cambian.`;
-      if (!window.confirm(resumen)) return;
+      const aceptar = await confirmar({
+        titulo: 'Importar planilla',
+        mensaje: (
+          <>
+            <p>
+              Se aplicará <strong>{preview.fuente}</strong> ({preview.etiquetaOrigen.toLowerCase()}). Los demás
+              productos del catálogo no cambian.
+            </p>
+            <dl className="import-resumen">
+              <div><dt>Nuevos</dt><dd>{cantidad(preview.conteos.nuevos)}</dd></div>
+              <div><dt>Modificados</dt><dd>{cantidad(preview.conteos.modificados)}</dd></div>
+              <div><dt>Sin cambios</dt><dd>{cantidad(preview.conteos.sinCambios)}</dd></div>
+              <div><dt>Retirados</dt><dd>{cantidad(preview.conteos.eliminados)}</dd></div>
+            </dl>
+          </>
+        ),
+        aceptar: 'Importar planilla',
+      });
+      if (!aceptar) return;
     }
     setOcupado(true);
     setError('');
@@ -57,7 +112,7 @@ export function ImportarCatalogo() {
         body.set('baseSha256', preview.baseSha256 ?? '');
         body.set('forzar', String(requiereForzar && forzarConfirmado));
         const resultado = await pedirJSON<{ importado: true; fuente: string; etiquetaOrigen: string; conteos: Preview['conteos'] }>('/api/catalogo/importar', { method: 'POST', body });
-        setMensaje(`${resultado.etiquetaOrigen} actualizada desde ${resultado.fuente}: ${resultado.conteos.nuevos} productos nuevos, ${resultado.conteos.modificados} modificados y ${resultado.conteos.eliminados} retirados.`);
+        setMensaje(`${resultado.etiquetaOrigen} actualizada desde ${resultado.fuente}: ${cantidad(resultado.conteos.nuevos)} productos nuevos, ${cantidad(resultado.conteos.modificados)} modificados y ${cantidad(resultado.conteos.eliminados)} retirados.`);
         setPreview(null);
         setArchivo(null);
         setForzarConfirmado(false);
@@ -75,42 +130,84 @@ export function ImportarCatalogo() {
 
   return (
     <div className="catalog-import">
-      <p className="catalog-modal-intro">El catálogo vigente se conserva hasta que revises la comparación y confirmes el cambio. Sube la planilla de puertas sólidas o la de enchapadas, prepintadas y marcos finger: se reconoce sola y cada una reemplaza únicamente sus propios productos.</p>
-      <form onSubmit={(e) => void enviar(e, 'previsualizar')}>
-        <label className="ia-field">
-          <span>Planilla de precios Excel (.xlsx, máximo 20 MB)</span>
-          <input key={inputKey} type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => { setArchivo(e.target.files?.[0] ?? null); setPreview(null); setError(''); setForzarConfirmado(false); }} disabled={ocupado} />
+      <p className="catalog-modal-intro">
+        Sube la planilla de puertas sólidas o la de enchapadas, prepintadas y marcos finger: se reconoce sola y cada
+        una reemplaza únicamente sus propios productos. El catálogo vigente no cambia hasta que revises la comparación
+        y confirmes.
+      </p>
+      <form className="import-formulario" onSubmit={(e) => void enviar(e, 'previsualizar')}>
+        <label
+          className={`import-archivo${arrastrando ? ' arrastrando' : ''}${archivo ? ' elegido' : ''}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!ocupado) setArrastrando(true);
+          }}
+          onDragLeave={() => setArrastrando(false)}
+          onDrop={soltar}
+        >
+          <input
+            key={inputKey}
+            className="sr-only"
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => elegir(e.target.files?.[0] ?? null)}
+            disabled={ocupado}
+          />
+          {archivo ? (
+            <>
+              <strong>{archivo.name}</strong>
+              <span>{tamano(archivo.size)} · Elegir otro archivo</span>
+            </>
+          ) : (
+            <>
+              <strong>Elegir planilla Excel</strong>
+              <span>o arrástrala aquí · .xlsx, máximo {MAXIMO_MB} MB</span>
+            </>
+          )}
         </label>
-        <div className="ia-actions"><button type="submit" className="button primary" disabled={!archivo || ocupado}>{ocupado ? 'Analizando…' : 'Analizar y comparar'}</button></div>
+        <button type="submit" className="button primary" disabled={!archivo || ocupado}>
+          {ocupado && !preview ? 'Analizando…' : 'Analizar y comparar'}
+        </button>
       </form>
       {error && <p className="catalog-error" role="alert">{error}</p>}
       {mensaje && <p className="notice notice-success" role="status">{mensaje}</p>}
       {preview && (
         <section className="catalog-import-preview" aria-labelledby="import-preview-title">
           <h3 id="import-preview-title">Vista previa · {preview.fuente}</h3>
-          <p>Formato detectado: <strong>{preview.etiquetaOrigen}</strong>. {preview.totalProductos} productos en la planilla.</p>
-          <p>Solo se reemplazan los productos de esta planilla. No se modifican {preview.sinModificar.map((o) => `la ${o.etiqueta.toLowerCase()} (${o.productos ? `${cantidad(o.productos)} productos` : 'aún sin importar'})`).join(' ni ')} ni los productos agregados a mano.</p>
+          <p>
+            Formato detectado: <strong>{preview.etiquetaOrigen}</strong>. {cantidad(preview.totalProductos)} productos en la planilla.
+          </p>
+          <p className="muted">
+            Solo se reemplazan los productos de esta planilla. No se modifican{' '}
+            {preview.sinModificar.map((o) => `la ${o.etiqueta.toLowerCase()} (${o.productos ? `${cantidad(o.productos)} productos` : 'aún sin importar'})`).join(' ni ')}{' '}
+            ni los productos agregados a mano.
+          </p>
           <div className="import-counts">
-            <span><strong>{preview.conteos.nuevos}</strong> Nuevos</span>
-            <span><strong>{preview.conteos.modificados}</strong> Modificados</span>
-            <span><strong>{preview.conteos.sinCambios}</strong> Sin cambios</span>
-            <span><strong>{preview.conteos.eliminados}</strong> Eliminados</span>
+            <span><strong>{cantidad(preview.conteos.nuevos)}</strong> Nuevos</span>
+            <span><strong>{cantidad(preview.conteos.modificados)}</strong> Modificados</span>
+            <span><strong>{cantidad(preview.conteos.sinCambios)}</strong> Sin cambios</span>
+            <span><strong>{cantidad(preview.conteos.eliminados)}</strong> Retirados</span>
           </div>
-          {preview.conteos.eliminados > 0 && <p className="catalog-warning">Al confirmar, se retirarán {preview.conteos.eliminados} productos que no aparecen en esta planilla.</p>}
-          {requiereForzar && <label className="import-force"><input type="checkbox" checked={forzarConfirmado} onChange={(e) => setForzarConfirmado(e.target.checked)} /> Confirmo que la reducción a {preview.totalProductos} productos es intencional.</label>}
-          {preview.erroresPlantilla.length > 0 && <div className="catalog-warning"><strong>Advertencias de la planilla</strong><ul>{preview.erroresPlantilla.map((x) => <li key={x}>{x}</li>)}</ul></div>}
-          <div className="import-change-groups">
-            {preview.productos.nuevos.length > 0 && <div><h4>Nuevos</h4><ul>{preview.productos.nuevos.map((p) => <li key={p.codigo}>{p.codigo} · {p.descripcion} · {pesos(p.precioNeto ?? 0)}</li>)}</ul>{preview.conteos.nuevos > 100 && <small>Se muestran los primeros 100.</small>}</div>}
-            {preview.productos.modificados.length > 0 && <div><h4>Modificados</h4><ul>{preview.productos.modificados.map((p) => <li key={p.codigo}>{p.codigo} · {p.anterior.descripcion} → {p.nuevo.descripcion} · {pesos(p.anterior.precioNeto ?? 0)} → {pesos(p.nuevo.precioNeto ?? 0)}</li>)}</ul></div>}
-            {preview.productos.eliminados.length > 0 && <div><h4>Eliminados</h4><ul>{preview.productos.eliminados.map((p) => <li key={p.codigo}>{p.codigo} · {p.descripcion}</li>)}</ul></div>}
-          </div>
-          {preview.incidencias.length > 0 && <details><summary>Incidencias de la importación ({preview.incidencias.length})</summary><ul>{preview.incidencias.slice(0, 50).map((i, n) => <li key={`${i.hoja ?? ''}-${i.fila}-${n}`}>{i.hoja ? `${i.hoja.trim()} · ` : ''}Fila {i.fila}: {i.detalle}</li>)}</ul></details>}
+          {sinCambios && <p className="notice">La planilla es idéntica al catálogo vigente: no hay nada que importar.</p>}
+          {preview.conteos.eliminados > 0 && <p className="catalog-warning">Al confirmar, se retirarán {cantidad(preview.conteos.eliminados)} productos que no aparecen en esta planilla.</p>}
+          {requiereForzar && <label className="import-force"><input type="checkbox" checked={forzarConfirmado} onChange={(e) => setForzarConfirmado(e.target.checked)} /> Confirmo que la reducción a {cantidad(preview.totalProductos)} productos es intencional.</label>}
+          {!sinCambios && (
+            <div className="import-change-groups">
+              {preview.productos.nuevos.length > 0 && <div><h4>Nuevos</h4><ul>{preview.productos.nuevos.map((p) => <li key={p.codigo}>{p.codigo} · {p.descripcion} · {pesos(p.precioNeto ?? 0)}</li>)}</ul>{preview.conteos.nuevos > preview.productos.nuevos.length && <small>Se muestran los primeros {preview.productos.nuevos.length}.</small>}</div>}
+              {preview.productos.modificados.length > 0 && <div><h4>Modificados</h4><ul>{preview.productos.modificados.map((p) => <li key={p.codigo}>{p.codigo} · {p.anterior.descripcion === p.nuevo.descripcion ? p.nuevo.descripcion : `${p.anterior.descripcion} → ${p.nuevo.descripcion}`} · {pesos(p.anterior.precioNeto ?? 0)} → {pesos(p.nuevo.precioNeto ?? 0)}{variacion(p.anterior.precioNeto, p.nuevo.precioNeto)}</li>)}</ul></div>}
+              {preview.productos.eliminados.length > 0 && <div><h4>Retirados</h4><ul>{preview.productos.eliminados.map((p) => <li key={p.codigo}>{p.codigo} · {p.descripcion}</li>)}</ul></div>}
+            </div>
+          )}
+          {preview.incidencias.length > 0 && <details><summary>Filas corregidas o excluidas al leer la planilla ({cantidad(preview.incidencias.length)})</summary><ul>{preview.incidencias.slice(0, 50).map((i, n) => <li key={`${i.hoja ?? ''}-${i.fila}-${n}`}>{i.hoja ? `${i.hoja.trim()} · ` : ''}Fila {i.fila}: {i.detalle}</li>)}</ul>{preview.incidencias.length > 50 && <small>Se muestran las primeras 50.</small>}</details>}
+          {/* Fallas de la hoja «Cotizador» del Excel original: no cambian los precios que se importan. */}
+          {preview.erroresPlantilla.length > 0 && <details><summary>Notas sobre la hoja «Cotizador» del Excel ({preview.erroresPlantilla.length}) · no afectan la importación</summary><ul>{preview.erroresPlantilla.map((x) => <li key={x}>{x}</li>)}</ul></details>}
           <div className="ia-actions">
             <button type="button" className="button secondary" disabled={ocupado} onClick={() => { setPreview(null); setForzarConfirmado(false); }}>Descartar vista previa</button>
-            <button type="button" className="button primary" disabled={ocupado || (requiereForzar && !forzarConfirmado)} onClick={(e) => void enviar(e as unknown as FormEvent, 'confirmar')}>{ocupado ? 'Aplicando…' : 'Confirmar e importar'}</button>
+            <button type="button" className="button primary" disabled={ocupado || sinCambios || (requiereForzar && !forzarConfirmado)} onClick={() => void enviar(null, 'confirmar')}>{ocupado ? 'Aplicando…' : 'Confirmar e importar'}</button>
           </div>
         </section>
       )}
+      {confirmacion}
     </div>
   );
 }

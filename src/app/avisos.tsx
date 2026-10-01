@@ -35,6 +35,8 @@ export function useAvisos() {
   return { avisos, avisar, cerrar, limpiar };
 }
 
+export type Avisar = ReturnType<typeof useAvisos>['avisar'];
+
 export function Avisos({ avisos, cerrar }: { avisos: Aviso[]; cerrar: (id: number) => void }) {
   return (
     <div className="avisos">

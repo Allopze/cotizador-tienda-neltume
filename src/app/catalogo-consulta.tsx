@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta } from './contrato';
-import { nombreProducto, sinMedida } from './formato';
+import { medidaProducto, nombreProducto, sinMedida } from './formato';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
@@ -15,7 +15,6 @@ const FAMILIAS = [
   ['PIEZAS_T', 'Piezas T'],
   ['MOLDURA', 'Molduras'],
 ] as const;
-const largo = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m`;
 
 /** Consulta del catálogo: modelos, maderas y medidas disponibles con el precio unitario de la cotización. */
 export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
@@ -132,13 +131,16 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
               ? `Mostrando ${datos.productos.length} de ${datos.total} productos: afina la búsqueda para ver el resto.`
               : `${datos.total} producto${datos.total === 1 ? '' : 's'}.`}
           </p>
-          <div className="catalogo-lista">
+          <div className="catalogo-lista" tabIndex={0} role="region" aria-label="Resultados del catálogo">
             <table>
               <thead>
                 <tr>
-                  <th scope="col">PRODUCTO / CÓDIGO</th>
-                  <th scope="col">MEDIDA</th>
-                  <th scope="col">UNITARIO NETO</th>
+                  <th scope="col">Producto / código</th>
+                  <th scope="col">Medida</th>
+                  <th scope="col">
+                    Unitario cotización
+                    <small>neto + margen, sin IVA</small>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -154,12 +156,8 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                         {p.manual ? ' · agregado manualmente' : ''}
                       </small>
                     </td>
-                    <td data-etiqueta="Medida">
-                      {p.familia === 'PUERTA'
-                        ? `${p.anchoMin != null && p.anchoMax != null ? `${largo(p.anchoMin)}–${largo(p.anchoMax)}` : p.medida.replace(' A ', '–')} × ${p.altoMin != null && p.altoMax != null && p.altoMin !== p.altoMax ? `${largo(p.altoMin)}–${largo(p.altoMax)}` : largo(p.largo)}`
-                        : `${p.medida} × ${largo(p.largo)}`}
-                    </td>
-                    <td data-etiqueta="Unitario neto">{pesos(p.unitario)}</td>
+                    <td data-etiqueta="Medida">{medidaProducto(p)}</td>
+                    <td data-etiqueta="Unitario cotización">{pesos(p.unitario)}</td>
                   </tr>
                 ))}
               </tbody>

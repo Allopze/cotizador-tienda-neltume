@@ -24,6 +24,22 @@ En **Cotizar**, el detalle del pedido aparece primero y la página se desplaza c
 
 Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium`. El generador detecta Chrome en macOS y Chromium/Chrome en Linux; puedes indicar otro ejecutable con `CHROMIUM_PATH`. Si npm arroja `Cannot read properties of null (reading 'edgesOut')`, agrega `legacy-peer-deps=true` a `.npmrc` y vuelve a instalar.
 
+## Despliegue con Docker
+
+`npm run deploy` genera `deploy/neltume-cotizador-<fecha>.zip` con el código, Dockerfile,
+Compose y un `.env` con un secreto nuevo. La instalación parte con base vacía, sin trasladar
+datos ni credenciales locales. Puedes preconfigurar el dominio con
+`npm run deploy -- --url https://cotizador.tudominio.cl`.
+
+Sube y descomprime el ZIP en tu servidor, completa `BETTER_AUTH_URL` y `NELTUME_HOSTS` en `.env`
+si no usaste `--url`, configura tu proxy HTTPS y ejecuta `docker compose up -d`.
+Después crea la primera cuenta con
+`docker compose exec cotizador npm run usuarios -- crear admin@tudominio.cl Admin`.
+Docker compila la app para el servidor, incluye Chromium y conserva SQLite y PDF en volúmenes.
+Consulta [la guía de instalación, actualización y respaldo](docker/LEEME.md).
+
+En actualizaciones, conserva el `.env` del servidor y ejecuta `docker compose up -d --build`.
+
 ## Configuración
 
 | Variable                                                                       | Uso                                                                                                                                                                                                                                                                                                           |

@@ -94,6 +94,38 @@ export function nombreProducto(s: string): string {
 /** «Calafquén Pino Oregón 1,00 a 1,05 m × 2 m» → «Calafquén Pino Oregón»: la medida va en su columna. */
 export const sinMedida = (s: string) => s.replace(/\s+\d[\s\S]*$/, '') || s;
 
+const largoTexto = (n: number) => `${n.toLocaleString('es-CL', { maximumFractionDigits: 2 })} m`;
+/** Medida de un producto del catálogo: rango de ancho × alto en puertas, escuadría × largo en el resto. */
+export function medidaProducto(p: {
+  familia: string;
+  medida: string;
+  largo: number;
+  anchoMin?: number | null;
+  anchoMax?: number | null;
+  altoMin?: number | null;
+  altoMax?: number | null;
+}) {
+  if (p.familia !== 'PUERTA') return `${p.medida} × ${largoTexto(p.largo)}`;
+  const ancho =
+    p.anchoMin != null && p.anchoMax != null
+      ? `${largoTexto(p.anchoMin)}–${largoTexto(p.anchoMax)}`
+      : p.medida.replace(' A ', '–');
+  const alto =
+    p.altoMin != null && p.altoMax != null && p.altoMin !== p.altoMax
+      ? `${largoTexto(p.altoMin)}–${largoTexto(p.altoMax)}`
+      : largoTexto(p.largo);
+  return `${ancho} × ${alto}`;
+}
+
+/** Número para un campo editable, con coma decimal y sin separador de miles: 0.8 → «0,8». */
+export const decimalCampo = (n: number) => n.toLocaleString('es-CL', { maximumFractionDigits: 4, useGrouping: false });
+/** «0,80», «0.8» u «80» (centímetros, sobre `limite`) → metros; vacío o ilegible → null. */
+export function leerMetros(valor: string, limite: number) {
+  const n = Number(valor.trim().replace(',', '.'));
+  if (!valor.trim() || !Number.isFinite(n)) return null;
+  return n > limite ? n / 100 : n;
+}
+
 export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   nombre: 'Cliente',
   rut: 'RUT',

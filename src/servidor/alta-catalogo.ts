@@ -10,6 +10,7 @@ import { interpretarCifra } from '../negocio/cifras';
 import { REGLAS } from '../negocio/precios';
 import { ErrorUsuarioCatalogo } from './errores';
 import { RepositorioCatalogoSqlite } from './repositorio-catalogo';
+import { etiquetaFamilia } from '../catalogo/familias';
 
 const borradorSchema = atributosProductoSchema
   .extend({ precioNeto: z.number().positive().nullable(), avisoPrecio: z.string().nullable().optional() })
@@ -495,7 +496,7 @@ export class ServicioAltaCatalogo {
       const m = mediana(referencia);
       if (propuesta.precioNeto > m * 3 || propuesta.precioNeto < m / 3)
         avisos.push(
-          `El precio ${formatoPrecio(propuesta.precioNeto)} está muy lejos de la mediana ${formatoPrecio(Math.round(m))} de ${familiaExistente ? propuesta.modelo : `la familia ${propuesta.familia}`}. Revisa que sea neto y unitario.`,
+          `El precio ${formatoPrecio(propuesta.precioNeto)} está muy lejos de la mediana ${formatoPrecio(Math.round(m))} de ${familiaExistente ? propuesta.modelo : `la familia ${etiquetaFamilia(propuesta.familia)}`}. Revisa que sea neto y unitario.`,
         );
     }
     return {

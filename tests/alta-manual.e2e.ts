@@ -9,14 +9,14 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
   // Las dos vías conviven: la descripción asistida y el formulario.
   await expect(page.getByLabel('Describe el producto')).toBeVisible();
   const datos = page.getByRole('form', { name: 'DATOS DEL PRODUCTO' });
-  await datos.getByRole('button', { name: 'Familia' }).click();
+  await datos.getByRole('combobox', { name: 'Familia' }).click();
   await datos.getByRole('option', { name: 'Puerta' }).click();
   await datos.getByLabel('Modelo').fill('Roble');
   await datos.getByLabel('Madera').fill('Raulí');
   await datos.getByLabel('Ancho mínimo').fill('80');
   await datos.getByLabel('Ancho máximo').fill('85');
   await datos.getByLabel('Alto').fill('2,10');
-  await datos.getByLabel('Precio neto unitario').fill('145.000');
+  await datos.getByLabel('Precio base neto').fill('145.000');
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
 
   const revision = page.locator('.catalog-preview');
@@ -25,7 +25,7 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
   await page.screenshot({ path: 'test-results/alta-manual.png', fullPage: true });
 
   // Cambiar un dato invalida la revisión: hay que volver a revisar.
-  await datos.getByLabel('Precio neto unitario').fill('150.000');
+  await datos.getByLabel('Precio base neto').fill('150.000');
   await expect(revision).toHaveCount(0);
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
   await expect(revision).toContainText('$150.000');

@@ -4,7 +4,7 @@ import { importar } from '../src/catalogo/importar';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { guardarCatalogo } from '../src/servidor/repositorio-catalogo';
 import { migrarEsquemaAutenticacion } from '../src/servidor/autenticacion-config';
-import { CLAVE_E2E, DIR_E2E, USUARIO_E2E } from './datos-e2e';
+import { ADMIN_E2E, CLAVE_E2E, DIR_E2E, USUARIO_E2E } from './datos-e2e';
 // Todo lo del E2E vive en un directorio aislado: no toca el catálogo ni la base reales.
 export default async function preparar() {
   await rm(DIR_E2E, { recursive: true, force: true });
@@ -43,6 +43,16 @@ export default async function preparar() {
     userId: user.id,
     providerId: 'credential',
     accountId: user.id,
+    password: await context.password.hash(CLAVE_E2E),
+  });
+  const admin = await context.internalAdapter.createUser(
+    { email: ADMIN_E2E, name: 'Administrador de prueba', emailVerified: true, role: 'admin' },
+    { method: 'admin' },
+  );
+  await context.internalAdapter.linkAccount({
+    userId: admin.id,
+    providerId: 'credential',
+    accountId: admin.id,
     password: await context.password.hash(CLAVE_E2E),
   });
 

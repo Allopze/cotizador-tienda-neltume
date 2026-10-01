@@ -50,9 +50,10 @@
     max-height: none;
     min-height: 0;
   }
-  .pantalla-catalogo .alta-producto {
-    min-height: 0;
-    overflow-y: auto;
+  /* Formularios largos: altura natural y un solo scroll, el del panel (la barra de guardado se fija en él). */
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > .alta-producto,
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > .config-catalogo {
+    flex: none;
   }
 }
 
@@ -133,9 +134,10 @@
     max-height: none;
     min-height: 0;
   }
-  .pantalla-catalogo .alta-producto {
-    min-height: 0;
-    overflow-y: auto;
+  /* Formularios largos: altura natural y un solo scroll, el del panel (la barra de guardado se fija en él). */
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > .alta-producto,
+  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > .config-catalogo {
+    flex: none;
   }
   .masthead {
     height: 85px;
@@ -403,13 +405,13 @@
     grid-column: auto;
     justify-self: start;
   }
-  /* El editor de la fila lleva 380 px de mínimo para la tabla de escritorio: en la tarjeta estorba. */
+  /* El editor de usuarios lleva 380 px de mínimo para la tabla de escritorio: en la tarjeta estorba. */
   .manual-editor {
     grid-template-columns: 1fr;
     min-width: 0;
   }
-  .manual-editor-wide {
-    grid-column: auto;
+  .gestion-editor .alta-campos {
+    grid-template-columns: 1fr;
   }
 }
 @media (pointer: coarse) {

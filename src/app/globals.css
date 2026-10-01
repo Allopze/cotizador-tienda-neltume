@@ -292,6 +292,10 @@ h1 {
 .secciones-contenido > h2 {
   margin-bottom: 4px;
 }
+/* El título recibe el foco al cambiar de sección (para el lector de pantalla); no necesita anillo. */
+.secciones-contenido > h2:focus {
+  outline: none;
+}
 .secciones-contenido .catalogo-lista {
   max-height: 65vh;
 }
@@ -323,6 +327,10 @@ h1 {
     border-bottom: 2px solid transparent;
     white-space: nowrap;
     padding: 8px 10px;
+    /* Objetivo táctil de 44 px. */
+    min-height: 44px;
+    display: flex;
+    align-items: center;
   }
   .secciones-nav a:hover,
   .secciones-nav a[aria-current='page'] {
@@ -606,6 +614,10 @@ h1 {
   gap: 8px;
   width: min(440px, calc(100vw - 32px));
   pointer-events: none;
+}
+/* En Catálogo la configuración lleva su barra de guardado al pie del panel: los avisos van sobre ella. */
+.pantalla-catalogo:has(.secciones-contenido > div:not([hidden]) .config-barra) .avisos {
+  bottom: 96px;
 }
 .aviso {
   pointer-events: auto;
