@@ -1,16 +1,20 @@
 import type Database from 'better-sqlite3';
 import type { Cotizacion } from '../negocio/estado';
-import {
-  calcularBulto,
-  resolverDestino,
-  textoBulto,
-  type CiudadStarken,
-  type EstadoStarken,
-  type ResultadoEnvioStarken,
-} from '../negocio/starken';
+import type { EstadoStarken, ResultadoEnvioStarken } from '../negocio/starken';
 import { ErrorUsuario } from './errores';
-import { ClienteStarken, ErrorStarken, leerEntornoStarken, MENSAJE_NO_CONFIGURADO } from './starken';
-import { leerConfiguracionStarken, type ConfiguracionStarken } from './starken-configuracion';
+import {
+  ClienteStarken,
+  ErrorStarken,
+  leerEntornoStarken,
+  MENSAJE_NO_CONFIGURADO,
+  ProveedorStarken,
+} from './starken';
+import {
+  guardarConfiguracionStarken,
+  leerConfiguracionStarken,
+  type ConfiguracionStarken,
+} from './starken-configuracion';
+import { firmarTarifa } from './starken-firma';
 
 /** Solo pruebas: Starken simulado (ver starken-fijo.ts). Nunca se elige desde la petición del navegador. */
 export const modoStarkenFijo = () =>
@@ -38,50 +42,69 @@ export function estadoStarken(db?: Database.Database): EstadoStarken {
 /**
  * Tarifas de Starken para el bulto de una cotización. El bulto se calcula aquí con las líneas guardadas (el
  * navegador no envía medidas ni pesos). `codigoCiudad` es la ciudad elegida a mano; sin ella el destino sale del
- * despacho de la cotización y, si no, de la comuna del cliente.
+ * despacho de la cotización y, si no, de la comuna del cliente. Cada tarifa sale firmada para esa cotización y ese
+ * destino: sin la firma, la acción `editar` no acepta aplicarla.
  */
 export async function cotizarEnvioStarken(
   cotizacion: Cotizacion,
   codigoCiudad: number | undefined,
   configuracion: ConfiguracionStarken,
   cliente: ClienteStarken | null,
+  ahora = Date.now(),
 ): Promise<ResultadoEnvioStarken> {
   if (!cliente) throw new ErrorStarken(MENSAJE_NO_CONFIGURADO, 'no_configurado');
-  if (!configuracion.origen)
-    throw new ErrorStarken('Configura la ciudad de origen de Starken en Ajustes.', 'paquete');
   if (cotizacion.incompletos.length)
     throw new ErrorUsuario('Completa o quita los ítems pendientes antes de cotizar el despacho.');
-  const resultado = calcularBulto(cotizacion.montos.lineas, configuracion.paquete);
-  if (!resultado.ok) throw new ErrorStarken(resultado.mensaje, 'paquete');
-  const destinos = await cliente.listarCiudades('destino');
-  let ciudad: CiudadStarken;
-  if (codigoCiudad !== undefined) {
-    const elegida = destinos.find((c) => c.codigoCiudad === codigoCiudad);
-    if (!elegida)
-      throw new ErrorStarken('La ciudad elegida no está entre las ciudades de Starken.', 'destino');
-    ciudad = elegida;
-  } else {
-    const r = resolverDestino([cotizacion.despacho?.destino, cotizacion.cliente.comuna], destinos);
-    if (r.estado !== 'unica')
-      return {
-        estado: 'elegir_ciudad',
-        motivo: r.estado,
-        candidatas: r.estado === 'ambigua' ? r.candidatas : [],
-      };
-    ciudad = r.ciudad;
-  }
-  const tarifas = await cliente.consultarTarifas({
-    origen: configuracion.origen.codigoCiudad,
-    destino: ciudad.codigoCiudad,
-    bulto: resultado.bulto,
+  const proveedor = new ProveedorStarken({
+    cliente,
+    origen: configuracion.origen,
+    paquete: configuracion.paquete,
   });
+  const r = await proveedor.cotizar(cotizacion.montos.lineas, {
+    codigoCiudad,
+    textos: [cotizacion.despacho?.destino, cotizacion.cliente.comuna],
+  });
+  if (r.estado !== 'tarifas') return r;
   return {
-    estado: 'tarifas',
-    bulto: resultado.bulto,
-    textoBulto: textoBulto(resultado.bulto),
-    destino: { codigoCiudad: ciudad.codigoCiudad, nombre: ciudad.nombre },
-    tarifas,
+    ...r,
+    tarifas: r.tarifas.map((t) => ({
+      ...t,
+      ...firmarTarifa(
+        cotizacion.id,
+        {
+          tipoEntrega: t.tipoEntrega,
+          ...(t.servicio ? { servicio: t.servicio } : {}),
+          dias: t.dias,
+          costoTotal: t.costoTotal,
+          ciudadDestino: r.destino.nombre,
+          codigoCiudadDestino: r.destino.codigoCiudad,
+        },
+        ahora,
+      ),
+    })),
   };
+}
+
+/**
+ * Guarda los ajustes de Starken. La ciudad de origen nunca es el texto que mandó el navegador: si cambió, se busca
+ * por código en la lista de Starken y se guarda su nombre; si es la ya guardada, se conserva la entrada guardada.
+ */
+export async function guardarAjustesStarken(
+  solicitud: ConfiguracionStarken,
+  db: Database.Database,
+  cliente: ClienteStarken | null,
+) {
+  const guardada = leerConfiguracionStarken(db).origen;
+  let origen = solicitud.origen;
+  if (origen && guardada?.codigoCiudad === origen.codigoCiudad) origen = guardada;
+  else if (origen) {
+    if (!cliente) throw new ErrorStarken(MENSAJE_NO_CONFIGURADO, 'no_configurado');
+    const codigo = origen.codigoCiudad;
+    const ciudad = (await cliente.listarCiudades('origen')).find((c) => c.codigoCiudad === codigo);
+    if (!ciudad) throw new ErrorUsuario('La ciudad de origen no está entre las ciudades de Starken.');
+    origen = { codigoCiudad: ciudad.codigoCiudad, nombre: ciudad.nombre };
+  }
+  return guardarConfiguracionStarken({ ...solicitud, origen }, db);
 }
 
 /**

@@ -37,11 +37,14 @@ import {
   configuracionStarkenSchema,
   guardarConfiguracionStarken,
   leerConfiguracionStarken,
+  mensajeErrorConfiguracion,
 } from '../src/servidor/starken-configuracion';
+import { firmarTarifa, verificarTarifa, VIGENCIA_FIRMA_MS } from '../src/servidor/starken-firma';
 import {
   cotizarEnvioStarken,
   crearClienteStarken,
   estadoStarken,
+  guardarAjustesStarken,
   modoStarkenFijo,
   respuestaErrorStarken,
 } from '../src/servidor/starken-servicio';
@@ -218,6 +221,21 @@ describe('configuración por entorno', () => {
     expect(leerEntornoStarken({ ...completo, STARKEN_URL: 'ftp://starken.test/rest' })).toBeNull();
   });
 
+  it('exige https: http solo se acepta hacia esta misma máquina (desarrollo y pruebas)', () => {
+    const conUrl = (STARKEN_URL: string) => leerEntornoStarken({ ...completo, STARKEN_URL });
+    expect(conUrl('http://starken.qa.test/rest')).toBeNull();
+    expect(conUrl('http://restservices-qa.starken.cl/apiqa/starkenservices/rest')).toBeNull();
+    // Un nombre que solo se parece a «localhost» no es esta máquina.
+    expect(conUrl('http://localhost.evil.test/rest')).toBeNull();
+    for (const local of [
+      'http://127.0.0.1:4010/rest',
+      'http://localhost:4010/rest',
+      'http://[::1]:4010/rest',
+    ])
+      expect(conUrl(local)?.url).toBe(local);
+    expect(conUrl('https://starken.qa.test/rest')?.url).toBe('https://starken.qa.test/rest');
+  });
+
   it('el estado avisa «Starken no está configurado» sin credenciales y lo da por disponible con ellas', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'neltume-starken-estado-'));
     const almacen = new Almacen(dir);
@@ -262,6 +280,8 @@ describe('cliente de Starken (fetch simulado)', () => {
     expect(init?.method).toBe('POST');
     expect(init?.headers).toMatchObject({ rut: '11111111-1', clave: 'clave-secreta-xyz' });
     expect(init?.signal).toBeInstanceOf(AbortSignal);
+    // No sigue redirecciones: reenviarían las credenciales de las cabeceras a otro destino.
+    expect(init?.redirect).toBe('error');
     const cuerpo = JSON.parse(String(init?.body));
     expect(cuerpo).toEqual({
       codigoCiudadOrigen: 1,
@@ -306,6 +326,44 @@ describe('cliente de Starken (fetch simulado)', () => {
       .catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ErrorStarken);
     expect(error).toMatchObject({ codigo: 'rechazado', message: 'Starken: El destino no tiene cobertura.' });
+  });
+
+  it('descarta la fila mal formada y conserva las demás; el neto sale del valor redondeado', async () => {
+    const filaMala = {
+      costoTotal: 'mucho',
+      diasEntrega: 2,
+      tipoEntrega: { descripcionTipoEntrega: 'AGENCIA' },
+    };
+    const sinTipo = { costoTotal: 1000, diasEntrega: 1 };
+    const fetch = simulado(
+      json({
+        ...respuestaTarifas(tarifa(37326.6, 'DOMICILIO', 2)),
+        listaTarifas: [filaMala, tarifa(37326.6, 'DOMICILIO', 2), null, sinTipo, tarifa(89250, 'AGENCIA', 1)],
+      }),
+    );
+    const tarifas = await cliente(fetch).consultarTarifas({ origen: 1, destino: 2, bulto: BULTO });
+    expect(tarifas.map((t) => [t.tipoEntrega, t.costoTotal, t.neto])).toEqual([
+      ['DOMICILIO', 37327, netoDesdeIva(37327)],
+      ['AGENCIA', 89250, 75000],
+    ]);
+    // Si ninguna sirve, se informa en vez de inventar una.
+    const ninguna = simulado(json({ ...respuestaTarifas(), listaTarifas: [filaMala, sinTipo] }));
+    await expect(cliente(ninguna).consultarTarifas({ origen: 1, destino: 2, bulto: BULTO })).rejects.toThrow(
+      'no informó tarifas',
+    );
+  });
+
+  it('una ciudad mal formada no invalida la lista entera', async () => {
+    const lista = listaDestino();
+    const fetch = simulado(
+      json({
+        ...lista,
+        listaCiudadesDestino: [{ nombreCiudad: 'SIN CODIGO' }, ...lista.listaCiudadesDestino, 'basura'],
+      }),
+    );
+    const ciudades = await cliente(fetch).listarCiudades('destino');
+    expect(ciudades).toHaveLength(CIUDADES.length);
+    expect(ciudades.some((c) => c.nombre === 'SIN CODIGO')).toBe(false);
   });
 
   it('una respuesta sin tarifas utilizables se informa, no se inventa una tarifa', async () => {
@@ -543,7 +601,7 @@ describe('bulto equivalente', () => {
   it('apila las puertas: suma el espesor y el peso, toma el ancho y el alto mayores', () => {
     const bulto = ok(calcularBulto([linea(puertaExacta(0.9, 2.4), 14)], parametros()));
     expect(bulto).toMatchObject({ alto: 84, ancho: 90, largo: 240, kilos: 420 });
-    expect(textoBulto(bulto)).toBe('14 puertas · 1 bulto equivalente: 84 × 90 × 240 cm, 420 kg');
+    expect(textoBulto(bulto)).toBe('14 puertas · 1 línea · total 84 × 90 × 240 cm, 420 kg');
   });
 
   it('varios bultos (líneas): suma una dimensión y toma el máximo de las otras dos', () => {
@@ -554,7 +612,7 @@ describe('bulto equivalente', () => {
     const bulto = ok(r);
     // Espesor: (5 + 4 + 5) × 6 = 84; ancho y largo: los mayores; peso: 14 × 30.
     expect(bulto).toMatchObject({ alto: 84, ancho: 90, largo: 240, kilos: 420, bultos: 3 });
-    expect(textoBulto(bulto)).toBe('14 puertas · 3 bultos equivalentes: 84 × 90 × 240 cm, 420 kg');
+    expect(textoBulto(bulto)).toBe('14 puertas · 3 líneas · total 84 × 90 × 240 cm, 420 kg');
   });
 
   it('usa la medida mayor entre la pedida y la de la referencia del catálogo', () => {
@@ -586,7 +644,7 @@ describe('bulto equivalente', () => {
       kilos: 2 * 30 + 4 * 3.5,
       bultos: 2,
     });
-    expect(textoBulto(bulto)).toBe('2 puertas, 4 marcos · 2 bultos equivalentes: 32 × 90 × 240 cm, 74 kg');
+    expect(textoBulto(bulto)).toBe('2 puertas, 4 marcos · 2 líneas · total 32 × 90 × 240 cm, 74 kg');
     expect(ok(calcularBulto([linea(marco, 1)], p))).toMatchObject({
       alto: 5,
       ancho: 5,
@@ -653,6 +711,9 @@ describe('IVA y neto', () => {
     expect(netoDesdeIva(9999)).toBe(8403); // 8.402,52 → sube
     expect(netoDesdeIva(89250)).toBe(75000);
     expect(netoDesdeIva(101150)).toBe(85000);
+    // Parte del valor ya redondeado a pesos: 37.326,6 son $37.327 y su neto, $31.367.
+    expect(netoDesdeIva(37326.6)).toBe(netoDesdeIva(37327));
+    expect(netoDesdeIva(37326.4)).toBe(netoDesdeIva(37326));
     for (const n of [1, 500, 12345, 99999, 1_000_000]) {
       expect(Number.isSafeInteger(netoDesdeIva(n))).toBe(true);
       // El neto más su IVA (redondeado) queda a un peso de lo que cobra Starken.
@@ -708,8 +769,25 @@ describe('destino de Starken', () => {
     expect(unica(['Villarrica, Región de la Araucanía'])).toBe(3);
     expect(unica(['Camino a Valdivia km 4 - Valdivia'])).toBe(40);
     expect(unica(['Parcela 5 Padre Las Casas'])).toBe(2);
-    // El nombre más largo gana: «Padre Las Casas» y no «Temuco», aunque ambos aparezcan.
+    // Varios nombres que caen en la misma ciudad no son ambigüedad.
     expect(unica(['Fundo El Roble Padre Las Casas Temuco'])).toBe(2);
+    // Un nombre contenido en otro más largo no cuenta aparte: «San Pedro» dentro de «San Pedro de la Paz».
+    const pedro = [ciudad(50, 'SAN PEDRO'), ciudad(51, 'SAN PEDRO DE LA PAZ'), ciudad(52, 'CONCEPCION')];
+    const r = resolverDestino(['Villa Norte San Pedro de la Paz'], pedro);
+    expect(r.estado === 'unica' && r.ciudad.codigoCiudad).toBe(51);
+  });
+
+  it('si el texto nombra ciudades distintas no se adivina: se pide elegir', () => {
+    // Sin comas no hay segmentos: «Santiago» (calle) y «Temuco» (ciudad) son dos ciudades posibles.
+    const r = resolverDestino(['Pasaje Santiago 123 Temuco'], CIUDADES);
+    expect(r.estado).toBe('ambigua');
+    expect(r.estado === 'ambigua' && r.candidatas.map((c) => c.codigoCiudad).sort()).toEqual([1, 2]);
+    expect(resolverDestino(['Osorno Valdivia'], CIUDADES)).toMatchObject({ estado: 'ambigua' });
+    // Con una coma, la última parte es la comuna y manda, como en una dirección.
+    const ok = resolverDestino(['Pasaje Santiago 123, Temuco'], CIUDADES);
+    expect(ok.estado === 'unica' && ok.ciudad.codigoCiudad).toBe(2);
+    // Una comuna contenida en varias ciudades sin ciudad homónima también queda en duda.
+    expect(resolverDestino(['Parcela 4 San Pablo'], CIUDADES)).toMatchObject({ estado: 'ambigua' });
   });
 
   it('una comuna repetida en varias ciudades es ambigua, salvo que una ciudad se llame igual', () => {
@@ -815,7 +893,7 @@ describe('cotizar el despacho de una cotización con Starken', () => {
     if (r.estado !== 'tarifas') throw new Error(r.estado);
     // 3 puertas × 4,5 cm = 13,5 cm; ancho 85 (la referencia supera los 82 pedidos); largo 200; 75 kg.
     expect(r.bulto).toMatchObject({ alto: 13.5, ancho: 85, largo: 200, kilos: 75 });
-    expect(r.textoBulto).toBe('3 puertas · 1 bulto equivalente: 13,5 × 85 × 200 cm, 75 kg');
+    expect(r.textoBulto).toBe('3 puertas · 1 línea · total 13,5 × 85 × 200 cm, 75 kg');
     expect(r.destino).toEqual({ codigoCiudad: 2, nombre: 'TEMUCO' });
     expect(r.tarifas.map((t) => [t.tipoEntrega, t.dias, t.costoTotal, t.neto])).toEqual([
       ['AGENCIA', 2, 89250, 75000],
@@ -907,76 +985,153 @@ describe('cotizar el despacho de una cotización con Starken', () => {
 });
 
 describe('aplicar la tarifa elegida', () => {
-  const tarifaElegida = {
-    tipoEntrega: 'DOMICILIO',
-    servicio: 'NORMAL',
-    dias: 3,
-    costoTotal: 101150,
-    ciudadDestino: 'TEMUCO',
-    codigoCiudadDestino: 2,
-  };
+  type Entorno = Awaited<ReturnType<typeof setup>>;
+  /**
+   * La tarifa tal como la entrega /api/starken/cotizar (firmada por el servidor para esa cotización) y su neto.
+   * `ahora` permite firmarla en otro momento, para probar el vencimiento.
+   */
+  async function elegir(e: Entorno, q: Cotizacion, tipo = 'DOMICILIO', ahora?: number) {
+    const r = await cotizarEnvioStarken(q, undefined, e.configuracion(), e.starken, ahora);
+    if (r.estado !== 'tarifas') throw new Error(r.estado);
+    const t = r.tarifas.find((x) => x.tipoEntrega === tipo)!;
+    return {
+      neto: t.neto,
+      tarifa: {
+        tipoEntrega: t.tipoEntrega,
+        servicio: t.servicio,
+        dias: t.dias,
+        costoTotal: t.costoTotal,
+        ciudadDestino: r.destino.nombre,
+        codigoCiudadDestino: r.destino.codigoCiudad,
+        vence: t.vence,
+        firma: t.firma,
+      },
+    };
+  }
+  async function conStarken() {
+    const e = await setup();
+    let q = await e.borrador();
+    q = await e.editar(q, { despacho: { transporte: 'Starken' } });
+    return { ...e, q };
+  }
 
   it('fija el valor de despacho neto, recalcula los montos y deja la tarifa en la actividad', async () => {
-    const { borrador, editar, detalles } = await setup();
-    let q = await borrador();
-    q = await editar(q, { despacho: { transporte: 'Starken' } });
+    const e = await conStarken();
+    let q = e.q;
     expect(q.flete).toBe(0);
-    q = await editar(q, { despacho: { valor: netoDesdeIva(101150) }, tarifaStarken: tarifaElegida });
+    const { tarifa, neto } = await elegir(e, q);
+    q = await e.editar(q, { despacho: { valor: neto }, tarifaStarken: tarifa });
     expect(q.flete).toBe(85000);
     expect(q.despacho).toMatchObject({ transporte: 'Starken', valor: 85000 });
     expect(q.montos.flete).toBe(85000);
     expect(q.montos.neto).toBe(q.montos.subtotal - q.montos.descuento + 85000);
-    const actividad = detalles(q).at(-1)!;
+    const actividad = e.detalles(q).at(-1)!;
     expect(actividad).toContain('Flete $0 → $85.000');
     expect(actividad).toContain(
       'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 neto) · destino TEMUCO (ciudad 2)',
     );
+    // La firma no se copia a la actividad.
+    expect(actividad).not.toContain(tarifa.firma);
     // El valor se sigue pudiendo corregir a mano.
-    q = await editar(q, { despacho: { valor: 90000 } });
+    q = await e.editar(q, { despacho: { valor: 90000 } });
     expect(q.flete).toBe(90000);
-    expect(detalles(q).at(-1)).not.toContain('Starken');
+    expect(e.detalles(q).at(-1)).not.toContain('Starken');
   });
 
   it('la tarifa queda en la actividad aunque el valor ya fuera ese', async () => {
-    const { borrador, editar, detalles } = await setup();
-    let q = await borrador();
-    q = await editar(q, { despacho: { transporte: 'Starken', valor: 85000 } });
-    const eventos = detalles(q).length;
-    q = await editar(q, { despacho: { valor: 85000 }, tarifaStarken: tarifaElegida });
-    expect(detalles(q)).toHaveLength(eventos + 1);
-    expect(detalles(q).at(-1)).toContain('Tarifa Starken aplicada');
+    const e = await conStarken();
+    let q = await e.editar(e.q, { despacho: { valor: 85000 } });
+    const eventos = e.detalles(q).length;
+    const { tarifa } = await elegir(e, q);
+    q = await e.editar(q, { despacho: { valor: 85000 }, tarifaStarken: tarifa });
+    expect(e.detalles(q)).toHaveLength(eventos + 1);
+    expect(e.detalles(q).at(-1)).toContain('Tarifa Starken aplicada');
   });
 
   it('rechaza una tarifa cuyo neto no es el valor de despacho, o sin Starken como transportista', async () => {
-    const { borrador, editar, detalles } = await setup();
-    let q = await borrador();
-    q = await editar(q, { despacho: { transporte: 'Starken' } });
-    const antes = detalles(q).length;
-    await expect(editar(q, { despacho: { valor: 70000 }, tarifaStarken: tarifaElegida })).rejects.toThrow(
+    const e = await conStarken();
+    let q = e.q;
+    const { tarifa } = await elegir(e, q);
+    const antes = e.detalles(q).length;
+    await expect(e.editar(q, { despacho: { valor: 70000 }, tarifaStarken: tarifa })).rejects.toThrow(
       'El valor de despacho debe ser el neto de la tarifa elegida ($85.000).',
     );
     // Sin valor nuevo tampoco: el actual ($0) no es el neto de la tarifa.
-    await expect(editar(q, { tarifaStarken: tarifaElegida })).rejects.toThrow('neto de la tarifa');
-    q = await editar(q, { despacho: { transporte: 'Transportes Paredes' } });
-    await expect(editar(q, { despacho: { valor: 85000 }, tarifaStarken: tarifaElegida })).rejects.toThrow(
+    await expect(e.editar(q, { tarifaStarken: tarifa })).rejects.toThrow('neto de la tarifa');
+    q = await e.editar(q, { despacho: { transporte: 'Transportes Paredes' } });
+    await expect(e.editar(q, { despacho: { valor: 85000 }, tarifaStarken: tarifa })).rejects.toThrow(
       'Elige Starken como transportista',
     );
-    expect(detalles(q).length).toBe(antes + 1);
+    expect(e.detalles(q).length).toBe(antes + 1);
   });
 
-  it('no se aplica en una cotización emitida sin revisión abierta: el valor quedó fijo', async () => {
-    const { borrador, editar, servicio } = await setup();
-    let q = await borrador();
-    q = await editar(q, { despacho: { transporte: 'Starken' } });
-    const emitida = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada }))
+  it('rechaza una tarifa falsificada: el costo, el destino o cualquier dato distinto del firmado', async () => {
+    const e = await conStarken();
+    const q = e.q;
+    const { tarifa } = await elegir(e, q);
+    const antes = e.detalles(q).length;
+    const falla = async (alterada: Record<string, unknown>, valor: number) => {
+      await expect(
+        e.editar(q, { despacho: { valor }, tarifaStarken: { ...tarifa, ...alterada } }),
+      ).rejects.toThrow('La tarifa de Starken no es válida para esta cotización');
+    };
+    // Un costo menor con su neto coherente: lo que haría quien edite la petición para abaratar el despacho.
+    await falla({ costoTotal: 11900 }, netoDesdeIva(11900));
+    await falla({ costoTotal: 1 }, 1);
+    await falla({ dias: 1 }, 85000);
+    await falla({ tipoEntrega: 'AGENCIA' }, 85000);
+    await falla({ servicio: 'EXPRESS' }, 85000);
+    await falla({ ciudadDestino: 'SANTIAGO' }, 85000);
+    await falla({ codigoCiudadDestino: 1 }, 85000);
+    // Ni alargar su vigencia ni inventar la firma.
+    await falla({ vence: new Date(Date.now() + 10 * 86_400_000).toISOString() }, 85000);
+    await falla({ firma: 'A'.repeat(43) }, 85000);
+    await falla({ firma: 'no es una firma' }, 85000);
+    await falla({ firma: '' }, 85000);
+    await falla({ firma: undefined }, 85000);
+    // Nada cambió: ni el valor ni la actividad.
+    expect(e.almacen.obtener(q.id)!.flete).toBe(0);
+    expect(e.detalles(q)).toHaveLength(antes);
+  });
+
+  it('rechaza la firma de otra cotización, aunque sea idéntica', async () => {
+    const e = await conStarken();
+    const otra = await e.borrador();
+    const { tarifa, neto } = await elegir(e, otra);
+    await expect(e.editar(e.q, { despacho: { valor: neto }, tarifaStarken: tarifa })).rejects.toThrow(
+      'no es válida para esta cotización',
+    );
+    // En la cotización para la que se firmó sí vale (con su transportista).
+    const de = await e.editar(otra, { despacho: { transporte: 'Starken' } });
+    const aplicada = await e.editar(de, { despacho: { valor: neto }, tarifaStarken: tarifa });
+    expect(aplicada.flete).toBe(85000);
+  });
+
+  it('una tarifa vence a los 15 minutos: hay que volver a cotizar', async () => {
+    const e = await conStarken();
+    const ahora = Date.now();
+    const vencida = await elegir(e, e.q, 'DOMICILIO', ahora - VIGENCIA_FIRMA_MS - 1000);
+    await expect(
+      e.editar(e.q, { despacho: { valor: vencida.neto }, tarifaStarken: vencida.tarifa }),
+    ).rejects.toThrow('La tarifa de Starken venció. Vuelve a cotizar el despacho.');
+    // Todavía vigente (un minuto antes de vencer): se acepta.
+    const vigente = await elegir(e, e.q, 'DOMICILIO', ahora - VIGENCIA_FIRMA_MS + 60_000);
+    const q = await e.editar(e.q, { despacho: { valor: vigente.neto }, tarifaStarken: vigente.tarifa });
+    expect(q.flete).toBe(85000);
+  });
+
+  it('se aplica sobre la revisión que crea editar una cotización emitida', async () => {
+    const e = await conStarken();
+    const emitida = (await e.servicio.ejecutar({ tipo: 'emitir', id: e.q.id, actualizada: e.q.actualizada }))
       .cotizacion;
-    // Editar una emitida abre una revisión en borrador: la tarifa se aplica ahí, con su actividad propia.
-    const r = await servicio.ejecutar({
+    // Editar una emitida abre una revisión en borrador: la tarifa, firmada para la emitida, se aplica ahí.
+    const { tarifa, neto } = await elegir(e, emitida);
+    const r = await e.servicio.ejecutar({
       tipo: 'editar',
       id: emitida.id,
       actualizada: emitida.actualizada,
-      despacho: { valor: 85000 },
-      tarifaStarken: tarifaElegida,
+      despacho: { valor: neto },
+      tarifaStarken: tarifa,
     });
     expect(r.cotizacion.id).not.toBe(emitida.id);
     expect(r.cotizacion.flete).toBe(85000);
@@ -984,10 +1139,80 @@ describe('aplicar la tarifa elegida', () => {
   });
 });
 
+describe('firma de tarifas', () => {
+  const datos = {
+    tipoEntrega: 'DOMICILIO',
+    servicio: 'NORMAL',
+    dias: 3,
+    costoTotal: 101150,
+    ciudadDestino: 'TEMUCO',
+    codigoCiudadDestino: 2,
+  };
+  const ID = '0b9b1f0e-6d0a-4a51-8f5e-1a2b3c4d5e6f';
+
+  it('la firma liga la tarifa a la cotización y vence a los 15 minutos', () => {
+    const ahora = 1_800_000_000_000;
+    const { vence, firma } = firmarTarifa(ID, datos, ahora);
+    expect(vence).toBe(new Date(ahora + VIGENCIA_FIRMA_MS).toISOString());
+    const aplicada = { ...datos, vence, firma };
+    expect(verificarTarifa(ID, aplicada, ahora)).toBe('valida');
+    expect(verificarTarifa(ID, aplicada, ahora + VIGENCIA_FIRMA_MS)).toBe('valida');
+    expect(verificarTarifa(ID, aplicada, ahora + VIGENCIA_FIRMA_MS + 1)).toBe('vencida');
+    expect(verificarTarifa(ID.replace('0b9b', '1c9b'), aplicada, ahora)).toBe('invalida');
+    expect(verificarTarifa(ID, { ...aplicada, costoTotal: 1190 }, ahora)).toBe('invalida');
+    expect(verificarTarifa(ID, { ...aplicada, vence: new Date(ahora + 1e9).toISOString() }, ahora)).toBe(
+      'invalida',
+    );
+    expect(verificarTarifa(ID, { ...aplicada, vence: 'mañana' }, ahora)).toBe('invalida');
+    // Una firma mal formada nunca hace fallar la verificación: es simplemente inválida.
+    for (const mala of ['', '!!!', 'A', firma.slice(1), firma + 'A', undefined as unknown as string])
+      expect(verificarTarifa(ID, { ...aplicada, firma: mala }, ahora)).toBe('invalida');
+  });
+
+  it('el servicio opcional forma parte de lo firmado', () => {
+    const ahora = 1_800_000_000_000;
+    const sin = { ...datos, servicio: undefined };
+    const { vence, firma } = firmarTarifa(ID, sin, ahora);
+    expect(verificarTarifa(ID, { ...sin, vence, firma }, ahora)).toBe('valida');
+    expect(verificarTarifa(ID, { ...datos, vence, firma }, ahora)).toBe('invalida');
+  });
+
+  it('usa una clave derivada de BETTER_AUTH_SECRET: con otro secreto la firma no vale', () => {
+    vi.stubEnv('BETTER_AUTH_SECRET', 'secreto-uno-0123456789abcdef-0123456789');
+    const { vence, firma } = firmarTarifa(ID, datos);
+    const aplicada = { ...datos, vence, firma };
+    expect(verificarTarifa(ID, aplicada)).toBe('valida');
+    vi.stubEnv('BETTER_AUTH_SECRET', 'secreto-dos-0123456789abcdef-0123456789');
+    expect(verificarTarifa(ID, aplicada)).toBe('invalida');
+    // La firma no deja ver el secreto ni se le parece.
+    expect(firma).not.toContain('secreto');
+  });
+
+  it('sin secreto (desarrollo) usa una clave propia del proceso, estable mientras corra', () => {
+    vi.stubEnv('BETTER_AUTH_SECRET', '');
+    const { vence, firma } = firmarTarifa(ID, datos);
+    expect(verificarTarifa(ID, { ...datos, vence, firma })).toBe('valida');
+    // Un secreto demasiado corto tampoco se usa.
+    vi.stubEnv('BETTER_AUTH_SECRET', 'corto');
+    expect(verificarTarifa(ID, { ...datos, vence, firma })).toBe('valida');
+  });
+});
+
 describe('configuración guardada', () => {
-  it('parte vacía (no se inventan pesos), se guarda y se valida', async () => {
+  const vacia = { origen: null, paquete: parametrosVacios() };
+  const invalido = (valor: unknown) => configuracionStarkenSchema.safeParse(valor);
+  const mensaje = (valor: unknown) => {
+    const r = invalido(valor);
+    return r.success ? null : mensajeErrorConfiguracion(r.error);
+  };
+  const familia = (kg: unknown, espesorCm: unknown) => ({
+    origen: null,
+    paquete: { ...parametrosVacios(), PUERTA: { kg, espesorCm } },
+  });
+
+  it('parte vacía (no se inventan pesos) y se guarda lo que se valida', async () => {
     const { db } = await setup();
-    expect(leerConfiguracionStarken(db)).toEqual({ origen: null, paquete: parametrosVacios() });
+    expect(leerConfiguracionStarken(db)).toEqual(vacia);
     const guardada = guardarConfiguracionStarken(
       {
         origen: { codigoCiudad: 1, nombre: 'SANTIAGO' },
@@ -999,13 +1224,39 @@ describe('configuración guardada', () => {
     expect(leerConfiguracionStarken(db).paquete.PUERTA).toEqual({ kg: 30, espesorCm: 6 });
     expect(leerConfiguracionStarken(db).paquete.MOLDURA).toEqual({ kg: null, espesorCm: null });
     expect(estadoStarken(db).configuracion).toEqual(guardada);
-    const invalido = (valor: unknown) => configuracionStarkenSchema.safeParse(valor).success;
-    expect(invalido({ origen: null, paquete: { PUERTA: { kg: -1, espesorCm: 6 } } })).toBe(false);
-    expect(invalido({ origen: null, paquete: { PUERTA: { kg: 0, espesorCm: 6 } } })).toBe(false);
-    expect(invalido({ origen: null, paquete: { PUERTA: { kg: 30, espesorCm: 9999 } } })).toBe(false);
-    expect(invalido({ origen: { codigoCiudad: 0, nombre: 'X' }, paquete: {} })).toBe(false);
-    expect(invalido({ origen: null, paquete: { SOFA: { kg: 1, espesorCm: 1 } } })).toBe(false);
-    expect(invalido({})).toBe(true);
+  });
+
+  it('un cuerpo vacío o a medias no vale: no puede borrar la configuración', () => {
+    expect(invalido({}).success).toBe(false);
+    expect(invalido({ origen: null }).success).toBe(false);
+    expect(invalido({ paquete: parametrosVacios() }).success).toBe(false);
+    expect(invalido({ origen: null, paquete: {} }).success).toBe(false);
+    expect(invalido({ origen: null, paquete: { PUERTA: { kg: 30, espesorCm: 6 } } }).success).toBe(false);
+    expect(invalido({ origen: null, paquete: { ...parametrosVacios(), PUERTA: { kg: 30 } } }).success).toBe(
+      false,
+    );
+    expect(invalido(null).success).toBe(false);
+    expect(invalido(vacia).success).toBe(true);
+    expect(mensaje({})).toContain('Configuración incompleta o inválida');
+  });
+
+  it('cada regla del peso y del espesor tiene su propio mensaje, con la familia por delante', () => {
+    expect(mensaje(familia(-1, 6))).toBe('Puertas: El peso por unidad debe ser mayor que cero.');
+    expect(mensaje(familia(0, 6))).toBe('Puertas: El peso por unidad debe ser mayor que cero.');
+    expect(mensaje(familia('30', 6))).toBe('Puertas: El peso por unidad debe ser un número.');
+    expect(mensaje(familia(2001, 6))).toBe('Puertas: El peso por unidad no puede superar 2.000 kg.');
+    expect(mensaje(familia(30, -1))).toBe('Puertas: El espesor debe ser mayor que cero.');
+    expect(mensaje(familia(30, 'grueso'))).toBe('Puertas: El espesor debe ser un número.');
+    expect(mensaje(familia(30, 301))).toBe('Puertas: El espesor no puede superar 300 cm.');
+    expect(mensaje(familia(30, null))).toBe('Puertas: Completa el peso y el espesor, o deja ambos vacíos.');
+    expect(mensaje(familia(null, 6))).toBe('Puertas: Completa el peso y el espesor, o deja ambos vacíos.');
+    expect(mensaje({ origen: { codigoCiudad: 0, nombre: 'X' }, paquete: parametrosVacios() })).toBe(
+      'El código de la ciudad de origen no es válido.',
+    );
+    expect(
+      mensaje({ origen: null, paquete: { ...parametrosVacios(), SOFA: { kg: 1, espesorCm: 1 } } }),
+    ).toContain('Configuración incompleta o inválida');
+    expect(invalido(familia(2000, 300)).success).toBe(true);
   });
 
   it('una configuración guardada ilegible se trata como vacía', async () => {
@@ -1015,7 +1266,47 @@ describe('configuración guardada', () => {
       '{no es json',
       new Date().toISOString(),
     );
-    expect(leerConfiguracionStarken(db)).toEqual({ origen: null, paquete: parametrosVacios() });
+    expect(leerConfiguracionStarken(db)).toEqual(vacia);
+  });
+});
+
+describe('guardar los ajustes verificando el origen', () => {
+  const solicitud = (nombre: string, codigoCiudad = 1) => ({
+    origen: { codigoCiudad, nombre },
+    paquete: parametros(),
+  });
+
+  it('el nombre del origen es el de la lista de Starken, no el que envía el navegador', async () => {
+    const { db, starken, espia } = await setup();
+    const guardada = await guardarAjustesStarken(solicitud('NOMBRE INVENTADO'), db, starken);
+    expect(guardada.origen).toEqual({ codigoCiudad: 1, nombre: 'SANTIAGO' });
+    expect(leerConfiguracionStarken(db).origen).toEqual({ codigoCiudad: 1, nombre: 'SANTIAGO' });
+    expect(espia.mock.calls.some(([url]) => String(url).endsWith('listarCiudadesOrigen'))).toBe(true);
+  });
+
+  it('si el origen no cambió, conserva la entrada guardada y no consulta a Starken', async () => {
+    const { db, starken, espia } = await setup();
+    await guardarAjustesStarken(solicitud('x'), db, starken);
+    espia.mockClear();
+    // Sin conexión con Starken (cliente nulo) también guarda, y el nombre sigue siendo el guardado.
+    const otra = await guardarAjustesStarken(solicitud('OTRO NOMBRE'), db, null);
+    expect(otra.origen).toEqual({ codigoCiudad: 1, nombre: 'SANTIAGO' });
+    expect(espia).not.toHaveBeenCalled();
+  });
+
+  it('rechaza un origen que no está en Starken y no guarda nada', async () => {
+    const { db, starken } = await setup();
+    await expect(guardarAjustesStarken(solicitud('X', 77), db, starken)).rejects.toThrow(
+      'La ciudad de origen no está entre las ciudades de Starken.',
+    );
+    expect(leerConfiguracionStarken(db).origen).toBeNull();
+    // Sin Starken configurado no hay con qué verificar un origen nuevo.
+    await expect(guardarAjustesStarken(solicitud('SANTIAGO'), db, null)).rejects.toMatchObject({
+      codigo: 'no_configurado',
+    });
+    // Quitar el origen sí se puede siempre.
+    const sin = await guardarAjustesStarken({ origen: null, paquete: parametros() }, db, null);
+    expect(sin.origen).toBeNull();
   });
 });
 

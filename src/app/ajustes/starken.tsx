@@ -4,6 +4,8 @@ import {
   ETIQUETA_FAMILIA,
   FAMILIAS_ENVIO,
   leerMedida,
+  MAX_ESPESOR_CM,
+  MAX_KG_UNIDAD,
   medidaATexto,
   type CiudadStarken,
   type ConfiguracionStarken,
@@ -23,6 +25,21 @@ const aTextos = (c: ConfiguracionStarken): Texto =>
       { kg: medidaATexto(c.paquete[f].kg), espesorCm: medidaATexto(c.paquete[f].espesorCm) },
     ]),
   ) as Texto;
+
+/** Primer problema de los datos de una familia, dicho regla por regla; null si están bien (o ambos vacíos). */
+function errorFamilia(familia: string, kg: number | null, espesorCm: number | null) {
+  if (Number.isNaN(kg))
+    return `${familia}: el peso por unidad debe ser un número mayor que cero (por ejemplo 4,5).`;
+  if (kg !== null && kg > MAX_KG_UNIDAD)
+    return `${familia}: el peso por unidad no puede superar ${MAX_KG_UNIDAD.toLocaleString('es-CL')} kg.`;
+  if (Number.isNaN(espesorCm))
+    return `${familia}: el espesor debe ser un número mayor que cero (por ejemplo 4,5).`;
+  if (espesorCm !== null && espesorCm > MAX_ESPESOR_CM)
+    return `${familia}: el espesor no puede superar ${MAX_ESPESOR_CM} cm.`;
+  if ((kg === null) !== (espesorCm === null))
+    return `${familia}: completa el peso y el espesor, o deja ambos vacíos.`;
+  return null;
+}
 
 /**
  * Ajustes de Starken: ciudad de origen y, como el catálogo no trae pesos, el peso por unidad y el grosor de cada
@@ -71,7 +88,11 @@ export function ConfiguracionStarkenAjustes({
   }, []);
 
   if (!estado || !textos)
-    return <p className="catalog-modal-intro">{error || 'Cargando la configuración de Starken…'}</p>;
+    return (
+      <p className="catalog-modal-intro" role="status">
+        {error || 'Cargando la configuración de Starken…'}
+      </p>
+    );
 
   const editable = estado.puedeEditar;
   const guardado = estado.configuracion.origen;
@@ -91,14 +112,9 @@ export function ConfiguracionStarkenAjustes({
     for (const f of FAMILIAS_ENVIO) {
       const kg = leerMedida(textos[f].kg),
         espesorCm = leerMedida(textos[f].espesorCm);
-      if (Number.isNaN(kg) || Number.isNaN(espesorCm)) {
-        setError(
-          `${ETIQUETA_FAMILIA[f]}: escribe el peso y el espesor como números mayores que cero (por ejemplo 4,5) o déjalos vacíos.`,
-        );
-        return;
-      }
-      if ((kg === null) !== (espesorCm === null)) {
-        setError(`${ETIQUETA_FAMILIA[f]}: completa el peso y el espesor, o deja ambos vacíos.`);
+      const problema = errorFamilia(ETIQUETA_FAMILIA[f], kg, espesorCm);
+      if (problema) {
+        setError(problema);
         return;
       }
       paquete[f] = { kg, espesorCm };
@@ -136,7 +152,7 @@ export function ConfiguracionStarkenAjustes({
           variables STARKEN_* (ver el README). Mientras tanto puedes guardar los pesos.
         </p>
       )}
-      <label className="ia-field starken-origen">
+      <label className="ia-field">
         <span>Ciudad de origen</span>
         <select
           value={origen}
@@ -158,8 +174,17 @@ export function ConfiguracionStarkenAjustes({
           ))}
         </select>
       </label>
-      {errorCiudades && <p className="catalog-error">{errorCiudades}</p>}
-      <div className="starken-parametros">
+      {ciudades === null && estado.disponible && !errorCiudades && (
+        <span role="status" className="sr-only">
+          Cargando las ciudades de Starken…
+        </span>
+      )}
+      {errorCiudades && (
+        <p className="catalog-error" role="alert">
+          {errorCiudades}
+        </p>
+      )}
+      <div>
         {FAMILIAS_ENVIO.map((f) => (
           <div className="tramo-descuento" key={f}>
             <label className="ia-field">

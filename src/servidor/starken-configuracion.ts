@@ -1,41 +1,73 @@
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import { parametrosVacios, type ConfiguracionStarken } from '../negocio/starken';
+import type { Familia } from '../catalogo/tipos';
+import {
+  ETIQUETA_FAMILIA,
+  MAX_ESPESOR_CM,
+  MAX_KG_UNIDAD,
+  parametrosVacios,
+  type ConfiguracionStarken,
+} from '../negocio/starken';
 import { abrirBaseDatos } from './base-datos';
 
 // Ajustes de Starken que define la empresa: ciudad de origen y, como el catálogo no trae pesos, el peso y el
 // grosor por unidad de cada familia. Vacíos de fábrica: no se inventa ningún peso. Las credenciales NO van aquí.
 
 const CLAVE = 'starken';
-const medida = (max: number) =>
-  z.number({ error: 'Indica un número.' }).finite().positive().max(max).nullable();
+const pesoKg = z
+  .number({ error: 'El peso por unidad debe ser un número.' })
+  .positive('El peso por unidad debe ser mayor que cero.')
+  .max(MAX_KG_UNIDAD, `El peso por unidad no puede superar ${MAX_KG_UNIDAD.toLocaleString('es-CL')} kg.`)
+  .nullable();
+const espesorCm = z
+  .number({ error: 'El espesor debe ser un número.' })
+  .positive('El espesor debe ser mayor que cero.')
+  .max(MAX_ESPESOR_CM, `El espesor no puede superar ${MAX_ESPESOR_CM} cm.`)
+  .nullable();
 const familiaSchema = z
-  .object({
-    kg: medida(2000).default(null),
-    espesorCm: medida(300).default(null),
-  })
-  .strict();
+  .object({ kg: pesoKg, espesorCm })
+  .strict()
+  // Con uno solo de los dos datos el bulto no se puede calcular: se pide completarlos o dejar ambos vacíos.
+  .refine(
+    (f) => (f.kg === null) === (f.espesorCm === null),
+    'Completa el peso y el espesor, o deja ambos vacíos.',
+  );
+/**
+ * Lo que se guarda y lo que acepta la API: siempre completo (origen y las cuatro familias, aunque vayan vacías), para
+ * que un cuerpo vacío o a medias no borre la configuración sin querer.
+ */
 export const configuracionStarkenSchema = z
   .object({
     origen: z
       .object({
-        codigoCiudad: z.number().int().positive(),
+        codigoCiudad: z.number().int().positive('El código de la ciudad de origen no es válido.'),
         nombre: z.string().trim().min(1).max(120),
       })
       .strict()
-      .nullable()
-      .default(null),
+      .nullable(),
     paquete: z
       .object({
-        PUERTA: familiaSchema.default(() => ({ kg: null, espesorCm: null })),
-        MARCO: familiaSchema.default(() => ({ kg: null, espesorCm: null })),
-        MOLDURA: familiaSchema.default(() => ({ kg: null, espesorCm: null })),
-        PIEZAS_T: familiaSchema.default(() => ({ kg: null, espesorCm: null })),
+        PUERTA: familiaSchema,
+        MARCO: familiaSchema,
+        MOLDURA: familiaSchema,
+        PIEZAS_T: familiaSchema,
       })
-      .strict()
-      .default(parametrosVacios),
+      .strict(),
   })
   .strict();
+
+/** Primer problema de una configuración rechazada, con la familia por delante: «Puertas: El espesor debe…». */
+export function mensajeErrorConfiguracion(error: z.ZodError) {
+  const [problema] = error.issues;
+  if (!problema) return 'Configuración inválida.';
+  const [, familia] = problema.path;
+  const etiqueta = typeof familia === 'string' ? ETIQUETA_FAMILIA[familia as Familia] : undefined;
+  // Un peso o espesor que no es número tiene su mensaje; falta un bloque entero o sobra una clave: está incompleta.
+  const esMedida = ['kg', 'espesorCm'].includes(String(problema.path.at(-1)));
+  if ((problema.code === 'invalid_type' && !esMedida) || problema.code === 'unrecognized_keys')
+    return `Configuración incompleta o inválida${etiqueta ? ` (${etiqueta.toLowerCase()})` : ''}: envía el origen y el peso y el espesor de cada familia, o null si no se definen.`;
+  return etiqueta ? `${etiqueta}: ${problema.message}` : problema.message;
+}
 
 export type { ConfiguracionStarken };
 

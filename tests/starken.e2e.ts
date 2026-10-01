@@ -81,7 +81,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     await page.getByLabel('Puertas: peso por unidad (kg)').fill('veinticinco');
     await page.getByLabel('Puertas: espesor (cm)').fill('4,5');
     await page.getByRole('button', { name: 'Guardar Starken' }).click();
-    await expect(alerta).toContainText('Puertas: escribe el peso y el espesor como números mayores que cero');
+    await expect(alerta).toContainText('Puertas: el peso por unidad debe ser un número mayor que cero');
     await page.getByLabel('Puertas: peso por unidad (kg)').fill('25');
     await page.getByRole('button', { name: 'Guardar Starken' }).click();
     await expect(
@@ -102,13 +102,20 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     await expect(boton).toBeEnabled();
     // 3 puertas × 4,5 cm = 13,5 cm apilados; el ancho y el alto salen de la medida de la puerta; 3 × 25 = 75 kg.
     await expect(panel.getByTestId('starken-bulto')).toHaveText(
-      /^Bulto: 3 puertas · 1 bulto equivalente: 13,5 × \d+(?:,\d+)? × \d+(?:,\d+)? cm, 75 kg$/,
+      /^Bulto: 3 puertas · 1 línea · total 13,5 × \d+(?:,\d+)? × \d+(?:,\d+)? cm, 75 kg$/,
     );
     const valorDespacho = panel.getByRole('button', { name: /^Editar valor de despacho/ });
     await expect(valorDespacho).toContainText('$0');
+    const cotizada = page.waitForResponse((r) => r.url().endsWith('/api/starken/cotizar'));
     await boton.click();
+    const tarifasFirmadas = (await (await cotizada).json()) as {
+      destino: { codigoCiudad: number; nombre: string };
+      tarifas: Record<string, string | number>[];
+    };
     const tarifas = panel.getByLabel('Tarifas de Starken');
     await expect(tarifas).toContainText('TEMUCO');
+    // El texto del bulto es el que calculó el servidor, con las medidas de la puerta del catálogo.
+    await expect(tarifas).toContainText(/Bulto cotizado: 3 puertas · 1 línea · total 13,5 × /);
     await expect(tarifas.getByRole('listitem')).toHaveText([
       /Agencia · 2 días · \$89\.250 IVA incl\. \(\$75\.000 neto\)/,
       /Domicilio · 3 días · \$101\.150 IVA incl\. \(\$85\.000 neto\)/,
@@ -117,7 +124,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     await expect(valorDespacho).toContainText('$0');
 
     // --- Elegir domicilio deja su neto como valor de despacho ---
-    await tarifas.getByRole('button', { name: /^Usar la tarifa Domicilio/ }).click();
+    await tarifas.getByRole('button', { name: /^Usar esta tarifa: Domicilio/ }).click();
     await expect(
       panel.getByRole('status').filter({ hasText: 'Valor de despacho fijado en $85.000 neto' }),
     ).toBeVisible();
@@ -177,6 +184,38 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     expect(
       eventos.filter((e) => e.detalle?.includes('Flete $85.000 → $90.000') && !e.detalle.includes('Starken')),
     ).toHaveLength(1);
+
+    // --- Una tarifa alterada en la petición (costo menor, con su neto) no se acepta aunque lleve una firma real ---
+    const domicilio = tarifasFirmadas.tarifas.find((t) => t.tipoEntrega === 'DOMICILIO')!;
+    const vigente = (await (await page.request.get(`/api/accion?id=${id}`)).json()) as {
+      cotizacion: { actualizada: string };
+    };
+    const forjada = await page.request.post('/api/accion', {
+      data: {
+        tipo: 'editar',
+        id,
+        actualizada: vigente.cotizacion.actualizada,
+        despacho: { valor: 10000 },
+        tarifaStarken: {
+          tipoEntrega: domicilio.tipoEntrega,
+          servicio: domicilio.servicio,
+          dias: domicilio.dias,
+          costoTotal: 11900,
+          ciudadDestino: tarifasFirmadas.destino.nombre,
+          codigoCiudadDestino: tarifasFirmadas.destino.codigoCiudad,
+          vence: domicilio.vence,
+          firma: domicilio.firma,
+        },
+      },
+    });
+    expect(forjada.status()).toBe(400);
+    expect(((await forjada.json()) as { error: string }).error).toContain(
+      'no es válida para esta cotización',
+    );
+    const intacta = (await (await page.request.get(`/api/accion?id=${id}`)).json()) as {
+      cotizacion: { flete: number };
+    };
+    expect(intacta.cotizacion.flete).toBe(90000);
   } finally {
     rol.run('user', USUARIO_E2E);
     limpiarConfiguracion();

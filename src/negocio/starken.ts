@@ -8,7 +8,7 @@ import { pesos } from './precios';
 /** Las tarifas de Starken vienen con IVA (19 %): el despacho de la cotización es neto. */
 export const IVA_STARKEN = 0.19;
 /** Valor neto en pesos enteros de una tarifa con IVA incluido: 44.418 → 37.326. */
-export const netoDesdeIva = (costoTotal: number) => Math.round(costoTotal / (1 + IVA_STARKEN));
+export const netoDesdeIva = (costoTotal: number) => Math.round(Math.round(costoTotal) / (1 + IVA_STARKEN));
 
 /** El transportista de la cotización es Starken (sin distinguir mayúsculas ni espacios). */
 export const esStarken = (transporte: string | null | undefined) =>
@@ -86,6 +86,9 @@ export type ResultadoBulto =
       mensaje: string;
     };
 
+/** Topes de lo que se acepta como peso por unidad (kg) y espesor (cm); los usan el formulario y el servidor. */
+export const MAX_KG_UNIDAD = 2000;
+export const MAX_ESPESOR_CM = 300;
 export const MENSAJE_SIN_PARAMETROS = 'Configura peso y espesor en Ajustes';
 const enCm = (metros: number) => Math.round(metros * 10000) / 100;
 const redondear = (n: number) => Math.round(n * 100) / 100;
@@ -165,13 +168,13 @@ const NOMBRE_UNIDAD: Record<Familia, [string, string]> = {
   MOLDURA: ['moldura', 'molduras'],
   PIEZAS_T: ['pieza T', 'piezas T'],
 };
-/** «14 puertas · 3 bultos equivalentes: 84 × 90 × 240 cm, 420 kg» (grosor apilado × ancho × largo). */
+/** «14 puertas · 3 líneas · total 84 × 90 × 240 cm, 420 kg» (grosor apilado × ancho × largo). */
 export function textoBulto(b: Bulto) {
   const unidades = FAMILIAS_ENVIO.filter((f) => b.unidades[f])
     .map((f) => `${b.unidades[f]} ${NOMBRE_UNIDAD[f][b.unidades[f] === 1 ? 0 : 1]}`)
     .join(', ');
-  const bultos = `${b.bultos} ${b.bultos === 1 ? 'bulto equivalente' : 'bultos equivalentes'}`;
-  return `${unidades} · ${bultos}: ${cifra(b.alto)} × ${cifra(b.ancho)} × ${cifra(b.largo)} cm, ${cifra(b.kilos)} kg`;
+  const lineas = `${b.bultos} ${b.bultos === 1 ? 'línea' : 'líneas'}`;
+  return `${unidades} · ${lineas} · total ${cifra(b.alto)} × ${cifra(b.ancho)} × ${cifra(b.largo)} cm, ${cifra(b.kilos)} kg`;
 }
 
 // --- Destino -----------------------------------------------------------------------------------------
@@ -225,18 +228,25 @@ function resolverTexto(texto: string, ciudades: readonly CiudadStarken[]): Coinc
     const c = coincidencia(ciudadesLlamadas(parte, ciudades), parte);
     if (c) return c;
   }
-  // Último recurso: algún nombre de comuna o ciudad aparece dentro del texto; vale el más largo, si es único.
+  // Último recurso: nombres de comuna o ciudad dentro del texto. Se descartan los contenidos en otro más largo
+  // («San Pedro» dentro de «San Pedro de la Paz»); si lo que queda apunta a más de una ciudad («Pasaje Santiago 123
+  // Temuco») no se adivina: la persona elige.
   const rodeado = ` ${completo} `;
-  const nombres = new Map<string, CiudadStarken[]>();
+  const nombres = new Map<string, Map<number, CiudadStarken>>();
   for (const c of ciudades)
     for (const n of [c.nombre, ...c.comunas].map(normalizarNombre))
-      if (n.length >= 4 && rodeado.includes(` ${n} `)) nombres.set(n, [...(nombres.get(n) ?? []), c]);
-  const masLargo = Math.max(0, ...[...nombres.keys()].map((n) => n.length));
-  const finalistas = [...nombres].filter(([n]) => n.length === masLargo);
-  if (finalistas.length !== 1)
-    return finalistas.length ? { ambigua: finalistas.flatMap(([, cs]) => cs) } : null;
-  const [nombre, candidatas] = finalistas[0];
-  return coincidencia([...new Map(candidatas.map((c) => [c.codigoCiudad, c])).values()], nombre);
+      if (n.length >= 4 && rodeado.includes(` ${n} `)) {
+        const de = nombres.get(n) ?? new Map<number, CiudadStarken>();
+        de.set(c.codigoCiudad, c);
+        nombres.set(n, de);
+      }
+  const vigentes = [...nombres.keys()].filter(
+    (n) => ![...nombres.keys()].some((otro) => otro !== n && ` ${otro} `.includes(` ${n} `)),
+  );
+  const candidatas = [...new Map(vigentes.flatMap((n) => [...nombres.get(n)!])).values()];
+  if (vigentes.length === 1) return coincidencia(candidatas, vigentes[0]);
+  if (candidatas.length <= 1) return candidatas.length ? { unica: candidatas[0] } : null;
+  return { ambigua: candidatas };
 }
 
 /**
@@ -294,6 +304,13 @@ export interface TarifaStarken {
   neto: number;
 }
 
+/** Tarifa con la firma del servidor: sin ella (o vencida, o de otra cotización) no se puede aplicar. */
+export interface TarifaStarkenFirmada extends TarifaStarken {
+  /** Vencimiento de la firma (ISO). */
+  vence: string;
+  firma: string;
+}
+
 /** Tarifa elegida por la persona, que queda en la actividad de la cotización. */
 export interface TarifaStarkenAplicada {
   tipoEntrega: string;
@@ -302,6 +319,9 @@ export interface TarifaStarkenAplicada {
   costoTotal: number;
   ciudadDestino: string;
   codigoCiudadDestino: number;
+  /** Firma y vencimiento que entregó el servidor con la tarifa. */
+  vence: string;
+  firma: string;
 }
 
 const etiquetaEntrega = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t);
@@ -317,7 +337,7 @@ export function textoTarifa(
 }
 
 /** Registro de actividad: «Tarifa Starken aplicada: Domicilio · 2 días · … · destino SAN CARLOS (ciudad 3)». */
-export const textoTarifaAplicada = (t: TarifaStarkenAplicada) =>
+export const textoTarifaAplicada = (t: Omit<TarifaStarkenAplicada, 'vence' | 'firma'>) =>
   `Tarifa Starken aplicada: ${textoTarifa(t)} · destino ${t.ciudadDestino} (ciudad ${t.codigoCiudadDestino})`;
 
 // --- Formas de la API (las usan el servidor y la interfaz) ------------------------------------------------
@@ -332,13 +352,13 @@ export interface EstadoStarken {
   mensaje: string | null;
   configuracion: ConfiguracionStarken;
 }
-export type ResultadoEnvioStarken =
+export type ResultadoEnvioStarken<T extends TarifaStarken = TarifaStarkenFirmada> =
   | {
       estado: 'tarifas';
       bulto: Bulto;
       textoBulto: string;
       destino: CiudadRef;
-      tarifas: TarifaStarken[];
+      tarifas: T[];
     }
   | {
       /** El destino no se pudo fijar solo: la persona elige una ciudad (las candidatas, si las hay). */

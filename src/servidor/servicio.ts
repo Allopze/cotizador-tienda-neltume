@@ -70,6 +70,7 @@ import { resolverReferencia, type OpcionCotizacion } from './referencias';
 import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { nombreCanonicoModelo } from '../catalogo/configuracion';
 import { esStarken, netoDesdeIva, textoTarifaAplicada, type TarifaStarkenAplicada } from '../negocio/starken';
+import { verificarTarifa } from './starken-firma';
 
 export { ErrorUsuario };
 
@@ -877,6 +878,14 @@ export class Servicio {
       if (tarifa) {
         if (!esStarken(despacho?.transporte))
           throw new ErrorUsuario('Elige Starken como transportista antes de aplicar su tarifa.');
+        // El navegador no es de fiar para el costo: la firma la dio este servidor para esta cotización.
+        const firma = verificarTarifa(accion.id, tarifa);
+        if (firma !== 'valida')
+          throw new ErrorUsuario(
+            firma === 'vencida'
+              ? 'La tarifa de Starken venció. Vuelve a cotizar el despacho.'
+              : 'La tarifa de Starken no es válida para esta cotización. Vuelve a cotizar el despacho.',
+          );
         if (flete !== netoDesdeIva(tarifa.costoTotal))
           throw new ErrorUsuario(
             `El valor de despacho debe ser el neto de la tarifa elegida (${pesos(netoDesdeIva(tarifa.costoTotal))}).`,

@@ -22,7 +22,7 @@ const ciudad = (codigoCiudad: number, nombreCiudad: string, ...comunas: string[]
   })),
 });
 const ORIGEN = [ciudad(1, 'SANTIAGO'), ciudad(2, 'TEMUCO'), ciudad(40, 'VALDIVIA')];
-export const DESTINO_SIN_COBERTURA = 99;
+const DESTINO_SIN_COBERTURA = 99;
 const DESTINO = [
   ciudad(1, 'SANTIAGO', 'SANTIAGO', 'PROVIDENCIA', 'ÑUÑOA', 'MAIPU', 'LAS CONDES'),
   ciudad(2, 'TEMUCO', 'TEMUCO', 'PADRE LAS CASAS'),

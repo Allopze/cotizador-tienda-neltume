@@ -12,7 +12,7 @@ import {
   type CiudadStarken,
   type EstadoStarken,
   type ResultadoEnvioStarken,
-  type TarifaStarken,
+  type TarifaStarkenFirmada,
 } from '@/negocio/starken';
 import type { CambiosEdicion } from './contrato';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
@@ -124,7 +124,7 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
     await cargarCiudades();
   }
 
-  async function usar(t: TarifaStarken, r: Tarifas) {
+  async function usar(t: TarifaStarkenFirmada, r: Tarifas) {
     const ok = await aplicar({
       despacho: { valor: t.neto },
       tarifaStarken: {
@@ -134,6 +134,9 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
         costoTotal: t.costoTotal,
         ciudadDestino: r.destino.nombre,
         codigoCiudadDestino: r.destino.codigoCiudad,
+        // Con la firma, el servidor reconoce que la tarifa salió de él para esta cotización y no venció.
+        vence: t.vence,
+        firma: t.firma,
       },
     });
     if (ok) {
@@ -150,6 +153,14 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
 
   return (
     <div className="starken-cotizar">
+      {/* Región en vivo: anuncia la carga de la configuración y de las tarifas, que el botón solo muestra con texto. */}
+      <span role="status" className="sr-only">
+        {!estado && !errorEstado
+          ? 'Cargando la configuración de Starken…'
+          : cargando
+            ? 'Consultando las tarifas de Starken…'
+            : ''}
+      </span>
       <div className="starken-acciones">
         <button
           type="button"
@@ -174,7 +185,12 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
             )}
           </p>
         ) : (
-          <p className="muted starken-ayuda" id="starken-ayuda" data-testid="starken-bulto">
+          <p
+            className="muted starken-ayuda"
+            id="starken-ayuda"
+            data-testid="starken-bulto"
+            title="Medidas totales: espesor apilado × ancho × largo"
+          >
             Bulto: {bulto.ok ? textoBulto(bulto.bulto) : ''}
           </p>
         )}
@@ -202,6 +218,7 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
               Cambiar ciudad
             </button>
           </p>
+          <p className="muted">Bulto cotizado: {vigente.textoBulto}</p>
           <ul className="starken-tarifas">
             {vigente.tarifas.map((t) => (
               <li key={`${t.tipoEntrega}-${t.servicio}-${t.costoTotal}`} className="starken-tarifa">
@@ -209,7 +226,7 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
                 <button
                   type="button"
                   className="button primary small"
-                  aria-label={`Usar la tarifa ${textoTarifa(t)}`}
+                  aria-label={`Usar esta tarifa: ${textoTarifa(t)}`}
                   onClick={() => void usar(t, vigente)}
                   disabled={ocupado || guardando}
                 >
@@ -246,7 +263,9 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
             />
           </label>
           {ciudades === null && !error ? (
-            <p className="muted">Cargando ciudades…</p>
+            <p className="muted" role="status">
+              Cargando ciudades…
+            </p>
           ) : lista.length ? (
             <ul className="starken-ciudades" aria-label="Ciudades de destino">
               {lista.map((c) => (

@@ -5,12 +5,15 @@ import {
   calcularBulto,
   netoDesdeIva,
   resolverDestino,
+  textoBulto,
   type Bulto,
   type CiudadRef,
   type CiudadStarken,
   type ParametrosFamilia,
+  type ResultadoEnvioStarken,
   type TarifaStarken,
 } from '../negocio/starken';
+import { HOSTNAMES_LOOPBACK } from './acceso';
 
 // Cliente del servicio REST de tarifas de Starken y proveedor de despacho. Las credenciales salen solo del
 // entorno del servidor: no se guardan en la base, no viajan al navegador ni aparecen en mensajes de error.
@@ -44,9 +47,16 @@ export interface EntornoStarken {
   rutCliente: string | null;
 }
 
+/** https, salvo http hacia esta misma máquina (desarrollo y pruebas): las credenciales no viajan en claro. */
+function urlSegura(url: string) {
+  if (!URL.canParse(url)) return false;
+  const { protocol, hostname } = new URL(url);
+  return protocol === 'https:' || (protocol === 'http:' && HOSTNAMES_LOOPBACK.has(hostname));
+}
+
 /**
- * Configuración del entorno, o null si falta algo: URL, RUT y clave de la integración, y la cuenta corriente
- * (con su dígito verificador) o, sin ella, el RUT del cliente. Una URL inválida también cuenta como falta.
+ * Configuración del entorno, o null si falta algo: URL https, RUT y clave de la integración, y la cuenta
+ * corriente (con su dígito verificador) o, sin ella, el RUT del cliente. Una URL inválida o http cuenta como falta.
  */
 export function leerEntornoStarken(
   env: Record<string, string | undefined> = process.env,
@@ -58,7 +68,7 @@ export function leerEntornoStarken(
   const cuentaCorriente = leer('STARKEN_CUENTA_CORRIENTE');
   const cuentaCorrienteDV = leer('STARKEN_CUENTA_CORRIENTE_DV');
   const rutCliente = leer('STARKEN_RUT_CLIENTE');
-  if (!url || !rut || !clave || !URL.canParse(url) || !/^https?:$/.test(new URL(url).protocol)) return null;
+  if (!url || !rut || !clave || !urlSegura(url)) return null;
   const conCuenta = !!cuentaCorriente && !!cuentaCorrienteDV;
   if (!conCuenta && !rutCliente) return null;
   return {
@@ -76,22 +86,22 @@ const ciudadSchema = z.object({
   nombreCiudad: z.string(),
   listaComunas: z.array(z.object({ nombreComuna: z.string() })).nullish(),
 });
-const base = { codigoRespuesta: z.number(), mensajeRespuesta: z.string().nullish() };
-const respuestaOrigen = z.object({ ...base, listaCiudadesOrigen: z.array(ciudadSchema).nullish() });
-const respuestaDestino = z.object({ ...base, listaCiudadesDestino: z.array(ciudadSchema).nullish() });
-const respuestaTarifas = z.object({
-  ...base,
-  listaTarifas: z
-    .array(
-      z.object({
-        costoTotal: z.number(),
-        diasEntrega: z.number(),
-        tipoEntrega: z.object({ descripcionTipoEntrega: z.string() }),
-        tipoServicio: z.object({ descripcionTipoServicio: z.string() }).nullish(),
-      }),
-    )
-    .nullish(),
+const tarifaSchema = z.object({
+  costoTotal: z.number(),
+  diasEntrega: z.number(),
+  tipoEntrega: z.object({ descripcionTipoEntrega: z.string() }),
+  tipoServicio: z.object({ descripcionTipoServicio: z.string() }).nullish(),
 });
+const base = { codigoRespuesta: z.number(), mensajeRespuesta: z.string().nullish() };
+// Las filas se validan una a una: una fila mal formada se descarta sin perder las demás.
+const respuestaOrigen = z.object({ ...base, listaCiudadesOrigen: z.array(z.unknown()).nullish() });
+const respuestaDestino = z.object({ ...base, listaCiudadesDestino: z.array(z.unknown()).nullish() });
+const respuestaTarifas = z.object({ ...base, listaTarifas: z.array(z.unknown()).nullish() });
+const filasValidas = <T extends z.ZodType>(esquema: T, filas: unknown[] | null | undefined) =>
+  (filas ?? []).flatMap((fila) => {
+    const r = esquema.safeParse(fila);
+    return r.success ? [r.data as z.infer<T>] : [];
+  });
 
 export type TipoListaCiudades = 'origen' | 'destino';
 interface EntradaCache {
@@ -108,11 +118,6 @@ const global = globalThis as typeof globalThis & { __neltumeStarkenCache?: Cache
 const cacheDelProceso = (): CacheCiudades =>
   (global.__neltumeStarkenCache ??= { listas: new Map(), pendientes: new Map() });
 export const nuevoCacheCiudades = (): CacheCiudades => ({ listas: new Map(), pendientes: new Map() });
-export function limpiarCacheStarken() {
-  const c = cacheDelProceso();
-  c.listas.clear();
-  c.pendientes.clear();
-}
 
 export interface OpcionesClienteStarken {
   /** Solo pruebas: la respuesta simulada de Starken. */
@@ -166,6 +171,8 @@ export class ClienteStarken {
         },
         ...(init.method === 'POST' ? { body: JSON.stringify(init.cuerpo) } : {}),
         cache: 'no-store',
+        // Una redirección no se sigue: reenviaría las credenciales (cabeceras rut y clave) a otro destino.
+        redirect: 'error',
         signal: AbortSignal.timeout(this.timeoutMs),
       });
       const crudo = await respuesta.text();
@@ -198,12 +205,12 @@ export class ClienteStarken {
   }
 
   private async descargarCiudades(tipo: TipoListaCiudades): Promise<CiudadStarken[]> {
-    const lista =
+    const filas =
       tipo === 'origen'
         ? (await this.llamar('listarCiudadesOrigen', { method: 'GET' }, respuestaOrigen)).listaCiudadesOrigen
         : (await this.llamar('listarCiudadesDestino', { method: 'GET' }, respuestaDestino))
             .listaCiudadesDestino;
-    return (lista ?? []).map((c) => ({
+    return filasValidas(ciudadSchema, filas).map((c) => ({
       codigoCiudad: c.codigoCiudad,
       nombre: texto(c.nombreCiudad, 120),
       comunas: (c.listaComunas ?? []).map((m) => texto(m.nombreComuna, 120)).filter(Boolean),
@@ -259,14 +266,15 @@ export class ClienteStarken {
       },
       respuestaTarifas,
     );
-    const tarifas = (r.listaTarifas ?? [])
-      .filter((t) => Number.isFinite(t.costoTotal) && t.costoTotal > 0)
+    const tarifas = filasValidas(tarifaSchema, r.listaTarifas)
+      .filter((t) => Number.isFinite(t.costoTotal) && Math.round(t.costoTotal) > 0)
       .map((t) => ({
         tipoEntrega: texto(t.tipoEntrega.descripcionTipoEntrega, 40).toUpperCase(),
         servicio: texto(t.tipoServicio?.descripcionTipoServicio, 40).toUpperCase(),
         dias: Math.max(0, Math.round(t.diasEntrega)),
         costoTotal: Math.round(t.costoTotal),
-        neto: netoDesdeIva(t.costoTotal),
+        // Del valor ya redondeado: es el que el servicio vuelve a convertir al aplicar la tarifa.
+        neto: netoDesdeIva(Math.round(t.costoTotal)),
       }));
     if (!tarifas.length) throw new ErrorStarken('Starken no informó tarifas para este envío.', 'rechazado');
     return tarifas.sort((a, b) => a.costoTotal - b.costoTotal || a.tipoEntrega.localeCompare(b.tipoEntrega));
@@ -279,49 +287,78 @@ export interface ContextoEnvioStarken {
   paquete: Partial<Record<Familia, Partial<ParametrosFamilia>>>;
 }
 
-/** Destino de una consulta: la ciudad de Starken que corresponde a los textos de la cotización. */
-export async function ciudadDeDestino(
-  cliente: ClienteStarken,
-  textos: readonly (string | null | undefined)[],
-): Promise<CiudadStarken> {
-  const r = resolverDestino(textos, await cliente.listarCiudades('destino'));
-  if (r.estado === 'unica') return r.ciudad;
-  throw new ErrorStarken(
-    r.estado === 'ambigua'
-      ? `El destino coincide con varias ciudades de Starken (${r.candidatas.map((c) => c.nombre).join(', ')}). Elige una.`
-      : 'No se encontró el destino en las ciudades de Starken. Elige una.',
-    'destino',
-  );
+/** Destino de una consulta: ciudad elegida a mano o textos de la cotización (del más al menos específico). */
+export interface DestinoEnvio {
+  codigoCiudad?: number;
+  textos?: readonly (string | null | undefined)[];
 }
 
 /**
- * Proveedor de despacho con Starken. Devuelve la tarifa más baja y en neto (lo que se guarda como valor de
- * despacho); para ver las opciones de agencia y domicilio se usa `ClienteStarken.consultarTarifas`.
+ * Proveedor de despacho con Starken. `cotizar` arma el bulto, fija el destino y consulta las tarifas de agencia y
+ * domicilio; `calculateShipping` (la interfaz ShippingProvider) devuelve la más baja, en neto.
  */
 export class ProveedorStarken implements ShippingProvider {
   readonly id = 'starken';
   readonly nombre = 'Starken';
   constructor(private readonly contexto: ContextoEnvioStarken) {}
 
-  async calculateShipping(
-    destination: string,
+  async cotizar(
     products: readonly ProductoDespacho[],
-  ): Promise<CotizacionEnvio | null> {
+    destino: DestinoEnvio,
+  ): Promise<ResultadoEnvioStarken<TarifaStarken>> {
     const { cliente, origen, paquete } = this.contexto;
     if (!origen) throw new ErrorStarken('Configura la ciudad de origen de Starken en Ajustes.', 'paquete');
     const bulto = calcularBulto(products, paquete);
     if (!bulto.ok) throw new ErrorStarken(bulto.mensaje, 'paquete');
-    const ciudad = await ciudadDeDestino(cliente, [destination]);
-    const [tarifa] = await cliente.consultarTarifas({
+    const ciudades = await cliente.listarCiudades('destino');
+    let ciudad: CiudadStarken;
+    if (destino.codigoCiudad !== undefined) {
+      const elegida = ciudades.find((c) => c.codigoCiudad === destino.codigoCiudad);
+      if (!elegida)
+        throw new ErrorStarken('La ciudad elegida no está entre las ciudades de Starken.', 'destino');
+      ciudad = elegida;
+    } else {
+      const r = resolverDestino(destino.textos ?? [], ciudades);
+      if (r.estado !== 'unica')
+        return {
+          estado: 'elegir_ciudad',
+          motivo: r.estado,
+          candidatas: r.estado === 'ambigua' ? r.candidatas : [],
+        };
+      ciudad = r.ciudad;
+    }
+    const tarifas = await cliente.consultarTarifas({
       origen: origen.codigoCiudad,
       destino: ciudad.codigoCiudad,
       bulto: bulto.bulto,
     });
     return {
+      estado: 'tarifas',
+      bulto: bulto.bulto,
+      textoBulto: textoBulto(bulto.bulto),
+      destino: { codigoCiudad: ciudad.codigoCiudad, nombre: ciudad.nombre },
+      tarifas,
+    };
+  }
+
+  async calculateShipping(
+    destination: string,
+    products: readonly ProductoDespacho[],
+  ): Promise<CotizacionEnvio | null> {
+    const r = await this.cotizar(products, { textos: [destination] });
+    if (r.estado === 'elegir_ciudad')
+      throw new ErrorStarken(
+        r.motivo === 'ambigua'
+          ? `El destino coincide con varias ciudades de Starken (${r.candidatas.map((c) => c.nombre).join(', ')}). Elige una.`
+          : 'No se encontró el destino en las ciudades de Starken. Elige una.',
+        'destino',
+      );
+    const [tarifa] = r.tarifas;
+    return {
       transportista: this.nombre,
       valor: tarifa.neto,
       plazoEstimado: `${tarifa.dias} ${tarifa.dias === 1 ? 'día' : 'días'}`,
-      referenciaExterna: `${tarifa.tipoEntrega} · ciudad ${ciudad.codigoCiudad}`,
+      referenciaExterna: `${tarifa.tipoEntrega} · ciudad ${r.destino.codigoCiudad}`,
     };
   }
 }
