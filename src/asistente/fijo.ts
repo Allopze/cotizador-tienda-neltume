@@ -3,7 +3,12 @@ import type { LLM, ContextoLLM } from './llm';
 import { clienteVacio, type SolicitudItem } from '../catalogo/tipos';
 export class LLMFijo implements LLM {
   async interpretar(c: ContextoLLM) {
-    const items = structuredClone(c.borrador.items);
+    // El índice es solo contexto: la lista completa de `actualizar_cotizacion` no lo lleva.
+    const items: SolicitudItem[] = c.borrador.items.map((i) => {
+      const item: Partial<typeof i> = structuredClone(i);
+      delete item.indice;
+      return item as SolicitudItem;
+    });
     if (c.modo === 'modificacion_anterior') {
       const cambio = c.mensaje.match(
         /\b(?:ahora(?:\s+debe\s+ser)?|pasa\s+a|cambia\s+a|sube\s+a)\s+(?:de\s+)?(\d{1,4})\b/i,

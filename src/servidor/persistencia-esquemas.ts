@@ -42,6 +42,7 @@ const solicitudSchema = z.object({
   observaciones: z.string().max(1000).nullable().optional(),
   modeloOriginal: z.string().max(300).nullable().optional(),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
+  fuente: z.string().max(300).nullable().optional(),
 });
 
 const productoSchema = z.object({
@@ -306,7 +307,7 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         solicitudes: Array.isArray(q.solicitudes)
           ? q.solicitudes.map((s) => esRegistro(s) ? {
               tipoMedida: null, descripcion: null, observaciones: null, margen: null,
-              modeloOriginal: null, coincidenciaModelo: null, ...s,
+              modeloOriginal: null, coincidenciaModelo: null, fuente: null, ...s,
             } : s)
           : q.solicitudes,
         montos: completarMontos(q.montos),

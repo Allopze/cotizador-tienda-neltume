@@ -344,59 +344,6 @@
   line-height: 1.5;
 }
 
-@media (min-width: 801px) and (min-height: 680px) {
-  .pantalla-completa .quote-panel {
-    min-height: 0;
-    overflow-y: auto;
-    padding: 28px 32px 24px;
-  }
-  .pantalla-completa .quote-panel > .panel-heading {
-    padding-bottom: 22px;
-  }
-  .pantalla-completa .quote-panel .panel-aviso {
-    margin: 0 0 20px;
-    padding: 12px 14px;
-  }
-  .pantalla-completa .quote-client-section .campo-etiqueta {
-    margin-bottom: 7px;
-  }
-  .pantalla-completa .quote-cuerpo {
-    flex: none;
-    min-height: 0;
-    overflow: visible;
-  }
-  .pantalla-completa .table-wrap {
-    overflow-x: auto;
-    overflow-y: visible;
-  }
-  .pantalla-completa .quote-cuerpo thead th {
-    position: static;
-  }
-  .pantalla-completa .quote-pie {
-    flex: none;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    align-items: start;
-    gap: 24px;
-    padding-top: 22px;
-    border-top: 1px solid var(--line);
-  }
-  .pantalla-completa .totals {
-    width: auto;
-    margin: 0;
-    padding: 0;
-  }
-  .pantalla-completa .totals > div {
-    min-height: 32px;
-    margin-bottom: 8px;
-    font-size: var(--fs-md);
-  }
-  .pantalla-completa .totals .grand-total {
-    margin-top: 10px;
-    padding-top: 12px;
-  }
-}
-
 @media (max-width: 800px) {
   .quote-section-heading {
     align-items: flex-start;

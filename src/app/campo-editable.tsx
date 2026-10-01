@@ -92,7 +92,7 @@ export function CampoEditable({
         >
           {guardando ? (
             <span>Guardando…</span>
-          ) : valor ? (
+          ) : valor || mostrar !== undefined ? (
             <span>{mostrar ?? valor}</span>
           ) : (
             <span className="campo-vacio">Agregar</span>

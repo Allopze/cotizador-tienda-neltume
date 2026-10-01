@@ -2,16 +2,27 @@
 import { Fragment, useEffect, useState, type RefObject } from 'react';
 import { despachoEditable, esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
 import { descripcionLinea, pesos } from '@/negocio/precios';
+import { metros } from '@/catalogo/resolver';
 import { leerPesos } from '@/negocio/cifras';
 import { esStarken } from '@/negocio/starken';
 import { CampoEditable } from './campo-editable';
 import { CotizarStarken } from './cotizar-starken';
+import { PreguntasPendientes } from './preguntas-pendientes';
+import {
+  ETIQUETA_PENDIENTE,
+  faltantesItem,
+  preguntasPendientes,
+  type CampoPendiente,
+} from '@/negocio/pendientes';
+import { bonito } from '@/asistente/preguntas';
+import { metrosTexto } from '@/catalogo/escalones';
 import type { CambiosEdicion, Despacho } from './contrato';
 import {
   ETIQUETA_CAMPO,
   SIN_CLIENTE,
   autoria,
   fechaLarga,
+  comportamientoScroll,
   medidaPedida,
   nombreProducto,
   numeroCotizacion,
@@ -53,6 +64,10 @@ interface Props {
   descargando: string | null;
   acciones: AccionesPanel;
   tituloRef: RefObject<HTMLHeadingElement | null>;
+  agregarProducto: () => void;
+  cambioVisual: { indices: number[]; total: boolean; texto: string } | null;
+  mostrarCotizacion: () => void;
+  cargando: boolean;
 }
 /** Línea valorizada que corresponde al ítem i (los incompletos no tienen línea). */
 export function lineaDe(q: Cotizacion, i: number) {
@@ -66,9 +81,28 @@ export function lineaDe(q: Cotizacion, i: number) {
 export const descripcionItem = (q: Cotizacion, i: number) => {
   const { linea } = lineaDe(q, i);
   return nombreProducto(
-    (linea && descripcionLinea(linea)) || q.solicitudes[i]?.descripcion || q.solicitudes[i]?.modelo || 'Producto por definir',
+    (linea && descripcionLinea(linea)) ||
+      q.solicitudes[i]?.descripcion ||
+      q.solicitudes[i]?.modelo ||
+      'Producto por definir',
   );
 };
+/** Lo que ya se sabe de un ítem pendiente, aparte del modelo y la cantidad que muestra la fila. */
+function entendido(s: Cotizacion['solicitudes'][number]) {
+  const medida = (n: number | null) => {
+    const m = n === null ? null : metros(n);
+    return m === null ? '—' : metrosTexto(m);
+  };
+  const medidas = s.medida
+    ? `${s.medida}${s.alto !== null ? ` × ${medida(s.alto)} m` : ''}`
+    : s.ancho !== null || s.alto !== null
+      ? `${medida(s.ancho)} × ${medida(s.alto)} m`
+      : null;
+  return [s.madera && bonito(s.madera), medidas].filter(Boolean).join(' · ');
+}
+const textoFaltan = (campos: CampoPendiente[]) =>
+  campos.map((c) => ETIQUETA_PENDIENTE[c].toLowerCase()).join(', ');
+
 /** Frase que el panel sugiere agregar a las puertas sin tipo de medida; la escribe la persona, no el sistema. */
 const RECTIFICAR_MEDIDA = 'Rectificar si la medida corresponde a hoja o vano.';
 
@@ -101,21 +135,41 @@ function notaEstado(q: Cotizacion | null) {
   }
 }
 
-export function CotizacionPanel({ actual, enCurso, guardando, descargando, acciones, tituloRef }: Props) {
+export function CotizacionPanel({
+  actual,
+  enCurso,
+  guardando,
+  descargando,
+  acciones,
+  tituloRef,
+  agregarProducto,
+  cambioVisual,
+  mostrarCotizacion,
+  cargando,
+}: Props) {
   const ocupado = enCurso !== null;
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
   const [transportistas, setTransportistas] = useState(['Starken', 'Transportes Paredes', 'Ignacio', 'Otro']);
   useEffect(() => {
     const abort = new AbortController();
-    pedirJSON<{ configuracion?: { transportistas?: string[] } }>('/api/configuracion-negocio', { signal: abort.signal, cache: 'no-store' })
-      .then((d) => { if (d.configuracion?.transportistas?.length) setTransportistas(d.configuracion.transportistas); })
+    pedirJSON<{ configuracion?: { transportistas?: string[] } }>('/api/configuracion-negocio', {
+      signal: abort.signal,
+      cache: 'no-store',
+    })
+      .then((d) => {
+        if (d.configuracion?.transportistas?.length) setTransportistas(d.configuracion.transportistas);
+      })
       .catch(() => {});
     return () => abort.abort();
   }, []);
   if (!actual)
     return (
-      <section className="quote-panel quote-panel-empty" aria-label="Vista previa de la cotización">
+      <section
+        id="panel-cotizacion"
+        className="quote-panel quote-panel-empty"
+        aria-label="Vista previa de la cotización"
+      >
         <div className="panel-heading">
           <div>
             <p className="eyebrow">02 / COTIZACIÓN</p>
@@ -134,6 +188,14 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
             Envía el pedido para ver el cliente, los productos y los valores. Podrás corregirlos antes de
             emitir el PDF.
           </p>
+          <button
+            type="button"
+            className="button secondary"
+            onClick={agregarProducto}
+            disabled={ocupado || cargando}
+          >
+            Agregar producto del catálogo
+          </button>
         </div>
       </section>
     );
@@ -149,6 +211,14 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
     : actual.incompletos.length
       ? 'Completa o quita los ítems pendientes para generar el PDF.'
       : null; // Lista para emitir: el diálogo de confirmación explica qué pasa.
+  const irAPendiente = (indice: number) => {
+    mostrarCotizacion();
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`producto-${indice}`);
+      el?.scrollIntoView({ behavior: comportamientoScroll(), block: 'center' });
+      el?.nextElementSibling?.querySelector('summary')?.focus({ preventScroll: true });
+    });
+  };
   // Desde la aprobación y hasta registrar el despacho, los datos logísticos se editan sin crear revisión.
   const editaDespacho = editable || (despachoEditable(actual) && !ocupado);
   const guardarDespacho = (cambios: Despacho, campo: string) =>
@@ -169,7 +239,7 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
         ? `Incluye flete por ${pesos(actual.montos.flete)} neto`
         : 'Despacho por confirmar';
   return (
-    <section className="quote-panel" aria-label="Cotización en curso">
+    <section id="panel-cotizacion" className="quote-panel" aria-label="Cotización en curso">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">02 / COTIZACIÓN</p>
@@ -202,143 +272,42 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           </button>
         </div>
       )}
-      <section className="quote-client-section" aria-labelledby="cliente-section-title">
-        <div className="quote-section-heading">
-          <div>
-            <p className="eyebrow">DATOS DEL DOCUMENTO</p>
-            <h3 id="cliente-section-title">Cliente y facturación</h3>
-          </div>
-          <p>Contacto y datos comerciales de esta cotización.</p>
-        </div>
-        <div className="client">
-          {CAMPOS_CLIENTE.map((campo) => {
-            const valor = actual?.cliente[campo] ?? '';
-            if (actual && !editable && !valor && (campo === 'giro' || campo === 'rut' || campo === 'direccion'))
-              return null;
-            return (
-              <CampoEditable
-                key={`${actual?.id}-${actual?.actualizada}-${campo}`}
-                className={`cliente-campo cliente-${campo}`}
-                etiqueta={ETIQUETA_CAMPO[campo]}
-                valor={valor}
-                mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
-                editable={editable}
-                discreto
-                guardando={guardando === `cliente.${campo}`}
-                maxLength={300}
-                guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
-              />
-            );
-          })}
-        </div>
-      </section>
-      {(editable || actual.observaciones || editaDespacho || actual.despacho) && (
-        <div className="quote-custom-fields">
-          {(editable || actual.observaciones) && (
-            <CampoEditable
-              etiqueta="Observaciones"
-              valor={actual.observaciones ?? ''}
-              mostrar={actual.observaciones || 'Agregar observaciones'}
-              editable={editable}
-              discreto
-              area
-              maxLength={2000}
-              guardando={guardando === 'observaciones'}
-              guardar={(v) => acciones.editar({ observaciones: v || null }, 'observaciones')}
-            />
-          )}
-          {(editaDespacho || actual.despacho) && (
-            <div className="quote-dispatch-fields">
-              <span className="campo-etiqueta">Despacho</span>
-              <CampoEditable
-                etiqueta="Destino"
-                valor={actual.despacho?.destino ?? ''}
-                mostrar={actual.despacho?.destino || 'Agregar comuna o destino'}
-                editable={editaDespacho}
-                discreto
-                guardando={guardando === 'despacho.destino'}
-                maxLength={300}
-                guardar={(v) => guardarDespacho({ destino: v || null }, 'despacho.destino')}
-              />
-              <CampoEditable
-                etiqueta="Dirección de despacho"
-                valor={actual.despacho?.direccion ?? ''}
-                mostrar={actual.despacho?.direccion || 'Agregar dirección'}
-                editable={editaDespacho}
-                discreto
-                guardando={guardando === 'despacho.direccion'}
-                maxLength={300}
-                guardar={(v) => guardarDespacho({ direccion: v || null }, 'despacho.direccion')}
-              />
-              <div className="ia-field item-select-field">
-                <span>Transportista</span>
-                <SelectorDesplegable
-                  ariaLabel="Transportista"
-                  value={transportistas.includes(actual.despacho?.transporte ?? '') ? actual.despacho?.transporte ?? '' : actual.despacho?.transporte ? '__otro__' : ''}
-                  opciones={[
-                    { value: '', label: 'Seleccionar transportista' },
-                    ...transportistas.map((nombre) => ({ value: nombre, label: nombre })),
-                    ...(actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte)
-                      ? [{ value: '__otro__', label: `Otro · ${actual.despacho.transporte}` }]
-                      : []),
-                  ]}
-                  onChange={(valor) => void guardarDespacho({ transporte: valor === '__otro__' ? actual.despacho?.transporte ?? '' : valor || null }, 'despacho.transporte')}
-                  disabled={!editaDespacho || ocupado}
-                />
-              </div>
-              {(actual.despacho?.transporte === 'Otro' || (!!actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte))) && (
-                <CampoEditable
-                  etiqueta="Especificar transportista"
-                  valor={actual.despacho?.transporte === 'Otro' ? '' : actual.despacho?.transporte ?? ''}
-                  mostrar={actual.despacho?.transporte === 'Otro' ? 'Especificar transportista' : actual.despacho?.transporte ?? ''}
-                  editable={editaDespacho}
-                  discreto
-                  guardando={guardando === 'despacho.transporte'}
-                  maxLength={120}
-                  guardar={(v) => guardarDespacho({ transporte: v || null }, 'despacho.transporte')}
-                />
-              )}
-              <CampoEditable
-                etiqueta="Valor de despacho"
-                valor={String(actual.flete)}
-                mostrar={pesos(actual.flete)}
-                editable={editable}
-                discreto
-                guardando={guardando === 'despacho.valor'}
-                tipo="text"
-                sufijo="$"
-                validar={(v) => { const n = v ? leerPesos(v) : 0; return Number.isSafeInteger(n) && n >= 0 && n <= 100_000_000 ? null : 'Indica un monto entre $0 y $100.000.000.'; }}
-                guardar={(v) => acciones.editar({ despacho: { valor: v ? leerPesos(v) : 0 } }, 'despacho.valor')}
-              />
-              {/* `admiteCambios` y no `editable`: durante cada guardado `editable` se apaga y el bloque perdería su estado. */}
-              {admiteCambios && esStarken(actual.despacho?.transporte) && (
-                <CotizarStarken
-                  key={actual.id}
-                  actual={actual}
-                  aplicar={(cambios) => acciones.editar(cambios, 'despacho.valor')}
-                  ocupado={ocupado}
-                  guardando={guardando === 'despacho.valor'}
-                />
-              )}
-              <CampoEditable
-                etiqueta="Entrega comprometida"
-                valor={actual.despacho?.entregaComprometida ?? ''}
-                mostrar={actual.despacho?.entregaComprometida || 'Agregar fecha o compromiso'}
-                editable={editaDespacho}
-                discreto
-                guardando={guardando === 'despacho.entregaComprometida'}
-                maxLength={120}
-                guardar={(v) => guardarDespacho({ entregaComprometida: v || null }, 'despacho.entregaComprometida')}
-              />
-            </div>
-          )}
+      <div className="quote-overview">
+        <strong>{actual.cliente.nombre || SIN_CLIENTE}</strong>
+        <span>
+          {[actual.cliente.proyecto, actual.cliente.comuna].filter(Boolean).join(' · ') ||
+            'Cliente opcional · puedes completarlo después'}
+        </span>
+      </div>
+      {actual.incompletos.length > 0 && (
+        <div className="quote-pending-summary" role="status">
+          <strong>{plural(actual.incompletos.length, 'producto pendiente', 'productos pendientes')}</strong>
+          <p>
+            Los productos pendientes no están incluidos en el total. Completa los campos indicados para
+            emitir.
+          </p>
         </div>
       )}
+      <p className="quote-change-note" role="status">
+        {cambioVisual?.texto || ''}
+      </p>
       {/* El detalle mantiene juntos los importes y los campos editables de cada producto. */}
       <div className="quote-cuerpo">
         <div className="items-top">
           <span>Detalle del pedido</span>
-          <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
+          <div className="items-heading-actions">
+            <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
+            {admiteCambios && (
+              <button
+                type="button"
+                className="button secondary small"
+                disabled={ocupado}
+                onClick={agregarProducto}
+              >
+                + Agregar producto
+              </button>
+            )}
+          </div>
         </div>
         {actual?.solicitudes.length ? (
           <div className="table-wrap">
@@ -361,13 +330,21 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                   const { pendiente, linea } = lineaDe(actual, i);
                   const medida = linea && medidaPedida(linea);
                   const descripcion = descripcionItem(actual, i);
-                  const posible =
-                    pendiente?.rechazo.tipo === 'modelo_posible'
-                      ? { pregunta: pendiente.pregunta, sugerido: pendiente.rechazo.sugerido }
-                      : null;
+                  const anchoMetros = s.ancho === null ? null : metros(s.ancho);
+                  const altoMetros = s.alto === null ? null : metros(s.alto);
+                  const faltan = faltantesItem(actual, i) ?? [];
+                  const falta = (campo: CampoPendiente) =>
+                    faltan.includes(campo) ? ' item-campo-falta' : '';
+                  const preguntasItem = pendiente
+                    ? preguntasPendientes({ solicitudes: actual.solicitudes, incompletos: [pendiente] })
+                    : [];
+                  const sabido = pendiente ? entendido(s) : '';
                   return (
                     <Fragment key={i}>
-                      <tr className={pendiente ? 'pending' : ''}>
+                      <tr
+                        id={`producto-${i}`}
+                        className={`${pendiente ? 'pending' : ''}${cambioVisual?.indices.includes(i) ? ' item-actualizado' : ''}`}
+                      >
                         <td>
                           <strong>{descripcion}</strong>
                           <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
@@ -378,11 +355,31 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                           )}
                           {s.modeloOriginal && s.coincidenciaModelo && (
                             <small className={`match-confidence ${s.coincidenciaModelo}`}>
-                              {s.coincidenciaModelo === 'alias' ? 'Normalizado desde' : 'Revisar posible coincidencia'}: {s.modeloOriginal}
+                              {s.coincidenciaModelo === 'alias'
+                                ? 'Normalizado desde'
+                                : 'Revisar posible coincidencia'}
+                              : {s.modeloOriginal}
                             </small>
                           )}
                           {medida && <small>{medida}</small>}
+                          {s.fuente && (
+                            <small className="item-fuente" title="Lo que se escribió en el pedido">
+                              «{s.fuente}»
+                            </small>
+                          )}
                           {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
+                          {pendiente && (
+                            <small className="pending-resumen">
+                              {sabido && <>Entendido: {sabido}. </>}
+                              {faltan.length ? `Falta: ${textoFaltan(faltan)}.` : null}
+                            </small>
+                          )}
+                          {linea?.producto.familia === 'PUERTA' &&
+                            (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
+                              <small className="medida-por-confirmar">
+                                Medida de hoja o vano por confirmar
+                              </small>
+                            )}
                         </td>
                         <td className="celda-cantidad">
                           <CampoEditable
@@ -417,7 +414,11 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                             <CampoEditable
                               etiqueta="Precio unitario"
                               etiquetaOculta
-                              valor={s.precioUnitario === null || s.precioUnitario === undefined ? '' : String(s.precioUnitario)}
+                              valor={
+                                s.precioUnitario === null || s.precioUnitario === undefined
+                                  ? ''
+                                  : String(s.precioUnitario)
+                              }
                               mostrar={pesos(linea.precioUnitario)}
                               editable={editable}
                               discreto
@@ -430,9 +431,20 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                                   ? null
                                   : 'El precio debe ser un entero entre $1 y $100.000.000.';
                               }}
-                              guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { precioUnitario: v ? leerPesos(v) : null } }] }, `item.${i}.precioUnitario`)}
+                              guardar={(v) =>
+                                acciones.editar(
+                                  {
+                                    items: [
+                                      { indice: i, cambios: { precioUnitario: v ? leerPesos(v) : null } },
+                                    ],
+                                  },
+                                  `item.${i}.precioUnitario`,
+                                )
+                              }
                             />
-                          ) : '—'}
+                          ) : (
+                            '—'
+                          )}
                         </td>
                         <td className="celda-monto celda-total" data-etiqueta="Total">
                           {linea ? pesos(linea.total) : '—'}
@@ -451,150 +463,256 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                           </td>
                         )}
                       </tr>
-                      {editable && (
+                      {admiteCambios && (
                         <tr className="item-editor-row">
                           <td className="quote-item-editor-cell" colSpan={conQuitar ? 5 : 4}>
-                            <div className="item-editor" role="group" aria-label={`Datos editables del ítem ${i + 1}`}>
-                              {posible && (
-                                <div className="aviso-medida" role="note">
-                                  <span>{posible.pregunta}</span>
-                                  <button
-                                    type="button"
-                                    className="button secondary small"
-                                    aria-label={`Confirmar ${nombreProducto(posible.sugerido)} en el ítem ${i + 1}`}
-                                    onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { modelo: posible.sugerido } }] }, `item.${i}.modelo`)}
-                                  >
-                                    Confirmar {nombreProducto(posible.sugerido)}
-                                  </button>
-                                </div>
-                              )}
-                              {linea?.producto.familia === 'PUERTA' && (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
-                                <div className="aviso-medida" role="note">
-                                  <span>{RECTIFICAR_MEDIDA}</span>
-                                  {!s.observaciones?.includes(RECTIFICAR_MEDIDA) && (
-                                    <button
-                                      type="button"
-                                      className="button secondary small"
-                                      aria-label={`Agregar como observación al ítem ${i + 1}: ${descripcion}`}
-                                      onClick={() => void acciones.editar({ items: [{ indice: i, cambios: { observaciones: [s.observaciones, RECTIFICAR_MEDIDA].filter(Boolean).join(' ') } }] }, `item.${i}.observaciones`)}
-                                    >
-                                      Agregar como observación
-                                    </button>
+                            <details className="item-details" open={pendiente ? true : undefined}>
+                              <summary aria-label={`Editar detalles del ítem ${i + 1}: ${descripcion}`}>
+                                {pendiente ? 'Completar producto' : 'Editar detalles'}
+                                <span>
+                                  {pendiente
+                                    ? faltan.length
+                                      ? `Falta: ${textoFaltan(faltan)}`
+                                      : pendiente.pregunta
+                                    : 'Modelo, madera, medidas y condiciones'}
+                                </span>
+                              </summary>
+                              <div
+                                className="item-editor"
+                                role="group"
+                                aria-label={`Datos editables del ítem ${i + 1}`}
+                              >
+                                {preguntasItem.length > 0 && (
+                                  <PreguntasPendientes
+                                    preguntas={preguntasItem}
+                                    editable={editable}
+                                    guardando={guardando}
+                                    responder={acciones.editar}
+                                  />
+                                )}
+                                {linea?.producto.familia === 'PUERTA' &&
+                                  (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
+                                    <div className="aviso-medida" role="note">
+                                      <span>{RECTIFICAR_MEDIDA}</span>
+                                      {!s.observaciones?.includes(RECTIFICAR_MEDIDA) && (
+                                        <button
+                                          type="button"
+                                          className="button secondary small"
+                                          aria-label={`Agregar como observación al ítem ${i + 1}: ${descripcion}`}
+                                          onClick={() =>
+                                            void acciones.editar(
+                                              {
+                                                items: [
+                                                  {
+                                                    indice: i,
+                                                    cambios: {
+                                                      observaciones: [s.observaciones, RECTIFICAR_MEDIDA]
+                                                        .filter(Boolean)
+                                                        .join(' '),
+                                                    },
+                                                  },
+                                                ],
+                                              },
+                                              `item.${i}.observaciones`,
+                                            )
+                                          }
+                                        >
+                                          Agregar como observación
+                                        </button>
+                                      )}
+                                    </div>
+                                  )}
+                                <div className="item-editor-heading">
+                                  <strong>Datos del producto</strong>
+                                  {linea && (
+                                    <small className="precio-trazabilidad">
+                                      Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} →
+                                      cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}
+                                    </small>
                                   )}
                                 </div>
-                              )}
-                              <div className="item-editor-heading">
-                                <strong>Datos del producto</strong>
-                                {linea && (
-                                  <small className="precio-trazabilidad">
-                                    Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} → cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}
-                                  </small>
-                                )}
-                              </div>
-                              <div className="item-editables">
-                                <CampoEditable
-                                  className="item-campo item-campo-descripcion"
-                                  etiqueta="Descripción para el documento"
-                                  valor={s.descripcion ?? ''}
-                                  mostrar={s.descripcion || descripcion}
-                                  editable={editable}
-                                  discreto
-                                  maxLength={300}
-                                  guardando={guardando === `item.${i}.descripcion`}
-                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { descripcion: v || null } }] }, `item.${i}.descripcion`)}
-                                />
-                                <CampoEditable
-                                  className="item-campo"
-                                  etiqueta="Modelo"
-                                  valor={s.modelo ?? ''}
-                                  mostrar={s.modelo || 'Agregar modelo'}
-                                  editable={editable}
-                                  discreto
-                                  guardando={guardando === `item.${i}.modelo`}
-                                  maxLength={300}
-                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { modelo: v || null } }] }, `item.${i}.modelo`)}
-                                />
-                                <CampoEditable
-                                  className="item-campo"
-                                  etiqueta="Madera"
-                                  valor={s.madera ?? ''}
-                                  mostrar={s.madera || 'Agregar madera'}
-                                  editable={editable}
-                                  discreto
-                                  guardando={guardando === `item.${i}.madera`}
-                                  maxLength={300}
-                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { madera: v || null } }] }, `item.${i}.madera`)}
-                                />
-                                {linea?.producto.familia === 'PUERTA' ? (
+                                <div className="item-editables">
                                   <CampoEditable
-                                    className="item-campo"
-                                    etiqueta="Ancho"
-                                    valor={s.ancho === null ? '' : String(s.ancho)}
-                                    mostrar={s.ancho ?? 'Agregar ancho'}
+                                    className="item-campo item-campo-descripcion"
+                                    etiqueta="Descripción para el documento"
+                                    valor={s.descripcion ?? ''}
+                                    mostrar={s.descripcion || descripcion}
+                                    editable={editable}
+                                    discreto
+                                    maxLength={300}
+                                    guardando={guardando === `item.${i}.descripcion`}
+                                    guardar={(v) =>
+                                      acciones.editar(
+                                        { items: [{ indice: i, cambios: { descripcion: v || null } }] },
+                                        `item.${i}.descripcion`,
+                                      )
+                                    }
+                                  />
+                                  <CampoEditable
+                                    className={`item-campo${falta('modelo')}`}
+                                    etiqueta="Modelo"
+                                    valor={s.modelo ?? ''}
+                                    mostrar={s.modelo || 'Agregar modelo'}
+                                    editable={editable}
+                                    discreto
+                                    guardando={guardando === `item.${i}.modelo`}
+                                    maxLength={300}
+                                    guardar={(v) =>
+                                      acciones.editar(
+                                        { items: [{ indice: i, cambios: { modelo: v || null } }] },
+                                        `item.${i}.modelo`,
+                                      )
+                                    }
+                                  />
+                                  <CampoEditable
+                                    className={`item-campo${falta('madera')}`}
+                                    etiqueta="Madera"
+                                    valor={s.madera ?? ''}
+                                    mostrar={s.madera || 'Agregar madera'}
+                                    editable={editable}
+                                    discreto
+                                    guardando={guardando === `item.${i}.madera`}
+                                    maxLength={300}
+                                    guardar={(v) =>
+                                      acciones.editar(
+                                        { items: [{ indice: i, cambios: { madera: v || null } }] },
+                                        `item.${i}.madera`,
+                                      )
+                                    }
+                                  />
+                                  {linea?.producto.familia === 'PUERTA' ||
+                                  s.ancho !== null ||
+                                  (pendiente?.rechazo.tipo === 'faltan_datos' &&
+                                    pendiente.rechazo.campos.includes('ancho')) ? (
+                                    <CampoEditable
+                                      className={`item-campo${falta('ancho')}`}
+                                      etiqueta="Ancho (m)"
+                                      valor={anchoMetros === null ? '' : String(anchoMetros)}
+                                      mostrar={anchoMetros ?? 'Agregar ancho'}
+                                      editable={editable}
+                                      discreto
+                                      tipo="number"
+                                      paso={0.001}
+                                      min={0.3}
+                                      max={3}
+                                      sufijo="m"
+                                      guardando={guardando === `item.${i}.ancho`}
+                                      validar={(v) =>
+                                        !v || (Number(v) >= 0.3 && Number(v) <= 3)
+                                          ? null
+                                          : 'Indica un ancho entre 0,3 y 3 metros.'
+                                      }
+                                      guardar={(v) =>
+                                        acciones.editar(
+                                          {
+                                            items: [{ indice: i, cambios: { ancho: v ? Number(v) : null } }],
+                                          },
+                                          `item.${i}.ancho`,
+                                        )
+                                      }
+                                    />
+                                  ) : (
+                                    <CampoEditable
+                                      className={`item-campo${falta('medida')}`}
+                                      etiqueta="Medida"
+                                      valor={s.medida ?? ''}
+                                      mostrar={s.medida || 'Agregar medida'}
+                                      editable={editable}
+                                      discreto
+                                      guardando={guardando === `item.${i}.medida`}
+                                      maxLength={300}
+                                      guardar={(v) =>
+                                        acciones.editar(
+                                          { items: [{ indice: i, cambios: { medida: v || null } }] },
+                                          `item.${i}.medida`,
+                                        )
+                                      }
+                                    />
+                                  )}
+                                  <CampoEditable
+                                    className={`item-campo${falta('alto')}`}
+                                    etiqueta="Alto / largo (m)"
+                                    valor={altoMetros === null ? '' : String(altoMetros)}
+                                    mostrar={altoMetros ?? 'Agregar alto o largo'}
                                     editable={editable}
                                     discreto
                                     tipo="number"
-                                    paso={0.01}
-                                    guardando={guardando === `item.${i}.ancho`}
-                                    validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un ancho válido.')}
-                                    guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { ancho: v ? Number(v) : null } }] }, `item.${i}.ancho`)}
+                                    paso={0.001}
+                                    min={0.3}
+                                    max={3}
+                                    sufijo="m"
+                                    guardando={guardando === `item.${i}.alto`}
+                                    validar={(v) =>
+                                      !v || (Number(v) >= 0.3 && Number(v) <= 3)
+                                        ? null
+                                        : 'Indica un alto o largo entre 0,3 y 3 metros.'
+                                    }
+                                    guardar={(v) =>
+                                      acciones.editar(
+                                        { items: [{ indice: i, cambios: { alto: v ? Number(v) : null } }] },
+                                        `item.${i}.alto`,
+                                      )
+                                    }
                                   />
-                                ) : (
+                                  <div className="ia-field item-select-field item-campo">
+                                    <span>La medida corresponde a</span>
+                                    <SelectorDesplegable
+                                      ariaLabel={`La medida corresponde a, ítem ${i + 1}`}
+                                      value={s.tipoMedida ?? 'no_especificado'}
+                                      opciones={[
+                                        { value: 'no_especificado', label: 'No especificado' },
+                                        { value: 'hoja', label: 'Hoja' },
+                                        { value: 'vano', label: 'Vano' },
+                                      ]}
+                                      onChange={(valor) =>
+                                        void acciones.editar(
+                                          {
+                                            items: [
+                                              {
+                                                indice: i,
+                                                cambios: {
+                                                  tipoMedida: valor as 'hoja' | 'vano' | 'no_especificado',
+                                                },
+                                              },
+                                            ],
+                                          },
+                                          `item.${i}.tipoMedida`,
+                                        )
+                                      }
+                                      disabled={!editable || ocupado}
+                                    />
+                                  </div>
                                   <CampoEditable
-                                    className="item-campo"
-                                    etiqueta="Medida"
-                                    valor={s.medida ?? ''}
-                                    mostrar={s.medida || 'Agregar medida'}
+                                    className="item-campo item-campo-observacion"
+                                    etiqueta="Observación del producto"
+                                    valor={s.observaciones ?? ''}
+                                    mostrar={
+                                      s.observaciones ||
+                                      'Agregar observación (ej. confirmar sentido de apertura)'
+                                    }
                                     editable={editable}
                                     discreto
-                                    guardando={guardando === `item.${i}.medida`}
-                                    maxLength={300}
-                                    guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { medida: v || null } }] }, `item.${i}.medida`)}
+                                    maxLength={500}
+                                    guardando={guardando === `item.${i}.observaciones`}
+                                    guardar={(v) =>
+                                      acciones.editar(
+                                        { items: [{ indice: i, cambios: { observaciones: v || null } }] },
+                                        `item.${i}.observaciones`,
+                                      )
+                                    }
                                   />
-                                )}
-                                <CampoEditable
-                                  className="item-campo"
-                                  etiqueta="Alto / largo"
-                                  valor={s.alto === null ? '' : String(s.alto)}
-                                  mostrar={s.alto ?? 'Agregar alto o largo'}
-                                  editable={editable}
-                                  discreto
-                                  tipo="number"
-                                  paso={0.01}
-                                  guardando={guardando === `item.${i}.alto`}
-                                  validar={(v) => (!v || Number.isFinite(Number(v)) ? null : 'Indica un alto válido.')}
-                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { alto: v ? Number(v) : null } }] }, `item.${i}.alto`)}
-                                />
-                                <div className="ia-field item-select-field item-campo">
-                                  <span>La medida corresponde a</span>
-                                  <SelectorDesplegable
-                                    ariaLabel={`La medida corresponde a, ítem ${i + 1}`}
-                                    value={s.tipoMedida ?? 'no_especificado'}
-                                    opciones={[
-                                      { value: 'no_especificado', label: 'No especificado' },
-                                      { value: 'hoja', label: 'Hoja' },
-                                      { value: 'vano', label: 'Vano' },
-                                    ]}
-                                    onChange={(valor) => void acciones.editar({ items: [{ indice: i, cambios: { tipoMedida: valor as 'hoja' | 'vano' | 'no_especificado' } }] }, `item.${i}.tipoMedida`)}
-                                    disabled={!editable || ocupado}
-                                  />
+                                  {linea && (
+                                    <MargenLinea
+                                      actual={actual}
+                                      linea={linea}
+                                      indice={i}
+                                      editable={editable}
+                                      editar={acciones.editar}
+                                    />
+                                  )}
                                 </div>
-                                <CampoEditable
-                                  className="item-campo item-campo-observacion"
-                                  etiqueta="Observación del producto"
-                                  valor={s.observaciones ?? ''}
-                                  mostrar={s.observaciones || 'Agregar observación (ej. confirmar sentido de apertura)'}
-                                  editable={editable}
-                                  discreto
-                                  maxLength={500}
-                                  guardando={guardando === `item.${i}.observaciones`}
-                                  guardar={(v) => acciones.editar({ items: [{ indice: i, cambios: { observaciones: v || null } }] }, `item.${i}.observaciones`)}
-                                />
-                                {linea && (
-                                  <MargenLinea actual={actual} linea={linea} indice={i} editable={editable} editar={acciones.editar} />
-                                )}
                               </div>
-                            </div>
+                            </details>
                           </td>
                         </tr>
                       )}
@@ -611,68 +729,194 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           </div>
         )}
       </div>
+      <details key={`cliente-${actual.id}`} className="quote-client-section quote-details">
+        <summary>
+          <span>Cliente y facturación</span>
+          <small>
+            {[actual.cliente.nombre, actual.cliente.rut, actual.cliente.comuna].filter(Boolean).join(' · ') ||
+              'Agregar datos del cliente'}
+          </small>
+        </summary>
+        <div className="client">
+          {CAMPOS_CLIENTE.map((campo) => {
+            const valor = actual?.cliente[campo] ?? '';
+            if (
+              actual &&
+              !admiteCambios &&
+              !valor &&
+              (campo === 'giro' || campo === 'rut' || campo === 'direccion')
+            )
+              return null;
+            return (
+              <CampoEditable
+                key={`${actual?.id}-${actual?.actualizada}-${campo}`}
+                className={`cliente-campo cliente-${campo}`}
+                etiqueta={ETIQUETA_CAMPO[campo]}
+                valor={valor}
+                mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
+                editable={editable}
+                discreto
+                guardando={guardando === `cliente.${campo}`}
+                maxLength={300}
+                guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
+              />
+            );
+          })}
+        </div>
+      </details>
+      {(admiteCambios || actual.observaciones || despachoEditable(actual) || actual.despacho) && (
+        <div className="quote-custom-fields">
+          {(admiteCambios || actual.observaciones) && (
+            <details key={`observaciones-${actual.id}`} className="quote-details">
+              <summary>
+                <span>Observaciones</span>
+                <small>{actual.observaciones || 'Agregar indicaciones para el documento'}</small>
+              </summary>
+              <CampoEditable
+                etiqueta="Observaciones"
+                valor={actual.observaciones ?? ''}
+                mostrar={actual.observaciones || 'Agregar observaciones'}
+                editable={editable}
+                discreto
+                area
+                maxLength={2000}
+                guardando={guardando === 'observaciones'}
+                guardar={(v) => acciones.editar({ observaciones: v || null }, 'observaciones')}
+              />
+            </details>
+          )}
+          {(admiteCambios || despachoEditable(actual) || actual.despacho) && (
+            <details key={`despacho-${actual.id}`} className="quote-details">
+              <summary>
+                <span>Despacho</span>
+                <small>
+                  {[
+                    actual.despacho?.destino,
+                    actual.despacho?.transporte,
+                    actual.flete ? `${pesos(actual.flete)} neto` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ') || 'Destino, transporte y costo por confirmar'}
+                </small>
+              </summary>
+              <div className="quote-dispatch-fields">
+                <CampoEditable
+                  etiqueta="Destino"
+                  valor={actual.despacho?.destino ?? ''}
+                  mostrar={actual.despacho?.destino || 'Agregar comuna o destino'}
+                  editable={editaDespacho}
+                  discreto
+                  guardando={guardando === 'despacho.destino'}
+                  maxLength={300}
+                  guardar={(v) => guardarDespacho({ destino: v || null }, 'despacho.destino')}
+                />
+                <CampoEditable
+                  etiqueta="Dirección de despacho"
+                  valor={actual.despacho?.direccion ?? ''}
+                  mostrar={actual.despacho?.direccion || 'Agregar dirección'}
+                  editable={editaDespacho}
+                  discreto
+                  guardando={guardando === 'despacho.direccion'}
+                  maxLength={300}
+                  guardar={(v) => guardarDespacho({ direccion: v || null }, 'despacho.direccion')}
+                />
+                <div className="ia-field item-select-field">
+                  <span>Transportista</span>
+                  <SelectorDesplegable
+                    ariaLabel="Transportista"
+                    value={
+                      transportistas.includes(actual.despacho?.transporte ?? '')
+                        ? (actual.despacho?.transporte ?? '')
+                        : actual.despacho?.transporte
+                          ? '__otro__'
+                          : ''
+                    }
+                    opciones={[
+                      { value: '', label: 'Seleccionar transportista' },
+                      ...transportistas.map((nombre) => ({ value: nombre, label: nombre })),
+                      ...(actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte)
+                        ? [{ value: '__otro__', label: `Otro · ${actual.despacho.transporte}` }]
+                        : []),
+                    ]}
+                    onChange={(valor) =>
+                      void guardarDespacho(
+                        {
+                          transporte:
+                            valor === '__otro__' ? (actual.despacho?.transporte ?? '') : valor || null,
+                        },
+                        'despacho.transporte',
+                      )
+                    }
+                    disabled={!editaDespacho || ocupado}
+                  />
+                </div>
+                {(actual.despacho?.transporte === 'Otro' ||
+                  (!!actual.despacho?.transporte &&
+                    !transportistas.includes(actual.despacho.transporte))) && (
+                  <CampoEditable
+                    etiqueta="Especificar transportista"
+                    valor={actual.despacho?.transporte === 'Otro' ? '' : (actual.despacho?.transporte ?? '')}
+                    mostrar={
+                      actual.despacho?.transporte === 'Otro'
+                        ? 'Especificar transportista'
+                        : (actual.despacho?.transporte ?? '')
+                    }
+                    editable={editaDespacho}
+                    discreto
+                    guardando={guardando === 'despacho.transporte'}
+                    maxLength={120}
+                    guardar={(v) => guardarDespacho({ transporte: v || null }, 'despacho.transporte')}
+                  />
+                )}
+                <CampoEditable
+                  etiqueta="Valor de despacho"
+                  valor={String(actual.flete)}
+                  mostrar={pesos(actual.flete)}
+                  editable={editable}
+                  discreto
+                  guardando={guardando === 'despacho.valor'}
+                  tipo="text"
+                  sufijo="$"
+                  validar={(v) => {
+                    const n = v ? leerPesos(v) : 0;
+                    return Number.isSafeInteger(n) && n >= 0 && n <= 100_000_000
+                      ? null
+                      : 'Indica un monto entre $0 y $100.000.000.';
+                  }}
+                  guardar={(v) =>
+                    acciones.editar({ despacho: { valor: v ? leerPesos(v) : 0 } }, 'despacho.valor')
+                  }
+                />
+                {/* `admiteCambios` y no `editable`: durante cada guardado `editable` se apaga y el bloque perdería su estado. */}
+                {admiteCambios && esStarken(actual.despacho?.transporte) && (
+                  <CotizarStarken
+                    key={actual.id}
+                    actual={actual}
+                    aplicar={(cambios) => acciones.editar(cambios, 'despacho.valor')}
+                    ocupado={ocupado}
+                    guardando={guardando === 'despacho.valor'}
+                  />
+                )}
+                <CampoEditable
+                  etiqueta="Entrega comprometida"
+                  valor={actual.despacho?.entregaComprometida ?? ''}
+                  mostrar={actual.despacho?.entregaComprometida || 'Agregar fecha o compromiso'}
+                  editable={editaDespacho}
+                  discreto
+                  guardando={guardando === 'despacho.entregaComprometida'}
+                  maxLength={120}
+                  guardar={(v) =>
+                    guardarDespacho({ entregaComprometida: v || null }, 'despacho.entregaComprometida')
+                  }
+                />
+              </div>
+            </details>
+          )}
+        </div>
+      )}
       <div className="quote-pie">
         <div className="quote-pie-acciones">
           {/* Una sola acción principal a la vista; el resto va en «Más acciones». */}
-          <div className="quote-actions">
-            {estado === 'borrador' && (
-              <button
-                type="button"
-                className="button primary"
-                disabled={!listo || ocupado}
-                aria-describedby={ayudaEmitir ? 'ayuda-emitir' : undefined}
-                onClick={acciones.emitir}
-              >
-                {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
-              </button>
-            )}
-            {estado === 'emitida' && (
-              <button
-                type="button"
-                className="button primary"
-                disabled={ocupado}
-                aria-describedby={esVencida ? 'ayuda-aprobar' : undefined}
-                onClick={acciones.aprobar}
-              >
-                {enCurso === 'aprobar' ? 'Guardando…' : 'Registrar aprobación del cliente'}
-              </button>
-            )}
-            <MenuAcciones
-              deshabilitado={ocupado}
-              opciones={[
-                {
-                  etiqueta: enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar',
-                  alElegir: acciones.duplicar,
-                },
-                ...(conItems
-                  ? [
-                      {
-                        etiqueta: 'Copiar resumen',
-                        alElegir: acciones.copiar,
-                        titulo: 'Resumen en texto para pegar en un correo o WhatsApp',
-                      },
-                    ]
-                  : []),
-                ...(estado === 'borrador' && actual.numero === null
-                  ? [{ etiqueta: 'Eliminar borrador', alElegir: acciones.eliminar, peligro: true }]
-                  : []),
-                ...(estado === 'emitida' || estado === 'aprobada'
-                  ? [{ etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }]
-                  : []),
-              ]}
-            />
-            {/* La ayuda solo aparece cuando explica por qué no se puede o qué se pedirá confirmar. */}
-            {estado === 'borrador' && ayudaEmitir && (
-              <p className="ayuda" id="ayuda-emitir">
-                {ayudaEmitir}
-              </p>
-            )}
-            {estado === 'emitida' && esVencida && (
-              <p className="ayuda" id="ayuda-aprobar">
-                La vigencia terminó: se pedirá confirmar antes de aprobar.
-              </p>
-            )}
-          </div>
           <MargenCotizacion
             actual={actual}
             admiteCambios={admiteCambios}
@@ -716,6 +960,116 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
           guardando={guardando}
           editar={acciones.editar}
         />
+      </div>
+      <div
+        className={`quote-toolbar${cambioVisual?.total ? ' total-actualizado' : ''}`}
+        role="region"
+        aria-label="Resumen y acciones de la cotización"
+      >
+        <div className="quote-toolbar-total">
+          <span>{actual.incompletos.length ? 'Total parcial' : 'Total del pedido'}</span>
+          <strong>{pesos(actual.montos.total)}</strong>
+          <small>IVA incluido · CLP</small>
+        </div>
+        {actual.incompletos.length > 0 && (
+          <button
+            type="button"
+            className="quote-pending-link"
+            onClick={() => irAPendiente(actual.incompletos[0].indice)}
+          >
+            {plural(actual.incompletos.length, 'pendiente')} ↑
+          </button>
+        )}
+        <div className="quote-actions">
+          {estado === 'borrador' && (
+            <button
+              type="button"
+              className="button primary"
+              disabled={!listo || ocupado}
+              aria-describedby={ayudaEmitir ? 'ayuda-emitir' : undefined}
+              onClick={acciones.emitir}
+            >
+              {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
+            </button>
+          )}
+          {estado === 'emitida' && (
+            <button
+              type="button"
+              className="button primary"
+              disabled={ocupado}
+              aria-describedby={esVencida ? 'ayuda-aprobar' : undefined}
+              onClick={acciones.aprobar}
+            >
+              {enCurso === 'aprobar' ? 'Guardando…' : 'Registrar aprobación del cliente'}
+            </button>
+          )}
+          {estado === 'aprobada' && (
+            <button
+              type="button"
+              className="button primary"
+              onClick={() => {
+                mostrarCotizacion();
+                requestAnimationFrame(() =>
+                  document
+                    .getElementById('seguimiento-title')
+                    ?.scrollIntoView({ behavior: comportamientoScroll(), block: 'start' }),
+                );
+              }}
+            >
+              Ver seguimiento del pedido
+            </button>
+          )}
+          <MenuAcciones
+            deshabilitado={ocupado}
+            opciones={[
+              {
+                etiqueta: enCurso === 'duplicar' ? 'Duplicando…' : 'Duplicar',
+                alElegir: acciones.duplicar,
+              },
+              ...(conItems
+                ? [
+                    {
+                      etiqueta: 'Copiar resumen',
+                      alElegir: acciones.copiar,
+                      titulo: 'Resumen en texto para pegar en un correo o WhatsApp',
+                    },
+                  ]
+                : []),
+              ...(estado === 'borrador' && actual.numero === null
+                ? [{ etiqueta: 'Eliminar borrador', alElegir: acciones.eliminar, peligro: true }]
+                : []),
+              ...(estado === 'emitida' || estado === 'aprobada'
+                ? [{ etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }]
+                : []),
+            ]}
+          />
+          {/* La ayuda solo aparece cuando explica por qué no se puede o qué se pedirá confirmar. */}
+          {estado === 'borrador' && ayudaEmitir && (
+            <div className="ayuda" id="ayuda-emitir">
+              <p>{ayudaEmitir}</p>
+              {actual.incompletos.length > 0 && (
+                <ul className="ayuda-pendientes">
+                  {actual.incompletos.map((p) => {
+                    const campos = faltantesItem(actual, p.indice) ?? [];
+                    return (
+                      <li key={p.indice}>
+                        <button type="button" className="enlace" onClick={() => irAPendiente(p.indice)}>
+                          Ítem {p.indice + 1} · {descripcionItem(actual, p.indice)}
+                        </button>
+                        <span>{campos.length ? ` — falta ${textoFaltan(campos)}` : ' — revisar'}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          )}
+          {estado === 'emitida' && esVencida && (
+            <p className="ayuda" id="ayuda-aprobar">
+              La vigencia terminó: se pedirá confirmar antes de aprobar.
+            </p>
+          )}
+        </div>
       </div>
       <div className="conditions">
         <span>Valores puestos en fábrica.</span>

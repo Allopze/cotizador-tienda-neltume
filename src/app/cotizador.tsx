@@ -1,7 +1,14 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-import { anticipoMinimo, esEditable, etiquetaEstado, type Cotizacion, type Despacho, type Mensaje } from '@/negocio/estado';
+import {
+  anticipoMinimo,
+  esEditable,
+  etiquetaEstado,
+  type Cotizacion,
+  type Despacho,
+  type Mensaje,
+} from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
@@ -9,9 +16,18 @@ import { Encabezado } from './encabezado';
 import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
+import { PreguntasPendientes } from './preguntas-pendientes';
+import { preguntasPendientes } from '@/negocio/pendientes';
+import { AgregarProducto } from './agregar-producto';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAnulacionPago, useAprobacion, useEmision } from './dialogos-cotizacion';
-import type { CambiosEdicion, Despacho as CambiosDespacho, Detalle, Resultado } from './contrato';
+import type {
+  CambiosEdicion,
+  Despacho as CambiosDespacho,
+  Detalle,
+  ProductoElegido,
+  Resultado,
+} from './contrato';
 import {
   SIN_CLIENTE,
   comportamientoScroll,
@@ -20,6 +36,7 @@ import {
   fechaCorta,
   fechaLarga,
   numeroCotizacion,
+  plural,
   resumenCambios,
   resumenTexto,
   vencida,
@@ -43,6 +60,16 @@ import {
 const ejemplo = 'Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco';
 const LIMITE = 6000,
   AVISO_LIMITE = 5000;
+/** Quita del texto las preguntas de los ítems pendientes: el bloque estructurado las reemplaza. */
+function sinPreguntas(texto: string, q: Cotizacion) {
+  const preguntas = new Set(q.incompletos.flatMap((p) => p.pregunta.split('\n')));
+  return texto
+    .split('\n')
+    .filter((linea) => !preguntas.has(linea))
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 const SIN_ASISTENTE = 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.';
 interface Seleccion {
   mensaje: string;
@@ -72,6 +99,20 @@ export function Cotizador({
 }) {
   const router = useRouter();
   const [actual, setActual] = useState<Cotizacion | null>(null);
+  const [asistenteContraido, setAsistenteContraido] = useState(false);
+  const [vistaMobile, setVistaMobile] = useState<'pedido' | 'cotizacion'>(abrirId ? 'cotizacion' : 'pedido');
+  const [agregandoProducto, setAgregandoProducto] = useState(false);
+  const [cambioVisual, setCambioVisual] = useState<{
+    id: string;
+    indices: number[];
+    total: boolean;
+    texto: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!cambioVisual) return;
+    const timer = setTimeout(() => setCambioVisual(null), 4500);
+    return () => clearTimeout(timer);
+  }, [cambioVisual]);
   const [mensaje, setMensaje] = useState(''),
     [textoConservado, setTextoConservado] = useState(false),
     [enCurso, setEnCurso] = useState<Operacion | null>(null),
@@ -264,7 +305,10 @@ export function Cotizador({
     setNotaLocal(null);
     setCharla([]);
     idPendiente.current = null;
-    if (enfocarTitulo) setEnfocar((n) => n + 1);
+    if (enfocarTitulo) {
+      setVistaMobile('cotizacion');
+      setEnfocar((n) => n + 1);
+    }
     return q;
   }
 
@@ -343,6 +387,32 @@ export function Cotizador({
       return;
     }
     setCharla([]);
+    if (!d.eliminada) {
+      const indices = q.solicitudes.flatMap((s, i) =>
+        JSON.stringify(s) !== JSON.stringify(previa?.solicitudes[i]) ? [i] : [],
+      );
+      const cantidades = indices.flatMap((i) => {
+        const antes = previa?.solicitudes[i]?.cantidad;
+        const despues = q.solicitudes[i].cantidad;
+        return antes != null && despues != null && antes !== despues
+          ? [`Cantidad: ${antes} → ${despues}`]
+          : [];
+      });
+      const total = !!previa && previa.montos.total !== q.montos.total;
+      setCambioVisual(
+        indices.length || total
+          ? {
+              id: q.id,
+              indices,
+              total,
+              texto: [
+                ...cantidades,
+                total ? `Total actualizado: ${pesos(q.montos.total)}` : 'Pedido actualizado',
+              ].join(' · '),
+            }
+          : null,
+      );
+    }
     if (d.eliminada) {
       setActual(null);
       setNotaLocal(null);
@@ -372,6 +442,9 @@ export function Cotizador({
     // El texto escrito se conserva, pero se señala que venía de otra conversación.
     setTextoConservado(!!mensaje.trim() && (!!actual || charla.length > 0 || !!seleccion));
     setActual(null);
+    setAsistenteContraido(false);
+    setVistaMobile('pedido');
+    setCambioVisual(null);
     setSeleccion(null);
     setNotaLocal(null);
     setCharla([]);
@@ -553,7 +626,15 @@ export function Cotizador({
     async aprobar() {
       const q = actual;
       if (!q || ocupado) return;
-      await aprobar({ ...q, vencida: vencida(q), despacho: q.despacho ?? { direccion: q.cliente.direccion, transporte: null, entregaComprometida: null } });
+      await aprobar({
+        ...q,
+        vencida: vencida(q),
+        despacho: q.despacho ?? {
+          direccion: q.cliente.direccion,
+          transporte: null,
+          entregaComprometida: null,
+        },
+      });
     },
     async quitar(indice) {
       const q = actual;
@@ -611,7 +692,9 @@ export function Cotizador({
       const restante = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0) - pago.monto;
       const minimo = anticipoMinimo(q.montos.total);
       const frenaProduccion =
-        !!q.nota && ['pedido_generado', 'en_produccion'].includes(q.estadoOperativo ?? '') && restante < minimo;
+        !!q.nota &&
+        ['pedido_generado', 'en_produccion'].includes(q.estadoOperativo ?? '') &&
+        restante < minimo;
       const datos = await pedirAnulacionPago({
         monto: pesos(pago.monto),
         fecha: fechaLarga(pago.fecha),
@@ -662,6 +745,39 @@ export function Cotizador({
     copiar: () => void copiar(),
   };
 
+  async function agregarProducto(producto: ProductoElegido) {
+    if (ocupado) return false;
+    const q = actual;
+    if (
+      q?.estado === 'emitida' &&
+      !(await confirmar({
+        titulo: 'Editar una cotización emitida',
+        mensaje: EDITAR_EMITIDA,
+        aceptar: 'Guardar en la revisión',
+      }))
+    )
+      return false;
+    setEnCurso('editar');
+    limpiar('operacion');
+    try {
+      const d = await peticion({
+        tipo: 'agregar_producto',
+        ...(q ? { id: q.id, ...versionDe(q) } : {}),
+        ...producto,
+      });
+      recibir(d, { previa: q });
+      setAgregandoProducto(false);
+      setVistaMobile('cotizacion');
+      avisar('exito', 'Producto agregado al pedido.', { clave: 'operacion' });
+      return true;
+    } catch (e) {
+      fallo(e, q);
+      throw e; // El selector muestra el error dentro del diálogo y conserva el producto.
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
   async function duplicar(id: string, numero: number | null) {
     if (ocupado) return;
     setEnCurso('duplicar');
@@ -703,11 +819,11 @@ export function Cotizador({
       vencida: c.vencida,
       despacho:
         c.id === conversacion.id
-          ? conversacion.despacho ?? {
+          ? (conversacion.despacho ?? {
               direccion: conversacion.cliente.direccion,
               transporte: null,
               entregaComprometida: null,
-            }
+            })
           : null,
     });
     if (!ok) {
@@ -853,6 +969,8 @@ export function Cotizador({
 
   // Aprobadas, reemplazadas y anuladas no admiten cambios (ni por chat).
   const bloqueada = !!actual && !esEditable(actual);
+  // Las preguntas con botones solo en un borrador: en una emitida, responder crearía una revisión.
+  const preguntasChat = actual?.estado === 'borrador' ? preguntasPendientes(actual) : [];
   const composerDeshabilitado = ocupado || bloqueada || cargando || !!seleccion || !configurado;
   const ayudaCompositor = [!configurado && 'aviso-asistente', mensaje.length >= AVISO_LIMITE && 'contador']
     .filter(Boolean)
@@ -864,7 +982,7 @@ export function Cotizador({
   }
   const inicio = !actual && !charla.length && !seleccion && enCurso !== 'chat';
   // Con conversación en curso la bienvenida solo ocupa espacio.
-  const conConversacion = !!actual?.historial.length || !!charla.length;
+  const conConversacion = !!actual?.historial.length || !!actual?.solicitudes.length || !!charla.length;
   // El historial guarda lo que se respondió en su momento («genera el PDF…»); tras emitir, esta línea
   // dice el estado real y qué pasa si se escribe un cambio.
   const estadoChat =
@@ -873,8 +991,9 @@ export function Cotizador({
       : null;
   const mostrarNueva = !!actual || !!charla.length || !!seleccion;
   return (
-    // «pantalla-completa»: en escritorio el cotizador ocupa justo el alto de la ventana (ver responsive.css).
-    <div className="app-shell pantalla-completa">
+    <div
+      className={`app-shell pantalla-cotizador${actual ? ' con-pedido' : ''}${asistenteContraido ? ' asistente-contraido' : ''}`}
+    >
       <Encabezado
         email={email}
         nombre={nombre}
@@ -884,240 +1003,305 @@ export function Cotizador({
       />
       {/* La pestaña activa ya dice «Cotizar»: un título visible solo lo repetiría. */}
       <h1 className="sr-only">Cotizar</h1>
-      <main className="workspace" ref={workspace}>
-        <section className={`chat-panel${inicio ? ' inicio' : ''}`} aria-label="Asistente de cotizaciones">
-          <div className="panel-heading">
-            <div>
-              <p className="eyebrow">01 / CONVERSACIÓN</p>
-              <h2>Cuéntame el pedido</h2>
+      <nav className="cotizador-vistas" aria-label="Vista del cotizador">
+        <button
+          type="button"
+          aria-pressed={vistaMobile === 'pedido'}
+          aria-controls="panel-pedido"
+          onClick={() => setVistaMobile('pedido')}
+        >
+          Pedido
+        </button>
+        <button
+          type="button"
+          aria-pressed={vistaMobile === 'cotizacion'}
+          aria-controls="panel-cotizacion"
+          onClick={() => setVistaMobile('cotizacion')}
+        >
+          Cotización{actual?.incompletos.length ? ` (${actual.incompletos.length} pendientes)` : ''}
+        </button>
+      </nav>
+      <main className="workspace" ref={workspace} data-vista={vistaMobile}>
+        <section
+          id="panel-pedido"
+          className={`chat-panel${inicio ? ' inicio' : ''}`}
+          aria-label="Asistente de cotizaciones"
+        >
+          <button
+            type="button"
+            className="chat-toggle"
+            aria-expanded={!asistenteContraido}
+            aria-controls="chat-contenido"
+            onClick={() => setAsistenteContraido((v) => !v)}
+          >
+            {asistenteContraido ? 'Abrir asistente →' : '← Contraer asistente'}
+          </button>
+          <div id="chat-contenido" className="chat-contenido">
+            <div className="panel-heading">
+              <div>
+                <p className="eyebrow">01 / CONVERSACIÓN</p>
+                <h2>Cuéntame el pedido</h2>
+              </div>
+              {mostrarNueva && (
+                <button
+                  type="button"
+                  className="button secondary small"
+                  onClick={nuevaCotizacion}
+                  disabled={ocupado || cargando}
+                  aria-keyshortcuts="Alt+N"
+                  title="Atajo: Alt+N · Ctrl/⌘+K abre el historial con el buscador"
+                >
+                  <span aria-hidden>+</span> Nueva cotización
+                </button>
+              )}
             </div>
-            {mostrarNueva && (
+            <div
+              className="messages"
+              ref={mensajes}
+              data-testid="conversacion"
+              aria-busy={enCurso === 'chat'}
+            >
+              {!conConversacion && (
+                <div className="welcome">
+                  <span className="speaker">NELTUME</span>
+                  <p>Empecemos con una puerta.</p>
+                  <div>
+                    Indica el modelo, la madera, las medidas y la cantidad. También puedes incluir los datos
+                    del cliente.
+                  </div>
+                  {!actual?.historial.length && !charla.length && (
+                    <button
+                      type="button"
+                      className="example"
+                      onClick={() => {
+                        setMensaje(ejemplo);
+                        setTextoConservado(false);
+                        input.current?.focus();
+                      }}
+                      disabled={composerDeshabilitado}
+                    >
+                      <span>USAR ESTE EJEMPLO</span>“3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez,
+                      Temuco”
+                      <b aria-hidden>→</b>
+                    </button>
+                  )}
+                </div>
+              )}
+              {(actual ? actual.historial : charla).map((m, i, lista) => {
+                const ultima = m.rol === 'asistente' && i === lista.length - 1;
+                // Con preguntas estructuradas, la última respuesta no las repite en texto: se responden ahí mismo.
+                const conPreguntas = ultima && preguntasChat.length > 0;
+                const texto = conPreguntas ? sinPreguntas(m.texto, actual!) : m.texto;
+                return (
+                  <div key={actual ? i : `charla-${i}`} className={`message ${m.rol}`}>
+                    <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
+                    {texto && (
+                      <TextoMensaje
+                        texto={texto}
+                        // Solo la última pregunta ofrece botones: las anteriores ya se respondieron.
+                        elegir={
+                          ultima && !conPreguntas && !composerDeshabilitado ? responderOpcion : undefined
+                        }
+                      />
+                    )}
+                    {conPreguntas && (
+                      <div className="pendientes-chat" aria-label="Datos que faltan para cotizar">
+                        <p className="pendientes-intro">
+                          Faltan datos en {plural(actual!.incompletos.length, 'producto')}. Elige una opción o
+                          escríbelo en tu próximo mensaje.
+                        </p>
+                        <PreguntasPendientes
+                          preguntas={preguntasChat}
+                          editable={!ocupado && !bloqueada}
+                          guardando={guardando}
+                          responder={acciones.editar}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {estadoChat && (
+                <div className="message asistente local estado">
+                  <span className="speaker">NELTUME</span>
+                  <p>{estadoChat}</p>
+                </div>
+              )}
+              {notaLocal && notaLocal.id === actualId && (
+                <div className={`message asistente local ${notaLocal.tipo ?? ''}`}>
+                  <span className="speaker">NELTUME</span>
+                  <p>{notaLocal.texto}</p>
+                </div>
+              )}
+              {seleccion && (
+                <>
+                  <div className="message usuario">
+                    <span className="speaker">TÚ</span>
+                    <p>{seleccion.mensaje}</p>
+                  </div>
+                  <div
+                    className="reference-selection"
+                    role="group"
+                    aria-label="Seleccionar cotización anterior"
+                  >
+                    <span className="speaker">NELTUME</span>
+                    <p>Encontré varias cotizaciones que podrían ser. Elige cuál quieres modificar:</p>
+                    <div className="reference-options">
+                      {seleccion.opciones.map((opcion) => {
+                        const numero = numeroCotizacion(opcion.numero);
+                        const fecha = fechaCorta(opcion.fecha);
+                        const total = totalesOpciones[opcion.id];
+                        const cliente = opcion.cliente || SIN_CLIENTE;
+                        const detalle = [fecha, opcion.proyecto, opcion.comuna, opcion.detalle].filter(
+                          Boolean,
+                        );
+                        return (
+                          <button
+                            type="button"
+                            key={opcion.id}
+                            disabled={ocupado}
+                            onClick={() => elegirReferencia(opcion)}
+                            aria-label={[
+                              `Elegir cotización ${numero} de ${cliente}`,
+                              etiquetaEstado[opcion.estado].toLowerCase(),
+                              total !== undefined && `total ${pesos(total)}`,
+                              ...detalle,
+                            ]
+                              .filter(Boolean)
+                              .join(', ')}
+                          >
+                            <span className="reference-top">
+                              <strong>
+                                {numero} · {cliente}
+                              </strong>
+                              <span className={`status ${opcion.estado}`}>
+                                {etiquetaEstado[opcion.estado]}
+                              </span>
+                              {total !== undefined && <span className="reference-total">{pesos(total)}</span>}
+                            </span>
+                            <small>{detalle.join(' · ')}</small>
+                          </button>
+                        );
+                      })}
+                      <button
+                        type="button"
+                        className="reference-ninguna"
+                        disabled={ocupado}
+                        onClick={descartarSeleccion}
+                      >
+                        Ninguna de estas · es una cotización nueva
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
+              {enCurso === 'chat' && (
+                <div className="thinking">
+                  Preparando los detalles
+                  <span className="puntos" aria-hidden>
+                    <span>·</span>
+                    <span>·</span>
+                    <span>·</span>
+                  </span>
+                </div>
+              )}
+            </div>
+            {/* Región viva separada: anuncia solo la última respuesta del asistente. */}
+            <p className="sr-only" aria-live="polite" aria-atomic="true">
+              {enCurso === 'chat' ? 'Preparando los detalles…' : anuncio}
+            </p>
+            {!configurado && (
+              <p className="notice" id="aviso-asistente">
+                {SIN_ASISTENTE}
+              </p>
+            )}
+            {actual && (
               <button
                 type="button"
-                className="button secondary small"
-                onClick={nuevaCotizacion}
-                disabled={ocupado || cargando}
-                aria-keyshortcuts="Alt+N"
-                title="Atajo: Alt+N · Ctrl/⌘+K abre el historial con el buscador"
+                className="jump-to-quote"
+                onClick={() => {
+                  setVistaMobile('cotizacion');
+                  requestAnimationFrame(() => {
+                    titulo.current?.scrollIntoView({ behavior: comportamientoScroll(), block: 'start' });
+                    titulo.current?.focus({ preventScroll: true });
+                  });
+                }}
               >
-                <span aria-hidden>+</span> Nueva cotización
+                Ver cotización <span aria-hidden>↓</span>
               </button>
             )}
-          </div>
-          <div className="messages" ref={mensajes} data-testid="conversacion" aria-busy={enCurso === 'chat'}>
-            {!conConversacion && (
-              <div className="welcome">
-                <span className="speaker">NELTUME</span>
-                <p>Empecemos con una puerta.</p>
-                <div>
-                  Indica el modelo, la madera, las medidas y la cantidad. También puedes incluir los datos del
-                  cliente.
-                </div>
-                {!actual?.historial.length && !charla.length && (
+            <form onSubmit={enviar} className="composer">
+              {textoConservado && (
+                <div className="composer-retained" id="texto-conservado">
+                  <span>Este texto venía de la cotización anterior. Revísalo antes de enviarlo.</span>
                   <button
                     type="button"
-                    className="example"
                     onClick={() => {
-                      setMensaje(ejemplo);
+                      setMensaje('');
                       setTextoConservado(false);
                       input.current?.focus();
                     }}
-                    disabled={composerDeshabilitado}
                   >
-                    <span>USAR ESTE EJEMPLO</span>“3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez,
-                    Temuco”
-                    <b aria-hidden>→</b>
+                    Borrar texto
                   </button>
-                )}
-              </div>
-            )}
-            {(actual ? actual.historial : charla).map((m, i, lista) => (
-              <div key={actual ? i : `charla-${i}`} className={`message ${m.rol}`}>
-                <span className="speaker">{m.rol === 'usuario' ? 'TÚ' : 'NELTUME'}</span>
-                <TextoMensaje
-                  texto={m.texto}
-                  // Solo la última pregunta ofrece botones: las anteriores ya se respondieron.
-                  elegir={
-                    m.rol === 'asistente' && i === lista.length - 1 && !composerDeshabilitado
-                      ? responderOpcion
-                      : undefined
-                  }
-                />
-              </div>
-            ))}
-            {estadoChat && (
-              <div className="message asistente local estado">
-                <span className="speaker">NELTUME</span>
-                <p>{estadoChat}</p>
-              </div>
-            )}
-            {notaLocal && notaLocal.id === actualId && (
-              <div className={`message asistente local ${notaLocal.tipo ?? ''}`}>
-                <span className="speaker">NELTUME</span>
-                <p>{notaLocal.texto}</p>
-              </div>
-            )}
-            {seleccion && (
-              <>
-                <div className="message usuario">
-                  <span className="speaker">TÚ</span>
-                  <p>{seleccion.mensaje}</p>
                 </div>
-                <div
-                  className="reference-selection"
-                  role="group"
-                  aria-label="Seleccionar cotización anterior"
-                >
-                  <span className="speaker">NELTUME</span>
-                  <p>Encontré varias cotizaciones que podrían ser. Elige cuál quieres modificar:</p>
-                  <div className="reference-options">
-                    {seleccion.opciones.map((opcion) => {
-                      const numero = numeroCotizacion(opcion.numero);
-                      const fecha = fechaCorta(opcion.fecha);
-                      const total = totalesOpciones[opcion.id];
-                      const cliente = opcion.cliente || SIN_CLIENTE;
-                      const detalle = [fecha, opcion.proyecto, opcion.comuna, opcion.detalle].filter(Boolean);
-                      return (
-                        <button
-                          type="button"
-                          key={opcion.id}
-                          disabled={ocupado}
-                          onClick={() => elegirReferencia(opcion)}
-                          aria-label={[
-                            `Elegir cotización ${numero} de ${cliente}`,
-                            etiquetaEstado[opcion.estado].toLowerCase(),
-                            total !== undefined && `total ${pesos(total)}`,
-                            ...detalle,
-                          ]
-                            .filter(Boolean)
-                            .join(', ')}
-                        >
-                          <span className="reference-top">
-                            <strong>
-                              {numero} · {cliente}
-                            </strong>
-                            <span className={`status ${opcion.estado}`}>{etiquetaEstado[opcion.estado]}</span>
-                            {total !== undefined && <span className="reference-total">{pesos(total)}</span>}
-                          </span>
-                          <small>{detalle.join(' · ')}</small>
-                        </button>
-                      );
-                    })}
-                    <button
-                      type="button"
-                      className="reference-ninguna"
-                      disabled={ocupado}
-                      onClick={descartarSeleccion}
-                    >
-                      Ninguna de estas · es una cotización nueva
-                    </button>
-                  </div>
-                </div>
-              </>
-            )}
-            {enCurso === 'chat' && (
-              <div className="thinking">
-                Preparando los detalles
-                <span className="puntos" aria-hidden>
-                  <span>·</span>
-                  <span>·</span>
-                  <span>·</span>
-                </span>
-              </div>
-            )}
-          </div>
-          {/* Región viva separada: anuncia solo la última respuesta del asistente. */}
-          <p className="sr-only" aria-live="polite" aria-atomic="true">
-            {enCurso === 'chat' ? 'Preparando los detalles…' : anuncio}
-          </p>
-          {!configurado && (
-            <p className="notice" id="aviso-asistente">
-              {SIN_ASISTENTE}
-            </p>
-          )}
-          {actual && (
-            <button
-              type="button"
-              className="jump-to-quote"
-              onClick={() => {
-                titulo.current?.scrollIntoView({ behavior: comportamientoScroll(), block: 'start' });
-                titulo.current?.focus({ preventScroll: true });
-              }}
-            >
-              Ver cotización <span aria-hidden>↓</span>
-            </button>
-          )}
-          <form onSubmit={enviar} className="composer">
-            {textoConservado && (
-              <div className="composer-retained" id="texto-conservado">
-                <span>Este texto venía de la cotización anterior. Revísalo antes de enviarlo.</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setMensaje('');
-                    setTextoConservado(false);
-                    input.current?.focus();
-                  }}
-                >
-                  Borrar texto
-                </button>
-              </div>
-            )}
-            <label className="sr-only" htmlFor="mensaje">
-              Escribe tu pedido
-            </label>
-            <textarea
-              ref={input}
-              id="mensaje"
-              value={mensaje}
-              onChange={(e) => {
-                setMensaje(e.target.value);
-                setTextoConservado(false);
-              }}
-              placeholder={
-                !configurado
-                  ? 'El chat no está disponible por ahora.'
-                  : bloqueada
-                    ? `Cotización ${etiquetaEstado[actual!.estado].toLowerCase()}: no admite cambios. Duplícala o crea una nueva.`
-                    : seleccion
-                      ? 'Elige una de las cotizaciones de arriba.'
-                      : estadoChat
-                        ? `Escribe un cambio: se creará una revisión de la ${numeroCotizacion(actual!.numero)}.`
-                        : 'Escribe el pedido o agrega un detalle…'
-              }
-              disabled={composerDeshabilitado}
-              rows={3}
-              maxLength={LIMITE}
-              aria-describedby={
-                [ayudaCompositor, textoConservado && 'texto-conservado'].filter(Boolean).join(' ') ||
-                undefined
-              }
-              onKeyDown={enterEnvia}
-            />
-            <div className="composer-bottom">
-              <span className="solo-escritorio">Enter para enviar · ⇧ Enter para nueva línea</span>
-              <span className="solo-tactil">Usa «Enviar» para mandar el mensaje</span>
-              {mensaje.length >= AVISO_LIMITE && (
-                <span id="contador" className={`contador ${mensaje.length >= LIMITE ? 'limite' : ''}`}>
-                  {mensaje.length.toLocaleString('es-CL')} / {LIMITE.toLocaleString('es-CL')} caracteres
-                </span>
               )}
-              <span className="composer-botones">
-                {enCurso === 'chat' && (
-                  <button type="button" className="cancelar" onClick={() => abortar.current?.abort()}>
-                    Cancelar
-                  </button>
+              <label className="sr-only" htmlFor="mensaje">
+                Escribe tu pedido
+              </label>
+              <textarea
+                ref={input}
+                id="mensaje"
+                value={mensaje}
+                onChange={(e) => {
+                  setMensaje(e.target.value);
+                  setTextoConservado(false);
+                }}
+                placeholder={
+                  !configurado
+                    ? 'El chat no está disponible por ahora.'
+                    : bloqueada
+                      ? `Cotización ${etiquetaEstado[actual!.estado].toLowerCase()}: no admite cambios. Duplícala o crea una nueva.`
+                      : seleccion
+                        ? 'Elige una de las cotizaciones de arriba.'
+                        : estadoChat
+                          ? `Escribe un cambio: se creará una revisión de la ${numeroCotizacion(actual!.numero)}.`
+                          : 'Escribe el pedido o agrega un detalle…'
+                }
+                disabled={composerDeshabilitado}
+                rows={3}
+                maxLength={LIMITE}
+                aria-describedby={
+                  [ayudaCompositor, textoConservado && 'texto-conservado'].filter(Boolean).join(' ') ||
+                  undefined
+                }
+                onKeyDown={enterEnvia}
+              />
+              <div className="composer-bottom">
+                <span className="solo-escritorio">Enter para enviar · ⇧ Enter para nueva línea</span>
+                <span className="solo-tactil">Usa «Enviar» para mandar el mensaje</span>
+                {mensaje.length >= AVISO_LIMITE && (
+                  <span id="contador" className={`contador ${mensaje.length >= LIMITE ? 'limite' : ''}`}>
+                    {mensaje.length.toLocaleString('es-CL')} / {LIMITE.toLocaleString('es-CL')} caracteres
+                  </span>
                 )}
-                <button
-                  type="submit"
-                  aria-label="Enviar mensaje"
-                  disabled={!mensaje.trim() || composerDeshabilitado}
-                >
-                  Enviar <span aria-hidden>→</span>
-                </button>
-              </span>
-            </div>
-          </form>
+                <span className="composer-botones">
+                  {enCurso === 'chat' && (
+                    <button type="button" className="cancelar" onClick={() => abortar.current?.abort()}>
+                      Cancelar
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    aria-label="Enviar mensaje"
+                    disabled={!mensaje.trim() || composerDeshabilitado}
+                  >
+                    Enviar <span aria-hidden>→</span>
+                  </button>
+                </span>
+              </div>
+            </form>
+          </div>
         </section>
         <CotizacionPanel
           actual={actual}
@@ -1126,6 +1310,10 @@ export function Cotizador({
           descargando={descargando}
           acciones={acciones}
           tituloRef={titulo}
+          agregarProducto={() => setAgregandoProducto(true)}
+          mostrarCotizacion={() => setVistaMobile('cotizacion')}
+          cargando={cargando}
+          cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
         />
       </main>
       <footer className="site-footer">
@@ -1135,6 +1323,13 @@ export function Cotizador({
         <span>Asistente de cotizaciones · Uso interno</span>
       </footer>
       <Avisos avisos={avisos} cerrar={cerrarAviso} />
+      {agregandoProducto && (
+        <AgregarProducto
+          alCerrar={() => setAgregandoProducto(false)}
+          agregar={agregarProducto}
+          ocupado={ocupado}
+        />
+      )}
       {confirmacion}
       {dialogoAprobacion}
       {dialogoAnulacion}

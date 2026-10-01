@@ -10,9 +10,12 @@ async function sinScrollDePagina(page: Page) {
   expect(alto).toBeLessThanOrEqual(ventana);
 }
 
-test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) => {
+test('el cotizador permite scroll de página y conserva su barra de acciones', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await iniciarSesion(page);
+  const sinScrollHorizontal = async () =>
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const barra = page.getByLabel('Resumen y acciones de la cotización');
   const panel = page.getByLabel('Cotización en curso');
   const enviar = async (texto: string) => {
     await page.getByLabel('Escribe tu pedido').fill(texto);
@@ -25,7 +28,7 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
   await expect(vistaPrevia.getByText('La cotización aparecerá aquí.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Nueva cotización' })).toHaveCount(0);
   await expect(page.getByTestId('total')).toHaveCount(0);
-  await sinScrollDePagina(page);
+  await sinScrollHorizontal();
 
   await enviar('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
   await expect(panel.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
@@ -33,9 +36,9 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
   await enviar('3 de 2x4 de 2,1');
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
   // Acciones y totales siguen a la vista con varios ítems.
-  await sinScrollDePagina(page);
+  await sinScrollHorizontal();
   await expect(panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeInViewport();
-  await expect(page.getByTestId('total')).toBeInViewport();
+  await expect(barra).toBeInViewport();
   await page.screenshot({ path: 'test-results/pantalla-completa-borrador.png' });
 
   await panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
@@ -44,7 +47,7 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
     .getByRole('button', { name: 'Emitir y generar PDF' })
     .click();
   await expect(panel.getByRole('heading', { level: 2 })).toHaveText(/^N° \d+$/);
-  await sinScrollDePagina(page);
+  await sinScrollHorizontal();
 
   await page.getByRole('button', { name: 'Registrar aprobación del cliente' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Registrar aprobación' }).click();
@@ -53,7 +56,8 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
   await panel.getByLabel(/^Monto recibido/).fill(String(Math.ceil(total * 0.5)));
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
   await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
-  await sinScrollDePagina(page);
+  await sinScrollHorizontal();
+  await panel.getByRole('button', { name: 'Descargar nota de pedido' }).scrollIntoViewIfNeeded();
   await expect(panel.getByRole('button', { name: 'Descargar nota de pedido' })).toBeInViewport();
   await page.screenshot({ path: 'test-results/pantalla-completa-aprobada.png' });
 
@@ -62,8 +66,8 @@ test('el cotizador cabe en la ventana en todos sus estados', async ({ page }) =>
     [1920, 1080],
   ]) {
     await page.setViewportSize({ width, height });
-    await sinScrollDePagina(page);
-    await expect(page.getByTestId('total')).toBeInViewport();
+    await sinScrollHorizontal();
+    await expect(barra).toBeInViewport();
   }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.screenshot({ path: 'test-results/pantalla-completa-720.png' });

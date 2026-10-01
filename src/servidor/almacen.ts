@@ -273,7 +273,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
     const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo FROM solicitudes $FILTRO
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
     const incompletos = hijos<{
       cotizacion_id: string;
@@ -311,6 +311,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
             margen: fila.margen,
             modeloOriginal: fila.modeloOriginal,
             coincidenciaModelo: fila.coincidenciaModelo,
+            fuente: fila.fuente ?? null,
           };
           if (fila.precio_unitario !== null) s.precioUnitario = fila.precio_unitario;
           if (s.cantidad === null || cantidadValida(s.cantidad)) return s;
@@ -658,8 +659,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, descripcion, observaciones, modelo_original, coincidencia_modelo)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo)
+    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente)
+    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente)
   `);
   q.solicitudes.forEach((s, i) =>
     insSolicitud.run({
@@ -678,6 +679,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       observaciones: s.observaciones ?? null,
       modelo_original: s.modeloOriginal ?? null,
       coincidencia_modelo: s.coincidenciaModelo ?? null,
+      fuente: s.fuente ?? null,
     }),
   );
   const insIncompleto = db.prepare(

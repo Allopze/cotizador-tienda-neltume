@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "arial",
+        "files": [
+          "src/app/globals.css"
+        ],
+        "createdAt": "2026-10-01T15:39:02.541Z",
+        "reason": "Codex: Arial/Helvetica es la tipografia operativa del diseno existente, combinada con titulos Georgia. Ambos usos ya estaban en HEAD y globals.css no fue modificado en la mejora del cotizador; se conserva esa identidad y consistencia."
+      }
+    ]
+  }
+}

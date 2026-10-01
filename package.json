@@ -13,6 +13,7 @@
     "limpiar-borradores": "tsx scripts/limpiar-borradores.ts",
     "respaldar": "tsx scripts/respaldar.ts",
     "feriados": "tsx scripts/feriados.ts",
+    "evaluar:ia": "tsx scripts/evaluar-ia.ts",
     "test": "vitest run && npm run test:e2e",
     "test:unit": "vitest run",
     "test:e2e": "tsx scripts/preparar-e2e.ts && playwright test",

@@ -48,8 +48,8 @@ describe('Proveedor CommandCode', () => {
     const body = JSON.parse(String(options?.body));
     expect(body.model).toBe('claude-sonnet-4-6');
     expect(body.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: true });
+    // La IA solo informa cambios: la lista completa del pedido ya no se ofrece.
     expect(body.tools.map((t: { name: string }) => t.name)).toEqual([
-      'actualizar_cotizacion',
       'modificar_cotizacion',
       'aprobar_cotizacion',
       'responder',
@@ -78,10 +78,14 @@ describe('Proveedor CommandCode', () => {
     const fetchMock = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(respuesta([llamada, llamada]))
+      .mockResolvedValueOnce(respuesta([llamada, llamada]))
+      .mockResolvedValueOnce(respuesta([llamada], 'max_tokens'))
       .mockResolvedValueOnce(respuesta([llamada], 'max_tokens'));
     vi.stubGlobal('fetch', fetchMock);
+    // Cada respuesta inutilizable se reintenta una vez antes de rendirse.
     expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
     expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('claude-sonnet-5');
   });
 });
@@ -119,7 +123,7 @@ describe('Modelos Chat Completions de CommandCode', () => {
     expect(body.model).toBe('poolside/laguna-s-2.1-free');
     expect(body.tool_choice).toBe('required');
     expect(body.parallel_tool_calls).toBe(false);
-    expect(body.tools[0].function.name).toBe('actualizar_cotizacion');
+    expect(body.tools[0].function.name).toBe('modificar_cotizacion');
     expect(JSON.parse(body.messages[1].content)).toEqual(contexto);
   });
   it.each([401, 403, 429, 500])('traduce el error %i sin revelar el cuerpo del proveedor', async (status) => {
@@ -165,4 +169,44 @@ describe('Modelos Chat Completions de CommandCode', () => {
       expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
     },
   );
+});
+
+describe('Reintento con corrección', () => {
+  const indiceFuera = {
+    type: 'tool_use',
+    id: 'test-call',
+    name: 'modificar_cotizacion',
+    input: { items: [{ indice: 3, cambios: { madera: 'LENGA' } }] },
+  };
+  it('reintenta una vez diciéndole al modelo qué corregir y usa la segunda respuesta', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(respuesta([indiceFuera]))
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const primero = JSON.parse(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).messages[0].content);
+    const segundo = JSON.parse(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).messages[0].content);
+    expect(primero.correccion).toBeUndefined();
+    expect(segundo.correccion).toMatch(/índice 3 no existe/);
+  });
+  it('si el reintento falla, devuelve la primera respuesta en vez de un error', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(respuesta([indiceFuera]))
+        .mockResolvedValueOnce(Response.json({ error: 'caído' }, { status: 500 })),
+    );
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: indiceFuera.name,
+      input: indiceFuera.input,
+    });
+  });
 });

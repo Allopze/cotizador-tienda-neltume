@@ -51,7 +51,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await enviar('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
   await expect(panel.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(primero.total));
-  await expect(panel.getByText('Juan Pérez', { exact: true })).toBeVisible();
+  await expect(panel.locator('.quote-overview').getByText('Juan Pérez', { exact: true })).toBeVisible();
   await enviar('agrega marcos de oregón');
   await expect(conversacion.getByText(/¿Qué sección o escuadría/)).toBeVisible();
   await expect(conversacion.getByText(/¿Qué alto o largo/)).toBeVisible();
@@ -67,6 +67,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
   // Una puerta sin tipo de medida sugiere la observación; con un clic queda escrita y ya no se ofrece.
+  await panel.locator('.item-details > summary').first().click();
   const rectificar = 'Rectificar si la medida corresponde a hoja o vano.';
   await expect(panel.getByText(rectificar, { exact: true })).toHaveCount(1);
   await panel.getByRole('button', { name: /^Agregar como observación al ítem 1: / }).click();
@@ -111,7 +112,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
   const estado = await new Almacen(DIR_E2E).leer();
-  expect(estado.cotizaciones[0].estado).toBe('aprobada');
+  expect(estado.cotizaciones.find((q) => q.numero === 323)?.estado).toBe('aprobada');
   expect(estado.siguienteCotizacion).toBe(324);
   expect(estado.siguienteNota).toBe(2);
   await page.reload();
@@ -125,6 +126,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
   await page.screenshot({ path: 'test-results/cotizacion-aprobada.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('button', { name: 'Pedido', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Nueva cotización' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });

@@ -57,6 +57,19 @@ const tarifaStarkenSchema = z
 const accionSchema = z.discriminatedUnion('tipo', [
   z
     .object({
+      tipo: z.literal('agregar_producto'),
+      id: z.uuid().optional(),
+      actualizada: version.optional(),
+      codigo: z.string().trim().min(1).max(80),
+      cantidad: z.number().int().min(1).max(10000),
+      ancho: z.number().finite().min(0.3).max(3).optional(),
+      alto: z.number().finite().min(0.3).max(3).optional(),
+      tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
+    })
+    .strict()
+    .refine((a) => Boolean(a.id) === Boolean(a.actualizada)),
+  z
+    .object({
       tipo: z.literal('chat'),
       id: z.uuid().optional(),
       actualizada: version.optional(),

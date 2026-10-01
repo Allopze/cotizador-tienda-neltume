@@ -1043,3 +1043,48 @@ td small {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Frase del pedido de la que salió el ítem y resumen de lo que falta en uno pendiente. */
+.item-fuente {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-style: italic;
+  overflow-wrap: anywhere;
+}
+.pending-resumen {
+  display: block;
+  margin-top: 2px;
+  color: var(--pending);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.item-editor .pendientes-preguntas {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: var(--amber-bg);
+}
+.item-editables .item-campo-falta {
+  box-shadow: inset 3px 0 0 var(--pending);
+  padding-left: 8px;
+}
+.ayuda-pendientes {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ayuda-pendientes li {
+  margin-top: 2px;
+}
+.ayuda-pendientes .enlace {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

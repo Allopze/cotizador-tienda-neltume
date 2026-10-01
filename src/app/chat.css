@@ -1162,3 +1162,104 @@ p + .pregunta-opciones {
   font-size: var(--fs-sm);
   line-height: 1.5;
 }
+
+/* Preguntas de los ítems pendientes: se responden con una edición directa, en el chat y en el panel. */
+.pendientes-chat {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.pendientes-intro {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.pendientes-preguntas {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+.pendiente-pregunta {
+  min-width: 0;
+}
+.pendiente-texto {
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--ink);
+}
+.pendiente-guardando {
+  font-weight: 400;
+  color: var(--muted);
+}
+.pendiente-detalle {
+  margin-top: 2px;
+  color: var(--pending);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
+.pendiente-opciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pendiente-opciones button {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-height: var(--control-sm);
+  padding: 6px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+.pendiente-opciones button:hover:not(:disabled) {
+  background: var(--pale);
+  border-color: var(--accent-line);
+}
+.pendiente-opciones button.sugerida {
+  border-color: var(--green);
+  background: var(--pale);
+}
+.pendiente-opciones button small {
+  font-weight: 400;
+  color: var(--muted);
+}
+.pendiente-entrada {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+}
+.pendiente-entrada input,
+.pendiente-entrada select {
+  min-height: var(--control-sm);
+  width: 9rem;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+.pendiente-entrada select {
+  width: auto;
+  min-width: 12rem;
+}
+.pendiente-entrada input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.pendiente-unidad {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+.pendiente-error {
+  flex-basis: 100%;
+  color: var(--danger);
+  font-size: var(--fs-xs);
+}

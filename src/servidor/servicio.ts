@@ -6,6 +6,8 @@ import { pregunta } from '../asistente/preguntas';
 import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { salidaSchema } from '../asistente/esquemas';
 import { contextoSeguro, type LLM } from '../asistente/llm';
+import { anclarCifras } from '../asistente/anclaje';
+import { mapaCatalogo } from '../catalogo/mapa';
 import {
   aliasMaderasCatalogo,
   aliasModelosCatalogo,
@@ -94,6 +96,16 @@ export type Accion =
       contexto?: Mensaje[];
     }
   | { tipo: 'quitar'; id: string; actualizada: string; indice: number }
+  | {
+      tipo: 'agregar_producto';
+      id?: string;
+      actualizada?: string;
+      codigo: string;
+      cantidad: number;
+      ancho?: number;
+      alto?: number;
+      tipoMedida?: 'hoja' | 'vano' | 'no_especificado';
+    }
   | { tipo: 'emitir'; id: string; actualizada: string; numero?: number }
   | {
       tipo: 'aprobar';
@@ -681,6 +693,8 @@ export class Servicio {
         });
       case 'editar':
         return this.editar(accion);
+      case 'agregar_producto':
+        return this.agregarProducto(accion);
       case 'duplicar':
         return this.almacen.transaccion((u) => {
           const origen = this.obtener(u, accion.id);
@@ -772,6 +786,56 @@ export class Servicio {
           return { cotizacion: q, ...(avisos.length ? { avisos } : {}) };
         });
     }
+  }
+
+  /** Selección explícita del catálogo: precios, revisiones y cálculo permanecen en el servidor. */
+  private agregarProducto(accion: Extract<Accion, { tipo: 'agregar_producto' }>) {
+    return this.almacen.transaccion((u): Resultado => {
+      if (Boolean(accion.id) !== Boolean(accion.actualizada))
+        throw new ErrorUsuario('Indica la versión de la cotización.');
+      if (!Number.isInteger(accion.cantidad) || accion.cantidad < 1 || accion.cantidad > 10000)
+        throw new ErrorUsuario('La cantidad debe ser un entero entre 1 y 10.000.');
+      const catalogo = this.catalogo;
+      const productos =
+        'productos' in catalogo
+          ? catalogo.productos
+          : catalogo.modelos().flatMap((modelo) => catalogo.productosDeModelo(normalizar(modelo)));
+      const p = productos.find((producto) => producto.codigo === accion.codigo);
+      if (!p)
+        throw new ErrorNoEncontrado('El producto ya no está disponible. Vuelve a buscarlo en el catálogo.');
+      const item: SolicitudItem = {
+        modelo: p.modelo,
+        madera: p.madera,
+        cantidad: accion.cantidad,
+        ancho: p.familia === 'PUERTA' ? (accion.ancho ?? p.anchoMax ?? p.anchoMin) : null,
+        alto: accion.alto ?? p.altoMax ?? p.largo,
+        medida: p.familia === 'PUERTA' ? null : p.medida,
+        tipoMedida: accion.tipoMedida ?? 'no_especificado',
+      };
+      const res = resolverItem(this.catalogo, item);
+      if (!res.ok || res.producto.codigo !== p.codigo)
+        throw new ErrorUsuario(
+          'Las medidas no corresponden a esta referencia. Selecciona el producto adecuado del catálogo.',
+        );
+      const q = accion.id ? this.obtener(u, accion.id) : this.nueva();
+      this.exigirEditable(q);
+      if (accion.id) this.verificarVersion(q, accion.actualizada!);
+      if (q.solicitudes.length >= 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
+      const antes = structuredClone(q.solicitudes);
+      const destino = this.abrirEdicion(q, u);
+      const descuentoAntes = descuentoDe(destino);
+      destino.solicitudes.push(item);
+      const avisos = this.recalcular(destino);
+      const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
+      u.guardar(destino);
+      u.registrarEvento(
+        destino.id,
+        'modificada',
+        this.autor,
+        textoCambios(cambios, cambioDescuento(descuentoAntes, destino)),
+      );
+      return { cotizacion: destino, cambios, ...(avisos.length ? { avisos } : {}) };
+    });
   }
 
   private editar(accion: Extract<Accion, { tipo: 'editar' }>) {
@@ -1502,6 +1566,15 @@ export class Servicio {
         return null;
       actualizarIndices.add(cambio.indice);
       const siguiente = { ...items[cambio.indice], ...sanearTextos(cambio.cambios) };
+      // La frase del cambio se suma a la del pedido original: juntas explican de dónde sale el ítem.
+      if (cambio.cambios.fuente !== undefined) {
+        const previa = items[cambio.indice].fuente ?? null,
+          nueva = siguiente.fuente ?? null;
+        siguiente.fuente =
+          previa && nueva && !previa.includes(nueva)
+            ? textoCampo('fuente', `${previa} · ${nueva}`)
+            : (previa ?? nueva);
+      }
       if (cambio.cambios.modelo !== undefined) reiniciarOrigenModelo(siguiente);
       const anterior = items[cambio.indice];
       const descartes = descartarDelProducto(anterior, siguiente, {
@@ -1584,7 +1657,11 @@ export class Servicio {
           modo === 'modificacion_anterior'
             ? { numero: base.numero ?? base.origen ?? null, estado: base.estado }
             : null,
-          { modelos: aliasModelosCatalogo(this.catalogo), maderas: aliasMaderasCatalogo(this.catalogo) },
+          {
+            modelos: aliasModelosCatalogo(this.catalogo),
+            maderas: aliasMaderasCatalogo(this.catalogo),
+            catalogo: mapaCatalogo(this.catalogo),
+          },
         ),
       );
     } catch (error) {
@@ -1672,7 +1749,7 @@ export class Servicio {
           },
         };
       } else if (res.name === 'modificar_cotizacion') {
-        if (modo !== 'modificacion_anterior') return responder(NO_ENTENDI);
+        // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
         const aplicado = this.aplicarModificacion(q, res.input);
         if (!aplicado) return responder(NO_ENTENDI);
         propuesta = aplicado;
@@ -1683,6 +1760,14 @@ export class Servicio {
             ? 'Puedo ayudarte con modelos, maderas, medidas, cantidades y datos del cliente. Los montos se muestran en la cotización.'
             : res.input.texto,
         );
+      if (this.llm.verificarCifras) {
+        // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
+        const anclado = anclarCifras(propuesta.items, q.solicitudes, [
+          accion.mensaje,
+          ...historialIA.map((m) => m.texto),
+        ]);
+        propuesta = { ...propuesta, items: anclado.items, avisos: [...propuesta.avisos, ...anclado.avisos] };
+      }
       const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
       const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];

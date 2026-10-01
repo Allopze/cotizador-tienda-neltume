@@ -31,7 +31,7 @@ export async function interpretarChat(
     signal: AbortSignal.timeout(timeoutIA()),
     body: JSON.stringify({
       model,
-      max_tokens: 4096,
+      max_tokens: 8192,
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: JSON.stringify(contexto) },

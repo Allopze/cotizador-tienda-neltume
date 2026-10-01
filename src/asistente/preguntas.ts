@@ -1,6 +1,6 @@
 import type { Rechazo } from '../catalogo/resolver';
 import { metrosTexto } from '../catalogo/escalones';
-const bonito = (s: string) =>
+export const bonito = (s: string) =>
   s
     .toLocaleLowerCase('es-CL')
     .replace(/(^|\s)\S/g, (l) => l.toUpperCase())

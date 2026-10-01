@@ -13,6 +13,8 @@ const cabecerasSeguridad = [
 ];
 
 const config: NextConfig = {
+  // El servidor E2E puede convivir con el servidor de desarrollo sin compartir su lock ni caché.
+  distDir: process.env.NELTUME_TEST_MODE === '1' ? '.next/e2e' : '.next',
   devIndicators: false,
   serverExternalPackages: ['playwright', 'proper-lockfile', 'better-sqlite3', 'better-auth'],
   outputFileTracingExcludes: { '/*': ['./datos-privados/**', './**/*.xlsx', './data/test-*/**'] },

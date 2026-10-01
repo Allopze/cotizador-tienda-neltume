@@ -143,7 +143,7 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
         <span>{pesos(m?.iva ?? 0)}</span>
       </div>
       <div className="grand-total">
-        <span>Total</span>
+        <span>{actual?.incompletos.length ? 'Total parcial' : 'Total'}</span>
         <strong data-testid="total">{pesos(m?.total ?? 0)}</strong>
       </div>
     </div>

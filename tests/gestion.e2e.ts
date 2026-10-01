@@ -49,6 +49,7 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   expect(cambio.ok()).toBe(true);
   await guardarCampo('Editar flete (neto)', 'Flete (neto)', '20000');
   await expect(page.getByRole('alert').filter({ hasText: 'Se cargó la versión actual' })).toBeVisible();
+  await panel.locator('.quote-client-section > summary').click();
   await expect(panel.getByText('Casa Soto', { exact: true })).toBeVisible();
   await guardarCampo('Editar flete (neto)', 'Flete (neto)', '20000');
   await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));

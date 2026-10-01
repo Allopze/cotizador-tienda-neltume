@@ -10,7 +10,8 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   const flujo = panel.locator('.quote-workflow');
   const estados = flujo.locator('.workflow-states');
   const libro = flujo.locator('.workflow-ledger');
-  const total = async () => Number(((await page.getByTestId('total').textContent()) ?? '').replace(/\D/g, ''));
+  const total = async () =>
+    Number(((await page.getByTestId('total').textContent()) ?? '').replace(/\D/g, ''));
 
   await page.getByLabel('Escribe tu pedido').fill('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
   await page.getByRole('button', { name: 'Enviar mensaje' }).click();
@@ -42,6 +43,7 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await expect(estados).toContainText('Facturación: Pendiente de facturación');
 
   // Con la cotización aprobada los datos de despacho se editan en línea; el valor del flete queda fijo.
+  await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();
   await panel.getByRole('button', { name: 'Editar destino' }).click();
   await panel.getByLabel('Destino', { exact: true }).fill('Osorno');
   await panel.getByRole('button', { name: 'Guardar' }).click();
@@ -69,7 +71,9 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await expect(estados).toContainText('Operación: Nota de pedido generada');
   // Con la nota generada, anular el anticipo advierte que la producción volverá a exigirlo.
   await flujo.getByRole('button', { name: /^Anular el pago de/ }).click();
-  await expect(dialogoPago).toContainText('la producción no podrá iniciarse hasta volver a registrar el anticipo');
+  await expect(dialogoPago).toContainText(
+    'la producción no podrá iniciarse hasta volver a registrar el anticipo',
+  );
   await dialogoPago.getByRole('button', { name: 'Cancelar' }).click();
   await expect(dialogoPago).toHaveCount(0);
   await expect(flujo.getByRole('button', { name: 'Iniciar producción' })).toBeEnabled();
@@ -88,7 +92,8 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   // Registrar el despacho exige transportista; se elige en «Despacho» y el botón se habilita.
   await expect(flujo.getByRole('button', { name: 'Registrar despacho' })).toBeDisabled();
   await expect(flujo.getByText('Indica el transportista en «Despacho»', { exact: false })).toBeVisible();
-  await panel.getByRole('combobox', { name: 'Transportista' }).selectOption('Starken');
+  await panel.getByRole('combobox', { name: 'Transportista' }).click();
+  await panel.getByRole('option', { name: 'Starken', exact: true }).click();
   await expect(flujo.getByRole('button', { name: 'Registrar despacho' })).toBeEnabled();
   await flujo.getByRole('button', { name: 'Registrar despacho' }).click();
   await expect(estados).toContainText('Operación: Despachada');
@@ -96,7 +101,8 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await expect(panel.getByRole('button', { name: /^Editar destino/ })).toHaveCount(0);
 
   // Facturación: pendiente → facturada con tipo y número → vuelve a pendiente.
-  await flujo.getByRole('combobox', { name: 'Documento' }).selectOption('factura');
+  await flujo.getByRole('combobox', { name: 'Documento' }).click();
+  await flujo.getByRole('option', { name: 'Factura', exact: true }).click();
   await flujo.getByLabel('N° o identificador externo').fill('4321');
   await flujo.getByRole('button', { name: 'Marcar como facturada' }).click();
   await expect(estados).toContainText('Facturación: Facturada · Factura N° 4321');
@@ -128,7 +134,9 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
 
   // El historial muestra etiquetas y el estado de pago; la actividad, el pago anulado con su motivo.
   await page.getByRole('link', { name: 'Historial' }).click();
-  const fila = page.getByRole('listitem').filter({ has: page.getByRole('link', { name: new RegExp(`^${numero}`) }) });
+  const fila = page
+    .getByRole('listitem')
+    .filter({ has: page.getByRole('link', { name: new RegExp(`^${numero}`) }) });
   const estadoFila = fila.locator('.history-estado');
   await expect(estadoFila).toContainText('Aprobada');
   await expect(estadoFila).toContainText('Despachada');

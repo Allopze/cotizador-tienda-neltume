@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 15;
+export const VERSION_ESQUEMA = 16;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -313,6 +313,15 @@ function crearEsquema(db: Database.Database) {
           UPDATE cotizaciones SET descuento_manual = 1 WHERE descuento > 0;
         `);
       db.exec('PRAGMA user_version = 15;');
+    }).immediate();
+  if (version < 16)
+    db.transaction(() => {
+      // v16: frase del pedido de la que salió cada ítem; los ítems existentes quedan sin ella.
+      const tieneColumna = (db.pragma('table_info(solicitudes)') as { name: string }[]).some(
+        (columna) => columna.name === 'fuente',
+      );
+      if (!tieneColumna) db.exec('ALTER TABLE solicitudes ADD COLUMN fuente TEXT;');
+      db.exec('PRAGMA user_version = 16;');
     }).immediate();
 }
 

@@ -28,6 +28,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     id = ((await (await respuestaChat).json()) as { cotizacion: { id: string } }).cotizacion.id;
     await expect(page.getByTestId('total')).not.toHaveText('$0');
 
+    await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();
     // Sin transportista Starken no hay botón.
     await expect(panel.getByRole('button', { name: 'Cotizar con Starken' })).toHaveCount(0);
 
@@ -44,16 +45,19 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
           })
         : ruta.continue(),
     );
-    await panel.getByLabel('Transportista').selectOption('Starken');
+    await panel.getByRole('combobox', { name: 'Transportista' }).click();
+    await panel.getByRole('option', { name: 'Starken', exact: true }).click();
     const boton = panel.getByRole('button', { name: 'Cotizar con Starken' });
     await expect(boton).toBeDisabled();
     await expect(panel.getByText('Starken no está configurado')).toBeVisible();
     await page.unroute('**/api/starken');
 
     // --- Configurado, pero sin ciudad de origen: desactivado hasta elegirla en Ajustes (los pesos se estiman) ---
-    await panel.getByLabel('Transportista').selectOption('');
+    await panel.getByRole('combobox', { name: 'Transportista' }).click();
+    await panel.getByRole('option', { name: 'Seleccionar transportista', exact: true }).click();
     await expect(boton).toHaveCount(0);
-    await panel.getByLabel('Transportista').selectOption('Starken');
+    await panel.getByRole('combobox', { name: 'Transportista' }).click();
+    await panel.getByRole('option', { name: 'Starken', exact: true }).click();
     await expect(boton).toBeDisabled();
     await expect(panel.getByText('Configura la ciudad de origen de Starken en Ajustes')).toBeVisible();
     await expect(panel.getByTestId('starken-bulto')).toHaveCount(0);
@@ -61,7 +65,10 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     // --- Ajustes: sin ser administradora se ve, pero no se edita ---
     const formularioStarken = page.getByRole('form', { name: 'Despacho con Starken' });
     const irAStarken = () =>
-      page.getByRole('navigation', { name: 'Secciones de ajustes' }).getByRole('link', { name: 'Starken' }).click();
+      page
+        .getByRole('navigation', { name: 'Secciones de ajustes' })
+        .getByRole('link', { name: 'Starken' })
+        .click();
     await panel.getByRole('link', { name: 'Abrir Ajustes' }).click();
     await expect(page).toHaveURL(/\/ajustes\?seccion=starken$/);
     await expect(page.getByRole('heading', { name: 'Despacho con Starken', level: 2 })).toBeVisible();
@@ -104,6 +111,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
 
     // --- De vuelta en la cotización: muestra el bulto y cotiza sin aplicar nada ---
     await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
+    await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();
     await expect(boton).toBeEnabled();
     // 3 puertas × 4,5 cm = 13,5 cm apilados; el ancho y el alto salen de la medida de la puerta; 3 × 25 = 75 kg.
     await expect(panel.getByTestId('starken-bulto')).toHaveText(

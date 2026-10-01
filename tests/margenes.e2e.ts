@@ -4,7 +4,9 @@ import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo'
 import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
 import { DIR_E2E, iniciarSesion } from './login-e2e';
 
-test('margen especial de la cotización: se fija, la línea tiene prioridad y se restaura', async ({ page }) => {
+test('margen especial de la cotización: se fija, la línea tiene prioridad y se restaura', async ({
+  page,
+}) => {
   const catalogo = new RepositorioCatalogoSqlite(
     abrirBaseDatos(`${DIR_E2E}/cotizador.sqlite`, { permitirJsonLegado: true }),
   );
@@ -21,7 +23,10 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   const totalPantalla = page.getByTestId('total');
   await expect(totalPantalla).toHaveText(total());
   // Sin margen especial: la línea muestra el estándar de su categoría (Pino Oregón, 85 %), sin corrección manual.
-  await expect(panel.getByText('Margen estándar: 85 % · Margen aplicado: 85 %', { exact: true })).toBeVisible();
+  await panel.locator('.item-details > summary').first().click();
+  await expect(
+    panel.getByText('Margen estándar: 85 % · Margen aplicado: 85 %', { exact: true }),
+  ).toBeVisible();
   await expect(panel.getByText('Por categoría', { exact: true })).toBeVisible();
 
   // Margen especial de la cotización.
@@ -30,7 +35,9 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   await panel.getByRole('button', { name: 'Guardar' }).click();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 42 % — modificado manualmente (cotización)', { exact: true }),
+    panel.getByText('Margen estándar: 85 % · Margen aplicado: 42 % — modificado manualmente (cotización)', {
+      exact: true,
+    }),
   ).toBeVisible();
   await expect(panel.getByText('42 %', { exact: true })).toBeVisible();
 
@@ -45,7 +52,9 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   await margenLinea.press('Enter');
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }, 0.3));
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 30 % — modificado manualmente (línea)', { exact: true }),
+    panel.getByText('Margen estándar: 85 % · Margen aplicado: 30 % — modificado manualmente (línea)', {
+      exact: true,
+    }),
   ).toBeVisible();
   await panel.getByRole('button', { name: 'Usar el margen de la cotización' }).click();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
@@ -53,15 +62,26 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   // El margen queda guardado: se reabre desde el historial.
   await page.getByRole('link', { name: 'Historial' }).click();
   // El asistente de prueba siempre pone el mismo cliente: el borrador se reconoce por su total.
-  await page.locator('.history-fila', { hasText: 'Sin número' }).filter({ hasText: total({ margenCotizacion: 0.42 }) }).first().click();
-  await expect(panel.getByText('Margen estándar: 85 % · Margen aplicado: 42 % — modificado manualmente (cotización)', { exact: true })).toBeVisible();
+  await page
+    .locator('.history-fila', { hasText: 'Sin número' })
+    .filter({ hasText: total({ margenCotizacion: 0.42 }) })
+    .first()
+    .click();
+  await panel.locator('.item-details > summary').first().click();
+  await expect(
+    panel.getByText('Margen estándar: 85 % · Margen aplicado: 42 % — modificado manualmente (cotización)', {
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
 
   // Restaurar vuelve a la categoría.
   await panel.getByRole('button', { name: 'Restaurar margen por categoría' }).click();
   await expect(totalPantalla).toHaveText(total());
   await expect(panel.getByText('Por categoría', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Margen estándar: 85 % · Margen aplicado: 85 %', { exact: true })).toBeVisible();
+  await expect(
+    panel.getByText('Margen estándar: 85 % · Margen aplicado: 85 %', { exact: true }),
+  ).toBeVisible();
 
   // Un valor fuera de rango se rechaza en el formulario.
   await panel.getByRole('button', { name: 'Editar margen especial de la cotización' }).click();
@@ -80,7 +100,10 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
 
   // Un borrador sin ítems también admite el margen especial, y un margen fijado no se oculta.
   await panel.getByRole('button', { name: /^Quitar ítem 1:/ }).click();
-  await page.getByRole('alertdialog', { name: 'Quitar ítem' }).getByRole('button', { name: 'Quitar ítem' }).click();
+  await page
+    .getByRole('alertdialog', { name: 'Quitar ítem' })
+    .getByRole('button', { name: 'Quitar ítem' })
+    .click();
   await expect(panel.getByText('Este borrador todavía no tiene productos.')).toBeVisible();
   await panel.getByRole('button', { name: 'Editar margen especial de la cotización' }).click();
   await panel.getByLabel('Margen especial de la cotización').fill('10,5');
@@ -91,6 +114,11 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   // Deja el historial como estaba: el borrador se elimina.
   await panel.getByRole('button', { name: 'Más acciones' }).click();
   await panel.getByRole('button', { name: 'Eliminar borrador' }).click();
-  await page.getByRole('alertdialog', { name: 'Eliminar borrador' }).getByRole('button', { name: 'Eliminar borrador' }).click();
-  await expect(page.getByLabel('Vista previa de la cotización').getByRole('heading', { level: 2 })).toHaveText('Vista previa');
+  await page
+    .getByRole('alertdialog', { name: 'Eliminar borrador' })
+    .getByRole('button', { name: 'Eliminar borrador' })
+    .click();
+  await expect(
+    page.getByLabel('Vista previa de la cotización').getByRole('heading', { level: 2 }),
+  ).toHaveText('Vista previa');
 });

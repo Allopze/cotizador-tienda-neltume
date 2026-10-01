@@ -43,6 +43,8 @@ export interface SolicitudItem {
   modeloOriginal?: string | null;
   /** 'posible' ya no se produce: queda solo para borradores antiguos; hoy un alias dudoso deja el ítem pendiente. */
   coincidenciaModelo?: 'canonico' | 'alias' | 'posible' | null;
+  /** Frase del pedido de la que salió el ítem, tal como la escribió la persona (la extrae la IA). */
+  fuente?: string | null;
 }
 export interface Cliente {
   nombre: string | null;

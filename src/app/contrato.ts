@@ -69,6 +69,13 @@ export interface CambiosEdicion {
   /** Tarifa de Starken elegida por la persona: el valor de despacho es su neto y la actividad la registra. */
   tarifaStarken?: TarifaStarkenAplicada;
 }
+export interface ProductoElegido {
+  codigo: string;
+  cantidad: number;
+  ancho?: number;
+  alto?: number;
+  tipoMedida?: 'hoja' | 'vano' | 'no_especificado';
+}
 /** Producto del catálogo tal como lo muestra la consulta: con el precio unitario de la cotización. */
 export interface ProductoConsulta {
   codigo: string;

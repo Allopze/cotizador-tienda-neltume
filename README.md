@@ -20,6 +20,8 @@ Reemplaza `admin@example.com` por el correo real de la persona responsable. Toda
 
 Abre [http://127.0.0.1:3000](http://127.0.0.1:3000). Los scripts de desarrollo y producción escuchan solo en `127.0.0.1`.
 
+En **Cotizar**, el detalle del pedido aparece primero y la página se desplaza completa en escritorio. El asistente puede contraerse; el total y la acción principal permanecen visibles abajo. **Agregar producto** busca en el catálogo sin usar IA y permite iniciar un borrador o ampliar el pedido. Cliente, despacho, observaciones y detalles de cada producto se abren al necesitarlos; los productos pendientes muestran su editor y el importe se identifica como total parcial. Los campos de ancho, alto y largo usan metros. En móvil, las vistas **Pedido** y **Cotización** conservan la conversación y el texto escrito al cambiar.
+
 Si no tienes Chrome/Chromium instalado, ejecuta `npx playwright install chromium`. El generador detecta Chrome en macOS y Chromium/Chrome en Linux; puedes indicar otro ejecutable con `CHROMIUM_PATH`. Si npm arroja `Cannot read properties of null (reading 'edgesOut')`, agrega `legacy-peer-deps=true` a `.npmrc` y vuelve a instalar.
 
 ## Configuración

@@ -67,8 +67,10 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   // 1-2. Huilo Huilo en Mara, medida de vano, cotizada con la siguiente medida del catálogo.
   await enviar(PEDIDO);
   await expect(panel.getByText('HUIL-M-3-E', { exact: true })).toBeVisible();
-  await expect(panel.getByText('Juan Pérez', { exact: true })).toBeVisible();
-  await expect(panel.getByText(/^Huilo Huilo Mara 0,8 a 0,85/)).toBeVisible();
+  await expect(panel.locator('.quote-overview').getByText('Juan Pérez', { exact: true })).toBeVisible();
+  await expect(panel.locator('#producto-0 > td:first-child > strong')).toHaveText(
+    /^Huilo Huilo Mara 0,8 a 0,85/,
+  );
   await expect(panel.getByText(/Normalizado desde|Revisar posible coincidencia|Incompleto/)).toHaveCount(0);
   await expect(
     panel.getByText('Referencia HUIL-M-3-E · 0,80–0,85 × 2,40 m · siguiente medida del catálogo en alto', {
@@ -78,7 +80,8 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(
     panel.getByText('Medida pedida: 0,835 × 2,36 m · medida de vano', { exact: true }),
   ).toBeVisible();
-  await expect(panel.getByLabel('La medida corresponde a')).toHaveValue('vano');
+  await panel.locator('.item-details > summary').first().click();
+  await expect(panel.getByRole('combobox', { name: /La medida corresponde a/ })).toContainText('Vano');
   // Con el tipo de medida definido no se sugiere rectificar la medida.
   await expect(panel.getByText('Rectificar si la medida corresponde a hoja o vano.')).toHaveCount(0);
 
@@ -203,12 +206,14 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await flujo.getByRole('button', { name: 'Registrar pago' }).click();
   await expect(estados).toContainText('Operación: 100 % pagado');
   await expect(estados).toContainText('Comercial: Vendida');
+  await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();
   await panel.getByRole('button', { name: 'Editar destino', exact: true }).click();
   await panel.getByLabel('Destino', { exact: true }).fill('Osorno');
   await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(panel.getByRole('button', { name: 'Editar destino: Osorno' })).toBeVisible();
-  await panel.getByRole('combobox', { name: 'Transportista' }).selectOption('Starken');
-  await expect(panel.getByRole('combobox', { name: 'Transportista' })).toHaveValue('Starken');
+  await panel.getByRole('combobox', { name: 'Transportista' }).click();
+  await panel.getByRole('option', { name: 'Starken', exact: true }).click();
+  await expect(panel.getByRole('combobox', { name: 'Transportista' })).toContainText('Starken');
   await flujo.getByRole('button', { name: 'Marcar lista para despacho' }).click();
   await expect(estados).toContainText('Operación: Lista para despacho');
   await flujo.getByRole('button', { name: 'Registrar despacho' }).click();
@@ -266,7 +271,8 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
       exact: true,
     }),
   ).toBeVisible();
-  await expect(panel.getByRole('combobox', { name: 'Transportista' })).toHaveValue('Starken');
+  await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();
+  await expect(panel.getByRole('combobox', { name: 'Transportista' })).toContainText('Starken');
   await expect(panel.getByRole('combobox', { name: 'Transportista' })).toBeDisabled();
   await expect(panel.getByText('Osorno', { exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: /^Editar destino/ })).toHaveCount(0);

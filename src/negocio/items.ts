@@ -8,7 +8,14 @@ export interface ProductoItem {
 }
 type IdentidadProducto = (s: SolicitudItem) => ProductoItem;
 
-const MAX_TEXTO = { modelo: 300, madera: 300, medida: 300, descripcion: 300, observaciones: 1000 } as const;
+const MAX_TEXTO = {
+  modelo: 300,
+  madera: 300,
+  medida: 300,
+  descripcion: 300,
+  observaciones: 1000,
+  fuente: 300,
+} as const;
 
 /** Espacios colapsados y recortados al largo del campo; un texto vacío queda null. */
 export const textoCampo = (campo: keyof typeof MAX_TEXTO, valor: string | null | undefined) =>
@@ -131,6 +138,7 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       tipoMedida: nuevo.tipoMedida ?? previo.tipoMedida ?? null,
       descripcion: nuevo.descripcion ?? previo.descripcion ?? null,
       observaciones: nuevo.observaciones ?? previo.observaciones ?? null,
+      fuente: nuevo.fuente ?? previo.fuente ?? null,
       // La IA no ve cómo se interpretó el modelo: se conserva mientras el modelo sea el mismo.
       ...(mismoModelo
         ? { modeloOriginal: previo.modeloOriginal ?? null, coincidenciaModelo: previo.coincidenciaModelo ?? null }

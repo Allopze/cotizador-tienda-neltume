@@ -12,6 +12,8 @@ export const solicitudSchema = z
     observaciones: z.string().max(1000).nullable().optional(),
     // Se acepta cualquier número y el servidor anula cantidades no enteras o fuera de 1–10.000 (con aviso).
     cantidad: z.number().nullable(),
+    /** Frase exacta del mensaje que describe el ítem; el servidor la muestra junto al ítem. */
+    fuente: texto.optional(),
   })
   .strict();
 export const clienteSchema = z
@@ -40,6 +42,7 @@ const solicitudCambioSchema = z
     tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
     descripcion: texto.optional(),
     observaciones: z.string().max(1000).nullable().optional(),
+    fuente: texto.optional(),
   })
   .strict();
 const clienteCambioSchema = z
