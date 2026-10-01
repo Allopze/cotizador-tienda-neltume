@@ -9,6 +9,7 @@ import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { CrearUsuario } from './crear-usuario';
 import { ConfiguracionNegocio } from './configuracion-negocio';
 import { GestionFeriados } from './feriados';
+import { ConfiguracionStarkenAjustes } from './starken';
 import { GestionUsuarios } from './usuarios';
 
 /** Pantalla «Ajustes»: contraseña, ajustes del asistente y alta de usuarios para admin. */
@@ -65,6 +66,10 @@ export function PantallaAjustes({
         <section aria-labelledby="ajustes-negocio">
           <h2 id="ajustes-negocio">Empresa y reglas comerciales</h2>
           <ConfiguracionNegocio avisar={avisar} />
+        </section>
+        <section aria-labelledby="ajustes-starken">
+          <h2 id="ajustes-starken">Despacho con Starken</h2>
+          <ConfiguracionStarkenAjustes avisar={avisar} />
         </section>
         {puedeCrearUsuarios && (
           <section aria-labelledby="ajustes-feriados">

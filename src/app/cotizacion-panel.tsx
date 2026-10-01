@@ -3,7 +3,9 @@ import { useEffect, useState, type RefObject } from 'react';
 import { despachoEditable, esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
 import { descripcionLinea, pesos } from '@/negocio/precios';
 import { leerPesos } from '@/negocio/cifras';
+import { esStarken } from '@/negocio/starken';
 import { CampoEditable } from './campo-editable';
+import { CotizarStarken } from './cotizar-starken';
 import type { CambiosEdicion, Despacho } from './contrato';
 import {
   ETIQUETA_CAMPO,
@@ -293,6 +295,16 @@ export function CotizacionPanel({ actual, enCurso, guardando, descargando, accio
                 validar={(v) => { const n = v ? leerPesos(v) : 0; return Number.isSafeInteger(n) && n >= 0 && n <= 100_000_000 ? null : 'Indica un monto entre $0 y $100.000.000.'; }}
                 guardar={(v) => acciones.editar({ despacho: { valor: v ? leerPesos(v) : 0 } }, 'despacho.valor')}
               />
+              {/* `admiteCambios` y no `editable`: durante cada guardado `editable` se apaga y el bloque perdería su estado. */}
+              {admiteCambios && esStarken(actual.despacho?.transporte) && (
+                <CotizarStarken
+                  key={actual.id}
+                  actual={actual}
+                  aplicar={(cambios) => acciones.editar(cambios, 'despacho.valor')}
+                  ocupado={ocupado}
+                  guardando={guardando === 'despacho.valor'}
+                />
+              )}
               <CampoEditable
                 etiqueta="Entrega comprometida"
                 valor={actual.despacho?.entregaComprometida ?? ''}

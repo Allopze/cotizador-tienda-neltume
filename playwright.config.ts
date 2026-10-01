@@ -32,6 +32,8 @@ export default defineConfig({
     env: {
       NELTUME_TEST_MODE: '1',
       NELTUME_LLM: 'fijo',
+      // Starken simulado (src/servidor/starken-fijo.ts): sin red ni credenciales reales.
+      NELTUME_STARKEN: 'fijo',
       NELTUME_FERIADOS_SYNC: '0',
       NELTUME_DATA_DIR: dataE2E,
       NELTUME_DB_PATH: dbE2E,

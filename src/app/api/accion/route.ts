@@ -40,6 +40,20 @@ const despachoSchema = z
     valor: z.number().int().min(0).max(100_000_000).nullable().optional(),
   })
   .strict();
+/** Tarifa de Starken que la persona eligió; el servicio verifica su firma y que el valor de despacho sea su neto. */
+const tarifaStarkenSchema = z
+  .object({
+    tipoEntrega: z.string().trim().min(1).max(40),
+    servicio: z.string().trim().max(40).optional(),
+    dias: z.number().int().min(0).max(365),
+    costoTotal: z.number().int().positive().max(100_000_000),
+    ciudadDestino: z.string().trim().min(1).max(120),
+    codigoCiudadDestino: z.number().int().positive(),
+    // La firma y su vencimiento los entrega el servidor con cada tarifa; se verifican antes de aplicarla.
+    vence: z.iso.datetime(),
+    firma: z.string().min(20).max(100),
+  })
+  .strict();
 const accionSchema = z.discriminatedUnion('tipo', [
   z
     .object({
@@ -143,6 +157,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
       observaciones: z.string().max(2000).nullable().optional(),
       despacho: despachoSchema.nullable().optional(),
+      tarifaStarken: tarifaStarkenSchema.optional(),
     })
     .strict(),
   z.object({

@@ -69,6 +69,8 @@ import { generarPdf, plantilla } from './pdf';
 import { resolverReferencia, type OpcionCotizacion } from './referencias';
 import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { nombreCanonicoModelo } from '../catalogo/configuracion';
+import { esStarken, netoDesdeIva, textoTarifaAplicada, type TarifaStarkenAplicada } from '../negocio/starken';
+import { verificarTarifa } from './starken-firma';
 
 export { ErrorUsuario };
 
@@ -122,6 +124,8 @@ export type Accion =
       margenCotizacion?: number | null;
       observaciones?: string | null;
       despacho?: Partial<Despacho> | null;
+      /** Tarifa de Starken elegida por la persona: el valor de despacho debe ser su neto y la actividad la registra. */
+      tarifaStarken?: TarifaStarkenAplicada;
     }
   | { tipo: 'pago'; id: string; actualizada: string; monto: number; fecha?: string; observacion?: string | null }
   /** Quita un pago registrado por error mientras la operación no llegue a «Lista para despacho». */
@@ -870,7 +874,25 @@ export class Servicio {
           : accion.despacho === null
             ? null
             : aplicarDespacho(q.despacho, accion.despacho, flete).despacho;
+      const tarifa = accion.tarifaStarken;
+      if (tarifa) {
+        if (!esStarken(despacho?.transporte))
+          throw new ErrorUsuario('Elige Starken como transportista antes de aplicar su tarifa.');
+        // El navegador no es de fiar para el costo: la firma la dio este servidor para esta cotización.
+        const firma = verificarTarifa(accion.id, tarifa);
+        if (firma !== 'valida')
+          throw new ErrorUsuario(
+            firma === 'vencida'
+              ? 'La tarifa de Starken venció. Vuelve a cotizar el despacho.'
+              : 'La tarifa de Starken no es válida para esta cotización. Vuelve a cotizar el despacho.',
+          );
+        if (flete !== netoDesdeIva(tarifa.costoTotal))
+          throw new ErrorUsuario(
+            `El valor de despacho debe ser el neto de la tarifa elegida (${pesos(netoDesdeIva(tarifa.costoTotal))}).`,
+          );
+      }
       if (
+        !tarifa &&
         JSON.stringify([solicitudes, cliente, observaciones, despacho]) ===
           JSON.stringify([q.solicitudes, q.cliente, q.observaciones, q.despacho]) &&
         descuentoNuevo === q.descuento &&
@@ -894,6 +916,7 @@ export class Servicio {
           : []),
         ...(observaciones !== destino.observaciones ? ['Observaciones actualizadas'] : []),
         ...(JSON.stringify(despacho) !== JSON.stringify(destino.despacho) ? ['Despacho actualizado'] : []),
+        ...(tarifa ? [textoTarifaAplicada(tarifa)] : []),
       ];
       for (const cambio of accion.items ?? []) {
         // `antes` y no `q.solicitudes`: en un borrador `destino` es `q` y sus ítems ya son los nuevos.

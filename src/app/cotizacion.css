@@ -183,6 +183,85 @@
 .quote-dispatch-fields .campo-valor-boton {
   width: 100%;
 }
+/* Cotizar con Starken: ocupa todo el ancho de la cuadrícula de despacho. */
+.starken-cotizar {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+}
+.starken-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+.starken-ayuda {
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+.starken-ayuda a {
+  color: var(--warm-text);
+}
+.starken-aplicada {
+  margin: 0;
+  color: var(--green);
+  font-size: var(--fs-md);
+}
+.starken-resultado,
+.starken-ciudad {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.starken-resultado > p,
+.starken-ciudad > p {
+  margin: 0;
+  font-size: var(--fs-xs);
+}
+.starken-tarifas,
+.starken-ciudades {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.starken-ciudades {
+  max-height: 220px;
+  overflow-y: auto;
+}
+.starken-tarifa {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+}
+.starken-tarifa-texto {
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.starken-ciudad-opcion {
+  width: 100%;
+  min-height: 40px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+}
+.starken-ciudad-opcion:hover:not(:disabled) {
+  background: var(--pale);
+}
 .aviso-medida {
   display: flex;
   flex-wrap: wrap;
