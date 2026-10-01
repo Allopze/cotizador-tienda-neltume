@@ -75,6 +75,22 @@ export const modificarSchema = z
   })
   .strict();
 export type ModificacionCotizacion = z.infer<typeof modificarSchema>;
+/**
+ * Lo que se le pide al modelo: en cada ítem nuevo debe decidir tipoMedida y fuente (null si no aplica).
+ * Como campos opcionales, algunos modelos los omitían y se perdía «medida de vano». El servidor sigue
+ * aceptando su ausencia (`modificarSchema`).
+ */
+export const modificarPedidoSchema = modificarSchema.extend({
+  agregar: z
+    .array(
+      solicitudSchema.extend({
+        tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable(),
+        fuente: texto,
+      }),
+    )
+    .max(100)
+    .optional(),
+});
 export const aprobarSchema = z.object({ numero: z.number().int().positive() }).strict();
 export const responderSchema = z.object({ texto: z.string().min(1).max(2000) }).strict();
 /** Extracción de atributos para un producto nuevo. El precio nunca se solicita al LLM. */

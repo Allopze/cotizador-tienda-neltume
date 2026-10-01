@@ -6,7 +6,7 @@ import { pregunta } from '../asistente/preguntas';
 import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { salidaSchema } from '../asistente/esquemas';
 import { contextoSeguro, type LLM } from '../asistente/llm';
-import { anclarCifras } from '../asistente/anclaje';
+import { anclarCifras, anclarNombres } from '../asistente/anclaje';
 import { mapaCatalogo } from '../catalogo/mapa';
 import {
   aliasMaderasCatalogo,
@@ -1762,11 +1762,17 @@ export class Servicio {
         );
       if (this.llm.verificarCifras) {
         // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
-        const anclado = anclarCifras(propuesta.items, q.solicitudes, [
-          accion.mensaje,
-          ...historialIA.map((m) => m.texto),
-        ]);
-        propuesta = { ...propuesta, items: anclado.items, avisos: [...propuesta.avisos, ...anclado.avisos] };
+        const textosIA = [accion.mensaje, ...historialIA.map((m) => m.texto)];
+        const anclado = anclarCifras(propuesta.items, q.solicitudes, textosIA);
+        const nombres = anclarNombres(anclado.items, q.solicitudes, textosIA, {
+          modelo: aliasModelosCatalogo(this.catalogo),
+          madera: aliasMaderasCatalogo(this.catalogo),
+        });
+        propuesta = {
+          ...propuesta,
+          items: nombres.items,
+          avisos: [...propuesta.avisos, ...anclado.avisos, ...nombres.avisos],
+        };
       }
       const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);

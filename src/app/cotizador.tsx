@@ -1105,7 +1105,7 @@ export function Cotizador({
                       />
                     )}
                     {conPreguntas && (
-                      <div className="pendientes-chat" aria-label="Datos que faltan para cotizar">
+                      <div className="pendientes-chat" role="group" aria-label="Datos que faltan para cotizar">
                         <p className="pendientes-intro">
                           Faltan datos en {plural(actual!.incompletos.length, 'producto')}. Elige una opción o
                           escríbelo en tu próximo mensaje.

@@ -53,18 +53,20 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await expect(page.getByTestId('total')).toHaveText(pesos(primero.total));
   await expect(panel.locator('.quote-overview').getByText('Juan Pérez', { exact: true })).toBeVisible();
   await enviar('agrega marcos de oregón');
-  await expect(conversacion.getByText(/¿Qué sección o escuadría/)).toBeVisible();
-  await expect(conversacion.getByText(/¿Qué alto o largo/)).toBeVisible();
-  await expect(conversacion.getByText(/¿Qué cantidad/)).toBeVisible();
-  // Las opciones de la última pregunta son botones que arman la respuesta en el compositor.
-  await conversacion.getByRole('button', { name: 'Responder sección o escuadría: 2X4' }).click();
-  await conversacion.getByRole('button', { name: 'Responder alto o largo: 2,1' }).click();
-  await expect(page.getByLabel('Escribe tu pedido')).toHaveValue('sección o escuadría 2X4; alto o largo 2,1');
+  const faltantes = conversacion.getByRole('group', { name: 'Datos que faltan para cotizar' });
+  await expect(faltantes.getByText('Sección o escuadría para el ítem 2 (Marco)')).toBeVisible();
+  await expect(faltantes.getByText('Alto o largo para el ítem 2 (Marco)')).toBeVisible();
+  await expect(faltantes.getByText('Cantidad para el ítem 2 (Marco)')).toBeVisible();
   await expect(page.getByText('Incompleto · no suma al total')).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(primero.total));
   await expect(page.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeDisabled();
-  await enviar('3 de 2x4 de 2,1');
+  // Las opciones guardan el dato directamente, sin volver a pasar por la IA; el alto de la puerta se sugiere.
+  await faltantes.getByRole('button', { name: /^2X4 · Sección o escuadría/ }).click();
+  await faltantes.getByRole('button', { name: /^2,10 m \(como el ítem 1\) · Alto o largo/ }).click();
+  await faltantes.getByRole('textbox', { name: /^Cantidad para el ítem 2/ }).fill('3');
+  await faltantes.getByRole('button', { name: 'Aplicar' }).click();
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
+  await expect(faltantes).toHaveCount(0);
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
   // Una puerta sin tipo de medida sugiere la observación; con un clic queda escrita y ya no se ofrece.
   await panel.locator('.item-details > summary').first().click();

@@ -1,4 +1,4 @@
-import { metros } from '../catalogo/resolver';
+import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
 
 /**
@@ -113,8 +113,19 @@ const mostrar = (campo: CampoCifra, valor: number) =>
  * cualquier ítem, para el mismo campo) se acepta: la persona puede pedir «otra igual» o reordenar.
  */
 export function anclarCifras(items: SolicitudItem[], previos: SolicitudItem[], textos: string[]) {
-  const conPalabras = textos.flatMap((t) => cifrasDelTexto(t)),
-    soloDigitos = textos.flatMap((t) => cifrasDelTexto(t, false));
+  const conPalabras = textos.flatMap((t) => cifrasDelTexto(t));
+  // Las cifras de la sección del propio ítem («12x2») no respaldan su largo: el 2 es parte de la sección.
+  const digitosDe = (item: SolicitudItem) =>
+    textos.flatMap((t) =>
+      cifrasDelTexto(
+        item.medida
+          ? t.replace(/\d+(?:[.,]\d+)?\s*[x×*]\s*\d+(?:[.,]\d+)?/gi, (m) =>
+              normalizarMedida(m) === normalizarMedida(item.medida!) ? ' ' : m,
+            )
+          : t,
+        false,
+      ),
+    );
   const conocidas = (campo: CampoCifra) =>
     previos.flatMap((p) => (p[campo] === null || p[campo] === undefined ? [] : [p[campo]!]));
   const avisos: string[] = [];
@@ -124,10 +135,52 @@ export function anclarCifras(items: SolicitudItem[], previos: SolicitudItem[], t
       const valor = item[campo];
       if (valor === null || valor === undefined) continue;
       if (conocidas(campo).some((c) => c === valor || cifraRespaldada(campo, valor, [c]))) continue;
-      if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : soloDigitos)) continue;
+      if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : digitosDe(item))) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
         `El asistente propuso ${etiqueta[campo]} ${mostrar(campo, valor)} para el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}, pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.`,
+      );
+    }
+    return resultado;
+  });
+  return { items: anclados, avisos };
+}
+
+type CampoNombre = 'modelo' | 'madera';
+/** Partes de un nombre que bastan para reconocerlo: «MARA ENCHAPADA» aparece en «enchapada en mara». */
+const partesNombre = (nombre: string) => [
+  nombre,
+  ...nombre.split(/\s+/).filter((p) => normalizar(p).length >= 4),
+];
+
+/**
+ * Lo mismo para los nombres: un modelo o una madera nueva debe aparecer en el texto, por su nombre, por una
+ * de sus palabras o por un alias del catálogo. Así la IA no puede cambiar «Pillo» por otro modelo parecido.
+ * Un nombre que ya estaba en el borrador se acepta («cámbialas todas a lenga» copia la madera).
+ */
+export function anclarNombres(
+  items: SolicitudItem[],
+  previos: SolicitudItem[],
+  textos: string[],
+  alias: Record<CampoNombre, Record<string, string[]>>,
+) {
+  const texto = normalizar(textos.join(' '));
+  const avisos: string[] = [];
+  const anclados = items.map((item, i) => {
+    let resultado = item;
+    for (const campo of ['modelo', 'madera'] as const) {
+      const valor = item[campo];
+      if (!valor) continue;
+      const clave = normalizar(valor);
+      if (previos.some((p) => p[campo] && normalizar(p[campo]!) === clave)) continue;
+      const alternativos = Object.entries(alias[campo]).flatMap(([nombre, lista]) =>
+        normalizar(nombre) === clave ? lista : [],
+      );
+      const candidatos = [...partesNombre(valor), ...alternativos].map(normalizar).filter(Boolean);
+      if (candidatos.some((c) => texto.includes(c))) continue;
+      resultado = { ...resultado, [campo]: null };
+      avisos.push(
+        `El asistente interpretó ${campo === 'modelo' ? 'el modelo' : 'la madera'} del ítem ${i + 1} como «${valor}», pero ese nombre no aparece en tu mensaje: quedó pendiente para que lo indiques.`,
       );
     }
     return resultado;

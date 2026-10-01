@@ -6,7 +6,7 @@ import { timeoutIA } from './configuracion';
 import {
   aprobarSchema,
   atributosProductoSchema,
-  modificarSchema,
+  modificarPedidoSchema,
   responderSchema,
   salidaSchema,
 } from './esquemas';
@@ -75,6 +75,7 @@ En una cotización anterior, borrador es la cotización objetivo y sus ítems so
 ## Datos de cada ítem
 - Nunca adivines cantidad, madera ni medidas: lo que el mensaje no dice va en null, aunque el catálogo tenga una sola opción. «Una» o «un» significa cantidad 1. Toda cifra que devuelvas debe estar escrita en el mensaje o en el historial; el sistema anula las demás y las pregunta.
 - fuente: copia literal del trozo del mensaje que describe ese ítem, por ejemplo «4 coscos de 80 por 200». Al editar un ítem, fuente es el trozo que pide el cambio.
+- Una cifra seguida de una unidad («1 metro», «2,10 m», «90 cm», «800 mm») es una medida, nunca la cantidad; la cantidad suele ir antes del modelo («8 Riñihue»).
 - Convierte a metros: 80×210 es ancho 0.80 y alto 2.10; acepta coma decimal. Si el texto dice medida de hoja o de vano, tipoMedida es "hoja" o "vano"; si no lo dice, null: nunca supongas cuál es.
 - Los accesorios MARCO, PIEZAS T, ENDOLADO, GUARDAPOLVO y PILASTRA usan medida (sección) + alto (= largo); ancho null. «4» en marcos significa medida "2x4".
 - Las terminaciones son maderas propias del catálogo, no modelos: «enchapada en Mara» (o «enchape Mara») es la madera MARA ENCHAPADA y «prepintada» es PREPINTADA; «Huilo Huilo en Mara» sin enchape es MARA sólida. «Pino finger» es PINO FINGER, nunca PINO OREGON (el alias «pino» solo vale si no dice «finger»), y «finger enchapado» es PINO FINGER ENCHAPADO MARA. Los marcos finger usan su escuadría en mm como medida («30x70», «30x90») y el largo como alto.
@@ -83,7 +84,7 @@ En una cotización anterior, borrador es la cotización objetivo y sus ítems so
 
 ## Nombres
 catalogo lista cada modelo con su familia, maderas y medidas: úsalo para saber si es puerta o accesorio y para interpretar las medidas, nunca para completar datos que la persona no dio.
-Usa aliasModelos y aliasMaderas para interpretar nombres alternativos o mal transcritos por voz y devuelve el nombre canónico. Si un nombre de modelo o madera no figura en el contexto o te deja dudas, conserva el texto tal como lo escribió la persona: nunca lo cambies por el nombre que más se le parezca; el sistema lo valida y pregunta. Si el historial muestra que el asistente preguntó «¿Te refieres a X?» y el mensaje lo confirma, usa X como modelo de ese ítem.
+Usa aliasModelos y aliasMaderas para interpretar nombres alternativos o mal transcritos por voz y devuelve el nombre canónico. Si un nombre de modelo o madera no figura en el contexto o te deja dudas, conserva el texto tal como lo escribió la persona («Pillo» queda «Pillo», aunque no exista en el catálogo): nunca lo cambies por el nombre que más se le parezca; el sistema lo valida y pregunta. Un nombre que no aparece en el mensaje se anula. Si el historial muestra que el asistente preguntó «¿Te refieres a X?» y el mensaje lo confirma, usa X como modelo de ese ítem.
 
 ## Aprobaciones y consultas
 Si aprueban una cotización con número explícito, llama aprobar_cotizacion. Si piden aprobar sin número, responde pidiendo el número; si el historial muestra que lo pediste y el mensaje lo entrega, llama aprobar_cotizacion. Para otras consultas usa responder, sin hablar de valores monetarios.
@@ -187,7 +188,7 @@ export const HERRAMIENTAS_COTIZACION: Definiciones = [
   [
     'modificar_cotizacion',
     'Aplica al borrador los cambios del mensaje: agrega ítems, edita ítems por índice, quita ítems y actualiza datos del cliente.',
-    modificarSchema,
+    modificarPedidoSchema,
   ],
   ['aprobar_cotizacion', 'Aprueba una cotización emitida por número explícito.', aprobarSchema],
   ['responder', 'Responde sin precios o pide el número de cotización.', responderSchema],

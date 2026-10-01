@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { anclarCifras, cifrasDelTexto } from '../src/asistente/anclaje';
+import { anclarCifras, anclarNombres, cifrasDelTexto } from '../src/asistente/anclaje';
+import { HERRAMIENTAS_COTIZACION, herramientas } from '../src/asistente/llm';
 import { casosSchema, puntuar, resumen } from '../src/asistente/evaluacion';
 import { contextoSeguro, problemaSalida, SYSTEM } from '../src/asistente/llm';
 import { mapaCatalogo } from '../src/catalogo/mapa';
@@ -108,6 +109,15 @@ describe('anclaje de cifras', () => {
     const { items } = anclarCifras([item({ cantidad: 2, ancho: 0.8, alto: 2 })], [], ['dos Molco de 80']);
     expect(items[0]).toMatchObject({ cantidad: 2, ancho: 0.8, alto: null });
   });
+  it('la sección del accesorio no respalda su largo', () => {
+    const guardapolvo = item({ modelo: 'GUARDAPOLVO', ancho: null, medida: '12X2', alto: 2, cantidad: 20 });
+    expect(anclarCifras([guardapolvo], [], ['20 guardapolvos 12x2 en lenga']).items[0]).toMatchObject({
+      medida: '12X2',
+      alto: null,
+      cantidad: 20,
+    });
+    expect(anclarCifras([guardapolvo], [], ['20 guardapolvos 12x2 de 2 metros']).items[0].alto).toBe(2);
+  });
   it('una cifra que ya estaba en el borrador se acepta («otra igual»)', () => {
     const previo = item({ cantidad: 2, ancho: 0.8, alto: 2 });
     const { items, avisos } = anclarCifras(
@@ -117,6 +127,45 @@ describe('anclaje de cifras', () => {
     );
     expect(items[1]).toMatchObject({ cantidad: 1, ancho: 0.9, alto: 2 });
     expect(avisos).toEqual([]);
+  });
+});
+
+describe('anclaje de nombres', () => {
+  const alias = {
+    modelo: { 'HUILO HUILO': ['WILLOW'], 'COZ COZ': ['COSCOS'] },
+    madera: { 'PINO OREGON': ['PINO', 'OREGON'], 'MARA ENCHAPADA': ['ENCHAPADA EN MARA'] },
+  };
+  it('no deja que la IA cambie un nombre dudoso por otro modelo del catálogo', () => {
+    const { items, avisos } = anclarNombres(
+      [item({ modelo: 'PIEZAS T', madera: 'PINO OREGON' })],
+      [],
+      ['3 Pillo oregón 80×210'],
+      alias,
+    );
+    expect(items[0]).toMatchObject({ modelo: null, madera: 'PINO OREGON' });
+    expect(avisos).toEqual([expect.stringMatching(/modelo del ítem 1 como «PIEZAS T».*no aparece/)]);
+  });
+  it('reconoce alias, palabras del nombre y valores que ya estaban en el borrador', () => {
+    const { items, avisos } = anclarNombres(
+      [
+        item({ modelo: 'COZ COZ', madera: 'MARA ENCHAPADA' }),
+        item({ modelo: 'Huilo Huilo', madera: 'LENGA' }),
+      ],
+      [item({ modelo: 'HUILO HUILO', madera: 'LENGA' })],
+      ['4 coscos enchapada en mara'],
+      alias,
+    );
+    expect(items.map((i) => [i.modelo, i.madera])).toEqual([
+      ['COZ COZ', 'MARA ENCHAPADA'],
+      ['Huilo Huilo', 'LENGA'],
+    ]);
+    expect(avisos).toEqual([]);
+  });
+  it('a la IA se le exige decidir tipoMedida y fuente en cada ítem nuevo', () => {
+    const [modificar] = herramientas(HERRAMIENTAS_COTIZACION);
+    const esquema = JSON.parse(JSON.stringify(modificar.input_schema));
+    const agregar = esquema.properties.agregar.items;
+    expect(agregar.required).toEqual(expect.arrayContaining(['tipoMedida', 'fuente']));
   });
 });
 
