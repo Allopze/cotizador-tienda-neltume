@@ -95,8 +95,20 @@ export const CONFIGURACION_CATALOGO_BASE: ConfiguracionCatalogo = {
     PILASTRA: 'MOLDURA',
   },
   aliasModelos: {
-    'HUILO HUILO': ['HUILO', 'HUILA', 'WILLO', 'WILLOW', 'HUILO HUILA', 'WILLOW WILLOW'],
+    'HUILO HUILO': [
+      'HUILO',
+      'HUILA',
+      'WILLO',
+      'WILLOW',
+      'HUILO HUILA',
+      'WILLOW WILLOW',
+      'HUILLO HUILLO',
+      'HUILLO',
+      'WILO WILO',
+      'WILLOWO',
+    ],
     PANGUIPULLI: ['PANGIPULLI'],
+    'COZ COZ': ['COSCOS', 'COS COS', 'COSCO'],
   },
   aliasPosiblesModelos: {
     'HUILO HUILO': ['PILLO'],

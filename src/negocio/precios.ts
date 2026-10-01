@@ -45,7 +45,7 @@ export type MargenesCategoria = Record<CategoriaMargen, number>;
 export const MARGENES_INICIALES: MargenesCategoria = {
   puertas_solidas_mara_lenga: 0.55,
   puertas_solidas_oregon: 0.85,
-  puertas_solidas_rauli: 0.25,
+  puertas_solidas_rauli: 0.55,
   puertas_prepintadas: 1.4,
   puertas_enchapadas_mara: 0.75,
   marcos_finger_sin_enchape: 1,

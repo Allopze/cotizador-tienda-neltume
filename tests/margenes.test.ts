@@ -108,7 +108,7 @@ describe('categorías de margen', () => {
       [producto({ madera: 'MARA' }), 'puertas_solidas_mara_lenga', 0.55],
       [producto({ madera: 'LENGA' }), 'puertas_solidas_mara_lenga', 0.55],
       [producto({ madera: 'PINO OREGON' }), 'puertas_solidas_oregon', 0.85],
-      [producto({ madera: 'RAULI' }), 'puertas_solidas_rauli', 0.25],
+      [producto({ madera: 'RAULI' }), 'puertas_solidas_rauli', 0.55],
       [producto({ madera: 'PREPINTADA', tipo: 'PUERTA PREPINTADA' }), 'puertas_prepintadas', 1.4],
       [producto({ madera: 'MARA ENCHAPADA', tipo: 'PUERTA ENCHAPADA' }), 'puertas_enchapadas_mara', 0.75],
       [accesorio('MARCO', 'PINO FINGER'), 'marcos_finger_sin_enchape', 1],
@@ -349,8 +349,8 @@ describe('margen especial de la cotización en el servicio', () => {
   it('se edita, se persiste, deja registro y se restaura; el margen de la línea tiene prioridad', async () => {
     const t = await preparar();
     expect(t.q.margenCotizacion).toBeNull();
-    // Categoría: Mara 55 %, Raulí 25 % (valor inicial de la categoría nueva).
-    expect(t.precios()).toEqual([155_000, 125_000]);
+    // Categoría: Mara 55 % y Raulí 55 % (valores iniciales).
+    expect(t.precios()).toEqual([155_000, 155_000]);
 
     await t.editar({ margenCotizacion: 0.42 });
     expect(t.q.margenCotizacion).toBe(0.42);
@@ -385,7 +385,7 @@ describe('margen especial de la cotización en el servicio', () => {
     // Restaurar: vuelve la categoría.
     await t.editar({ margenCotizacion: null });
     expect(t.q.margenCotizacion).toBeNull();
-    expect(t.precios()).toEqual([155_000, 125_000]);
+    expect(t.precios()).toEqual([155_000, 155_000]);
     expect(t.detalles().at(-1)).toBe('Margen especial de la cotización: 7 % → estándar de categoría');
     expect(new Almacen(t.dir).obtener(t.q.id)!.margenCotizacion).toBeNull();
   });
@@ -512,7 +512,7 @@ describe('margen especial de la cotización en el servicio', () => {
     const leida = new Almacen(t.dir).obtener(t.q.id)!;
     expect(leida.reglas?.margenes).toEqual(LEGADO);
     t.q = leida;
-    // Mara 50 % (su regla congelada) y Raulí 30 % (su «otros» congelado), no el 25 % inicial ni el 90 % actual.
+    // Mara 50 % (su regla congelada) y Raulí 30 % (su «otros» congelado), no el 55 % inicial ni el 90 % actual.
     await t.editar({ cantidades: [{ indice: 1, cantidad: 3 }] });
     expect(t.precios()).toEqual([150_000, 130_000]);
     // Una cotización nueva sí toma la configuración vigente.

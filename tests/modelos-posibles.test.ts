@@ -4,7 +4,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { contextoSeguro, SYSTEM } from '../src/asistente/llm';
 import { pregunta } from '../src/asistente/preguntas';
-import { CONFIGURACION_CATALOGO_BASE, validarConfiguracionCatalogo } from '../src/catalogo/configuracion';
+import {
+  CONFIGURACION_CATALOGO_BASE,
+  normalizarCatalogo,
+  validarConfiguracionCatalogo,
+} from '../src/catalogo/configuracion';
 import { leerConfiguracionCatalogo } from '../src/catalogo/configuracion-archivo';
 import {
   aliasMaderasCatalogo,
@@ -38,6 +42,28 @@ const pedido = (modelo: string | null, extra: Record<string, unknown> = {}) => (
   modelo, madera: 'Mara', ancho: 83, alto: 236, medida: null, cantidad: 2, ...extra,
 });
 const lista = (...items: object[]) => ({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
+/** Alias seguros de fábrica; el nombre canónico de los documentos sigue siendo «Huilo Huilo». */
+const ALIAS_HUILO_HUILO = [
+  'HUILO',
+  'HUILA',
+  'WILLO',
+  'WILLOW',
+  'HUILO HUILA',
+  'WILLOW WILLOW',
+  'HUILLO HUILLO',
+  'HUILLO',
+  'WILO WILO',
+  'WILLOWO',
+];
+const ALIAS_COZ_COZ = ['COSCOS', 'COS COS', 'COSCO'];
+/** Modelos del catálogo real (planilla de precios) al definir esos alias. */
+const MODELOS_REALES = [
+  'ANCACOMOE', 'BAKER', 'CALAFQUEN', 'CHAN CHAN', 'CHAUQUEN', 'COCHAMO', 'COZ COZ', 'ENCO', 'ENDOLADO',
+  'ENSENADA', 'FUTALEUFU', 'FUTRONO', 'FUY', 'GUARDAPOLVO', 'HUELLAHUE', 'HUERQUEHUE', 'Huilo Huilo', 'LANCO',
+  'LICAN', 'LIPINZA', 'LOS LAGOS', 'MALALHUE', 'MARCO', 'MOLCO', 'NELTUME', 'PALENA', 'PANGUIPULLI',
+  'PETROHUE', 'PIEZAS T', 'PILASTRA', 'PIRIHUEICO', 'PUÑIR', 'RANCO', 'RIÑIHUE', 'RUPANCO', 'TOLEDO',
+  'TOLTEN', 'YELCHO',
+];
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -103,9 +129,9 @@ describe('configuración de alias posibles', () => {
 
   it('suma los alias posibles configurados a los de la base, sin duplicarlos', () => {
     const config = validarConfiguracionCatalogo({
-      aliasPosiblesModelos: { 'Huilo Huilo': ['PILLO', 'Huillo'], PANGUIPULLI: ['Pangui'] },
+      aliasPosiblesModelos: { 'Huilo Huilo': ['PILLO', 'Hullo'], PANGUIPULLI: ['Pangui'] },
     });
-    expect(config.aliasPosiblesModelos).toEqual({ 'HUILO HUILO': ['PILLO', 'Huillo'], PANGUIPULLI: ['Pangui'] });
+    expect(config.aliasPosiblesModelos).toEqual({ 'HUILO HUILO': ['PILLO', 'Hullo'], PANGUIPULLI: ['Pangui'] });
     expect(validarConfiguracionCatalogo({}).aliasPosiblesModelos).toEqual({ 'HUILO HUILO': ['PILLO'] });
   });
 
@@ -119,8 +145,8 @@ describe('configuración de alias posibles', () => {
   });
 
   it('un alias dudoso manda sobre el seguro del mismo modelo: una configuración guardada antes no lo sustituye solo', () => {
-    const config = validarConfiguracionCatalogo({ aliasModelos: { 'HUILO HUILO': ['HUILO', 'PILLO', 'HUILLO'] } });
-    expect(config.aliasModelos['HUILO HUILO']).toEqual(['HUILO', 'HUILA', 'WILLO', 'WILLOW', 'HUILO HUILA', 'WILLOW WILLOW', 'HUILLO']);
+    const config = validarConfiguracionCatalogo({ aliasModelos: { 'HUILO HUILO': ['HUILO', 'PILLO', 'HUILLOW'] } });
+    expect(config.aliasModelos['HUILO HUILO']).toEqual([...ALIAS_HUILO_HUILO, 'HUILLOW']);
     expect(config.aliasPosiblesModelos['HUILO HUILO']).toEqual(['PILLO']);
   });
 
@@ -146,6 +172,84 @@ describe('configuración de alias posibles', () => {
     const w = resolverItem(repo, pedido('Willow'));
     expect(w.ok && w.coincidenciaModelo).toBe('alias');
     db.close();
+  });
+});
+
+describe('alias seguros de Huilo Huilo y Coz Coz', () => {
+  const catalogoConCoz: Catalogo = {
+    ...catalogo,
+    productos: [...catalogo.productos, puerta('COZ-M-3-A', 'COZ COZ')],
+  };
+
+  it('cada alias se normaliza al modelo canónico y se marca como alias; el nombre canónico sigue exacto', () => {
+    const casos: [string, string][] = [
+      ['Huillo Huillo', 'HUI-M-3-A'],
+      ['Huillo', 'HUI-M-3-A'],
+      ['Wilo Wilo', 'HUI-M-3-A'],
+      ['Willowo', 'HUI-M-3-A'],
+      ['Coscos', 'COZ-M-3-A'],
+      ['Cos Cos', 'COZ-M-3-A'],
+      ['Cosco', 'COZ-M-3-A'],
+      // Mayúsculas, tildes, guiones y espacios de más no cambian el resultado.
+      ['HUILLO-HUILLO', 'HUI-M-3-A'],
+      ['  wilo   wilo ', 'HUI-M-3-A'],
+      ['COS  COS', 'COZ-M-3-A'],
+    ];
+    for (const [alias, codigo] of casos) {
+      const r = resolverItem(catalogoConCoz, pedido(alias));
+      expect(r.ok && [r.producto.codigo, r.coincidenciaModelo], alias).toEqual([codigo, 'alias']);
+    }
+    const canonicos: [string, string][] = [
+      ['Huilo Huilo', 'HUI-M-3-A'],
+      ['Coz Coz', 'COZ-M-3-A'],
+    ];
+    for (const [modelo, codigo] of canonicos) {
+      const r = resolverItem(catalogoConCoz, pedido(modelo));
+      expect(r.ok && [r.producto.codigo, r.coincidenciaModelo], modelo).toEqual([codigo, 'canonico']);
+    }
+  });
+
+  it('en una cotización el modelo queda con el nombre canónico y se conserva lo que escribió la persona', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-posibles-'));
+    dirs.push(dir);
+    const llm = { interpretar: vi.fn() };
+    const s = new Servicio(catalogoConCoz, llm, new Almacen(dir));
+    llm.interpretar.mockResolvedValueOnce(lista(pedido('Huillo Huillo'), pedido('Coscos')));
+    const q = (await s.ejecutar({ tipo: 'chat', mensaje: 'cotiza huillo huillo y coscos' })).cotizacion;
+    expect(q.incompletos).toHaveLength(0);
+    expect(q.solicitudes[0]).toMatchObject({ modelo: 'Huilo Huilo', modeloOriginal: 'Huillo Huillo', coincidenciaModelo: 'alias' });
+    expect(q.solicitudes[1]).toMatchObject({ modelo: 'COZ COZ', modeloOriginal: 'Coscos', coincidenciaModelo: 'alias' });
+    expect(q.montos.lineas.map((l) => l.producto.codigo)).toEqual(['HUI-M-3-A', 'COZ-M-3-A']);
+  });
+
+  it('están en la configuración de fábrica y en la del archivo, y la IA los recibe como alias seguros', async () => {
+    expect(CONFIGURACION_CATALOGO_BASE.aliasModelos['HUILO HUILO']).toEqual(ALIAS_HUILO_HUILO);
+    expect(CONFIGURACION_CATALOGO_BASE.aliasModelos['COZ COZ']).toEqual(ALIAS_COZ_COZ);
+    const config = await leerConfiguracionCatalogo('config/catalogo.json');
+    expect(config.aliasModelos['HUILO HUILO']).toEqual(expect.arrayContaining(ALIAS_HUILO_HUILO));
+    expect(config.aliasModelos['COZ COZ']).toEqual(expect.arrayContaining(ALIAS_COZ_COZ));
+    const aliases = aliasModelosCatalogo(catalogoConCoz);
+    expect(aliases['COZ COZ']).toEqual(ALIAS_COZ_COZ);
+    expect(aliases['HUILO HUILO']).toEqual(expect.arrayContaining(['HUILLO HUILLO', 'HUILLO', 'WILO WILO', 'WILLOWO']));
+  });
+
+  it('ningún alias choca con un modelo real, con un alias dudoso ni con el alias de otro modelo', () => {
+    const nuevos = [...ALIAS_HUILO_HUILO.slice(6), ...ALIAS_COZ_COZ];
+    expect(() => validarConfiguracionCatalogo({})).not.toThrow();
+    const reales = MODELOS_REALES.map(normalizarCatalogo);
+    for (const alias of nuevos) expect(reales, alias).not.toContain(normalizarCatalogo(alias));
+    const duenos = new Map<string, Set<string>>();
+    for (const [modelo, aliases] of [
+      ...Object.entries(CONFIGURACION_CATALOGO_BASE.aliasModelos),
+      ...Object.entries(CONFIGURACION_CATALOGO_BASE.aliasPosiblesModelos),
+    ])
+      for (const alias of aliases) {
+        const clave = normalizarCatalogo(alias);
+        duenos.set(clave, (duenos.get(clave) ?? new Set<string>()).add(normalizarCatalogo(modelo)));
+      }
+    for (const alias of nuevos) expect(duenos.get(normalizarCatalogo(alias))?.size, alias).toBe(1);
+    // «Pillo» sigue siendo el único alias dudoso.
+    expect(CONFIGURACION_CATALOGO_BASE.aliasPosiblesModelos).toEqual({ 'HUILO HUILO': ['PILLO'] });
   });
 });
 
