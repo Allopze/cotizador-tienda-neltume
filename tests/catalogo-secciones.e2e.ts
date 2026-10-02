@@ -80,7 +80,7 @@ test('configuración: quitar una fila marca cambios sin guardar y se puede desha
   await quitar.click();
   await expect(filas).toHaveCount(antes - 1);
   await expect(barra).toContainText('Hay cambios sin guardar');
-  await expect(page.getByRole('link', { name: /Configuración \(cambios sin guardar\)/ })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Nombres y alias \(cambios sin guardar\)/ })).toBeVisible();
 
   await page.getByRole('status').filter({ hasText: `Se quitó la madera ${nombre}` }).getByRole('button', { name: 'Deshacer' }).click();
   await expect(filas).toHaveCount(antes);
@@ -100,6 +100,58 @@ test('configuración: duplicados se marcan en la fila antes de guardar', async (
   await expect(page.locator('.config-barra')).toContainText('Sin cambios pendientes');
 });
 
+test('configuración: palabras como etiquetas, choques avisados y prueba de reconocimiento', async ({ page }) => {
+  await page.goto('/catalogo?seccion=configuracion');
+  const maderas = page.getByRole('group', { name: 'Maderas' });
+  const filas = maderas.locator('.config-editor-fila');
+  const primera = filas.first();
+  const nombre = await primera.getByLabel('Nombre').inputValue();
+  const segunda = await filas.nth(1).getByLabel('Nombre').inputValue();
+
+  // Pegar una lista separada por comas agrega una etiqueta por alias; uno igual al nombre no se agrega.
+  const alias = primera.getByLabel(`Otras formas de escribir ${nombre}`);
+  await alias.fill('');
+  await alias.pressSequentially('ALIAS PRUEBA');
+  await alias.press('Enter');
+  await expect(primera.getByRole('button', { name: 'Quitar «ALIAS PRUEBA»' })).toBeVisible();
+  await alias.pressSequentially(nombre.toLowerCase());
+  await alias.press('Enter');
+  await expect(primera.getByRole('button', { name: `Quitar «${nombre.toUpperCase()}»` })).toHaveCount(0);
+  await expect(primera).toContainText('No hace falta agregar');
+
+  // La prueba usa el borrador sin guardar.
+  const probar = page.getByLabel(/^Probar/);
+  await probar.fill('alias prueba');
+  await expect(page.locator('.config-probar')).toContainText(`la madera ${nombre}`);
+
+  // Un alias que ya es el nombre de otra madera se avisa en la fila, sin esperar a guardar.
+  await alias.pressSequentially(segunda);
+  await alias.press('Enter');
+  await expect(primera).toContainText(`también lleva a ${segunda}`);
+  await expect(page.locator('.config-indice')).toContainText('2 por corregir');
+
+  await page.getByRole('button', { name: 'Descartar cambios' }).click();
+  await expect(page.locator('.config-barra')).toContainText('Sin cambios pendientes');
+});
+
+test('configuración: cada modelo junta lo que se cambia solo y lo que se pregunta', async ({ page }) => {
+  await page.goto('/catalogo?seccion=configuracion');
+  const modelos = page.getByRole('group', { name: 'Modelos' });
+  const fila = modelos.locator('.config-editor-fila').filter({ has: page.getByRole('button', { name: 'Quitar «PILLO»' }) });
+  await expect(fila.getByRole('button', { name: 'Quitar «WILLOW»' })).toBeVisible();
+
+  // Una palabra en las dos columnas se marca: el asistente no sabría si preguntar.
+  const solo = fila.getByLabel(/^Se cambia solo por /);
+  await solo.pressSequentially('pillo');
+  await solo.press('Enter');
+  await expect(fila).toContainText('está en las dos columnas');
+
+  await page.getByLabel(/^Probar/).fill('pillo');
+  await expect(page.locator('.config-probar')).toContainText('pregunta antes de usarlo');
+  await page.getByRole('button', { name: 'Descartar cambios' }).click();
+  await expect(page.locator('.config-barra')).toContainText('Sin cambios pendientes');
+});
+
 test('agregar: los datos que faltan se marcan en su campo', async ({ page }) => {
   await page.goto('/catalogo?seccion=agregar');
   await page.getByRole('button', { name: 'Revisar propuesta' }).click();
@@ -114,7 +166,7 @@ test('en móvil la pestaña activa queda a la vista', async ({ browser }) => {
   const page = await contexto.newPage();
   await iniciarSesion(page, ADMIN_E2E);
   await page.goto('/catalogo?seccion=configuracion');
-  const activa = page.getByRole('navigation', { name: 'Secciones del catálogo' }).getByRole('link', { name: 'Configuración' });
+  const activa = page.getByRole('navigation', { name: 'Secciones del catálogo' }).getByRole('link', { name: 'Nombres y alias' });
   await expect(activa).toBeInViewport({ ratio: 1 });
   expect((await activa.boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await contexto.close();

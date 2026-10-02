@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type MouseEvent } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { AltaProducto } from '../alta-producto';
 import { Avisos, useAvisos } from '../avisos';
 import { CatalogoConsulta } from '../catalogo-consulta';
@@ -78,13 +78,26 @@ export function PantallaCatalogo({
   // La configuración es la única sección con un borrador largo que se guarda aparte.
   const [configuracionSucia, setConfiguracionSucia] = useState(false);
   useAvisoSalida(configuracionSucia, AVISO_SALIDA);
+  // En móvil las pestañas se desplazan en horizontal: la activa se trae entera a la vista.
+  const nav = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const barra = nav.current;
+    const activa = barra?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!barra || !activa || barra.scrollWidth <= barra.clientWidth) return;
+    const caja = barra.getBoundingClientRect();
+    const pestaña = activa.getBoundingClientRect();
+    // El borde derecho se desvanece (26 px): la pestaña activa queda fuera de ese borde.
+    const sobraDerecha = pestaña.right - (caja.right - 26);
+    if (sobraDerecha > 0) barra.scrollLeft += Math.ceil(sobraDerecha);
+    else if (pestaña.left < caja.left) barra.scrollLeft -= Math.ceil(caja.left - pestaña.left);
+  }, [seccion, cliente]);
 
   return (
     <div className="app-shell pantalla-catalogo">
       <Encabezado email={email} nombre={nombre} pantalla="catalogo" />
       <EncabezadoPagina titulo="Catálogo" />
       <div className="con-secciones superficie">
-        <nav className="secciones-nav" aria-label="Secciones del catálogo">
+        <nav ref={nav} className="secciones-nav" aria-label="Secciones del catálogo">
           <ul>
             {seccionesVisibles.map((s) => (
               <li key={s.id}>

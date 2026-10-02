@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { FAMILIAS } from '@/catalogo/familias';
+import { normalizarCatalogo } from '@/catalogo/configuracion';
 import type { Familia } from '@/catalogo/tipos';
 import type { Avisar } from './avisos';
 import { SelectorFamilia } from './selector-familia';
@@ -17,95 +18,297 @@ interface Configuracion {
   aliasModelos: Record<string, string[]>;
   aliasPosiblesModelos: Record<string, string[]>;
 }
-/** Fila en edición: los alias se guardan como texto para poder escribir comas mientras se escribe. */
-interface MaderaEdit {
-  nombre: string;
-  codigo: string;
-  aliasTexto: string;
-}
+type MaderaEdit = Madera;
 interface FamiliaEdit {
   modelo: string;
   familia: Familia;
 }
+/** Un modelo con sus dos listas: lo que se reemplaza solo y lo que obliga a preguntar. */
 interface ModeloEdit {
   modelo: string;
-  aliasTexto: string;
+  alias: string[];
+  posibles: string[];
 }
 interface Filas {
   maderas: MaderaEdit[];
-  familias: FamiliaEdit[];
   modelos: ModeloEdit[];
-  posibles: ModeloEdit[];
+  familias: FamiliaEdit[];
 }
 type Grupo = keyof Filas;
+type Campo = 'nombre' | 'codigo' | 'alias' | 'posibles' | 'modelo';
+interface ErrorFila {
+  texto: string;
+  campo: Campo;
+  /** Fila sin completar: se avisa al intentar guardar, no mientras se escribe. */
+  vacia?: boolean;
+}
 /** Errores por grupo y fila: se muestran junto a la fila que hay que corregir. */
-type Errores = Partial<Record<Grupo, Record<number, string>>>;
+type Errores = Partial<Record<Grupo, Record<number, ErrorFila>>>;
 
 const DURACION_DESHACER = 8000;
-const partirAlias = (texto: string) =>
-  texto
-    .split(',')
-    .map((valor) => valor.trim())
-    .filter(Boolean);
-const aliasPorModelo = (filas: ModeloEdit[]) =>
-  Object.fromEntries(filas.filter((m) => m.modelo.trim()).map((m) => [m.modelo.trim(), partirAlias(m.aliasTexto)]));
-const clave = (texto: string) => texto.trim().toLocaleUpperCase('es-CL');
+const TITULOS: Record<Grupo, string> = {
+  maderas: 'Maderas',
+  modelos: 'Modelos',
+  familias: 'Familia de cada modelo',
+};
+const limpiar = (alias: string[]) => alias.map((a) => a.trim()).filter(Boolean);
 
-const filasDe = (c: Configuracion): Filas => ({
-  maderas: c.maderas.map((m) => ({ nombre: m.nombre, codigo: m.codigo, aliasTexto: m.alias.join(', ') })),
-  familias: Object.entries(c.familiasPorModelo).map(([modelo, familia]) => ({ modelo, familia })),
-  modelos: Object.entries(c.aliasModelos).map(([modelo, alias]) => ({ modelo, aliasTexto: alias.join(', ') })),
-  posibles: Object.entries(c.aliasPosiblesModelos).map(([modelo, alias]) => ({ modelo, aliasTexto: alias.join(', ') })),
-});
+const filasDe = (c: Configuracion): Filas => {
+  const modelos = new Map<string, ModeloEdit>();
+  const fila = (modelo: string) => {
+    const k = normalizarCatalogo(modelo);
+    if (!modelos.has(k)) modelos.set(k, { modelo, alias: [], posibles: [] });
+    return modelos.get(k)!;
+  };
+  for (const [modelo, alias] of Object.entries(c.aliasModelos)) fila(modelo).alias.push(...alias);
+  for (const [modelo, alias] of Object.entries(c.aliasPosiblesModelos)) fila(modelo).posibles.push(...alias);
+  return {
+    maderas: c.maderas.map((m) => ({ nombre: m.nombre, codigo: m.codigo, alias: [...m.alias] })),
+    modelos: [...modelos.values()],
+    familias: Object.entries(c.familiasPorModelo).map(([modelo, familia]) => ({ modelo, familia })),
+  };
+};
+const listaPorModelo = (filas: ModeloEdit[], lista: 'alias' | 'posibles') =>
+  Object.fromEntries(filas.filter((m) => m.modelo.trim() && m[lista].length).map((m) => [m.modelo.trim(), limpiar(m[lista])]));
 const configuracionDe = (f: Filas): Configuracion => ({
-  maderas: f.maderas.map((m) => ({ nombre: m.nombre.trim(), codigo: m.codigo.trim(), alias: partirAlias(m.aliasTexto) })),
+  maderas: f.maderas.map((m) => ({ nombre: m.nombre.trim(), codigo: m.codigo.trim(), alias: limpiar(m.alias) })),
   familiasPorModelo: Object.fromEntries(f.familias.filter((x) => x.modelo.trim()).map((x) => [x.modelo.trim(), x.familia])),
-  aliasModelos: aliasPorModelo(f.modelos),
-  aliasPosiblesModelos: aliasPorModelo(f.posibles),
+  aliasModelos: listaPorModelo(f.modelos, 'alias'),
+  aliasPosiblesModelos: listaPorModelo(f.modelos, 'posibles'),
 });
 
-/** Lo que el servidor rechazaría, dicho junto a la fila: vacíos y duplicados. */
+/**
+ * Lo que el servidor rechazaría, dicho junto a la fila: vacíos, duplicados y palabras que llevan a dos
+ * maderas o dos modelos. Compara como el asistente: sin tildes, mayúsculas ni signos.
+ */
 function validar(f: Filas): Errores {
   const errores: Errores = {};
-  const marcar = (grupo: Grupo, fila: number, texto: string) => {
-    errores[grupo] = { ...errores[grupo], [fila]: texto };
+  const marcar = (grupo: Grupo, fila: number, error: ErrorFila) => {
+    if (!errores[grupo]?.[fila]) errores[grupo] = { ...errores[grupo], [fila]: error };
   };
+
   const nombres = new Map<string, number>();
   const codigos = new Map<string, number>();
   f.maderas.forEach((m, i) => {
-    if (!m.nombre.trim() || !m.codigo.trim()) return marcar('maderas', i, 'La madera necesita nombre y código.');
-    if (nombres.has(clave(m.nombre))) return marcar('maderas', i, `«${m.nombre.trim()}» ya está en la fila ${nombres.get(clave(m.nombre))! + 1}.`);
-    if (codigos.has(clave(m.codigo))) return marcar('maderas', i, `El código «${m.codigo.trim()}» ya lo usa la fila ${codigos.get(clave(m.codigo))! + 1}.`);
-    nombres.set(clave(m.nombre), i);
-    codigos.set(clave(m.codigo), i);
+    if (!m.nombre.trim()) return marcar('maderas', i, { texto: 'La madera necesita nombre.', campo: 'nombre', vacia: true });
+    if (!m.codigo.trim()) return marcar('maderas', i, { texto: 'La madera necesita código.', campo: 'codigo', vacia: true });
+    if (!/^[A-Z0-9]+$/i.test(m.codigo.trim()))
+      return marcar('maderas', i, { texto: 'El código solo admite letras y números, sin espacios.', campo: 'codigo' });
+    const nombre = normalizarCatalogo(m.nombre);
+    const codigo = m.codigo.trim().toUpperCase();
+    if (nombres.has(nombre)) marcar('maderas', i, { texto: `«${m.nombre.trim()}» ya está en la fila ${nombres.get(nombre)! + 1}.`, campo: 'nombre' });
+    else if (codigos.has(codigo)) marcar('maderas', i, { texto: `El código «${m.codigo.trim()}» ya lo usa la fila ${codigos.get(codigo)! + 1}.`, campo: 'codigo' });
+    if (!nombres.has(nombre)) nombres.set(nombre, i);
+    if (!codigos.has(codigo)) codigos.set(codigo, i);
   });
-  for (const grupo of ['familias', 'modelos', 'posibles'] as const) {
+  // Cada palabra debe llevar a una sola madera. Se marcan las dos filas.
+  const terminos = new Map<string, { fila: number; valor: string }[]>();
+  f.maderas.forEach((m, i) => {
+    for (const valor of [m.nombre, ...m.alias]) {
+      const k = normalizarCatalogo(valor);
+      if (k) terminos.set(k, [...(terminos.get(k) ?? []), { fila: i, valor }]);
+    }
+  });
+  for (const usos of terminos.values()) {
+    for (const uso of usos) {
+      const otro = usos.find((o) => normalizarCatalogo(f.maderas[o.fila].nombre) !== normalizarCatalogo(f.maderas[uso.fila].nombre));
+      if (!otro) continue;
+      marcar('maderas', uso.fila, {
+        texto: `«${uso.valor.trim()}» también lleva a ${f.maderas[otro.fila].nombre.trim()} (fila ${otro.fila + 1}): el asistente no sabría cuál elegir.`,
+        campo: uso.valor === f.maderas[uso.fila].nombre ? 'nombre' : 'alias',
+      });
+    }
+  }
+
+  for (const grupo of ['modelos', 'familias'] as const) {
     const vistos = new Map<string, number>();
     f[grupo].forEach((fila, i) => {
-      if (!fila.modelo.trim()) return;
-      const k = clave(fila.modelo);
-      if (vistos.has(k)) return marcar(grupo, i, `El modelo «${fila.modelo.trim()}» ya está en la fila ${vistos.get(k)! + 1}.`);
+      if (!fila.modelo.trim()) {
+        if ('alias' in fila && (fila.alias.length || fila.posibles.length))
+          marcar(grupo, i, { texto: 'Escribe el nombre del modelo.', campo: 'modelo', vacia: true });
+        return;
+      }
+      const k = normalizarCatalogo(fila.modelo);
+      if (vistos.has(k)) return marcar(grupo, i, { texto: `El modelo «${fila.modelo.trim()}» ya está en la fila ${vistos.get(k)! + 1}.`, campo: 'modelo' });
       vistos.set(k, i);
     });
   }
+  // Una palabra de modelo, segura o dudosa, debe llevar a un solo modelo; y no estar en las dos columnas.
+  const palabras = new Map<string, { fila: number; modelo: string }>();
+  f.modelos.forEach((fila, i) => {
+    if (!fila.modelo.trim()) return;
+    const dudosas = new Set(fila.posibles.map(normalizarCatalogo));
+    for (const [lista, valores] of [['alias', fila.alias], ['posibles', fila.posibles]] as const) {
+      for (const valor of valores) {
+        const k = normalizarCatalogo(valor);
+        if (!k) continue;
+        if (lista === 'alias' && dudosas.has(k)) {
+          marcar('modelos', i, { texto: `«${valor.trim()}» está en las dos columnas: déjalo solo en una.`, campo: 'alias' });
+          continue;
+        }
+        const previo = palabras.get(k);
+        if (previo && previo.fila !== i)
+          marcar('modelos', i, { texto: `«${valor.trim()}» ya lleva a ${previo.modelo.trim()} (fila ${previo.fila + 1}).`, campo: lista });
+        else if (!previo) palabras.set(k, { fila: i, modelo: fila.modelo });
+      }
+    }
+  });
   return errores;
 }
 
-/** Botón «Quitar»: dice qué quita y, si la fila tenía datos, ofrece deshacer. */
+/** Botón para quitar una fila: ícono discreto, con el nombre completo para lectores de pantalla. */
 function BotonQuitar({ etiqueta, quitar }: { etiqueta: string; quitar: () => void }) {
   return (
-    <button type="button" className="button secondary small" onClick={quitar} aria-label={`Quitar ${etiqueta}`}>
-      Quitar
+    <button type="button" className="config-quitar" onClick={quitar} aria-label={`Quitar ${etiqueta}`} title="Quitar fila">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" focusable="false">
+        <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5M7 7v4M9 7v4" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      </svg>
     </button>
   );
 }
 
-function ErrorFila({ id, texto }: { id: string; texto?: string }) {
-  return texto ? (
+function TextoError({ id, error, mostrar }: { id: string; error?: ErrorFila; mostrar: boolean }) {
+  return error && mostrar ? (
     <p id={id} className="campo-error config-error-fila">
-      {texto}
+      {error.texto}
     </p>
   ) : null;
+}
+
+/**
+ * Lista de palabras como etiquetas: cada una se ve entera y se quita con su ×. Enter, coma o salir del campo
+ * la agregan; pegar una lista separada por comas agrega todas. Lo que el asistente ya reconoce no se repite,
+ * y lo que sobra se explica con un botón para quitarlo.
+ */
+function CampoPalabras({
+  etiqueta,
+  valores,
+  cambiar,
+  nombre,
+  invalido,
+}: {
+  etiqueta: string;
+  valores: string[];
+  cambiar: (valores: string[]) => void;
+  /** Nombre de la madera o modelo: una palabra igual a él sobra. */
+  nombre: string;
+  invalido?: { 'aria-invalid': true; 'aria-describedby': string };
+}) {
+  const [texto, setTexto] = useState('');
+  const [aviso, setAviso] = useState('');
+  const entrada = useRef<HTMLInputElement>(null);
+  const sobra = (valor: string) => !!normalizarCatalogo(nombre) && normalizarCatalogo(valor) === normalizarCatalogo(nombre);
+  const sobrantes = valores.filter(sobra);
+
+  function agregar(crudo: string) {
+    const nuevos = [...valores];
+    const repetidos: string[] = [];
+    for (const parte of crudo.split(',').map((p) => p.trim()).filter(Boolean)) {
+      const k = normalizarCatalogo(parte);
+      if (!k || nuevos.some((v) => normalizarCatalogo(v) === k) || sobra(parte)) repetidos.push(parte);
+      else nuevos.push(parte.toLocaleUpperCase('es-CL'));
+    }
+    if (nuevos.length !== valores.length) cambiar(nuevos);
+    setAviso(
+      repetidos.length
+        ? `No hace falta agregar ${repetidos.map((r) => `«${r}»`).join(', ')}: el asistente ya lo reconoce (no distingue tildes ni mayúsculas).`
+        : '',
+    );
+    setTexto('');
+  }
+
+  function teclear(evento: KeyboardEvent<HTMLInputElement>) {
+    if (evento.key === 'Enter' || evento.key === ',') {
+      evento.preventDefault();
+      if (texto.trim()) agregar(texto);
+    } else if (evento.key === 'Backspace' && !texto && valores.length) {
+      cambiar(valores.slice(0, -1));
+    }
+  }
+
+  function pegar(evento: ClipboardEvent<HTMLInputElement>) {
+    const pegado = evento.clipboardData.getData('text');
+    if (!pegado.includes(',')) return;
+    evento.preventDefault();
+    agregar(texto + pegado);
+  }
+
+  return (
+    <div className="config-alias">
+      <div className="config-chips" onClick={() => entrada.current?.focus()}>
+        {valores.map((valor, i) => (
+          <span key={`${valor}-${i}`} className="config-chip">
+            {valor}
+            <button type="button" aria-label={`Quitar «${valor}»`} title="Quitar" onClick={() => cambiar(valores.filter((_, j) => j !== i))}>
+              ×
+            </button>
+          </span>
+        ))}
+        <label className="config-chips-entrada">
+          <span className="sr-only">{etiqueta}</span>
+          <input
+            ref={entrada}
+            value={texto}
+            onChange={(e) => {
+              setTexto(e.target.value);
+              setAviso('');
+            }}
+            onKeyDown={teclear}
+            onPaste={pegar}
+            onBlur={() => texto.trim() && agregar(texto)}
+            maxLength={80}
+            placeholder={valores.length ? '+ otra' : 'Escribe y presiona Enter'}
+            {...invalido}
+          />
+        </label>
+      </div>
+      {sobrantes.length > 0 && (
+        <p className="config-alias-aviso">
+          {sobrantes.map((s) => `«${s}»`).join(', ')} no hace falta: es igual al nombre, y el asistente no distingue tildes ni mayúsculas.{' '}
+          <button type="button" className="config-enlace" onClick={() => cambiar(valores.filter((v) => !sobra(v)))}>
+            Quitar
+          </button>
+        </p>
+      )}
+      {aviso && (
+        <p className="config-alias-aviso" role="status">
+          {aviso}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Prueba lo que el asistente reconocería con el borrador actual, antes de guardar. */
+function ProbarReconocimiento({ config }: { config: Configuracion }) {
+  const [texto, setTexto] = useState('');
+  const k = normalizarCatalogo(texto);
+  const coincide = (nombre: string, alias: string[]) => normalizarCatalogo(nombre) === k || alias.some((a) => normalizarCatalogo(a) === k);
+  const madera = k ? config.maderas.find((m) => coincide(m.nombre, m.alias)) : undefined;
+  const modelo = k ? Object.entries(config.aliasModelos).find(([m, alias]) => coincide(m, alias))?.[0] : undefined;
+  const posible = k ? Object.entries(config.aliasPosiblesModelos).find(([, alias]) => alias.some((a) => normalizarCatalogo(a) === k))?.[0] : undefined;
+
+  return (
+    <div className="config-probar">
+      <label className="ia-field">
+        <span>Probar: escribe una madera o modelo como lo diría un cliente</span>
+        <input value={texto} onChange={(e) => setTexto(e.target.value)} placeholder="Ej.: raulí, willow" maxLength={80} />
+      </label>
+      <p className="config-probar-resultado" role="status">
+        {!k
+          ? 'Muestra qué entendería el asistente, incluidos los cambios sin guardar.'
+          : !madera && !modelo && !posible
+            ? 'No lo reconoce: lo deja tal como lo escribió el cliente.'
+            : [
+                madera && `Lo entiende como la madera ${madera.nombre} (código ${madera.codigo}).`,
+                modelo && `Lo entiende como el modelo ${modelo}.`,
+                posible && `Podría ser el modelo ${posible}: pregunta antes de usarlo.`,
+              ]
+                .filter(Boolean)
+                .join(' ')}
+      </p>
+    </div>
+  );
 }
 
 export function ConfiguracionCatalogo({
@@ -153,7 +356,7 @@ export function ConfiguracionCatalogo({
   const borrador = useMemo(() => (filas ? configuracionDe(filas) : null), [filas]);
   const sucio = !!base && !!borrador && JSON.stringify(borrador) !== JSON.stringify(configuracionDe(base));
   useEffect(() => alCambiar(sucio), [sucio, alCambiar]);
-  const errores = useMemo(() => (filas && intentado ? validar(filas) : {}), [filas, intentado]);
+  const errores = useMemo(() => (filas ? validar(filas) : {}), [filas]);
 
   const editar = <G extends Grupo>(grupo: G, indice: number, cambio: Partial<Filas[G][number]>) =>
     setFilas((f) => f && { ...f, [grupo]: f[grupo].map((x, i) => (i === indice ? { ...x, ...cambio } : x)) });
@@ -165,7 +368,8 @@ export function ConfiguracionCatalogo({
     const fila = filas[grupo][indice];
     setFilas((f) => f && { ...f, [grupo]: f[grupo].filter((_, i) => i !== indice) });
     // Una fila nueva y vacía se quita sin más; una con datos se puede recuperar unos segundos.
-    if (!Object.values(fila).some((v) => typeof v === 'string' && v.trim())) return;
+    const conDatos = Object.values(fila).some((v) => (Array.isArray(v) ? v.length > 0 : typeof v === 'string' && v.trim()));
+    if (!conDatos) return;
     const id = avisar('info', `Se quitó ${nombre}. Se aplica al guardar.`, {
       clave: 'config-quitar',
       accion: {
@@ -201,7 +405,7 @@ export function ConfiguracionCatalogo({
     try {
       const data = await pedirJSON<{ configuracion: Configuracion }>('/api/catalogo-configuracion', { json: borrador });
       aplicar(data.configuracion);
-      avisar('exito', 'Configuración del catálogo guardada.', { clave: 'config-guardada' });
+      avisar('exito', 'Nombres y alias guardados.', { clave: 'config-guardada' });
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
     } finally {
@@ -209,98 +413,173 @@ export function ConfiguracionCatalogo({
     }
   }
 
-  if (!filas || !base) return <p className="catalog-modal-intro">{error || 'Cargando configuración…'}</p>;
+  if (!filas || !base || !borrador) return <p className="catalog-modal-intro">{error || 'Cargando configuración…'}</p>;
   const editable = puedeEditar && !ocupado;
   const errorId = (grupo: Grupo, i: number) => `${uid}-${grupo}-${i}-error`;
-  const invalida = (grupo: Grupo, i: number) =>
-    errores[grupo]?.[i] ? { 'aria-invalid': true as const, 'aria-describedby': errorId(grupo, i) } : {};
-
-  const grupoAlias = (grupo: 'modelos' | 'posibles', titulo: string, ayuda: string) => (
-    <fieldset className="config-grupo" disabled={!editable}>
-      <legend>{titulo}</legend>
-      <p className="catalog-modal-intro">{ayuda}</p>
-      {filas[grupo].map((fila, i) => (
-        <div className="config-editor-fila" key={i}>
-          <label className="ia-field">
-            <span>Modelo</span>
-            <input value={fila.modelo} onChange={(e) => editar(grupo, i, { modelo: e.target.value })} maxLength={80} {...invalida(grupo, i)} />
-          </label>
-          <label className="ia-field">
-            <span>Alias (separados por coma)</span>
-            <input value={fila.aliasTexto} onChange={(e) => editar(grupo, i, { aliasTexto: e.target.value })} maxLength={200} />
-          </label>
-          <BotonQuitar etiqueta={`alias de ${fila.modelo.trim() || 'modelo nuevo'}`} quitar={() => quitar(grupo, i, `los alias de ${fila.modelo.trim() || 'un modelo'}`)} />
-          <ErrorFila id={errorId(grupo, i)} texto={errores[grupo]?.[i]} />
-        </div>
-      ))}
-      <button type="button" className="button secondary small" onClick={() => agregar(grupo, { modelo: '', aliasTexto: '' })}>
-        Agregar modelo
-      </button>
-    </fieldset>
-  );
+  // Un vacío se marca al intentar guardar; un choque, apenas aparece.
+  const visible = (grupo: Grupo, i: number) => {
+    const e = errores[grupo]?.[i];
+    return e && (intentado || !e.vacia) ? e : undefined;
+  };
+  const invalida = (grupo: Grupo, i: number, campo: Campo) =>
+    visible(grupo, i)?.campo === campo ? { 'aria-invalid': true as const, 'aria-describedby': errorId(grupo, i) } : undefined;
+  const conError = (grupo: Grupo, i: number) => (visible(grupo, i) ? ' con-error' : '');
+  const cuenta = (grupo: Grupo) => Object.keys(errores[grupo] ?? {}).filter((i) => visible(grupo, Number(i))).length;
 
   return (
     <form ref={formulario} className="config-catalogo" onSubmit={guardar} noValidate>
       <p className="catalog-modal-intro">
-        Nombres, códigos y alias de maderas y modelos que el asistente usa para reconocer lo que pide el cliente. Los
-        cambios se aplican a las cotizaciones nuevas.
+        Los clientes no siempre escriben igual que el catálogo: dicen «pino» por Pino Oregon o «willow» por Huilo Huilo.
+        Aquí se le enseña al asistente esas otras formas de decirlo. Los cambios se aplican a las cotizaciones nuevas.
       </p>
 
-      <fieldset className="config-grupo" disabled={!editable}>
-        <legend>Maderas</legend>
-        {filas.maderas.map((madera, i) => (
-          <div className="config-editor-fila" key={i}>
-            <label className="ia-field">
-              <span>Nombre</span>
-              <input value={madera.nombre} onChange={(e) => editar('maderas', i, { nombre: e.target.value })} maxLength={80} {...invalida('maderas', i)} />
-            </label>
-            <label className="ia-field config-campo-corto">
-              <span>Código</span>
-              <input value={madera.codigo} onChange={(e) => editar('maderas', i, { codigo: e.target.value })} maxLength={10} {...invalida('maderas', i)} />
-            </label>
-            <label className="ia-field">
-              <span>Alias (separados por coma)</span>
-              <input value={madera.aliasTexto} onChange={(e) => editar('maderas', i, { aliasTexto: e.target.value })} maxLength={200} placeholder="Ej.: PINO, OREGON" />
-            </label>
-            <BotonQuitar etiqueta={`madera ${madera.nombre.trim() || 'nueva'}`} quitar={() => quitar('maderas', i, `la madera ${madera.nombre.trim() || 'nueva'}`)} />
-            <ErrorFila id={errorId('maderas', i)} texto={errores.maderas?.[i]} />
-          </div>
+      <nav className="config-indice" aria-label="Partes de la configuración">
+        {(Object.keys(TITULOS) as Grupo[]).map((grupo) => (
+          <a key={grupo} href={`#config-${grupo}`}>
+            {TITULOS[grupo]}
+            {cuenta(grupo) > 0 && <span className="config-indice-errores"> ({cuenta(grupo)} por corregir)</span>}
+          </a>
         ))}
-        <button type="button" className="button secondary small" onClick={() => agregar('maderas', { nombre: '', codigo: '', aliasTexto: '' })}>
+      </nav>
+
+      <ProbarReconocimiento config={borrador} />
+
+      <fieldset id="config-maderas" className="config-grupo" disabled={!editable}>
+        <legend>{TITULOS.maderas}</legend>
+        <p className="catalog-modal-intro">
+          En la última columna van otras palabras con que un cliente nombra la madera: abreviaciones, otros nombres o errores
+          comunes. No hace falta repetirlas con tildes o en minúsculas.
+        </p>
+        <div className="config-tabla config-tabla-maderas">
+          <div className="config-cabecera" aria-hidden="true">
+            <span>Nombre</span>
+            <span>Código</span>
+            <span>El cliente también puede escribir</span>
+          </div>
+          {filas.maderas.map((madera, i) => (
+            <div className={`config-editor-fila${conError('maderas', i)}`} key={i}>
+              <label className="ia-field">
+                <span className="config-etiqueta">Nombre</span>
+                <input value={madera.nombre} onChange={(e) => editar('maderas', i, { nombre: e.target.value })} maxLength={80} {...invalida('maderas', i, 'nombre')} />
+              </label>
+              <label className="ia-field">
+                <span className="config-etiqueta">Código</span>
+                <input value={madera.codigo} onChange={(e) => editar('maderas', i, { codigo: e.target.value })} maxLength={10} {...invalida('maderas', i, 'codigo')} />
+              </label>
+              <div className="ia-field">
+                <span className="config-etiqueta" aria-hidden="true">
+                  El cliente también puede escribir
+                </span>
+                <CampoPalabras
+                  etiqueta={`Otras formas de escribir ${madera.nombre.trim() || 'la madera nueva'}`}
+                  valores={madera.alias}
+                  nombre={madera.nombre}
+                  cambiar={(alias) => editar('maderas', i, { alias })}
+                  invalido={invalida('maderas', i, 'alias')}
+                />
+              </div>
+              <BotonQuitar etiqueta={`madera ${madera.nombre.trim() || 'nueva'}`} quitar={() => quitar('maderas', i, `la madera ${madera.nombre.trim() || 'nueva'}`)} />
+              <TextoError id={errorId('maderas', i)} error={errores.maderas?.[i]} mostrar={!!visible('maderas', i)} />
+            </div>
+          ))}
+        </div>
+        <button type="button" className="button secondary small" onClick={() => agregar('maderas', { nombre: '', codigo: '', alias: [] })}>
           Agregar madera
         </button>
       </fieldset>
 
-      <fieldset className="config-grupo" disabled={!editable}>
-        <legend>Familia por modelo</legend>
-        {filas.familias.map((fila, i) => (
-          <div className="config-editor-fila" key={i}>
-            <label className="ia-field">
-              <span>Modelo</span>
-              <input value={fila.modelo} onChange={(e) => editar('familias', i, { modelo: e.target.value })} maxLength={80} {...invalida('familias', i)} />
-            </label>
-            <div className="ia-field">
-              <span id={`${uid}-familia-${i}`}>Familia</span>
-              <SelectorFamilia
-                id={`${uid}-familia-${i}`}
-                value={fila.familia}
-                opciones={FAMILIAS}
-                vacio="Elige una familia"
-                disabled={!editable}
-                seleccionar={(familia) => editar('familias', i, { familia: familia as Familia })}
-              />
-            </div>
-            <BotonQuitar etiqueta={`familia de ${fila.modelo.trim() || 'modelo nuevo'}`} quitar={() => quitar('familias', i, `la familia de ${fila.modelo.trim() || 'un modelo'}`)} />
-            <ErrorFila id={errorId('familias', i)} texto={errores.familias?.[i]} />
+      <fieldset id="config-modelos" className="config-grupo" disabled={!editable}>
+        <legend>{TITULOS.modelos}</legend>
+        <p className="catalog-modal-intro">
+          <strong>Se cambia solo:</strong> el asistente lo reemplaza por el modelo sin preguntar («willow» → Huilo Huilo).{' '}
+          <strong>Podría ser:</strong> palabras que a veces son el modelo y a veces no; el ítem queda pendiente hasta que
+          alguien confirme («pillo» → ¿Huilo Huilo?).
+        </p>
+        <div className="config-tabla config-tabla-modelos">
+          <div className="config-cabecera" aria-hidden="true">
+            <span>Modelo</span>
+            <span>Se cambia solo</span>
+            <span>Podría ser (pregunta)</span>
           </div>
-        ))}
-        <button type="button" className="button secondary small" onClick={() => agregar('familias', { modelo: '', familia: 'PUERTA' })}>
+          {filas.modelos.map((fila, i) => {
+            const nombre = fila.modelo.trim() || 'el modelo nuevo';
+            return (
+              <div className={`config-editor-fila${conError('modelos', i)}`} key={i}>
+                <label className="ia-field">
+                  <span className="config-etiqueta">Modelo</span>
+                  <input value={fila.modelo} onChange={(e) => editar('modelos', i, { modelo: e.target.value })} maxLength={80} {...invalida('modelos', i, 'modelo')} />
+                </label>
+                <div className="ia-field">
+                  <span className="config-etiqueta" aria-hidden="true">
+                    Se cambia solo
+                  </span>
+                  <CampoPalabras
+                    etiqueta={`Se cambia solo por ${nombre}`}
+                    valores={fila.alias}
+                    nombre={fila.modelo}
+                    cambiar={(alias) => editar('modelos', i, { alias })}
+                    invalido={invalida('modelos', i, 'alias')}
+                  />
+                </div>
+                <div className="ia-field">
+                  <span className="config-etiqueta" aria-hidden="true">
+                    Podría ser (pregunta)
+                  </span>
+                  <CampoPalabras
+                    etiqueta={`Podría ser ${nombre} (pregunta)`}
+                    valores={fila.posibles}
+                    nombre={fila.modelo}
+                    cambiar={(posibles) => editar('modelos', i, { posibles })}
+                    invalido={invalida('modelos', i, 'posibles')}
+                  />
+                </div>
+                <BotonQuitar etiqueta={`palabras de ${nombre}`} quitar={() => quitar('modelos', i, `las palabras de ${nombre}`)} />
+                <TextoError id={errorId('modelos', i)} error={errores.modelos?.[i]} mostrar={!!visible('modelos', i)} />
+              </div>
+            );
+          })}
+        </div>
+        <button type="button" className="button secondary small" onClick={() => agregar('modelos', { modelo: '', alias: [], posibles: [] })}>
           Agregar modelo
         </button>
       </fieldset>
 
-      {grupoAlias('modelos', 'Alias por modelo', 'Se reemplazan por el modelo sin preguntar.')}
-      {grupoAlias('posibles', 'Alias posibles por modelo', 'Nunca se reemplazan solos: el ítem queda pendiente hasta que alguien confirme el modelo.')}
+      <fieldset id="config-familias" className="config-grupo" disabled={!editable}>
+        <legend>{TITULOS.familias}</legend>
+        <p className="catalog-modal-intro">Qué tipo de producto es cada modelo, para cotizarlo con la tabla de precios correcta.</p>
+        <div className="config-tabla config-tabla-familias">
+          <div className="config-cabecera" aria-hidden="true">
+            <span>Modelo</span>
+            <span>Familia</span>
+          </div>
+          {filas.familias.map((fila, i) => (
+            <div className={`config-editor-fila${conError('familias', i)}`} key={i}>
+              <label className="ia-field">
+                <span className="config-etiqueta">Modelo</span>
+                <input value={fila.modelo} onChange={(e) => editar('familias', i, { modelo: e.target.value })} maxLength={80} {...invalida('familias', i, 'modelo')} />
+              </label>
+              <div className="ia-field">
+                <span id={`${uid}-familia-${i}`} className="config-etiqueta">
+                  Familia
+                </span>
+                <SelectorFamilia
+                  id={`${uid}-familia-${i}`}
+                  value={fila.familia}
+                  opciones={FAMILIAS}
+                  vacio="Elige una familia"
+                  disabled={!editable}
+                  seleccionar={(familia) => editar('familias', i, { familia: familia as Familia })}
+                />
+              </div>
+              <BotonQuitar etiqueta={`familia de ${fila.modelo.trim() || 'modelo nuevo'}`} quitar={() => quitar('familias', i, `la familia de ${fila.modelo.trim() || 'un modelo'}`)} />
+              <TextoError id={errorId('familias', i)} error={errores.familias?.[i]} mostrar={!!visible('familias', i)} />
+            </div>
+          ))}
+        </div>
+        <button type="button" className="button secondary small" onClick={() => agregar('familias', { modelo: '', familia: 'PUERTA' })}>
+          Agregar modelo
+        </button>
+      </fieldset>
 
       <details className="config-json">
         <summary>Vista técnica (JSON)</summary>

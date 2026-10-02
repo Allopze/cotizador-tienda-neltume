@@ -4,6 +4,6 @@ export const SECCIONES = [
   { id: 'importar', titulo: 'Importar', encabezado: 'Importar catálogo desde Excel' },
   { id: 'agregar', titulo: 'Agregar producto', encabezado: 'Agregar un producto' },
   { id: 'manuales', titulo: 'Gestionar catálogo', encabezado: 'Gestionar productos del catálogo' },
-  { id: 'configuracion', titulo: 'Configuración', encabezado: 'Configuración del catálogo' },
+  { id: 'configuracion', titulo: 'Nombres y alias', encabezado: 'Nombres y alias del catálogo' },
 ] as const;
 export type Seccion = (typeof SECCIONES)[number]['id'];

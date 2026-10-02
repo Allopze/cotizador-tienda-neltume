@@ -513,15 +513,50 @@ p + .pregunta-opciones {
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
-.config-editor-fila {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 10px 14px;
-  margin-bottom: 12px;
+/* Cada lista es una tabla: un solo encabezado arriba, columnas al ancho de su contenido. */
+.config-tabla {
+  --config-columnas: minmax(0, 1fr) 40px;
+  margin-bottom: 10px;
 }
-.config-editor-fila .ia-field {
-  flex: 1 1 200px;
+.config-tabla-maderas {
+  --config-columnas: minmax(140px, 1fr) 76px minmax(0, 2.2fr) 40px;
+}
+.config-tabla-familias {
+  --config-columnas: minmax(140px, 1fr) minmax(0, 1fr) 40px;
+  max-width: 640px;
+}
+.config-tabla-modelos {
+  --config-columnas: minmax(120px, 0.9fr) minmax(0, 2fr) minmax(0, 1.3fr) 40px;
+}
+.config-cabecera,
+.config-editor-fila {
+  display: grid;
+  grid-template-columns: var(--config-columnas);
+  align-items: start;
+  gap: 6px 10px;
+}
+.config-cabecera {
+  align-items: end;
+  padding-bottom: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.config-editor-fila {
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.config-editor-fila.con-error {
+  background: color-mix(in srgb, var(--danger) 5%, transparent);
+}
+/* El encabezado de la tabla nombra las columnas; cada campo conserva su etiqueta para lectores de pantalla. */
+.config-etiqueta {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 .config-grupo > .button {
   margin-bottom: 4px;
@@ -531,16 +566,168 @@ p + .pregunta-opciones {
   font-size: var(--fs-sm);
 }
 /* Los campos de configuración llevan la tipografía de la interfaz, no la monoespaciada de las claves. */
-.config-editor-fila .ia-field input {
+.config-editor-fila .ia-field input,
+.config-probar .ia-field input {
   font: inherit;
   font-size: var(--fs-md);
 }
-.config-editor-fila .config-campo-corto {
-  flex: 0 1 110px;
-}
 .config-error-fila {
-  flex-basis: 100%;
-  margin-top: -4px;
+  grid-column: 1 / -1;
+  margin: 0;
+}
+.config-quitar {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.config-quitar:hover:not(:disabled) {
+  color: var(--danger);
+}
+.config-quitar:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+/* Alias como etiquetas dentro de un campo: se ven enteros y se quitan de a uno. */
+.config-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 8px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  cursor: text;
+}
+.config-chips:focus-within {
+  outline: 2px solid var(--warm);
+  outline-offset: 1px;
+}
+.config-chips:has(input[aria-invalid='true']) {
+  border-color: var(--danger);
+}
+.config-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 2px 2px 8px;
+  border: 1px solid var(--line);
+  background: var(--pale);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.config-chip button {
+  min-width: 24px;
+  min-height: 24px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: var(--fs-md);
+  line-height: 1;
+  cursor: pointer;
+}
+.config-chip button:hover:not(:disabled) {
+  color: var(--danger);
+}
+.config-chips-entrada {
+  flex: 1 1 90px;
+  min-width: 90px;
+}
+/* Dentro de .ia-field: hay que ganarle al estilo de campo normal, o queda una caja dentro de otra. */
+.config-chips-entrada input,
+.config-editor-fila .ia-field .config-chips-entrada input {
+  width: 100%;
+  min-height: 28px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.config-chips-entrada input:focus-visible,
+.config-editor-fila .ia-field .config-chips-entrada input:focus-visible {
+  outline: none;
+}
+.config-alias-aviso {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.config-enlace {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.config-catalogo .catalog-modal-intro strong {
+  color: var(--ink);
+}
+.config-indice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 14px 0 0;
+  font-size: var(--fs-sm);
+}
+.config-indice a {
+  color: var(--ink);
+}
+.config-indice-errores {
+  color: var(--danger);
+}
+.config-probar {
+  max-width: 560px;
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  background: var(--pale);
+}
+.config-probar-resultado {
+  margin: 8px 0 0;
+  font-size: var(--fs-sm);
+}
+@media (max-width: 800px) {
+  .config-cabecera {
+    display: none;
+  }
+  .config-tabla-modelos .config-editor-fila {
+    grid-template-columns: minmax(0, 1fr) 40px;
+  }
+  .config-tabla-maderas .config-editor-fila {
+    grid-template-columns: minmax(0, 1fr) 76px 40px;
+  }
+  /* Las listas de palabras ocupan el ancho completo, debajo del nombre; quitar queda arriba a la derecha. */
+  .config-tabla .ia-field:has(.config-alias) {
+    grid-column: 1 / -1;
+  }
+  .config-tabla-maderas .config-quitar,
+  .config-tabla-modelos .config-quitar {
+    grid-row: 1;
+    grid-column: -2 / -1;
+  }
+  .config-etiqueta {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip: auto;
+  }
+  .config-editor-fila {
+    padding: 10px 0;
+  }
+  .config-editor-fila .config-quitar {
+    align-self: end;
+  }
 }
 /* Barra de guardado fija al pie del panel: el formulario es largo y el botón quedaba fuera de vista. */
 .config-barra {

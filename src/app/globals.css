@@ -321,6 +321,9 @@ h1 {
   .secciones-nav ul {
     display: flex;
     gap: 4px;
+    width: max-content;
+    /* Espacio para que la última pestaña pueda quedar fuera del borde desvanecido. */
+    padding-right: 26px;
   }
   .secciones-nav a {
     border-left: 0;
