@@ -5,19 +5,48 @@ cotizaciones, PDF, planillas privadas ni credenciales de tu equipo. Incluye el c
 Dockerfile, Compose y un `.env` con un secreto nuevo. Docker instala las dependencias y compila
 Next.js en el servidor, para usar módulos nativos de SQLite compatibles con su arquitectura.
 
-## Generar la entrega
+## Despliegue directo por SSH
+
+`npm run deploy` sube el código a `chome:/srv/cotizador-neltume` por SSH, conserva el `.env`
+del servidor, sincroniza el resto (borra allí lo que ya no existe en la entrega) y ejecuta
+`docker compose up -d --build --wait`. Requiere acceso SSH sin contraseña, y `unzip`, `rsync` y
+Docker Compose en el servidor. Al final borra las imágenes viejas del cotizador. En el primer despliegue crea el `.env` con un secreto nuevo y
+`NELTUME_PORT=3010`; si no pasaste `--url`, se detiene hasta que completes `BETTER_AUTH_URL` y
+`NELTUME_HOSTS` en ese archivo. Después, cada `npm run deploy` actualiza y reinicia la app.
+
+### Guard de recursos
+
+Antes de tocar nada, el despliegue toma un lock (un solo despliegue a la vez) y se cancela si
+quedan menos de 5 GB libres en el disco de Docker, menos de 2 GB de RAM disponible o la carga
+supera el 80 % de los núcleos. `npm run deploy -- --forzar` omite el chequeo, pero no el lock.
+Durante el build, Node queda limitado a 2 GB de heap. En ejecución, el contenedor se limita a
+1,5 CPU, 1536 MB de RAM sin swap extra y 512 procesos; ajústalo con `NELTUME_CPUS` y
+`NELTUME_MEMORIA` en el `.env` del servidor.
+
+### Túnel de Cloudflare propio
+
+Si el dominio está en una cuenta de Cloudflare distinta a la del túnel que ya corre en el
+servidor, Compose incluye un servicio `tunel` opcional. Crea el túnel en la cuenta del dominio,
+agrega el hostname público con servicio `http://cotizador:3000` y, en el `.env` del servidor:
+
+```dotenv
+COMPOSE_PROFILES=tunel
+CLOUDFLARE_TUNNEL_TOKEN=<token del túnel>
+```
+
+## Generar la entrega como ZIP
 
 En tu equipo, con las dependencias instaladas:
 
 ```sh
-npm run deploy
+npm run deploy:zip
 ```
 
 El ZIP queda en `deploy/neltume-cotizador-<fecha>.zip`. Si ya conoces el dominio, puedes dejar
 configurados el origen y los hosts permitidos desde aquí:
 
 ```sh
-npm run deploy -- --url https://cotizador.tudominio.cl
+npm run deploy:zip -- --url https://cotizador.tudominio.cl
 ```
 
 No hace falta Docker en tu equipo. El ZIP incluye un secreto de sesión recién generado: trátalo
