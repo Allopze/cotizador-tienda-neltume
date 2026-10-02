@@ -963,8 +963,26 @@ export class Servicio {
         descuentoManual === descuentoEsManual(q) &&
         flete === q.flete &&
         margenCotizacion === margenAntes
-      )
-        return { cotizacion: q, ...extra };
+      ) {
+        if (!q.incompletos.length) return { cotizacion: q, ...extra };
+        // El catálogo puede haber recibido el producto que faltaba, aunque el pedido siga igual.
+        const recalculada = structuredClone(q);
+        const nuevosAvisos = this.recalcular(recalculada, false);
+        const pendientes = new Set(q.incompletos.map((p) => p.indice));
+        const resueltas = recalculada.montos.lineas.filter((l) => l.indice !== null && pendientes.has(l.indice));
+        if (!resueltas.length) return { cotizacion: q, ...extra };
+        const destino = this.abrirEdicion(q, u);
+        destino.solicitudes = recalculada.solicitudes;
+        destino.incompletos = recalculada.incompletos;
+        destino.montos = recalculada.montos;
+        destino.descuento = recalculada.descuento;
+        destino.actualizada = marca(destino.actualizada);
+        u.guardar(destino);
+        for (const linea of resueltas)
+          u.registrarEvento(destino.id, 'modificada', this.autor, `Producto ${linea.producto.codigo} agregado al catálogo`);
+        const todos = [...avisos, ...nuevosAvisos];
+        return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}) };
+      }
       const destino = this.abrirEdicion(q, u);
       const antes = structuredClone(destino.solicitudes),
         clienteAntes = destino.cliente;

@@ -51,13 +51,13 @@ const catalogo: Catalogo = {
 };
 describe('Resolver con catálogo incompleto', () => {
   it.each([
-    [{ modelo: 'Marco', madera: 'raulí', medida: '4', alto: 2.1, cantidad: 1 }, 'Marco'],
-    [{ modelo: 'Molco', madera: 'raulí', ancho: 0.8, alto: 2, cantidad: 1 }, 'Molco'],
-  ])('informa la madera no disponible en vez de fallar o mostrar opciones vacías', (s, nombre) => {
+    [{ modelo: 'Marco', madera: 'raulí', medida: '4', alto: 2.1, cantidad: 1 }, 'Marco', 'MARCO'],
+    [{ modelo: 'Molco', madera: 'raulí', ancho: 0.8, alto: 2, cantidad: 1 }, 'Molco', 'PUERTA'],
+  ])('informa la madera no disponible en vez de fallar o mostrar opciones vacías', (s, nombre, familia) => {
     const r = resolverItem(catalogo, s);
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.rechazo).toEqual({ tipo: 'madera_no_disponible', valor: 'RAULI', disponibles: ['PINO OREGON'] });
+    expect(r.rechazo).toEqual({ tipo: 'madera_no_disponible', valor: 'RAULI', disponibles: ['PINO OREGON'], familia });
     expect(pregunta(r.rechazo, s.modelo)).toBe(
       `${nombre} no viene en Raulí. Maderas disponibles: Pino Oregón.`,
     );
