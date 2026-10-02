@@ -156,15 +156,15 @@ describe('medidas especiales por escalones del catálogo', () => {
   it('la pregunta por una medida fuera del catálogo informa el tramo que se cotiza', () => {
     const texto = (r: ReturnType<typeof resolverItem>, modelo: string) => (r.ok ? null : pregunta(r.rechazo, modelo));
     expect(texto(puerta('Huilo Huilo', 0.55, 2.1), 'Huilo Huilo')).toBe(
-      'Huilo Huilo no viene en 0,55 m de ancho. Se cotizan anchos entre 0,70 y 0,95 m; las medidas intermedias usan la siguiente medida del catálogo.',
+      'Huilo Huilo no viene en 0,55 m de ancho. Se cotizan anchos entre 0,70 y 0,95 m.',
     );
     expect(texto(puerta('Calafquén', 0.8, 2.45), 'Calafquén')).toBe(
-      'Calafquén no viene en 2,45 m de alto o largo. Se cotizan altos o largos entre 2,00 y 2,40 m; las medidas intermedias usan la siguiente medida del catálogo.',
+      'Calafquén no viene en 2,45 m de alto o largo. Se cotizan altos o largos entre 2,00 y 2,40 m.',
     );
     // Para un kit no se ofrece la pieza lineal de 3 m.
     const marco28 = resolverItem(catalogo, { modelo: 'Marco', madera: 'Mara', medida: '2x4', alto: 2.8, cantidad: 1 });
     expect(texto(marco28, 'MARCO')).toBe(
-      'Marco no viene en 2,80 m de alto o largo. Se cotizan altos o largos entre 2,50 y 2,60 m; las medidas intermedias usan la siguiente medida del catálogo.',
+      'Marco no viene en 2,80 m de alto o largo. Se cotizan altos o largos entre 2,50 y 2,60 m.',
     );
   });
 

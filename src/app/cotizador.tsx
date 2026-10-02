@@ -1112,6 +1112,7 @@ export function Cotizador({
                         </p>
                         <PreguntasPendientes
                           preguntas={preguntasChat}
+                          asistente={configurado}
                           editable={!ocupado && !bloqueada}
                           guardando={guardando}
                           responder={acciones.editar}
@@ -1304,6 +1305,7 @@ export function Cotizador({
           </div>
         </section>
         <CotizacionPanel
+          asistente={configurado}
           actual={actual}
           enCurso={enCurso}
           guardando={guardando}

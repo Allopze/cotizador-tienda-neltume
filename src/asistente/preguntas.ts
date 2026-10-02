@@ -45,6 +45,8 @@ export function pregunta(r: Rechazo, modelo: string | null) {
       // Con una sola medida no hay tramo que describir.
       if (r.rango && Math.abs(r.rango.max - r.rango.min) < 1e-9)
         return `${inicio} Solo se cotiza ${metrosTexto(r.rango.min)} m de ${campo}.`;
+      if (r.rango && typeof r.valor === 'number' && (r.valor < r.rango.min || r.valor > r.rango.max))
+        return `${inicio} Se cotizan ${r.campo === 'ancho' ? 'anchos' : 'altos o largos'} entre ${metrosTexto(r.rango.min)} y ${metrosTexto(r.rango.max)} m.`;
       // Entre escalones se cotiza la siguiente medida: se informa el tramo, no una lista cerrada.
       return r.rango
         ? `${inicio} Se cotizan ${r.campo === 'ancho' ? 'anchos' : 'altos o largos'} entre ${metrosTexto(r.rango.min)} y ${metrosTexto(r.rango.max)} m; las medidas intermedias usan la siguiente medida del catálogo.`

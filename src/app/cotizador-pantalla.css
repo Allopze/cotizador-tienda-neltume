@@ -300,7 +300,8 @@
 .cotizador-vistas {
   display: none;
 }
-.dialogo-productos {
+.dialogo-productos,
+.dialogo-alta {
   width: min(760px, calc(100vw - 32px));
 }
 .catalogo-busqueda-label {

@@ -58,6 +58,7 @@ export interface AccionesPanel {
   flujo: (accion: Record<string, unknown>) => Promise<boolean>;
 }
 interface Props {
+  asistente: boolean;
   actual: Cotizacion | null;
   enCurso: Operacion | null;
   guardando: string | null;
@@ -136,6 +137,7 @@ function notaEstado(q: Cotizacion | null) {
 }
 
 export function CotizacionPanel({
+  asistente,
   actual,
   enCurso,
   guardando,
@@ -485,6 +487,7 @@ export function CotizacionPanel({
                                 {preguntasItem.length > 0 && (
                                   <PreguntasPendientes
                                     preguntas={preguntasItem}
+                                    asistente={asistente}
                                     editable={editable}
                                     guardando={guardando}
                                     responder={acciones.editar}

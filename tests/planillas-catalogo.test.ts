@@ -594,13 +594,13 @@ describe('resolución y márgenes con las dos planillas', () => {
     const s = await servicio();
     const pregunta1 = async (item: object) => (await cotizar(s, item)).incompletos[0]?.pregunta;
     expect(await pregunta1(pedido('Huilo Huilo', 'enchapada en Mara', { ancho: 80, alto: 245 }))).toBe(
-      'Huilo Huilo no viene en 2,45 m de alto o largo. Se cotizan altos o largos entre 2,00 y 2,40 m; las medidas intermedias usan la siguiente medida del catálogo.',
+      'Huilo Huilo no viene en 2,45 m de alto o largo. Se cotizan altos o largos entre 2,00 y 2,40 m.',
     );
     expect(await pregunta1(pedido('Huilo Huilo', 'enchapada en Mara', { ancho: 95, alto: 230 }))).toBe(
-      'Huilo Huilo no viene en 0,95 m de ancho. Se cotizan anchos entre 0,70 y 0,90 m; las medidas intermedias usan la siguiente medida del catálogo.',
+      'Huilo Huilo no viene en 0,95 m de ancho. Se cotizan anchos entre 0,70 y 0,90 m.',
     );
     expect(await pregunta1(pedido('Marco', 'pino finger', { medida: '30x70', alto: 2 }))).toBe(
-      'Marco no viene en 2,00 m de alto o largo. Se cotizan altos o largos entre 2,20 y 3,00 m; las medidas intermedias usan la siguiente medida del catálogo.',
+      'Marco no viene en 2,00 m de alto o largo. Se cotizan altos o largos entre 2,20 y 3,00 m.',
     );
     // Sin la madera se pregunta por ella, con las terminaciones entre las opciones.
     const faltante = await pregunta1(pedido('Huilo Huilo', null, { ancho: 80, alto: 230 }));

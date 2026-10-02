@@ -8,6 +8,11 @@ import type { Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { clienteVacio, type Catalogo, type SolicitudItem } from '../src/catalogo/tipos';
 import { generarPdf, plantilla } from '../src/servidor/pdf';
+import { preguntasPendientes } from '../src/negocio/pendientes';
+import { ServicioAltaCatalogo } from '../src/servidor/alta-catalogo';
+import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
+import { cotizacionSchema } from '../src/servidor/persistencia-esquemas';
+import type { Rechazo } from '../src/catalogo/resolver';
 vi.mock('../src/servidor/pdf', () => ({
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
@@ -72,6 +77,97 @@ afterEach(async () => {
   }
 });
 describe('Persistencia y flujo del asistente', () => {
+  it('agrega el marco pendiente de 2,27 m y lo cotiza con una edición sin cambios de campos', async () => {
+    const { almacen, llm } = await setup();
+    const puerta = catalogo.productos[0];
+    const marco = {
+      ...puerta, modelo: 'MARCO', familia: 'MARCO' as const, tipo: null,
+      madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X90', anchoMin: null, anchoMax: null,
+      precioNeto: 50_000, descripcion: 'MARCO PINO FINGER ENCHAPADO MARA 30X90',
+    };
+    guardarCatalogo(almacen.baseDatos(), {
+      ...catalogo,
+      productos: [
+        { ...puerta, codigo: 'HUIL-EM', modelo: 'HUILO HUILO', madera: 'MARA ENCHAPADA', largo: 2.4, altoMin: 2.21, altoMax: 2.4, precioNeto: 100_000 },
+        { ...puerta, codigo: 'RAN-L', modelo: 'RANCO', madera: 'LENGA', anchoMin: 0.85, anchoMax: 0.9, medida: '0,85 A 0,90', largo: 2.5, altoMin: 2.21, altoMax: 2.5, precioNeto: 150_000 },
+        { ...marco, codigo: 'MAR-FE-250', largo: 2.5 },
+        { ...marco, codigo: 'MAR-FE-300', largo: 3 },
+        { ...marco, codigo: 'MAR-L-250', madera: 'LENGA', medida: '2X5', largo: 2.5 },
+        { ...marco, codigo: 'MAR-L-210', madera: 'LENGA', medida: '2X5', largo: 2.1 },
+      ],
+    });
+    const repositorio = new RepositorioCatalogoSqlite(almacen.baseDatos());
+    const servicio = new Servicio(repositorio, llm, almacen);
+    const items: SolicitudItem[] = [
+      { modelo: 'Huilo Huilo', madera: 'MARA ENCHAPADA', ancho: 0.82, alto: 2.27, medida: null, cantidad: 2, tipoMedida: 'vano' },
+      { modelo: 'Marco', madera: 'PINO FINGER ENCHAPADO MARA', ancho: null, alto: 2.27, medida: '30X90', cantidad: 2 },
+      { modelo: 'Ranco', madera: 'LENGA', ancho: 0.87, alto: 2.44, medida: null, cantidad: 1 },
+      { modelo: 'Marco', madera: 'LENGA', ancho: null, alto: 2.44, medida: '2X5', cantidad: 1 },
+    ];
+    llm.interpretar.mockResolvedValueOnce({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
+    let q = (await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: '2 Huilo Huilo enchapada 0,82×2,27 vano con marco 30x90 enchapado de 2,27; 1 Ranco lenga 0,87×2,44 con marco 2x5 lenga',
+    })).cotizacion;
+    expect(q.incompletos).toHaveLength(1);
+    expect(q.incompletos[0]).toMatchObject({ indice: 1, rechazo: { tipo: 'medida_no_disponible', campo: 'alto', familia: 'MARCO', valor: 2.27 } });
+    const [pregunta] = preguntasPendientes(q);
+    expect(pregunta.alta).toEqual({
+      familia: 'MARCO', modelo: 'Marco', madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X90',
+      anchoMin: null, anchoMax: null, largo: 2.27,
+    });
+    q = almacen.obtener(q.id)!;
+    const solicitudes = structuredClone(q.solicitudes),
+      eventosAntes = almacen.eventos(q.id);
+    // Sin un producto nuevo, la edición vacía no guarda ni registra actividad.
+    const sinProducto = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada })).cotizacion;
+    expect(sinProducto).toEqual(q);
+    expect(almacen.obtener(q.id)).toEqual(q);
+    expect(almacen.eventos(q.id)).toEqual(eventosAntes);
+
+    const alta = new ServicioAltaCatalogo(almacen.baseDatos(), repositorio, llm);
+    const propuesta = alta.proponerManual(undefined, { ...pregunta.alta!, tipo: null, precioNeto: 48_000 }, 'cuenta');
+    const nuevo = alta.confirmar(propuesta.id, 'cuenta');
+    const versionAntes = q.actualizada;
+    // Como en una petición nueva, el servicio recibe el catálogo actualizado.
+    const actualizado = new Servicio(new RepositorioCatalogoSqlite(almacen.baseDatos()), llm, almacen);
+    q = (await actualizado.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada })).cotizacion;
+    expect(q.incompletos).toEqual([]);
+    expect(q.solicitudes).toEqual(solicitudes.map((s, i) => i === 1 ? { ...s, modelo: 'MARCO', coincidenciaModelo: 'canonico' } : s));
+    expect(q.montos.lineas).toHaveLength(4);
+    expect(q.montos.lineas.find((l) => l.indice === 1)).toMatchObject({ producto: { codigo: nuevo.codigo, precioNeto: 48_000 }, cantidad: 2, altoSolicitado: 2.27 });
+    expect(q.actualizada).not.toBe(versionAntes);
+    expect(almacen.obtener(q.id)).toEqual(q);
+    expect(almacen.eventos(q.id).slice(eventosAntes.length)).toMatchObject([
+      { tipo: 'modificada', detalle: `Producto ${nuevo.codigo} agregado al catálogo` },
+    ]);
+    expect(llm.interpretar).toHaveBeenCalledTimes(1);
+    // Repetir el callback de guardado tampoco agrega eventos ni altera la versión.
+    const eventos = almacen.eventos(q.id);
+    expect((await actualizado.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada })).cotizacion).toEqual(q);
+    expect(almacen.eventos(q.id)).toEqual(eventos);
+  });
+
+  it.each<Rechazo>([
+    { tipo: 'madera_desconocida', valor: 'Roble', disponibles: [], familia: 'PUERTA' },
+    { tipo: 'madera_no_disponible', valor: 'LENGA', disponibles: [], familia: 'PUERTA' },
+    { tipo: 'medida_no_disponible', campo: 'alto', valor: 2.27, disponibles: [], familia: 'MARCO' },
+  ])('carga $tipo con familia y también sin ella en cotizaciones antiguas', async (rechazo) => {
+    const { servicio, almacen } = await setup();
+    const q = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+    q.solicitudes = [solicitud];
+    q.incompletos = [{ indice: 0, rechazo, pregunta: 'Pendiente' }];
+    expect(cotizacionSchema.parse(q).incompletos[0].rechazo).toEqual(rechazo);
+    await almacen.transaccion((u) => u.guardar(q));
+    expect(almacen.obtener(q.id)?.incompletos[0].rechazo).toEqual(rechazo);
+    const legado = { ...rechazo };
+    if ('familia' in legado) delete legado.familia;
+    q.incompletos[0].rechazo = legado;
+    expect(cotizacionSchema.parse(q).incompletos[0].rechazo).toEqual(legado);
+    await almacen.transaccion((u) => u.guardar(q));
+    expect(almacen.obtener(q.id)?.incompletos[0].rechazo).toEqual(legado);
+  });
+
   it('correlativo 323, reinicio, PDF inmutable, edición crea borrador, nota sin ajuste y bloqueo', async () => {
     const { dir, servicio, llm } = await setup();
     let q = (await servicio.ejecutar({ tipo: 'nueva' })).cotizacion;

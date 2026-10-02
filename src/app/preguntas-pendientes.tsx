@@ -4,6 +4,8 @@ import { metros } from '@/catalogo/resolver';
 import { metrosTexto } from '@/catalogo/escalones';
 import { cambiosRespuesta, type PreguntaPendiente } from '@/negocio/pendientes';
 import type { CambiosEdicion } from './contrato';
+import { AltaProducto } from './alta-producto';
+import { Dialogo } from './dialogo';
 
 /** Con más opciones que estas, un desplegable se lee mejor que una fila de botones. */
 const MAX_BOTONES = 10;
@@ -11,6 +13,7 @@ const MAX_BOTONES = 10;
 interface Props {
   preguntas: PreguntaPendiente[];
   editable: boolean;
+  asistente: boolean;
   guardando: string | null;
   responder: (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
 }
@@ -19,7 +22,7 @@ interface Props {
  * Preguntas de los ítems pendientes. Cada respuesta se guarda con una edición directa: no pasa por la IA,
  * así que es inmediata y no se puede malinterpretar.
  */
-export function PreguntasPendientes({ preguntas, editable, guardando, responder }: Props) {
+export function PreguntasPendientes({ preguntas, editable, asistente, guardando, responder }: Props) {
   if (!preguntas.length) return null;
   return (
     <div className="pendientes-preguntas">
@@ -28,8 +31,10 @@ export function PreguntasPendientes({ preguntas, editable, guardando, responder 
           key={p.clave}
           pregunta={p}
           editable={editable}
+          asistente={asistente}
           guardando={guardando === `pendiente.${p.clave}`}
           responder={(valor) => responder(cambiosRespuesta(p, valor), `pendiente.${p.clave}`)}
+          alGuardar={() => responder({}, `pendiente.${p.clave}`)}
         />
       ))}
     </div>
@@ -39,17 +44,27 @@ export function PreguntasPendientes({ preguntas, editable, guardando, responder 
 function Pregunta({
   pregunta: p,
   editable,
+  asistente,
   guardando,
   responder,
+  alGuardar,
 }: {
   pregunta: PreguntaPendiente;
   editable: boolean;
+  asistente: boolean;
   guardando: boolean;
   responder: (valor: string | number) => Promise<boolean>;
+  alGuardar: () => Promise<boolean>;
 }) {
   const id = useId();
+  const [altaAbierta, setAltaAbierta] = useState(false);
   const deshabilitado = !editable || guardando;
   const desplegable = p.opciones.length > MAX_BOTONES;
+  const botonAlta = p.alta && editable && (
+    <button type="button" disabled={deshabilitado} onClick={() => setAltaAbierta(true)}>
+      Agregar al catálogo
+    </button>
+  );
   return (
     <div className="pendiente-pregunta" role="group" aria-labelledby={`${id}-texto`}>
       <p id={`${id}-texto`} className="pendiente-texto">
@@ -75,9 +90,30 @@ function Pregunta({
                 {o.sugerencia && <small>{o.sugerencia}</small>}
               </button>
             ))}
+            {botonAlta}
           </div>
         ))}
       {p.entrada && <Entrada pregunta={p} deshabilitado={deshabilitado} responder={responder} />}
+      {(desplegable || !p.opciones.length) && botonAlta && (
+        <div className="pendiente-opciones">{botonAlta}</div>
+      )}
+      {p.alta && (
+        <Dialogo
+          abierto={altaAbierta}
+          alCerrar={() => setAltaAbierta(false)}
+          titulo="Agregar al catálogo"
+          className="dialogo-alta"
+        >
+          <AltaProducto
+            inicial={p.alta}
+            asistente={asistente}
+            alGuardar={() => {
+              setAltaAbierta(false);
+              void alGuardar();
+            }}
+          />
+        </Dialogo>
+      )}
     </div>
   );
 }
