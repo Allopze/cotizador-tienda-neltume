@@ -139,13 +139,34 @@ describe('Persistencia y flujo del asistente', () => {
     expect(q.actualizada).not.toBe(versionAntes);
     expect(almacen.obtener(q.id)).toEqual(q);
     expect(almacen.eventos(q.id).slice(eventosAntes.length)).toMatchObject([
-      { tipo: 'modificada', detalle: `Producto ${nuevo.codigo} agregado al catálogo` },
+      { tipo: 'modificada', detalle: `Ítem 2 cotizado con ${nuevo.codigo}, agregado al catálogo` },
     ]);
     expect(llm.interpretar).toHaveBeenCalledTimes(1);
     // Repetir el callback de guardado tampoco agrega eventos ni altera la versión.
     const eventos = almacen.eventos(q.id);
     expect((await actualizado.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada })).cotizacion).toEqual(q);
     expect(almacen.eventos(q.id)).toEqual(eventos);
+  });
+
+  it('cotiza un pendiente tras reimportar la planilla y registra el producto del catálogo vigente', async () => {
+    const { almacen, llm } = await setup();
+    guardarCatalogo(almacen.baseDatos(), catalogo);
+    const servicio = new Servicio(new RepositorioCatalogoSqlite(almacen.baseDatos()), llm, almacen);
+    const items = [solicitud, { ...solicitud, madera: 'LENGA' }];
+    llm.interpretar.mockResolvedValueOnce({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: '3 Molco oregón y 3 Molco lenga' })).cotizacion;
+    expect(q.incompletos).toMatchObject([{ indice: 1, rechazo: { tipo: 'madera_no_disponible' } }]);
+    const eventosAntes = almacen.eventos(q.id);
+    const nuevo = { ...catalogo.productos[0], codigo: 'MOL-L-3-A', madera: 'LENGA' };
+    guardarCatalogo(almacen.baseDatos(), { ...catalogo, productos: [...catalogo.productos, nuevo] });
+    const actualizado = new Servicio(new RepositorioCatalogoSqlite(almacen.baseDatos()), llm, almacen);
+    q = (await actualizado.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada })).cotizacion;
+    expect(q.incompletos).toEqual([]);
+    expect(q.montos.lineas.find((l) => l.indice === 1)?.producto.codigo).toBe(nuevo.codigo);
+    expect(almacen.eventos(q.id).slice(eventosAntes.length)).toMatchObject([
+      { tipo: 'modificada', detalle: 'Ítem 2 cotizado con MOL-L-3-A del catálogo vigente' },
+    ]);
+    expect(llm.interpretar).toHaveBeenCalledTimes(1);
   });
 
   it.each<Rechazo>([
