@@ -153,6 +153,19 @@ const partesNombre = (nombre: string) => [
   ...nombre.split(/\s+/).filter((p) => normalizar(p).length >= 4),
 ];
 
+/**
+ * La secuencia tal como se dijo y, después, con cada palabra en singular («3 marcos» nombra MARCO, «guardapolvos»
+ * a GUARDAPOLVO). Solo se quita una «S» o «ES» final de palabras largas: «amarradas» sigue sin contener «mara».
+ */
+const FORMAS = [
+  (p: string) => p,
+  (p: string) => (p.length > 3 && p.endsWith('S') ? p.slice(0, -1) : p),
+  (p: string) => (p.length > 4 && p.endsWith('ES') ? p.slice(0, -2) : p),
+];
+function singulares(palabras: string[]) {
+  return [...new Set(FORMAS.map((forma) => palabras.map(forma).join(' ')))];
+}
+
 /** Cómo resolvería el catálogo lo que dijo el cliente: el nombre canónico, o null si no lo sabe o debe preguntar. */
 export type ResolverNombre = (dicho: string) => string | null;
 
@@ -179,7 +192,8 @@ function dichoComo(texto: string, resolver: ResolverNombre) {
       for (let largo = Math.min(4, palabras.length); largo >= 1; largo--)
         for (let i = 0; i + largo <= palabras.length; i++) {
           if (usada.slice(i, i + largo).some(Boolean)) continue;
-          const nombre = resolver(palabras.slice(i, i + largo).join(' '));
+          const secuencia = palabras.slice(i, i + largo);
+          const nombre = singulares(secuencia).reduce<string | null>((n, s) => n ?? resolver(s), null);
           if (!nombre) continue;
           resueltos.add(normalizar(nombre));
           usada.fill(true, i, i + largo);
@@ -191,12 +205,13 @@ function dichoComo(texto: string, resolver: ResolverNombre) {
     if (nombre) return resueltos.has(normalizar(nombre));
     return partesNombre(propuesto).some((parte) => {
       const clave = normalizar(parte);
-      return !!clave && literales.some((p, i) => {
-        let secuencia = p;
+      // Cada palabra se lleva al singular antes de unirla: así el mínimo de letras vale por palabra («coz xs»).
+      return !!clave && FORMAS.some((forma) => literales.some((p, i) => {
+        let secuencia = p && forma(p);
         let fin = i + 1;
-        while (secuencia && secuencia.length < clave.length && literales[fin]) secuencia += literales[fin++];
+        while (secuencia && secuencia.length < clave.length && literales[fin]) secuencia += forma(literales[fin++]);
         return secuencia === clave;
-      });
+      }));
     });
   };
 }

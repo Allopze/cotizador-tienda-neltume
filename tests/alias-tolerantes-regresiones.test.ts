@@ -91,6 +91,30 @@ describe('regresiones de canónicos y tolerancia', () => {
     expect(anclarNombres([solicitud('CUNCO')], [], ['2 cunco sur de mara'], alias, resolverNombres(conSur)).items[0].modelo).toBeNull();
   });
 
+  it('el anclaje reconoce accesorios dichos en plural sin aceptar palabras que solo contienen el nombre', async () => {
+    const accesorio = (modelo: string, familia: Producto['familia']): Producto => ({
+      ...producto(modelo), familia, medida: '2X4', anchoMin: null, anchoMax: null,
+    });
+    const { repo } = await repositorio([
+      accesorio('MARCO', 'MARCO'), accesorio('PILASTRA', 'MOLDURA'), accesorio('GUARDAPOLVO', 'MOLDURA'),
+    ]);
+    const alias = { modelo: repo.aliasModelos(), madera: repo.aliasMaderas() };
+    for (const [texto, modelo] of [
+      ['3 marcos 2x4 de 2,10 en mara', 'MARCO'],
+      ['10 pilastras 6x1 de mara de 3 metros', 'PILASTRA'],
+      ['20 guardapolvos 12x2 en mara', 'GUARDAPOLVO'],
+    ]) {
+      const { items, avisos } = anclarNombres([{ ...solicitud(modelo), madera: 'MARA' }], [], [texto], alias, resolverNombres(repo));
+      expect(items[0].modelo).toBe(modelo);
+      expect(avisos).toEqual([]);
+    }
+    expect(
+      anclarNombres([solicitud('MARCO')], [], ['2 puertas amarradas'], alias, resolverNombres(repo)).items[0],
+    ).toMatchObject({ modelo: null, madera: null });
+    // El singular se aplica por palabra: «xs» es muy corta para perder la S, así que «COZ X» no se dijo.
+    expect(anclarNombres([solicitud('COZ X')], [], ['2 coz xs de mara'], alias, resolverNombres(repo)).items[0].modelo).toBeNull();
+  });
+
   it('el anclaje conserva nombres desconocidos literales y rechaza Damerau sin confirmar', async () => {
     const { repo } = await repositorio([producto('CUNCU')]);
     const resolver = resolverNombres(repo);
