@@ -32,7 +32,7 @@ test('agrega al catálogo desde un pendiente con el formulario completado y coti
   await expect(datos.getByLabel('Madera', { exact: true })).toHaveValue('Roble pendiente e2e');
   await expect(datos.getByLabel('Ancho mínimo')).toHaveValue('0,8');
   await expect(datos.getByLabel('Ancho máximo')).toHaveValue('0,8');
-  await expect(datos.getByLabel('Alto', { exact: true })).toHaveValue('2,1');
+  await expect(datos.getByRole('textbox', { name: /^Alto / })).toHaveValue('2,1');
   await expect(datos.getByLabel('Precio base neto')).toHaveValue('');
   await expect(datos.getByLabel('Precio base neto')).toBeFocused();
   await datos.getByLabel('Precio base neto').fill('145.000');
