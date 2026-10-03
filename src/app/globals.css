@@ -299,8 +299,9 @@ h1 {
 .secciones-contenido .catalogo-lista {
   max-height: 65vh;
 }
+/* La configuración del catálogo ocupa todo el ancho del panel; el resto de los formularios conserva su columna. */
 .secciones-contenido .alta-producto,
-.secciones-contenido form {
+.secciones-contenido form:not(.config-catalogo) {
   max-width: 720px;
 }
 @media (max-width: 800px) {

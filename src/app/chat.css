@@ -526,7 +526,7 @@ p + .pregunta-opciones {
   max-width: 640px;
 }
 .config-tabla-modelos {
-  --config-columnas: minmax(120px, 0.9fr) minmax(0, 2fr) minmax(0, 1.3fr) 40px;
+  --config-columnas: minmax(120px, 0.8fr) minmax(0, 2.2fr) minmax(108px, 1.4fr) 40px;
 }
 .config-cabecera,
 .config-editor-fila {
@@ -564,6 +564,10 @@ p + .pregunta-opciones {
 .config-grupo > .catalog-modal-intro {
   margin: 0 0 10px;
   font-size: var(--fs-sm);
+}
+/* El formulario ocupa todo el panel: los párrafos de ayuda conservan un ancho de lectura cómodo. */
+.config-catalogo .catalog-modal-intro {
+  max-width: 72ch;
 }
 /* Los campos de configuración llevan la tipografía de la interfaz, no la monoespaciada de las claves. */
 .config-editor-fila .ia-field input,
