@@ -153,6 +153,41 @@ const partesNombre = (nombre: string) => [
   ...nombre.split(/\s+/).filter((p) => normalizar(p).length >= 4),
 ];
 
+/** Cómo resolvería el catálogo lo que dijo el cliente: el nombre canónico, o null si no lo sabe o debe preguntar. */
+export type ResolverNombre = (dicho: string) => string | null;
+
+/**
+ * Si el texto nombra `propuesto` escrito de otra forma («huillo», «wilo wilo»): alguna secuencia de palabras
+ * enteras del texto la resuelve el catálogo, con sus mismas reglas, a ese nombre. Así el anclaje nunca acepta
+ * lo que el resolver habría preguntado o dejado desconocido, y «amarradas» no contiene la madera «mara».
+ */
+function dichoComo(texto: string, resolver: ResolverNombre) {
+  const palabras = texto
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  let resueltos: Set<string> | null = null;
+  return (propuesto: string) => {
+    if (!resueltos) {
+      resueltos = new Set();
+      // Primero las secuencias más largas: una palabra dentro de una frase que ya nombró otra cosa no cuenta
+      // («cunnco» dentro de «cunnco sur», «pinno» dentro de «pinno finger»).
+      const usada = palabras.map(() => false);
+      for (let largo = Math.min(4, palabras.length); largo >= 1; largo--)
+        for (let i = 0; i + largo <= palabras.length; i++) {
+          if (usada.slice(i, i + largo).some(Boolean)) continue;
+          const nombre = resolver(palabras.slice(i, i + largo).join(' '));
+          if (!nombre) continue;
+          resueltos.add(normalizar(nombre));
+          usada.fill(true, i, i + largo);
+        }
+    }
+    return resueltos.has(normalizar(propuesto));
+  };
+}
+
 /**
  * Lo mismo para los nombres: un modelo o una madera nueva debe aparecer en el texto, por su nombre, por una
  * de sus palabras o por un alias del catálogo. Así la IA no puede cambiar «Pillo» por otro modelo parecido.
@@ -163,8 +198,11 @@ export function anclarNombres(
   previos: SolicitudItem[],
   textos: string[],
   alias: Record<CampoNombre, Record<string, string[]>>,
+  /** Resolución del catálogo: acepta un nombre dicho con otra forma solo si el catálogo lo lleva a ese nombre. */
+  resolver?: Record<CampoNombre, ResolverNombre>,
 ) {
   const texto = normalizar(textos.join(' '));
+  const dicho = resolver && { modelo: dichoComo(textos.join(' '), resolver.modelo), madera: dichoComo(textos.join(' '), resolver.madera) };
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     let resultado = item;
@@ -176,8 +214,8 @@ export function anclarNombres(
       const alternativos = Object.entries(alias[campo]).flatMap(([nombre, lista]) =>
         normalizar(nombre) === clave ? lista : [],
       );
-      const candidatos = [...partesNombre(valor), ...alternativos].map(normalizar).filter(Boolean);
-      if (candidatos.some((c) => texto.includes(c))) continue;
+      const candidatos = [...partesNombre(valor), ...alternativos];
+      if (candidatos.some((c) => !!normalizar(c) && texto.includes(normalizar(c))) || dicho?.[campo](valor)) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
         `El asistente interpretó ${campo === 'modelo' ? 'el modelo' : 'la madera'} del ítem ${i + 1} como «${valor}», pero ese nombre no aparece en tu mensaje: quedó pendiente para que lo indiques.`,

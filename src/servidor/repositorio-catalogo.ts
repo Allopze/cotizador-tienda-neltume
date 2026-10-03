@@ -6,7 +6,9 @@ import { escalon, escalonesSeTocan } from '../catalogo/escalones';
 import { ETIQUETA_ORIGEN, type OrigenCatalogo } from '../catalogo/origenes';
 import {
   aliasMaderasConfiguradas,
+  choqueTolerante,
   CONFIGURACION_CATALOGO_BASE,
+  modeloParecido as modeloParecidoConfigurado,
   nombreCanonicoModelo,
   resolverMaderaConfigurada,
   resolverModeloConfigurado,
@@ -361,9 +363,9 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   resolverMadera(valor: string) {
     return (
-      resolverMaderaConfigurada(valor, this.configuracion) ??
+      resolverMaderaConfigurada(valor, this.configuracion, { tolerante: false }) ??
       this.maderas().find((madera) => normalizar(madera) === normalizar(valor)) ??
-      null
+      resolverMaderaConfigurada(valor, this.configuracion)
     );
   }
 
@@ -373,6 +375,10 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   resolverModeloPosible(valor: string) {
     return resolverModeloPosibleConfigurado(valor, this.configuracion);
+  }
+
+  modeloParecido(valor: string, modelos: string[]) {
+    return modeloParecidoConfigurado(valor, this.configuracion, modelos);
   }
 
   aliasMaderas() {
@@ -696,6 +702,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   guardarConfiguracion(configuracion: ConfiguracionCatalogo) {
     const validada = validarConfiguracionCatalogo(configuracion);
+    const choque = choqueTolerante(validada);
+    if (choque) throw new Error(choque);
     this.db
       .prepare(
         `INSERT INTO catalogo_configuracion (id, configuracion_json) VALUES (1, ?)

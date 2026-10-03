@@ -3,6 +3,7 @@ import { ajusteMedida, enEscalon, escalon, esKit, LARGO_PIEZA, vieneEnKit, type 
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
+  modeloParecido,
   nombreCanonicoModelo,
   normalizarCatalogo,
   resolverMaderaConfigurada,
@@ -65,6 +66,8 @@ export interface FuenteCatalogo {
   resolverMadera?(valor: string): string | null;
   resolverModelo?(valor: string): string;
   resolverModeloPosible?(valor: string): string | null;
+  /** Modelo del catálogo al que `valor` se parece a una letra de distancia; null si no hay o si hay empate. */
+  modeloParecido?(valor: string, modelos: string[]): string | null;
   aliasMaderas?(): Record<string, string[]>;
   aliasModelos?(): Record<string, string[]>;
 }
@@ -105,7 +108,8 @@ function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
 /**
  * Un nombre canónico existente siempre gana frente a cualquier alias (p. ej. «Pillo» si fuera un modelo real).
  * Después un alias seguro se normaliza al modelo. Un alias dudoso nunca sustituye: `posible` trae el modelo
- * del catálogo que se sugiere confirmar, y `modelo` queda como vino.
+ * del catálogo que se sugiere confirmar, y `modelo` queda como vino. Sin alias dudoso, un nombre a una letra
+ * de distancia de un modelo conocido se sugiere igual: preguntar es más seguro que reemplazarlo en silencio.
  */
 export function modeloDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
   const canonico = modelosCatalogo(catalogo).find((m) => normalizar(m) === normalizar(valor));
@@ -115,21 +119,46 @@ export function modeloDelCatalogo(catalogo: CatalogoConsultable, valor: string) 
       ? resolverModeloConfigurado(valor, CONFIGURACION_CATALOGO_BASE)
       : (catalogo.resolverModelo?.(valor) ?? valor);
   if (normalizar(modelo) !== normalizar(valor)) return { modelo, canonico: false, posible: null };
-  const sugerido =
+  const dudoso =
     'productos' in catalogo
       ? resolverModeloPosibleConfigurado(valor, CONFIGURACION_CATALOGO_BASE)
       : (catalogo.resolverModeloPosible?.(valor) ?? null);
+  const parecido =
+    dudoso === null
+      ? 'productos' in catalogo
+        ? modeloParecido(valor, CONFIGURACION_CATALOGO_BASE, modelosCatalogo(catalogo))
+        : (catalogo.modeloParecido?.(valor, modelosCatalogo(catalogo)) ?? null)
+      : null;
+  const sugerido = dudoso ?? parecido;
   const posible = sugerido ? (modelosCatalogo(catalogo).find((m) => normalizar(m) === normalizar(sugerido)) ?? null) : null;
   return { modelo, canonico: false, posible };
 }
-/** Madera canónica para un nombre o alias; null si el catálogo no la conoce. */
+/**
+ * Lo que el catálogo entiende por un texto, para el anclaje: el modelo o madera canónicos, o null si no lo
+ * reconoce o si tendría que preguntar (alias dudoso, parecido o ambigüedad).
+ */
+export const resolverNombres = (catalogo: CatalogoConsultable) => ({
+  modelo: (dicho: string) => {
+    const r = modeloDelCatalogo(catalogo, dicho);
+    return r.posible || (!r.canonico && normalizar(r.modelo) === normalizar(dicho)) ? null : r.modelo;
+  },
+  madera: (dicho: string) => maderaDelCatalogo(catalogo, dicho),
+});
+/**
+ * Madera canónica para un nombre o alias; null si el catálogo no la conoce. Orden: alias exacto, madera real
+ * exacta y, al final, la variante tolerante («MARRA» no cambia a MARA si MARRA existe en el catálogo).
+ */
 export function maderaDelCatalogo(catalogo: CatalogoConsultable, valor: string) {
-  const configurada =
-    'productos' in catalogo
-      ? resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE)
-      : catalogo.resolverMadera?.(valor);
+  if (!('productos' in catalogo))
+    return (
+      catalogo.resolverMadera?.(valor) ??
+      maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
+      null
+    );
   return (
-    configurada ?? maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ?? null
+    resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE, { tolerante: false }) ??
+    maderasCatalogo(catalogo).find((disponible) => normalizar(disponible) === normalizar(valor)) ??
+    resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE)
   );
 }
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {

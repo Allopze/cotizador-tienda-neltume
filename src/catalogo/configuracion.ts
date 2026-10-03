@@ -8,6 +8,22 @@ export const normalizarCatalogo = (s: string) =>
     .toUpperCase()
     .replace(/[^A-Z0-9]/g, '');
 
+/**
+ * Clave tolerante a errores de escritura: además de normalizarCatalogo, junta las palabras repetidas
+ * («WILO WILO» → «WILO») y colapsa las letras dobles consecutivas («HUILLO» → «HUILO»,
+ * «WILLOW» → «WILOW»). No reemplaza a normalizarCatalogo: la coincidencia exacta siempre gana.
+ */
+export const claveTolerante = (s: string) => {
+  const palabras = s
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  const propias = palabras.length >= 2 && palabras.every((p) => p === palabras[0]) ? [palabras[0]] : palabras;
+  return normalizarCatalogo(propias.join(' ')).replace(/(.)\1+/g, '$1');
+};
+
 /** Presentación estable del nombre que se guarda en todos los documentos y consultas. */
 export const nombreCanonicoModelo = (s: string) =>
   normalizarCatalogo(s) === 'HUILOHUILO' ? 'Huilo Huilo' : s;
@@ -183,15 +199,71 @@ export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatal
   return configuracion;
 }
 
-export const resolverMaderaConfigurada = (valor: string, configuracion: ConfiguracionCatalogo) => {
-  const clave = normalizarCatalogo(valor);
-  return (
-    configuracion.maderas.find(
-      (madera) =>
-        normalizarCatalogo(madera.nombre) === clave ||
-        madera.alias.some((alias) => normalizarCatalogo(alias) === clave),
-    )?.nombre ?? null
+/**
+ * Choques que solo ve la clave tolerante: «TOLLTEN» en un modelo y «TOLTEN» en otro, o «PILO» seguro y
+ * «PILLO» dudoso en el mismo. Se rechazan al guardar; una configuración ya guardada se sigue cargando
+ * (los resolvers ignoran la coincidencia tolerante ambigua), para que el editor pueda corregirla.
+ */
+export function choqueTolerante(configuracion: ConfiguracionCatalogo): string | null {
+  const maderas = new Map<string, string>();
+  for (const madera of configuracion.maderas)
+    for (const valor of [madera.nombre, ...madera.alias]) {
+      const clave = claveTolerante(valor);
+      const dueno = maderas.get(clave);
+      if (dueno && dueno !== madera.nombre) return `El nombre o alias de madera “${valor}” se parece a uno de ${dueno}: el asistente no sabría cuál elegir.`;
+      maderas.set(clave, madera.nombre);
+    }
+  const modelos = new Map<string, string>();
+  for (const [modelo, aliases] of [
+    ...Object.entries(configuracion.aliasModelos),
+    ...Object.entries(configuracion.aliasPosiblesModelos),
+  ])
+    for (const valor of [modelo, ...aliases]) {
+      const clave = claveTolerante(valor);
+      const dueno = modelos.get(clave);
+      if (dueno && normalizarCatalogo(dueno) !== normalizarCatalogo(modelo))
+        return `La palabra de modelo “${valor}” se parece a una de ${dueno}: el asistente no sabría cuál elegir.`;
+      modelos.set(clave, modelo);
+    }
+  for (const [modelo, posibles] of Object.entries(configuracion.aliasPosiblesModelos)) {
+    const seguros = Object.entries(configuracion.aliasModelos)
+      .filter(([otro]) => normalizarCatalogo(otro) === normalizarCatalogo(modelo))
+      .flatMap(([, aliases]) => aliases.map(claveTolerante));
+    const repetido = posibles.find((p) => seguros.includes(claveTolerante(p)));
+    if (repetido) return `“${repetido}” de ${modelo} está, escrito parecido, en las dos columnas: déjalo solo en una.`;
+  }
+  return null;
+}
+
+/** Dueños (por identidad normalizada) de la clave tolerante de `valor` entre `entradas`. */
+function duenosTolerantes(valor: string, entradas: [string, string[]][]) {
+  const clave = claveTolerante(valor);
+  if (!clave) return new Map<string, string>();
+  return new Map(
+    entradas.filter(([, palabras]) => palabras.some((p) => claveTolerante(p) === clave)).map(([n]) => [normalizarCatalogo(n), n]),
   );
+}
+
+/** Único dueño de la clave tolerante de `valor`; null si nadie la tiene o si la tienen dos (ambigua). */
+function duenoTolerante(valor: string, entradas: [string, string[]][]) {
+  const duenos = duenosTolerantes(valor, entradas);
+  return duenos.size === 1 ? [...duenos.values()][0] : null;
+}
+
+/** Con `tolerante: false` solo compara exacto: así una madera real del catálogo gana a una variante. */
+export const resolverMaderaConfigurada = (
+  valor: string,
+  configuracion: ConfiguracionCatalogo,
+  { tolerante = true }: { tolerante?: boolean } = {},
+) => {
+  const clave = normalizarCatalogo(valor);
+  const exacta = configuracion.maderas.find(
+    (madera) =>
+      normalizarCatalogo(madera.nombre) === clave ||
+      madera.alias.some((alias) => normalizarCatalogo(alias) === clave),
+  );
+  if (exacta || !tolerante) return exacta?.nombre ?? null;
+  return duenoTolerante(valor, configuracion.maderas.map((m) => [m.nombre, [m.nombre, ...m.alias]]));
 };
 
 /**
@@ -214,18 +286,65 @@ export const resolverModeloConfigurado = (valor: string, configuracion: Configur
     ([modelo, aliases]) =>
       normalizarCatalogo(modelo) === clave || aliases.some((alias) => normalizarCatalogo(alias) === clave),
   );
-  return entrada?.[0] ?? valor;
+  if (entrada) return entrada[0];
+  // Un dudoso (aunque sea por parecido, y aunque sea ambiguo) manda sobre un seguro que solo coincide por
+  // parecido: el valor queda como vino y se pregunta o se marca desconocido, nunca se reemplaza.
+  if (resolverModeloPosibleConfigurado(valor, configuracion)) return valor;
+  if (duenosTolerantes(valor, Object.entries(configuracion.aliasPosiblesModelos)).size) return valor;
+  return (
+    duenoTolerante(
+      valor,
+      Object.entries(configuracion.aliasModelos).map(([modelo, aliases]) => [modelo, [modelo, ...aliases]]),
+    ) ?? valor
+  );
 };
 
 /** Modelo al que podría referirse un alias dudoso; null si el valor no figura entre ellos. */
 export const resolverModeloPosibleConfigurado = (valor: string, configuracion: ConfiguracionCatalogo) => {
   const clave = normalizarCatalogo(valor);
-  return (
-    Object.entries(configuracion.aliasPosiblesModelos).find(([, aliases]) =>
-      aliases.some((alias) => normalizarCatalogo(alias) === clave),
-    )?.[0] ?? null
+  const exacta = Object.entries(configuracion.aliasPosiblesModelos).find(([, aliases]) =>
+    aliases.some((alias) => normalizarCatalogo(alias) === clave),
   );
+  return exacta ? exacta[0] : duenoTolerante(valor, Object.entries(configuracion.aliasPosiblesModelos));
 };
+
+/** Distancia de Damerau-Levenshtein con transposición adyacente; basta saber si supera 1. */
+function distanciaDamerau(a: string, b: string) {
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  const d: number[][] = Array.from({ length: a.length + 1 }, (_, i) =>
+    Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+  );
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++) {
+      const costo = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + costo);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1])
+        d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
+  return d[a.length][b.length];
+}
+
+/**
+ * Modelo al que `valor` se parece a lo más a una letra o una transposición, comparando claves tolerantes
+ * contra los modelos del catálogo (`modelos`), los configurados y sus alias seguros. Devuelve null si la
+ * clave es muy corta (a esa distancia casi cualquier palabra se parecería) o si más de un modelo queda
+ * igual de cerca.
+ */
+export function modeloParecido(valor: string, configuracion: ConfiguracionCatalogo, modelos: string[] = []): string | null {
+  const clave = claveTolerante(valor);
+  if (clave.length < 5) return null;
+  const candidatos = new Map<string, string>();
+  const probar = (palabra: string, modelo: string) => {
+    if (distanciaDamerau(clave, claveTolerante(palabra)) <= 1) candidatos.set(normalizarCatalogo(modelo), modelo);
+  };
+  for (const modelo of modelos) probar(modelo, modelo);
+  for (const [modelo, aliases] of Object.entries(configuracion.aliasModelos)) {
+    probar(modelo, modelo);
+    for (const alias of aliases) probar(alias, modelo);
+  }
+  for (const modelo of Object.keys(configuracion.aliasPosiblesModelos)) probar(modelo, modelo);
+  return candidatos.size === 1 ? [...candidatos.values()][0] : null;
+}
 
 export const aliasMaderasConfiguradas = (configuracion: ConfiguracionCatalogo) =>
   Object.fromEntries(configuracion.maderas.map((madera) => [madera.nombre, madera.alias]));
