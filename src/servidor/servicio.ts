@@ -979,8 +979,14 @@ export class Servicio {
         destino.descuento = recalculada.descuento;
         destino.actualizada = marca(destino.actualizada);
         u.guardar(destino);
+        // Los productos agregados a mano los conoce el catálogo con que se cotizó, no la base de cotizaciones.
+        const catalogo = this.catalogo as CatalogoConsultable & { listarManuales?: () => { codigo: string }[] };
+        const manuales = new Set((catalogo.listarManuales?.() ?? []).map((p) => p.codigo));
         for (const linea of resueltas)
-          u.registrarEvento(destino.id, 'modificada', this.autor, `Producto ${linea.producto.codigo} agregado al catálogo`);
+          u.registrarEvento(
+            destino.id, 'modificada', this.autor,
+            `Ítem ${linea.indice! + 1} cotizado con ${linea.producto.codigo}${manuales.has(linea.producto.codigo) ? ', agregado al catálogo' : ' del catálogo vigente'}`,
+          );
         const todos = [...avisos, ...nuevosAvisos];
         return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}) };
       }

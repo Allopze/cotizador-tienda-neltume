@@ -233,13 +233,33 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     return no({ tipo: 'modelo_desconocido', valor: s.modelo, disponibles: modelosCatalogo(catalogo) });
   const familia = opciones[0].familia,
     puerta = familia === 'PUERTA';
+  // Cada madera tiene sus propios escalones: una alternativa debe calzar con todas las medidas pedidas.
+  const maderasCompatibles = () => unicos(opciones, 'madera').filter((madera) => {
+    let productos = opciones.filter((p) => p.madera === madera);
+    if (puerta && s.ancho !== null) {
+      const ancho = metros(s.ancho);
+      if (ancho === null) return false;
+      productos = porEscalon(productos, ancho, 'ancho').productos;
+    }
+    if (!puerta && s.medida) {
+      let medida = normalizarMedida(s.medida);
+      if (familia !== 'MOLDURA' && /^\d+$/.test(medida)) medida = `2X${medida}`;
+      productos = productos.filter((p) => p.medida === medida);
+    }
+    if (s.alto !== null) {
+      const alto = metros(s.alto);
+      if (alto === null) return false;
+      productos = porEscalon(productos, alto, 'alto').productos;
+    }
+    return productos.length > 0;
+  });
   const madera = s.madera ? maderaDelCatalogo(catalogo, s.madera) : null;
   if (s.madera && !madera)
-    return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: unicos(opciones, 'madera'), familia });
+    return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: maderasCompatibles(), familia });
   if (madera) {
     const conMadera = opciones.filter((p) => p.madera === madera);
     if (!conMadera.length)
-      return no({ tipo: 'madera_no_disponible', valor: madera, disponibles: unicos(opciones, 'madera'), familia });
+      return no({ tipo: 'madera_no_disponible', valor: madera, disponibles: maderasCompatibles(), familia });
     opciones = conMadera;
   }
   if (s.cantidad !== null && (!Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000))

@@ -29,8 +29,12 @@ export function pregunta(r: Rechazo, modelo: string | null) {
     case 'modelo_posible':
       return `¿Te refieres a ${bonito(r.sugerido)}? Confírmalo para cotizar.`;
     case 'madera_desconocida':
+      if (!r.disponibles.length)
+        return `No trabajamos “${r.valor}” en este catálogo, y ninguna madera de ${nombre} es compatible con las medidas pedidas.`;
       return `No trabajamos “${r.valor}” en este catálogo. Maderas disponibles: ${listar(r.disponibles.map(bonito))}.`;
     case 'madera_no_disponible':
+      if (!r.disponibles.length)
+        return `${nombre} no viene en ${bonito(r.valor)}, y ninguna madera de ${nombre} es compatible con las medidas pedidas.`;
       return `${nombre} no viene en ${bonito(r.valor)}. Maderas disponibles: ${listar(r.disponibles.map(bonito))}.`;
     case 'cantidad_invalida':
       return `La cantidad de ${nombre} debe ser un entero entre 1 y 10.000. ¿Cuántas unidades necesitas?`;
