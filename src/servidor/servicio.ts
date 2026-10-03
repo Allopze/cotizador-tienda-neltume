@@ -15,6 +15,7 @@ import {
   maderasCatalogo,
   metros,
   modeloDelCatalogo,
+  resolverNombres,
   modelosCatalogo,
   normalizar,
   normalizarMedida,
@@ -1791,7 +1792,7 @@ export class Servicio {
         const nombres = anclarNombres(anclado.items, q.solicitudes, textosIA, {
           modelo: aliasModelosCatalogo(this.catalogo),
           madera: aliasMaderasCatalogo(this.catalogo),
-        });
+        }, resolverNombres(this.catalogo));
         propuesta = {
           ...propuesta,
           items: nombres.items,

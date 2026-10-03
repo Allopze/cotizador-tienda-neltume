@@ -62,7 +62,7 @@ function Pregunta({
   const desplegable = p.opciones.length > MAX_BOTONES;
   const botonAlta = p.alta && editable && (
     <button type="button" disabled={deshabilitado} onClick={() => setAltaAbierta(true)}>
-      Agregar al catálogo
+      {p.modeloNuevo ? 'Es un modelo nuevo' : 'Agregar al catálogo'}
     </button>
   );
   return (

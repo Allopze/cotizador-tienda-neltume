@@ -170,6 +170,7 @@ describe('Persistencia y flujo del asistente', () => {
   });
 
   it.each<Rechazo>([
+    { tipo: 'modelo_posible', valor: 'Cunco', sugerido: 'CUNCU', disponibles: ['CUNCU'], familia: 'PUERTA' },
     { tipo: 'madera_desconocida', valor: 'Roble', disponibles: [], familia: 'PUERTA' },
     { tipo: 'madera_no_disponible', valor: 'LENGA', disponibles: [], familia: 'PUERTA' },
     { tipo: 'medida_no_disponible', campo: 'alto', valor: 2.27, disponibles: [], familia: 'MARCO' },

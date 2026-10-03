@@ -88,7 +88,7 @@ describe('coincidencias posibles de modelo', () => {
     const r = resolverItem(catalogo, pedido('  pillo '));
     expect(r.ok).toBe(false);
     if (r.ok) return;
-    expect(r.rechazo).toEqual({ tipo: 'modelo_posible', valor: '  pillo ', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'] });
+    expect(r.rechazo).toEqual({ tipo: 'modelo_posible', valor: '  pillo ', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'], familia: 'PUERTA' });
     expect(pregunta(r.rechazo, 'Pillo')).toBe('¿Te refieres a Huilo Huilo? Confírmalo para cotizar.');
   });
 
@@ -291,7 +291,7 @@ describe('flujo de una coincidencia posible', () => {
     expect(q.incompletos).toEqual([
       {
         indice: 0,
-        rechazo: { tipo: 'modelo_posible', valor: 'Pillo', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'] },
+        rechazo: { tipo: 'modelo_posible', valor: 'Pillo', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'], familia: 'PUERTA' },
         pregunta: '¿Te refieres a Huilo Huilo? Confírmalo para cotizar.',
       },
     ]);

@@ -1,7 +1,14 @@
 'use client';
 import { useEffect, useId, useMemo, useRef, useState, type ClipboardEvent, type FormEvent, type KeyboardEvent } from 'react';
 import { FAMILIAS } from '@/catalogo/familias';
-import { normalizarCatalogo } from '@/catalogo/configuracion';
+import {
+  claveTolerante,
+  modeloParecido,
+  normalizarCatalogo,
+  resolverMaderaConfigurada,
+  resolverModeloConfigurado,
+  resolverModeloPosibleConfigurado,
+} from '@/catalogo/configuracion';
 import type { Familia } from '@/catalogo/tipos';
 import type { Avisar } from './avisos';
 import { SelectorFamilia } from './selector-familia';
@@ -88,6 +95,7 @@ function validar(f: Filas): Errores {
   };
 
   const nombres = new Map<string, number>();
+  const nombresTolerantes = new Map<string, number>();
   const codigos = new Map<string, number>();
   f.maderas.forEach((m, i) => {
     if (!m.nombre.trim()) return marcar('maderas', i, { texto: 'La madera necesita nombre.', campo: 'nombre', vacia: true });
@@ -95,18 +103,25 @@ function validar(f: Filas): Errores {
     if (!/^[A-Z0-9]+$/i.test(m.codigo.trim()))
       return marcar('maderas', i, { texto: 'El código solo admite letras y números, sin espacios.', campo: 'codigo' });
     const nombre = normalizarCatalogo(m.nombre);
+    const nombreTolerante = claveTolerante(m.nombre);
     const codigo = m.codigo.trim().toUpperCase();
     if (nombres.has(nombre)) marcar('maderas', i, { texto: `«${m.nombre.trim()}» ya está en la fila ${nombres.get(nombre)! + 1}.`, campo: 'nombre' });
+    else if (nombresTolerantes.has(nombreTolerante))
+      marcar('maderas', i, { texto: `«${m.nombre.trim()}» ya está en la fila ${nombresTolerantes.get(nombreTolerante)! + 1}.`, campo: 'nombre' });
     else if (codigos.has(codigo)) marcar('maderas', i, { texto: `El código «${m.codigo.trim()}» ya lo usa la fila ${codigos.get(codigo)! + 1}.`, campo: 'codigo' });
     if (!nombres.has(nombre)) nombres.set(nombre, i);
+    if (!nombresTolerantes.has(nombreTolerante)) nombresTolerantes.set(nombreTolerante, i);
     if (!codigos.has(codigo)) codigos.set(codigo, i);
   });
   // Cada palabra debe llevar a una sola madera. Se marcan las dos filas.
   const terminos = new Map<string, { fila: number; valor: string }[]>();
+  const anotarTermino = (clave: string, fila: number, valor: string) => {
+    if (clave.length > 1) terminos.set(clave, [...(terminos.get(clave) ?? []), { fila, valor }]);
+  };
   f.maderas.forEach((m, i) => {
     for (const valor of [m.nombre, ...m.alias]) {
-      const k = normalizarCatalogo(valor);
-      if (k) terminos.set(k, [...(terminos.get(k) ?? []), { fila: i, valor }]);
+      anotarTermino(`=${normalizarCatalogo(valor)}`, i, valor);
+      anotarTermino(`~${claveTolerante(valor)}`, i, valor);
     }
   });
   for (const usos of terminos.values()) {
@@ -122,6 +137,7 @@ function validar(f: Filas): Errores {
 
   for (const grupo of ['modelos', 'familias'] as const) {
     const vistos = new Map<string, number>();
+    const vistosTolerantes = new Map<string, number>();
     f[grupo].forEach((fila, i) => {
       if (!fila.modelo.trim()) {
         if ('alias' in fila && (fila.alias.length || fila.posibles.length))
@@ -129,27 +145,37 @@ function validar(f: Filas): Errores {
         return;
       }
       const k = normalizarCatalogo(fila.modelo);
-      if (vistos.has(k)) return marcar(grupo, i, { texto: `El modelo «${fila.modelo.trim()}» ya está en la fila ${vistos.get(k)! + 1}.`, campo: 'modelo' });
+      const tolerante = claveTolerante(fila.modelo);
+      if (vistos.has(k))
+        return marcar(grupo, i, { texto: `El modelo «${fila.modelo.trim()}» ya está en la fila ${vistos.get(k)! + 1}.`, campo: 'modelo' });
+      if (grupo === 'modelos' && vistosTolerantes.has(tolerante))
+        return marcar(grupo, i, { texto: `El modelo «${fila.modelo.trim()}» ya está en la fila ${vistosTolerantes.get(tolerante)! + 1}.`, campo: 'modelo' });
       vistos.set(k, i);
+      vistosTolerantes.set(tolerante, i);
     });
   }
-  // Una palabra de modelo, segura o dudosa, debe llevar a un solo modelo; y no estar en las dos columnas.
+  // Una palabra de modelo —el nombre, un alias seguro o uno dudoso— debe llevar a un solo modelo; y no estar en las dos columnas.
   const palabras = new Map<string, { fila: number; modelo: string }>();
   f.modelos.forEach((fila, i) => {
     if (!fila.modelo.trim()) return;
-    const dudosas = new Set(fila.posibles.map(normalizarCatalogo));
-    for (const [lista, valores] of [['alias', fila.alias], ['posibles', fila.posibles]] as const) {
-      for (const valor of valores) {
-        const k = normalizarCatalogo(valor);
-        if (!k) continue;
-        if (lista === 'alias' && dudosas.has(k)) {
-          marcar('modelos', i, { texto: `«${valor.trim()}» está en las dos columnas: déjalo solo en una.`, campo: 'alias' });
-          continue;
-        }
-        const previo = palabras.get(k);
+    const dudosas = new Set(fila.posibles.flatMap((p) => [`=${normalizarCatalogo(p)}`, `~${claveTolerante(p)}`]));
+    const valores = [
+      { lista: 'modelo' as const, valor: fila.modelo },
+      ...fila.alias.map((valor) => ({ lista: 'alias' as const, valor })),
+      ...fila.posibles.map((valor) => ({ lista: 'posibles' as const, valor })),
+    ];
+    for (const { lista, valor } of valores) {
+      const k = normalizarCatalogo(valor);
+      if (!k) continue;
+      if (lista === 'alias' && (dudosas.has(`=${k}`) || dudosas.has(`~${claveTolerante(valor)}`))) {
+        marcar('modelos', i, { texto: `«${valor.trim()}» está en las dos columnas: déjalo solo en una.`, campo: 'alias' });
+        continue;
+      }
+      for (const clave of [`=${k}`, `~${claveTolerante(valor)}`]) {
+        const previo = palabras.get(clave);
         if (previo && previo.fila !== i)
           marcar('modelos', i, { texto: `«${valor.trim()}» ya lleva a ${previo.modelo.trim()} (fila ${previo.fila + 1}).`, campo: lista });
-        else if (!previo) palabras.set(k, { fila: i, modelo: fila.modelo });
+        else if (!previo) palabras.set(clave, { fila: i, modelo: fila.modelo });
       }
     }
   });
@@ -177,14 +203,15 @@ function TextoError({ id, error, mostrar }: { id: string; error?: ErrorFila; mos
 
 /**
  * Lista de palabras como etiquetas: cada una se ve entera y se quita con su ×. Enter, coma o salir del campo
- * la agregan; pegar una lista separada por comas agrega todas. Lo que el asistente ya reconoce no se repite,
- * y lo que sobra se explica con un botón para quitarlo.
+ * la agregan; pegar una lista separada por comas agrega todas. La clave tolerante reconoce los canónicos
+ * aunque no tengan alias: esas variantes no se repiten, y lo que sobra se explica con un botón para quitarlo.
  */
 function CampoPalabras({
   etiqueta,
   valores,
   cambiar,
   nombre,
+  dudosa = false,
   invalido,
 }: {
   etiqueta: string;
@@ -192,26 +219,38 @@ function CampoPalabras({
   cambiar: (valores: string[]) => void;
   /** Nombre de la madera o modelo: una palabra igual a él sobra. */
   nombre: string;
+  /**
+   * Columna «Podría ser»: una variante del nombre («CUNNCO» para CUNCO) no sobra, porque anotarla aquí hace
+   * que el asistente pregunte en vez de cambiarla solo. Solo sobra el nombre tal cual.
+   */
+  dudosa?: boolean;
   invalido?: { 'aria-invalid': true; 'aria-describedby': string };
 }) {
   const [texto, setTexto] = useState('');
   const [aviso, setAviso] = useState('');
   const entrada = useRef<HTMLInputElement>(null);
-  const sobra = (valor: string) => !!normalizarCatalogo(nombre) && normalizarCatalogo(valor) === normalizarCatalogo(nombre);
+  const claveNombre = claveTolerante(nombre);
+  const igualAlNombre = (valor: string) =>
+    dudosa ? !!normalizarCatalogo(nombre) && normalizarCatalogo(valor) === normalizarCatalogo(nombre) : claveTolerante(valor) === claveNombre;
+  /** Un chip sobra si repite el nombre o una palabra anterior según la clave tolerante. */
+  const sobra = (valor: string, i: number) => {
+    const clave = claveTolerante(valor);
+    return !!clave && (igualAlNombre(valor) || valores.slice(0, i).some((v) => claveTolerante(v) === clave));
+  };
   const sobrantes = valores.filter(sobra);
 
   function agregar(crudo: string) {
     const nuevos = [...valores];
     const repetidos: string[] = [];
     for (const parte of crudo.split(',').map((p) => p.trim()).filter(Boolean)) {
-      const k = normalizarCatalogo(parte);
-      if (!k || nuevos.some((v) => normalizarCatalogo(v) === k) || sobra(parte)) repetidos.push(parte);
+      const clave = claveTolerante(parte);
+      if (!clave || igualAlNombre(parte) || nuevos.some((v) => claveTolerante(v) === clave)) repetidos.push(parte);
       else nuevos.push(parte.toLocaleUpperCase('es-CL'));
     }
     if (nuevos.length !== valores.length) cambiar(nuevos);
     setAviso(
       repetidos.length
-        ? `No hace falta agregar ${repetidos.map((r) => `«${r}»`).join(', ')}: el asistente ya lo reconoce (no distingue tildes ni mayúsculas).`
+        ? `No hace falta agregar ${repetidos.map((r) => `«${r}»`).join(', ')}: el asistente ya lo reconoce (no distingue tildes, mayúsculas ni letras repetidas).`
         : '',
     );
     setTexto('');
@@ -264,8 +303,9 @@ function CampoPalabras({
       </div>
       {sobrantes.length > 0 && (
         <p className="config-alias-aviso">
-          {sobrantes.map((s) => `«${s}»`).join(', ')} no hace falta: es igual al nombre, y el asistente no distingue tildes ni mayúsculas.{' '}
-          <button type="button" className="config-enlace" onClick={() => cambiar(valores.filter((v) => !sobra(v)))}>
+          {sobrantes.map((s) => `«${s}»`).join(', ')} no hace falta: el asistente ya lo reconoce por el nombre o por
+          otra palabra (no distingue tildes, mayúsculas ni letras repetidas).{' '}
+          <button type="button" className="config-enlace" onClick={() => cambiar(valores.filter((v, i) => !sobra(v, i)))}>
             Quitar
           </button>
         </p>
@@ -280,13 +320,18 @@ function CampoPalabras({
 }
 
 /** Prueba lo que el asistente reconocería con el borrador actual, antes de guardar. */
-function ProbarReconocimiento({ config }: { config: Configuracion }) {
+function ProbarReconocimiento({ config, modelos }: { config: Configuracion; modelos: string[] }) {
   const [texto, setTexto] = useState('');
   const k = normalizarCatalogo(texto);
-  const coincide = (nombre: string, alias: string[]) => normalizarCatalogo(nombre) === k || alias.some((a) => normalizarCatalogo(a) === k);
-  const madera = k ? config.maderas.find((m) => coincide(m.nombre, m.alias)) : undefined;
-  const modelo = k ? Object.entries(config.aliasModelos).find(([m, alias]) => coincide(m, alias))?.[0] : undefined;
-  const posible = k ? Object.entries(config.aliasPosiblesModelos).find(([, alias]) => alias.some((a) => normalizarCatalogo(a) === k))?.[0] : undefined;
+  const nombreMadera = k ? resolverMaderaConfigurada(texto, config) : null;
+  const madera = nombreMadera ? config.maderas.find((m) => m.nombre === nombreMadera) : undefined;
+  const resuelto = k ? resolverModeloConfigurado(texto, config, modelos) : '';
+  const modelo =
+    k && (normalizarCatalogo(resuelto) !== k || modelos.some((m) => normalizarCatalogo(m) === k))
+      ? resuelto
+      : undefined;
+  const posible = k && !modelo ? resolverModeloPosibleConfigurado(texto, config) : null;
+  const parecido = k && !modelo && !posible ? modeloParecido(texto, config, modelos) : null;
 
   return (
     <div className="config-probar">
@@ -297,12 +342,13 @@ function ProbarReconocimiento({ config }: { config: Configuracion }) {
       <p className="config-probar-resultado" role="status">
         {!k
           ? 'Muestra qué entendería el asistente, incluidos los cambios sin guardar.'
-          : !madera && !modelo && !posible
+          : !madera && !modelo && !posible && !parecido
             ? 'No lo reconoce: lo deja tal como lo escribió el cliente.'
             : [
                 madera && `Lo entiende como la madera ${madera.nombre} (código ${madera.codigo}).`,
                 modelo && `Lo entiende como el modelo ${modelo}.`,
                 posible && `Podría ser el modelo ${posible}: pregunta antes de usarlo.`,
+                parecido && `Podría ser el modelo ${parecido} (se parece): pregunta antes de usarlo.`,
               ]
                 .filter(Boolean)
                 .join(' ')}
@@ -442,7 +488,7 @@ export function ConfiguracionCatalogo({
         ))}
       </nav>
 
-      <ProbarReconocimiento config={borrador} />
+      <ProbarReconocimiento config={borrador} modelos={filas.modelos.map((m) => m.modelo)} />
 
       <fieldset id="config-maderas" className="config-grupo" disabled={!editable}>
         <legend>{TITULOS.maderas}</legend>
@@ -529,6 +575,7 @@ export function ConfiguracionCatalogo({
                     etiqueta={`Podría ser ${nombre} (pregunta)`}
                     valores={fila.posibles}
                     nombre={fila.modelo}
+                    dudosa
                     cambiar={(posibles) => editar('modelos', i, { posibles })}
                     invalido={invalida('modelos', i, 'posibles')}
                   />

@@ -37,6 +37,8 @@ export interface PreguntaPendiente {
   /** Respuesta numérica libre: medidas en metros o cantidad entera. */
   entrada: { min: number; max: number; paso: number; unidad: 'm' | null } | null;
   alta: PrefillAlta | null;
+  /** Permite rechazar una sugerencia y dar de alta el nombre escrito. */
+  modeloNuevo?: boolean;
 }
 
 export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
@@ -158,13 +160,13 @@ function partes(r: Rechazo, pregunta: string): Parte[] {
 }
 
 function prefillAlta(s: SolicitudItem | undefined, r: Rechazo | undefined): PrefillAlta | null {
-  if (!s || !r || !['modelo_desconocido', 'madera_desconocida', 'madera_no_disponible', 'medida_no_disponible'].includes(r.tipo))
+  if (!s || !r || !['modelo_desconocido', 'modelo_posible', 'madera_desconocida', 'madera_no_disponible', 'medida_no_disponible'].includes(r.tipo))
     return null;
   const familia = 'familia' in r ? r.familia ?? null : null;
   const ancho = familia === 'PUERTA' && s.ancho !== null ? metros(s.ancho) : null;
   return {
     familia,
-    modelo: s.modelo ?? null,
+    modelo: r.tipo === 'modelo_posible' ? r.valor : s.modelo ?? null,
     madera: s.madera ?? null,
     medida: familia === 'PUERTA' ? null : s.medida ?? null,
     anchoMin: ancho,
@@ -255,6 +257,7 @@ export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompl
       detalle: parte.detalle,
       opciones: sugerir(q, indices, parte),
       entrada: parte.entrada,
+      modeloNuevo: indices.length === 1 && q.incompletos.find((p) => p.indice === indices[0])?.rechazo.tipo === 'modelo_posible',
       alta: indices.length === 1
         ? prefillAlta(q.solicitudes[indices[0]], q.incompletos.find((p) => p.indice === indices[0])?.rechazo)
         : null,

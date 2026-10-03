@@ -343,7 +343,7 @@ export class ServicioAltaCatalogo {
   private construir(borrador: BorradorProducto): Producto {
     const familia = borrador.familia as Familia;
     const modeloEntrada = normalizarNombre(borrador.modelo!);
-    const modelo = normalizarNombre(this.catalogo.resolverModelo(modeloEntrada));
+    const modelo = normalizarNombre(this.catalogo.resolverModelo(modeloEntrada, { tolerante: false }));
     const maderaEntrada = normalizarNombre(borrador.madera!);
     const madera = normalizarNombre(this.catalogo.resolverMadera(maderaEntrada) ?? maderaEntrada);
     const medida =
