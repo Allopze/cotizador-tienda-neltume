@@ -1,7 +1,7 @@
 import { bonito } from '../asistente/preguntas';
 import { metrosTexto } from '../catalogo/escalones';
 import { metros, normalizar, normalizarMedida, RANGO_METROS, type Rechazo } from '../catalogo/resolver';
-import type { SolicitudItem } from '../catalogo/tipos';
+import type { Familia, SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion } from './estado';
 
 /**
@@ -15,6 +15,15 @@ export interface OpcionPendiente {
   /** Por qué se sugiere («Como el ítem 1»): la opción se muestra primero y destacada. */
   sugerencia?: string;
 }
+export type PrefillAlta = {
+  familia: Familia | null;
+  modelo: string | null;
+  madera: string | null;
+  medida: string | null;
+  anchoMin: number | null;
+  anchoMax: number | null;
+  largo: number | null;
+};
 export interface PreguntaPendiente {
   clave: string;
   /** Ítems (índices desde 0) a los que se aplica la respuesta. */
@@ -27,6 +36,7 @@ export interface PreguntaPendiente {
   opciones: OpcionPendiente[];
   /** Respuesta numérica libre: medidas en metros o cantidad entera. */
   entrada: { min: number; max: number; paso: number; unidad: 'm' | null } | null;
+  alta: PrefillAlta | null;
 }
 
 export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
@@ -147,6 +157,22 @@ function partes(r: Rechazo, pregunta: string): Parte[] {
   }
 }
 
+function prefillAlta(s: SolicitudItem | undefined, r: Rechazo | undefined): PrefillAlta | null {
+  if (!s || !r || !['modelo_desconocido', 'madera_desconocida', 'madera_no_disponible', 'medida_no_disponible'].includes(r.tipo))
+    return null;
+  const familia = 'familia' in r ? r.familia ?? null : null;
+  const ancho = familia === 'PUERTA' && s.ancho !== null ? metros(s.ancho) : null;
+  return {
+    familia,
+    modelo: s.modelo ?? null,
+    madera: s.madera ?? null,
+    medida: familia === 'PUERTA' ? null : s.medida ?? null,
+    anchoMin: ancho,
+    anchoMax: ancho,
+    largo: s.alto !== null ? metros(s.alto) : null,
+  };
+}
+
 const valorDe = (s: SolicitudItem, campo: CampoPendiente) => s[campo] ?? null;
 const igual = (campo: CampoPendiente, a: string | number, b: string | number) => {
   if (campo === 'ancho' || campo === 'alto')
@@ -229,6 +255,9 @@ export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompl
       detalle: parte.detalle,
       opciones: sugerir(q, indices, parte),
       entrada: parte.entrada,
+      alta: indices.length === 1
+        ? prefillAlta(q.solicitudes[indices[0]], q.incompletos.find((p) => p.indice === indices[0])?.rechazo)
+        : null,
     };
   });
 }

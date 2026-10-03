@@ -105,10 +105,21 @@ const rechazoSchema = z.discriminatedUnion('tipo', [
     sugerido: z.string(),
     disponibles: z.array(z.string()),
   }),
-  z.object({ tipo: z.literal('madera_desconocida'), valor: z.string(), disponibles: z.array(z.string()) }),
-  z.object({ tipo: z.literal('madera_no_disponible'), valor: z.string(), disponibles: z.array(z.string()) }),
+  z.object({
+    tipo: z.literal('madera_desconocida'),
+    valor: z.string(),
+    disponibles: z.array(z.string()),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
+  }),
+  z.object({
+    tipo: z.literal('madera_no_disponible'),
+    valor: z.string(),
+    disponibles: z.array(z.string()),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
+  }),
   z.object({
     tipo: z.literal('medida_no_disponible'),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
     campo: z.enum(['ancho', 'alto', 'medida']),
     valor: z.union([z.number(), z.string()]),
     disponibles: z.array(z.string()),

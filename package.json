@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "deploy": "node scripts/deploy.mjs",
+    "deploy": "node scripts/deploy.mjs --ssh chome --dir /srv/cotizador-neltume --port 3010",
+    "deploy:zip": "node scripts/deploy.mjs",
     "start": "next start --hostname 127.0.0.1",
     "importar": "tsx scripts/importar.ts",
     "migrar:sqlite": "tsx scripts/migrar-sqlite.ts",

@@ -123,7 +123,7 @@ it('preguntas determinísticas contienen los datos que faltan y las opciones', (
       'MOLCO',
     ),
   ).toBe(
-    'Molco no viene en 1,60 m de ancho. Se cotizan anchos entre 0,60 y 1,45 m; las medidas intermedias usan la siguiente medida del catálogo.',
+    'Molco no viene en 1,60 m de ancho. Se cotizan anchos entre 0,60 y 1,45 m.',
   );
   expect(pregunta({ tipo: 'madera_desconocida', valor: 'roble', disponibles: ['RAULI'] }, 'MOLCO')).toContain(
     'Raulí',

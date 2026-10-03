@@ -2,7 +2,11 @@ name: neltume-cotizador
 
 services:
   cotizador:
-    build: .
+    build:
+      context: .
+      # Permite al despliegue borrar solo las imágenes viejas de este proyecto.
+      labels:
+        cl.neltume.cotizador: 'true'
     restart: unless-stopped
     init: true
     env_file: .env
@@ -21,6 +25,11 @@ services:
       - datos:/app/data
       - respaldos:/app/respaldos
     shm_size: 256mb
+    # Tope de recursos para no saturar el servidor; se ajusta desde .env.
+    cpus: ${NELTUME_CPUS:-1.5}
+    mem_limit: ${NELTUME_MEMORIA:-1536m}
+    memswap_limit: ${NELTUME_MEMORIA:-1536m}
+    pids_limit: 512
     healthcheck:
       test:
         [
@@ -34,6 +43,26 @@ services:
       start_period: 60s
       retries: 3
     stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+  # Túnel de Cloudflare propio de la cuenta del dominio. Se activa con COMPOSE_PROFILES=tunel
+  # y CLOUDFLARE_TUNNEL_TOKEN en .env; en el panel, el hostname apunta a http://cotizador:3000.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    profiles: [tunel]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      cotizador:
+        condition: service_healthy
+    cpus: 0.5
+    mem_limit: 256m
     logging:
       driver: json-file
       options:

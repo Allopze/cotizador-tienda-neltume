@@ -9,6 +9,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 make g+
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY . .
+# Acota el heap de Node durante el build para no agotar la RAM del servidor.
+ENV NODE_OPTIONS=--max-old-space-size=2048
 # La base temporal de construcción solo contiene esquemas y no se copia a runtime.
 RUN npm run auth:migrar && npm run build && npm prune --omit=dev --no-audit --no-fund
 

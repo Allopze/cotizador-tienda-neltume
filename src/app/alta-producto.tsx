@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Familia, Producto } from '@/catalogo/tipos';
+import type { PrefillAlta } from '@/negocio/pendientes';
 import { leerPesos } from '@/negocio/cifras';
 import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
 import { useConfirmacion } from './dialogo';
@@ -13,6 +14,8 @@ type Mensaje = { rol: 'usuario' | 'asistente'; texto: string };
 interface Props {
   /** Sin asistente sigue disponible el formulario: solo se oculta la descripción asistida. */
   asistente: boolean;
+  inicial?: PrefillAlta;
+  alGuardar?: (producto: Producto) => void;
 }
 /** Atributos que el servidor interpretó o recibió (null = sin dato). */
 interface Borrador {
@@ -57,9 +60,20 @@ const VACIO: Campos = {
  * Alta de un producto al catálogo en una sola pantalla: el formulario es la vía manual y el asistente,
  * opcional, lo completa a partir de una descripción. Ambas vías terminan en la misma propuesta revisable.
  */
-export function AltaProducto({ asistente }: Props) {
+export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
   const [ajusteNumero, setAjusteNumero] = useState(REGLAS.ajuste);
-  const [campos, setCampos] = useState<Campos>(VACIO);
+  const [campos, setCampos] = useState<Campos>(() => inicial
+    ? {
+        ...VACIO,
+        familia: inicial.familia ?? '',
+        modelo: inicial.modelo ?? '',
+        madera: inicial.madera ?? '',
+        medida: inicial.medida ?? '',
+        anchoMin: inicial.anchoMin !== null ? decimalCampo(inicial.anchoMin) : '',
+        anchoMax: inicial.anchoMax !== null ? decimalCampo(inicial.anchoMax) : '',
+        largo: inicial.largo !== null ? decimalCampo(inicial.largo) : '',
+      }
+    : VACIO);
   const [avisosAlta, setAvisosAlta] = useState<string[]>([]);
   const [id, setId] = useState<string | null>(null);
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
@@ -75,9 +89,22 @@ export function AltaProducto({ asistente }: Props) {
     revision = useRef<HTMLDivElement>(null);
   const [confirmar, confirmacion] = useConfirmacion();
   const uid = useId();
+  const inicialAlMontar = useRef(inicial);
   const puerta = campos.familia === 'PUERTA';
   const ajuste = porcentaje(ajusteNumero * 100);
   const venta = (neto: number) => Math.round(neto * (1 + ajusteNumero));
+
+  useEffect(() => {
+    if (!inicialAlMontar.current) return;
+    const cuadro = requestAnimationFrame(() => {
+      const primero = !inicialAlMontar.current?.familia
+        ? formulario.current?.querySelector<HTMLElement>('.familia-trigger')
+        : [...(formulario.current?.querySelectorAll<HTMLInputElement>('input') ?? [])]
+            .find((c) => c.id !== `${uid}-tipo` && !c.value.trim());
+      primero?.focus();
+    });
+    return () => cancelAnimationFrame(cuadro);
+  }, [uid]);
 
   useEffect(() => {
     const control = new AbortController();
@@ -226,8 +253,11 @@ export function AltaProducto({ asistente }: Props) {
     setError('');
     try {
       const data = await pedir({ tipo: 'confirmar', id });
-      setGuardado(data.producto ?? propuesta);
+      const producto = data.producto ?? propuesta;
+      pendiente.current = null;
+      setGuardado(producto);
       setPropuesta(null);
+      alGuardar?.(producto);
     } catch (causa) {
       fallo(causa);
     } finally {
@@ -256,7 +286,7 @@ export function AltaProducto({ asistente }: Props) {
     setAvisosAlta([]);
   }
 
-  if (guardado)
+  if (guardado && !alGuardar)
     return (
       <div className="alta-producto">
         <div className="catalog-success" role="status">

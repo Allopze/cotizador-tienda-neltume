@@ -1,4 +1,4 @@
-import type { Catalogo, Producto, SolicitudItem } from './tipos';
+import type { Catalogo, Familia, Producto, SolicitudItem } from './tipos';
 import { ajusteMedida, enEscalon, escalon, esKit, LARGO_PIEZA, vieneEnKit, type AjusteMedida } from './escalones';
 import {
   aliasMaderasConfiguradas,
@@ -30,10 +30,11 @@ export type Rechazo =
   | { tipo: 'modelo_desconocido'; valor: string; disponibles: string[] }
   /** El nombre se parece a un modelo, pero no basta para cotizarlo: hay que confirmar `sugerido`. */
   | { tipo: 'modelo_posible'; valor: string; sugerido: string; disponibles: string[] }
-  | { tipo: 'madera_desconocida'; valor: string; disponibles: string[] }
-  | { tipo: 'madera_no_disponible'; valor: string; disponibles: string[] }
+  | { tipo: 'madera_desconocida'; valor: string; disponibles: string[]; familia?: Familia }
+  | { tipo: 'madera_no_disponible'; valor: string; disponibles: string[]; familia?: Familia }
   | {
       tipo: 'medida_no_disponible';
+      familia?: Familia;
       campo: 'ancho' | 'alto' | 'medida';
       valor: number | string;
       disponibles: string[];
@@ -197,11 +198,11 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     puerta = familia === 'PUERTA';
   const madera = s.madera ? maderaDelCatalogo(catalogo, s.madera) : null;
   if (s.madera && !madera)
-    return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: unicos(opciones, 'madera') });
+    return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: unicos(opciones, 'madera'), familia });
   if (madera) {
     const conMadera = opciones.filter((p) => p.madera === madera);
     if (!conMadera.length)
-      return no({ tipo: 'madera_no_disponible', valor: madera, disponibles: unicos(opciones, 'madera') });
+      return no({ tipo: 'madera_no_disponible', valor: madera, disponibles: unicos(opciones, 'madera'), familia });
     opciones = conMadera;
   }
   if (s.cantidad !== null && (!Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000))
@@ -222,6 +223,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     if (!opciones.length)
       return no({
         tipo: 'medida_no_disponible',
+        familia,
         campo: 'ancho',
         valor: ancho,
         disponibles: medidas,
@@ -235,7 +237,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     const medidas = unicos(opciones, 'medida');
     opciones = opciones.filter((p) => p.medida === medida);
     if (!opciones.length)
-      return no({ tipo: 'medida_no_disponible', campo: 'medida', valor: s.medida, disponibles: medidas });
+      return no({ tipo: 'medida_no_disponible', campo: 'medida', valor: s.medida, disponibles: medidas, familia });
   }
   if (s.alto !== null) {
     const alto = metros(s.alto),
@@ -248,6 +250,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     if (!opciones.length)
       return no({
         tipo: 'medida_no_disponible',
+        familia,
         campo: 'alto',
         valor: alto,
         disponibles,
