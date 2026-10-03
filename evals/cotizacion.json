@@ -662,5 +662,54 @@
         }
       ]
     }
+  },
+  {
+    "id": "paula-lastra-enchapadas",
+    "descripcion": "Pedido real con enchapadas, marcos finger y medidas de vano: el largo de los marcos no se dice y no se inventa",
+    "mensajes": [
+      "Cotizar a Paula Lastra\nDespacho a Chillan\n2 unidades Huilo Huilo enchapada de\n0.82x2.27 mts (vano) con su marco de\n30x90 enchapado\n1 unidad ranco lenga solida 0.87x2.44 mts\n(vano) con su marco de 2x5 pulgadas en\nlenga"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.82,
+          "alto": 2.27,
+          "medida": null,
+          "cantidad": 2,
+          "tipoMedida": "vano"
+        },
+        {
+          "modelo": "MARCO",
+          "madera": "PINO FINGER ENCHAPADO MARA",
+          "ancho": null,
+          "alto": null,
+          "medida": "30X90",
+          "cantidad": 2
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "LENGA",
+          "ancho": 0.87,
+          "alto": 2.44,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "vano"
+        },
+        {
+          "modelo": "MARCO",
+          "madera": "LENGA",
+          "ancho": null,
+          "alto": null,
+          "medida": "2X5",
+          "cantidad": 1
+        }
+      ],
+      "cliente": {
+        "nombre": "Paula Lastra",
+        "comuna": "Chillán"
+      }
+    }
   }
 ]
