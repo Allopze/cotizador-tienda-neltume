@@ -369,8 +369,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     );
   }
 
-  resolverModelo(valor: string) {
-    return resolverModeloConfigurado(valor, this.configuracion);
+  resolverModelo(valor: string, { tolerante = true }: { tolerante?: boolean } = {}) {
+    return resolverModeloConfigurado(valor, this.configuracion, this.modelos(), { tolerante });
   }
 
   resolverModeloPosible(valor: string) {

@@ -169,6 +169,7 @@ function dichoComo(texto: string, resolver: ResolverNombre) {
     .split(/[^A-Z0-9]+/)
     .filter(Boolean);
   let resueltos: Set<string> | null = null;
+  let literales: string[] = [];
   return (propuesto: string) => {
     if (!resueltos) {
       resueltos = new Set();
@@ -183,8 +184,20 @@ function dichoComo(texto: string, resolver: ResolverNombre) {
           resueltos.add(normalizar(nombre));
           usada.fill(true, i, i + largo);
         }
+      // Lo desconocido se respalda literalmente, con palabras enteras y fuera de nombres ya resueltos.
+      literales = palabras.map((p, i) => usada[i] ? '' : p);
     }
-    return resueltos.has(normalizar(propuesto));
+    const nombre = resolver(propuesto);
+    if (nombre) return resueltos.has(normalizar(nombre));
+    return partesNombre(propuesto).some((parte) => {
+      const clave = normalizar(parte);
+      return !!clave && literales.some((p, i) => {
+        let secuencia = p;
+        let fin = i + 1;
+        while (secuencia && secuencia.length < clave.length && literales[fin]) secuencia += literales[fin++];
+        return secuencia === clave;
+      });
+    });
   };
 }
 
@@ -215,7 +228,9 @@ export function anclarNombres(
         normalizar(nombre) === clave ? lista : [],
       );
       const candidatos = [...partesNombre(valor), ...alternativos];
-      if (candidatos.some((c) => !!normalizar(c) && texto.includes(normalizar(c))) || dicho?.[campo](valor)) continue;
+      if (dicho
+        ? dicho[campo](valor)
+        : candidatos.some((c) => !!normalizar(c) && texto.includes(normalizar(c)))) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
         `El asistente interpretó ${campo === 'modelo' ? 'el modelo' : 'la madera'} del ítem ${i + 1} como «${valor}», pero ese nombre no aparece en tu mensaje: quedó pendiente para que lo indiques.`,

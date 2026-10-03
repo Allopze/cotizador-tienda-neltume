@@ -48,6 +48,25 @@ describe('alta desde las preguntas pendientes', () => {
       expect(renderizar(rechazo, true)).not.toContain('Agregar al catálogo');
   });
 
+  it('un modelo posible ofrece «Es un modelo nuevo» y precarga el valor escrito, también sin familia', () => {
+    for (const familia of ['PUERTA', undefined] as const) {
+      const preguntas = preguntasPendientes({
+        solicitudes: [item({ modelo: 'CUNCU', madera: 'Mara', ancho: 82, alto: 200 })],
+        incompletos: [{ indice: 0, rechazo: {
+          tipo: 'modelo_posible', valor: 'Cunco', sugerido: 'CUNCU', disponibles: ['CUNCU'], familia,
+        }, pregunta: '¿Te refieres a Cuncu?' }],
+      });
+      expect(preguntas[0].alta).toMatchObject({ modelo: 'Cunco', familia: familia ?? null, madera: 'Mara', largo: 2 });
+      expect(preguntas[0].alta?.anchoMin).toBe(familia ? 0.82 : null);
+      const renderizar = (editable: boolean) => renderToStaticMarkup(createElement(PreguntasPendientes, {
+        preguntas, editable, asistente: false, guardando: null, responder: async () => true,
+      }));
+      expect(renderizar(true)).toContain('Es un modelo nuevo');
+      expect(renderizar(true)).not.toContain('Agregar al catálogo');
+      expect(renderizar(false)).not.toContain('Es un modelo nuevo');
+    }
+  });
+
   it('el formulario abre con los atributos del marco y el precio vacío', () => {
     const h = renderToStaticMarkup(createElement(AltaProducto, { asistente: false, inicial, alGuardar: () => {} }));
     for (const valor of ['Marco', 'PINO FINGER ENCHAPADO MARA', '30X90', '2,27'])
@@ -127,7 +146,6 @@ describe('preguntas de los ítems pendientes', () => {
 
   it.each<Rechazo>([
     faltan(['madera', 'cantidad']),
-    { tipo: 'modelo_posible', valor: 'Pillo', sugerido: 'Huilo Huilo', disponibles: [] },
     { tipo: 'medida_implausible', campo: 'alto', valor: 9999, disponibles: [] },
     { tipo: 'producto_ambiguo', valor: 'Huilo Huilo', disponibles: [] },
     { tipo: 'cantidad_invalida', valor: 0, disponibles: [] },

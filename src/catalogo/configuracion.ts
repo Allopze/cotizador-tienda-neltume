@@ -280,24 +280,60 @@ export function conMaderasEnchapadas(configuracion: ConfiguracionCatalogo): Conf
     : configuracion;
 }
 
-export const resolverModeloConfigurado = (valor: string, configuracion: ConfiguracionCatalogo) => {
-  const clave = normalizarCatalogo(valor);
-  const entrada = Object.entries(configuracion.aliasModelos).find(
-    ([modelo, aliases]) =>
-      normalizarCatalogo(modelo) === clave || aliases.some((alias) => normalizarCatalogo(alias) === clave),
-  );
-  if (entrada) return entrada[0];
-  // Un dudoso (aunque sea por parecido, y aunque sea ambiguo) manda sobre un seguro que solo coincide por
-  // parecido: el valor queda como vino y se pregunta o se marca desconocido, nunca se reemplaza.
-  if (resolverModeloPosibleConfigurado(valor, configuracion)) return valor;
-  if (duenosTolerantes(valor, Object.entries(configuracion.aliasPosiblesModelos)).size) return valor;
-  return (
-    duenoTolerante(
-      valor,
-      Object.entries(configuracion.aliasModelos).map(([modelo, aliases]) => [modelo, [modelo, ...aliases]]),
-    ) ?? valor
-  );
-};
+/**
+ * Índice de nombres seguros: incluye todos los canónicos reales, aunque no tengan alias. Se construye una
+ * vez para el anclaje; cada consulta compara claves ya calculadas. Un dudoso nunca habilita tolerancia segura.
+ */
+export function crearResolverModeloConfigurado(
+  configuracion: Pick<ConfiguracionCatalogo, 'aliasModelos' | 'aliasPosiblesModelos'>,
+  modelos: string[] = [],
+  { tolerante = true }: { tolerante?: boolean } = {},
+) {
+  const canonicos = new Map(modelos.map((m) => [normalizarCatalogo(m), m]));
+  const exactos = new Map<string, Map<string, string>>();
+  const tolerantes = new Map<string, Map<string, string>>();
+  const dudososExactos = new Set<string>();
+  const dudososTolerantes = new Set<string>();
+  const anotar = (indice: Map<string, Map<string, string>>, clave: string, modelo: string) => {
+    if (!clave) return;
+    const duenos = indice.get(clave) ?? new Map<string, string>();
+    duenos.set(normalizarCatalogo(modelo), modelo);
+    indice.set(clave, duenos);
+  };
+  for (const modelo of modelos) anotar(tolerantes, claveTolerante(modelo), modelo);
+  for (const [modelo, aliases] of Object.entries(configuracion.aliasModelos))
+    for (const palabra of [modelo, ...aliases]) {
+      anotar(exactos, normalizarCatalogo(palabra), modelo);
+      anotar(tolerantes, claveTolerante(palabra), modelo);
+    }
+  for (const [modelo, aliases] of Object.entries(configuracion.aliasPosiblesModelos))
+    for (const palabra of aliases) {
+      dudososExactos.add(normalizarCatalogo(palabra));
+      dudososTolerantes.add(claveTolerante(palabra));
+      anotar(tolerantes, claveTolerante(palabra), modelo);
+    }
+  return (valor: string) => {
+    const clave = normalizarCatalogo(valor);
+    const canonico = canonicos.get(clave);
+    if (canonico !== undefined) return { modelo: canonico, canonico: true, ambiguo: false };
+    const exacto = exactos.get(clave);
+    if (exacto?.size === 1 && !dudososExactos.has(clave))
+      return { modelo: [...exacto.values()][0], canonico: false, ambiguo: false };
+    const parecidos = tolerantes.get(claveTolerante(valor));
+    const ambiguo = (exacto?.size ?? 0) > 1 || (parecidos?.size ?? 0) > 1;
+    const modelo = tolerante && !ambiguo && !dudososTolerantes.has(claveTolerante(valor)) && parecidos?.size === 1
+      ? [...parecidos.values()][0]
+      : valor;
+    return { modelo, canonico: false, ambiguo };
+  };
+}
+
+export const resolverModeloConfigurado = (
+  valor: string,
+  configuracion: ConfiguracionCatalogo,
+  modelos: string[] = [],
+  opciones: { tolerante?: boolean } = {},
+) => crearResolverModeloConfigurado(configuracion, modelos, opciones)(valor).modelo;
 
 /** Modelo al que podría referirse un alias dudoso; null si el valor no figura entre ellos. */
 export const resolverModeloPosibleConfigurado = (valor: string, configuracion: ConfiguracionCatalogo) => {
@@ -328,14 +364,15 @@ function distanciaDamerau(a: string, b: string) {
  * Modelo al que `valor` se parece a lo más a una letra o una transposición, comparando claves tolerantes
  * contra los modelos del catálogo (`modelos`), los configurados y sus alias seguros. Devuelve null si la
  * clave es muy corta (a esa distancia casi cualquier palabra se parecería) o si más de un modelo queda
- * igual de cerca.
+ * igual de cerca. Las claves iguales se resuelven antes, como coincidencias tolerantes seguras.
  */
 export function modeloParecido(valor: string, configuracion: ConfiguracionCatalogo, modelos: string[] = []): string | null {
   const clave = claveTolerante(valor);
   if (clave.length < 5) return null;
   const candidatos = new Map<string, string>();
   const probar = (palabra: string, modelo: string) => {
-    if (distanciaDamerau(clave, claveTolerante(palabra)) <= 1) candidatos.set(normalizarCatalogo(modelo), modelo);
+    const otra = claveTolerante(palabra);
+    if (clave !== otra && distanciaDamerau(clave, otra) <= 1) candidatos.set(normalizarCatalogo(modelo), modelo);
   };
   for (const modelo of modelos) probar(modelo, modelo);
   for (const [modelo, aliases] of Object.entries(configuracion.aliasModelos)) {

@@ -52,7 +52,7 @@ describe('rangos de catálogo y confianza del modelo', () => {
     const posible = resolverItem(catalogo, { modelo: 'Pillo', madera: 'Mara', ancho: 83, alto: 236, cantidad: 1 });
     expect(posible).toEqual({
       ok: false,
-      rechazo: { tipo: 'modelo_posible', valor: 'Pillo', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'] },
+      rechazo: { tipo: 'modelo_posible', valor: 'Pillo', sugerido: 'Huilo Huilo', disponibles: ['Huilo Huilo'], familia: 'PUERTA' },
     });
     const confirmado = resolverItem(catalogo, { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83, alto: 236, cantidad: 1 });
     expect(confirmado.ok && [confirmado.producto.codigo, confirmado.coincidenciaModelo]).toEqual(['HUI-M-3-A', 'canonico']);

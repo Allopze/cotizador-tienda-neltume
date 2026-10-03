@@ -203,8 +203,8 @@ function TextoError({ id, error, mostrar }: { id: string; error?: ErrorFila; mos
 
 /**
  * Lista de palabras como etiquetas: cada una se ve entera y se quita con su ×. Enter, coma o salir del campo
- * la agregan; pegar una lista separada por comas agrega todas. Lo que el asistente ya reconoce no se repite,
- * y lo que sobra se explica con un botón para quitarlo.
+ * la agregan; pegar una lista separada por comas agrega todas. La clave tolerante reconoce los canónicos
+ * aunque no tengan alias: esas variantes no se repiten, y lo que sobra se explica con un botón para quitarlo.
  */
 function CampoPalabras({
   etiqueta,
@@ -320,18 +320,18 @@ function CampoPalabras({
 }
 
 /** Prueba lo que el asistente reconocería con el borrador actual, antes de guardar. */
-function ProbarReconocimiento({ config }: { config: Configuracion }) {
+function ProbarReconocimiento({ config, modelos }: { config: Configuracion; modelos: string[] }) {
   const [texto, setTexto] = useState('');
   const k = normalizarCatalogo(texto);
   const nombreMadera = k ? resolverMaderaConfigurada(texto, config) : null;
   const madera = nombreMadera ? config.maderas.find((m) => m.nombre === nombreMadera) : undefined;
-  const resuelto = k ? resolverModeloConfigurado(texto, config) : '';
+  const resuelto = k ? resolverModeloConfigurado(texto, config, modelos) : '';
   const modelo =
-    k && (normalizarCatalogo(resuelto) !== k || Object.keys(config.aliasModelos).some((m) => normalizarCatalogo(m) === k))
+    k && (normalizarCatalogo(resuelto) !== k || modelos.some((m) => normalizarCatalogo(m) === k))
       ? resuelto
       : undefined;
-  const posible = k ? resolverModeloPosibleConfigurado(texto, config) : null;
-  const parecido = k && !modelo && !posible ? modeloParecido(texto, config) : null;
+  const posible = k && !modelo ? resolverModeloPosibleConfigurado(texto, config) : null;
+  const parecido = k && !modelo && !posible ? modeloParecido(texto, config, modelos) : null;
 
   return (
     <div className="config-probar">
@@ -488,7 +488,7 @@ export function ConfiguracionCatalogo({
         ))}
       </nav>
 
-      <ProbarReconocimiento config={borrador} />
+      <ProbarReconocimiento config={borrador} modelos={filas.modelos.map((m) => m.modelo)} />
 
       <fieldset id="config-maderas" className="config-grupo" disabled={!editable}>
         <legend>{TITULOS.maderas}</legend>

@@ -64,6 +64,7 @@ const configuracionTolerante = (alias: string[]): ConfiguracionCatalogo => ({
 });
 /** Fuente de catálogo con la configuración de prueba, como la que entrega el repositorio SQLite. */
 const fuenteDe = (configuracion: ConfiguracionCatalogo): FuenteCatalogo => ({
+  configuracion,
   modelos: () => ['Huilo Huilo', 'PANGUIPULLI'],
   maderas: () => ['MARA'],
   productosDeModelo: (modeloNormalizado) =>
@@ -112,6 +113,7 @@ describe('resolución tolerante de modelos y maderas', () => {
         valor: 'WILLOWO',
         sugerido: 'Huilo Huilo',
         disponibles: ['Huilo Huilo'],
+        familia: 'PUERTA',
       });
   });
 
@@ -202,9 +204,10 @@ describe('prioridades: preguntar antes que reemplazar', () => {
     expect(maderaDelCatalogo(conMarra, 'MARRA')).toBe('MARRA');
   });
 
-  it('sugiere un modelo del catálogo aunque no tenga alias configurados', () => {
+  it('reserva Damerau para claves distintas aunque el modelo no tenga alias configurados', () => {
     const config: ConfiguracionCatalogo = { ...CONFIGURACION_CATALOGO_BASE, aliasModelos: {}, aliasPosiblesModelos: {} };
-    expect(modeloParecido('PANGUIPULI', config, ['PANGUIPULLI'])).toBe('PANGUIPULLI');
+    expect(modeloParecido('PANGUIPULI', config, ['PANGUIPULLI'])).toBeNull();
+    expect(resolverModeloConfigurado('PANGUIPULI', config, ['PANGUIPULLI'])).toBe('PANGUIPULLI');
     expect(modeloParecido('PANGUIPUYI', config, ['PANGUIPULLI'])).toBe('PANGUIPULLI');
   });
 });
