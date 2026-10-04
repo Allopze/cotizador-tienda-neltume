@@ -101,7 +101,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       )}
       {aprobada && (
         <form className="workflow-payment" onSubmit={registrarPago}>
-          <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input inputMode="numeric" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
+          <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input inputMode="numeric" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} onBlur={() => { const n = leerPesos(montoPago); if (n > 0) setMontoPago(n.toLocaleString('es-CL')); }} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
           <label className="ia-field"><span>Fecha del pago</span><input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} disabled={ocupado || saldo <= 0} /></label>
           <label className="ia-field"><span>Observación</span><input value={observacionPago} onChange={(e) => setObservacionPago(e.target.value)} maxLength={500} placeholder="Transferencia, anticipo…" disabled={ocupado || saldo <= 0} /></label>
           <button type="submit" className="button secondary" disabled={ocupado || saldo <= 0 || leerPesos(montoPago) <= 0}>Registrar pago</button>

@@ -763,9 +763,14 @@ p + .pregunta-opciones {
 .config-barra .ia-actions {
   margin-top: 0;
 }
+/* Sin cambios no hay nada que guardar: la barra vuelve a su lugar y no ocupa la pantalla. */
+.config-barra:not(.sucia) {
+  position: static;
+}
 @media (max-width: 800px) {
+  /* En móvil la página es la que se desplaza: la barra se fija al borde de la pantalla. */
   .config-barra {
-    bottom: -24px;
+    bottom: 0;
     margin: 24px -16px -24px;
     padding: 10px 16px;
   }
@@ -1159,13 +1164,24 @@ p + .pregunta-opciones {
   border: 1px solid var(--line-strong);
   background: var(--surface);
   color: var(--ink);
-  font:
-    var(--fs-md) ui-monospace,
-    Menlo,
-    monospace;
+  font: inherit;
+  font-size: var(--fs-md);
 }
-.ia-field input:read-only {
+/* Solo la clave API va en monoespaciada (se distinguen 0/O y l/1); nombres, montos y fechas no son código. */
+.ia-field input[type='password'] {
+  font-family: ui-monospace, Menlo, monospace;
+}
+/* Un campo que no se puede editar se ve igual sea input, select o textarea: antes los textareas y selects
+   desactivados parecían editables. */
+.ia-field input:read-only,
+.ia-field input:disabled,
+.ia-field select:disabled,
+.ia-field textarea:disabled,
+.ia-field textarea:read-only {
   background: var(--pale);
+  border-color: var(--line);
+  color: var(--muted);
+  opacity: 1;
 }
 .ia-field input:focus-visible {
   outline-offset: 1px;
@@ -1196,7 +1212,7 @@ p + .pregunta-opciones {
 .ia-model-fijo code {
   color: var(--muted);
   font:
-    0.72rem ui-monospace,
+    var(--fs-xs) ui-monospace,
     Menlo,
     monospace;
 }
@@ -1239,7 +1255,7 @@ p + .pregunta-opciones {
   overflow: hidden;
   color: var(--muted);
   font:
-    0.72rem ui-monospace,
+    var(--fs-xs) ui-monospace,
     Menlo,
     monospace;
   text-overflow: ellipsis;
@@ -1527,4 +1543,20 @@ p + .pregunta-opciones {
   flex-basis: 100%;
   color: var(--danger);
   font-size: var(--fs-xs);
+}
+/* Pesos de Starken: una familia por grupo, con etiquetas cortas que quedan junto a su campo. */
+.starken-familia {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  margin: 14px 0 0;
+  padding: 0;
+  border: 0;
+}
+.starken-familia legend {
+  grid-column: 1 / -1;
+  padding: 0;
+  margin-bottom: 4px;
+  font-weight: 600;
+  color: var(--ink);
 }

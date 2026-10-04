@@ -131,18 +131,18 @@ test('ajustes y alta conservan sus bloques verticales; las listas cortas no agre
   await expect(page.locator('.heading-meta')).toHaveText('0 resultados');
   await sinScrollDePagina(page);
 
+  // En el teléfono el catálogo se desplaza con la página, sin un segundo scroll dentro de la lista: el panel de
+  // alto fijo dejaba ~350px útiles y cortaba las tarjetas.
   await page.goto('/catalogo');
   const lista = page.locator('.catalogo-lista');
   await expect(lista).toBeVisible();
-  await sinScrollDePagina(page);
-  expect(await lista.evaluate((elemento) => elemento.scrollHeight)).toBeGreaterThan(
-    await lista.evaluate((elemento) => elemento.clientHeight),
+  expect(await lista.evaluate((elemento) => elemento.scrollHeight)).toBeLessThanOrEqual(
+    await lista.evaluate((elemento) => elemento.clientHeight + 1),
   );
 
   await page.goto('/catalogo?seccion=agregar');
   const alta = page.locator('.alta-producto');
   await expect(alta).toBeVisible();
-  await sinScrollDePagina(page);
   await alta.getByRole('button', { name: 'Revisar propuesta' }).scrollIntoViewIfNeeded();
   await expect(alta.getByRole('button', { name: 'Revisar propuesta' })).toBeInViewport();
 });

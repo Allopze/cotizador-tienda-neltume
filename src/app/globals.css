@@ -63,6 +63,10 @@ body {
   font-family: Arial, Helvetica, sans-serif;
   font-size: var(--fs-md);
 }
+/* «smaller» del navegador dejaba textos secundarios en 9,6–11,2px: nunca bajo 12px. */
+small {
+  font-size: max(var(--fs-xs), 0.8em);
+}
 button,
 a,
 textarea {
@@ -270,6 +274,9 @@ h1 {
   gap: 2px;
 }
 .secciones-nav a {
+  /* Contiene el «(cambios sin guardar)» oculto: absoluto y sin ancla, escapaba de la fila desplazable en móvil
+     y ensanchaba la página. */
+  position: relative;
   display: block;
   padding: 9px 10px;
   border-left: 2px solid transparent;
@@ -308,23 +315,17 @@ h1 {
   .con-secciones {
     grid-template-columns: 1fr;
   }
-  /* En móvil la navegación pasa a una fila de pestañas desplazable. */
+  /* En móvil las pestañas se reparten en varias filas: desplazables, las de la derecha (Usuarios, Nombres y
+     alias) y su marca de cambios quedaban fuera de vista. */
   .secciones-nav {
     padding: 4px 8px 0;
     border-right: 0;
     border-bottom: 1px solid var(--line);
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* Con cuatro secciones las últimas quedan fuera de vista: el borde se desvanece y las anuncia,
-       igual que la cabecera y los filtros del historial. */
-    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
   }
   .secciones-nav ul {
     display: flex;
-    gap: 4px;
-    width: max-content;
-    /* Espacio para que la última pestaña pueda quedar fuera del borde desvanecido. */
-    padding-right: 26px;
+    flex-wrap: wrap;
+    gap: 0 4px;
   }
   .secciones-nav a {
     border-left: 0;
@@ -372,6 +373,42 @@ h1 {
 .usuario-clave .muted {
   margin: 0;
   font-size: var(--fs-xs);
+}
+/* Guardar y Cancelar separados; la celda de acciones de la tabla los posicionaba como en la fila. */
+.usuario-clave .celda-acciones {
+  position: static;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* Con cambios, la botonera de Ajustes se fija al pie (igual que la barra de Nombres y alias). */
+.acciones-guardar.sucia {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin-inline: -30px;
+  padding: 12px 30px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.acciones-guardar .acciones-error {
+  flex-basis: 100%;
+  margin: 0;
+}
+@media (max-width: 800px) {
+  .acciones-guardar.sucia {
+    margin-inline: -16px;
+    padding: 8px 16px;
+    row-gap: 6px;
+  }
+  /* Fija al pie, la barra no debe comerse la pantalla: el aviso arriba y los dos botones en una fila. */
+  .acciones-guardar.sucia .cambios-pendientes {
+    flex-basis: 100%;
+  }
+  .acciones-guardar.sucia .button {
+    flex: 1 1 0;
+    padding-inline: 10px;
+  }
 }
 .cambios-pendientes {
   align-self: center;
@@ -440,8 +477,11 @@ h1 {
   border: 1px solid var(--line);
   padding: 7px 12px;
 }
-.history-filters button:hover:not(:disabled) {
-  background: var(--pale);
+/* Solo con mouse: en táctil el hover queda pegado y le quitaba el fondo verde al filtro recién elegido. */
+@media (hover: hover) {
+  .history-filters button:hover:not(:disabled):not([aria-pressed='true']) {
+    background: var(--pale);
+  }
 }
 .history-filters button[aria-pressed='true'] {
   background: var(--green);
@@ -720,6 +760,8 @@ button[type='submit'].button.peligro:not(:disabled) {
 }
 .campo-vacio {
   color: var(--warm-text);
+  /* Una indicación, no un dato: sin negrita aunque vaya dentro de <strong>. */
+  font-weight: 400;
 }
 /* El lápiz no ocupa ancho: así el valor queda alineado con su columna (cantidades, totales). */
 .campo-valor-boton {

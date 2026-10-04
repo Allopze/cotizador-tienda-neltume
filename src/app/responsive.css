@@ -84,60 +84,11 @@
   }
 }
 @media (max-width: 800px) {
-  .pantalla-catalogo {
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-  }
-  .pantalla-catalogo > .masthead,
-  .pantalla-catalogo > .page-heading {
-    flex: none;
-  }
-  .pantalla-catalogo > .page-heading {
-    min-height: 0;
-    padding: 12px 0;
-  }
-  .pantalla-catalogo > .con-secciones {
-    flex: 1;
-    min-height: 0;
-    margin-bottom: 12px;
-    grid-template-rows: auto minmax(0, 1fr);
-  }
-  .pantalla-catalogo > .site-footer {
-    display: none;
-  }
-  .pantalla-catalogo .secciones-contenido {
-    display: flex;
-    min-height: 0;
-    flex-direction: column;
-    overflow-y: auto;
-  }
-  .pantalla-catalogo .secciones-contenido > h2 {
-    flex: none;
-  }
-  .pantalla-catalogo .secciones-contenido > div:not([hidden]) {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    flex-direction: column;
-  }
-  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > * {
-    flex: 1;
-    min-height: 0;
-  }
-  .pantalla-catalogo .catalogo-consulta {
-    grid-template-rows: auto auto auto minmax(0, 1fr);
-    min-height: 0;
-  }
-  .pantalla-catalogo .catalogo-lista {
-    height: 100%;
+  /* En móvil el catálogo se desplaza con la página: el panel de alto fijo dejaba ~350px útiles y un scroll
+     anidado (la lista y el formulario se cortaban a media tarjeta). */
+  .pantalla-catalogo .secciones-contenido .catalogo-lista {
     max-height: none;
-    min-height: 0;
-  }
-  /* Formularios largos: altura natural y un solo scroll, el del panel (la barra de guardado se fija en él). */
-  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > .alta-producto,
-  .pantalla-catalogo .secciones-contenido > div:not([hidden]) > .config-catalogo {
-    flex: none;
+    overflow: visible;
   }
   .masthead {
     height: 85px;
@@ -154,22 +105,18 @@
     padding-top: 12px;
     row-gap: 4px;
   }
+  /* Las cuatro pantallas caben en el ancho, repartidas: desplazable, «Ajustes» quedaba cortado en el borde. */
   .header-nav {
     order: 3;
     width: 100%;
     gap: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    /* Sin barra, «Ajustes» quedaba fuera de vista sin ninguna señal: el borde se desvanece. */
-    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
+    justify-content: space-between;
+    letter-spacing: 0.06em;
   }
   .header-nav a {
     flex: none;
-    padding: 12px 14px 10px;
+    padding: 12px 0 10px;
     border-bottom-width: 2px;
-  }
-  .header-nav a:first-child {
-    padding-left: 0;
   }
   .page-heading {
     padding: 18px 0;
@@ -212,17 +159,36 @@
   .conditions {
     flex-direction: row;
   }
+  /* Tarjeta: N° y monto arriba; cliente, estados y datos debajo, cada uno a todo el ancho. */
   .history-list .history-fila {
-    grid-template-columns: 82px minmax(0, 1fr) auto;
-    gap: 6px 10px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 8px 12px;
   }
-  .history-list .history-meta {
-    grid-column: 2;
-    grid-row: 2;
+  .history-list .history-number {
+    grid-column: 1;
+    grid-row: 1;
   }
   .history-list .history-fila > strong {
-    grid-column: 3;
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .history-list .history-client {
+    grid-column: 1 / -1;
     grid-row: 2;
+  }
+  .history-list .history-estado {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    align-items: center;
+    gap: 4px 8px;
+  }
+  .history-list .history-estado small {
+    margin-top: 0;
+  }
+  .history-list .history-meta {
+    grid-column: 1 / -1;
+    grid-row: 4;
   }
   .history-list .history-fila > span:last-child {
     display: none;
@@ -317,45 +283,6 @@
     flex-direction: column;
   }
 }
-/* Pantallas táctiles: textos de entrada ≥16px (sin zoom en iOS) y blancos de 44px. */
-@media (pointer: coarse) {
-  .composer textarea,
-  .catalog-composer textarea,
-  .history-search input,
-  .ia-field input,
-  .login-form input {
-    font-size: 1rem;
-  }
-  .solo-tactil {
-    display: inline;
-  }
-  .solo-escritorio {
-    display: none;
-  }
-  .remove,
-  .aviso-cerrar {
-    width: 44px;
-    height: 44px;
-  }
-  .history-filters button,
-  .opciones-chat button,
-  .button.small,
-  .ia-settings-button,
-  .logout-button,
-  .composer-bottom button,
-  .catalog-composer button {
-    min-height: 44px;
-  }
-  /* Con el masthead delante: login.css se importa después y vuelve a fijar el alto en 36px. */
-  .masthead .account-toggle {
-    min-height: 44px;
-  }
-  /* El valor editable es el botón: sin esto, editar cliente, cantidad o flete era un blanco de 29px. */
-  .campo-valor-boton {
-    min-height: 44px;
-    align-items: center;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -366,17 +293,10 @@
 }
 @media (max-width: 800px) {
   /* Filtros de estado en una sola línea desplazable, en vez de dos filas de botones. */
+  /* Los seis filtros a la vista, en dos filas: desplazables, «Reemplazadas» y «Anuladas» quedaban ocultos. */
   .history-filters {
-    flex-wrap: nowrap;
-    overflow-x: auto;
+    flex-wrap: wrap;
     width: 100%;
-    padding-bottom: 2px;
-    scrollbar-width: none;
-    /* Igual que la cabecera: «Reemplazadas» y «Anuladas» se anuncian al desvanecer el borde. */
-    mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent);
-  }
-  .history-filters button {
-    flex: none;
   }
   .history-fechas {
     width: 100%;
@@ -412,18 +332,5 @@
   }
   .gestion-editor .alta-campos {
     grid-template-columns: 1fr;
-  }
-}
-@media (pointer: coarse) {
-  .campo-editar,
-  .campo-guardar,
-  .campo-cancelar,
-  .history-duplicar {
-    min-height: 44px;
-  }
-  .campo input,
-  .history-fechas input,
-  .ia-field textarea {
-    font-size: 1rem;
   }
 }

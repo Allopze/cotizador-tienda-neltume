@@ -830,6 +830,10 @@ describe('destino de Starken', () => {
   it('el destino del despacho manda sobre la comuna del cliente; uno desconocido pasa a la comuna', () => {
     expect(unica(['Valdivia', 'Temuco'])).toBe(40);
     expect(unica(['Atlantis', 'Temuco'])).toBe(2);
+    // El destino descartado se informa para que la interfaz advierta que se cotizó con la comuna.
+    expect(resolverDestino(['Atlantis', 'Temuco'], CIUDADES)).toMatchObject({ descartado: 'Atlantis' });
+    expect(resolverDestino(['Valdivia', 'Temuco'], CIUDADES)).not.toHaveProperty('descartado');
+    expect(resolverDestino([null, 'Temuco'], CIUDADES)).not.toHaveProperty('descartado');
     expect(unica([null, 'Temuco'])).toBe(2);
     expect(resolverDestino(['Atlantis', 'Nunca Jamás'], CIUDADES)).toEqual({ estado: 'no_encontrada' });
   });

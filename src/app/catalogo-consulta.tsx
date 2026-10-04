@@ -157,7 +157,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                       </small>
                     </td>
                     <td data-etiqueta="Medida">{medidaProducto(p)}</td>
-                    <td data-etiqueta="Unitario cotización">{pesos(p.unitario)}</td>
+                    <td data-etiqueta="Unitario (neto + margen, sin IVA)">{pesos(p.unitario)}</td>
                   </tr>
                 ))}
               </tbody>

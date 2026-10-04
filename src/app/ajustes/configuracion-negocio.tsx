@@ -5,7 +5,7 @@ import { aCentesimas, conDosDecimales, leerPorcentaje, margenAPorcentaje, porcen
 import { MAX_TRAMOS, problemaTramos, type ProblemaTramos } from '@/negocio/descuento-cantidad';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
-import { AccionesGuardar, useAvisarCambios, useBorrador } from './borrador';
+import { AccionesGuardar, SinPermiso, useAvisarCambios, useBorrador } from './borrador';
 
 interface Empresa {
   nombre: string | null;
@@ -145,7 +145,6 @@ function useEnvio(negocio: Negocio, avisar: Avisar, mensaje: string) {
   return { ocupado, error, setError, enviar };
 }
 
-const SinPermiso = () => <p className="ia-permiso">Solo quien administra el cotizador puede cambiar estos datos.</p>;
 
 export function DatosEmpresa(props: PropsBloque) {
   return <ConNegocio negocio={props.negocio}>{(estado) => <FormularioEmpresa {...props} estado={estado} />}</ConNegocio>;
@@ -240,8 +239,11 @@ function FormularioEmpresa({ negocio, avisar, alCambiar, estado }: PropsBloque &
         {logoError && <p className="catalog-error" role="alert">{logoError}</p>}
         <Image className="logo-configuracion-vista" src={borrador.logoSvg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(borrador.logoSvg)}` : '/logo-neltume.svg'} alt="Vista previa del logo" width={180} height={90} unoptimized />
       </div>
-      {error && <p className="catalog-error" role="alert">{error}</p>}
-      {editable && <AccionesGuardar sucio={sucio} ocupado={ocupado} descartar={() => { setLogoError(''); descartar(); }} />}
+      {editable ? (
+        <AccionesGuardar sucio={sucio} ocupado={ocupado} error={error} descartar={() => { setLogoError(''); descartar(); }} />
+      ) : (
+        error && <p className="catalog-error" role="alert">{error}</p>
+      )}
     </form>
   );
 }
@@ -528,16 +530,12 @@ function FormularioPrecios({ negocio, avisar, alCambiar, estado }: PropsBloque &
           </p>
         )}
       </div>
-      {errores && Object.keys(errores).length > 0 && (
-        <p className="catalog-error" role="alert">
-          Revisa los campos marcados antes de guardar.
-        </p>
-      )}
-      {error && <p className="catalog-error" role="alert">{error}</p>}
+      {!editable && error && <p className="catalog-error" role="alert">{error}</p>}
       {editable && (
         <AccionesGuardar
           sucio={sucio}
           ocupado={ocupado}
+          error={errores && Object.keys(errores).length > 0 ? 'Revisa los campos marcados antes de guardar.' : error}
           descartar={() => {
             setErrores(null);
             setAvisoTramos(null);
@@ -632,11 +630,12 @@ function FormularioCotizaciones({ negocio, avisar, alCambiar, estado }: PropsBlo
           disabled={!editable || ocupado}
         />
       </label>
-      {error && <p className="catalog-error" role="alert">{error}</p>}
+      {!editable && error && <p className="catalog-error" role="alert">{error}</p>}
       {editable && (
         <AccionesGuardar
           sucio={sucio}
           ocupado={ocupado}
+          error={error}
           descartar={() => {
             setErrorDias(null);
             descartar();

@@ -14,7 +14,7 @@ import {
 import type { Familia } from '@/catalogo/tipos';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
-import { AccionesGuardar, useAvisarCambios } from './borrador';
+import { AccionesGuardar, SinPermiso, useAvisarCambios } from './borrador';
 
 type Estado = EstadoStarken & { puedeEditar: boolean };
 type Texto = Record<Familia, { kg: string; espesorCm: string }>;
@@ -162,6 +162,7 @@ export function ConfiguracionStarkenAjustes({
           el espesor indicados; los marcos, molduras y piezas T se toman con sección cuadrada de ese espesor.
         </p>
       </details>
+      {!editable && <SinPermiso />}
       {!estado.disponible && (
         <p className="catalog-error" role="status">
           Starken aún no está conectado a este cotizador; pide a soporte que lo active. Mientras tanto
@@ -202,9 +203,10 @@ export function ConfiguracionStarkenAjustes({
       )}
       <div>
         {FAMILIAS_ENVIO.map((f) => (
-          <div className="tramo-descuento" key={f}>
+          <fieldset className="starken-familia" key={f}>
+            <legend>{ETIQUETA_FAMILIA[f]}</legend>
             <label className="ia-field">
-              <span>{ETIQUETA_FAMILIA[f]}: peso por unidad (kg)</span>
+              <span>Peso por unidad (kg)</span>
               <input
                 inputMode="decimal"
                 maxLength={8}
@@ -216,7 +218,7 @@ export function ConfiguracionStarkenAjustes({
               />
             </label>
             <label className="ia-field">
-              <span>{ETIQUETA_FAMILIA[f]}: espesor (cm)</span>
+              <span>Espesor (cm)</span>
               <input
                 inputMode="decimal"
                 maxLength={8}
@@ -227,10 +229,10 @@ export function ConfiguracionStarkenAjustes({
                 disabled={!editable || ocupado}
               />
             </label>
-          </div>
+          </fieldset>
         ))}
       </div>
-      {error && (
+      {!editable && error && (
         <p className="catalog-error" role="alert">
           {error}
         </p>
@@ -239,6 +241,7 @@ export function ConfiguracionStarkenAjustes({
         <AccionesGuardar
           sucio={sucio}
           ocupado={ocupado}
+          error={error}
           descartar={() => {
             setError('');
             recibir(estado);

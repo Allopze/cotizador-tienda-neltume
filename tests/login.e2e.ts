@@ -17,7 +17,7 @@ test('redirige a login y protege las APIs y los documentos hasta autenticar', as
   await page.getByLabel('Contraseña').fill('contraseña-incorrecta-2026');
   await page.getByRole('button', { name: 'Ingresar' }).click();
   await expect(page.locator('.login-error')).toHaveText(
-    'No se pudo iniciar sesión. Revisa tus datos o espera un momento antes de volver a intentar.',
+    'Correo o contraseña incorrectos. Revísalos y vuelve a intentar.',
   );
 
   await page.getByLabel('Contraseña').fill(CLAVE_E2E);

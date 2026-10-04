@@ -206,7 +206,8 @@ export const normalizarNombre = (texto: string) =>
     .trim();
 
 export type ResolucionDestino =
-  | { estado: 'unica'; ciudad: CiudadStarken }
+  /** `descartado`: un texto anterior (p. ej. el destino del despacho) que no coincidió con ninguna ciudad. */
+  | { estado: 'unica'; ciudad: CiudadStarken; descartado?: string }
   | { estado: 'ambigua'; candidatas: CiudadStarken[] }
   | { estado: 'no_encontrada' };
 
@@ -280,7 +281,12 @@ export function resolverDestino(
   const principal = coincidencias.findIndex((c) => c !== null);
   if (principal < 0) return { estado: 'no_encontrada' };
   const c = coincidencias[principal]!;
-  if ('unica' in c) return { estado: 'unica', ciudad: c.unica };
+  // El primer texto escrito que no coincidió se informa: la persona debe saber que se cotizó con otro.
+  const descartado = textos
+    .slice(0, principal)
+    .find((t) => t?.trim())
+    ?.trim();
+  if ('unica' in c) return { estado: 'unica', ciudad: c.unica, ...(descartado ? { descartado } : {}) };
   for (const otra of coincidencias.slice(principal + 1))
     if (otra && 'unica' in otra && c.ambigua.some((x) => x.codigoCiudad === otra.unica.codigoCiudad))
       return { estado: 'unica', ciudad: otra.unica };
@@ -375,6 +381,8 @@ export type ResultadoEnvioStarken<T extends TarifaStarken = TarifaStarkenFirmada
       bulto: Bulto;
       textoBulto: string;
       destino: CiudadRef;
+      /** Destino escrito en la cotización que no coincidió con Starken (se cotizó con la comuna del cliente). */
+      destinoDescartado?: string;
       tarifas: T[];
     }
   | {

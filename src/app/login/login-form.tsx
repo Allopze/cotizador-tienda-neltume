@@ -9,6 +9,7 @@ export function LoginForm({ sesionExpirada = false }: { sesionExpirada?: boolean
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const [verClave, setVerClave] = useState(false);
   const clave = useRef<HTMLInputElement>(null);
 
   async function ingresar(event: FormEvent<HTMLFormElement>) {
@@ -31,7 +32,10 @@ export function LoginForm({ sesionExpirada = false }: { sesionExpirada?: boolean
           ? MENSAJES.red
           : status >= 500
             ? MENSAJES.servidor(status)
-            : 'No se pudo iniciar sesión. Revisa tus datos o espera un momento antes de volver a intentar.',
+            : // Dos causas distintas, dos mensajes: con un solo texto no se sabía si reescribir la clave o esperar.
+              status === 429
+              ? 'Demasiados intentos seguidos. Espera unos minutos antes de volver a intentar.'
+              : 'Correo o contraseña incorrectos. Revísalos y vuelve a intentar.',
       );
       setPassword('');
       setOcupado(false);
@@ -76,20 +80,34 @@ export function LoginForm({ sesionExpirada = false }: { sesionExpirada?: boolean
             disabled={ocupado}
           />
           <label htmlFor="clave">Contraseña</label>
-          <input
-            ref={clave}
-            id="clave"
-            name="password"
-            type="password"
-            autoComplete="current-password"
-            required
-            maxLength={128}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? 'login-error' : undefined}
-            value={password}
-            onChange={(event) => setPassword(event.target.value)}
-            disabled={ocupado}
-          />
+          <div className="login-clave">
+            <input
+              ref={clave}
+              id="clave"
+              name="password"
+              type={verClave ? 'text' : 'password'}
+              autoComplete="current-password"
+              required
+              maxLength={128}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'login-error' : undefined}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={ocupado}
+            />
+            {/* En el teléfono se escribe a ciegas: ver la clave evita errores de tipeo. */}
+            <button
+              type="button"
+              className="login-ver-clave"
+              aria-pressed={verClave}
+              aria-controls="clave"
+              onClick={() => setVerClave((v) => !v)}
+              disabled={ocupado}
+            >
+              {verClave ? 'Ocultar' : 'Mostrar'}
+              <span className="sr-only"> contraseña</span>
+            </button>
+          </div>
           {error && (
             <p className="login-error" id="login-error" role="alert">
               {error}

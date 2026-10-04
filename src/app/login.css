@@ -106,6 +106,25 @@
     var(--fs-md) Arial,
     sans-serif;
 }
+/* Contraseña con botón «Mostrar» dentro del campo, a la derecha. */
+.login-clave {
+  position: relative;
+}
+.login-clave input {
+  padding-right: 84px;
+}
+.login-ver-clave {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  min-width: 72px;
+  border: 0;
+  background: transparent;
+  color: var(--warm-text);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
 .login-submit {
   width: 100%;
   min-height: var(--control);
