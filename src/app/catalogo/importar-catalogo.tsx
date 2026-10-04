@@ -161,13 +161,26 @@ export function ImportarCatalogo() {
           ) : (
             <>
               <strong>Elegir planilla Excel</strong>
-              <span>o arrástrala aquí · .xlsx, máximo {MAXIMO_MB} MB</span>
+              {/* Arrastrar no existe en el teléfono: allí solo se indica el formato. */}
+              <span>
+                <span className="solo-escritorio">o arrástrala aquí · </span>.xlsx, máximo {MAXIMO_MB} MB
+              </span>
             </>
           )}
         </label>
-        <button type="submit" className="button primary" disabled={!archivo || ocupado}>
+        <button
+          type="submit"
+          className="button primary"
+          disabled={!archivo || ocupado}
+          aria-describedby={!archivo ? 'importar-sin-archivo' : undefined}
+        >
           {ocupado && !preview ? 'Analizando…' : 'Analizar y comparar'}
         </button>
+        {!archivo && (
+          <p className="muted" id="importar-sin-archivo">
+            Elige una planilla para analizarla.
+          </p>
+        )}
       </form>
       {error && <p className="catalog-error" role="alert">{error}</p>}
       {mensaje && <p className="notice notice-success" role="status">{mensaje}</p>}

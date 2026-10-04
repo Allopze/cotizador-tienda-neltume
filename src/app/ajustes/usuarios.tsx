@@ -105,8 +105,8 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
   return (
     <div className="usuarios-admin">
       <p className="catalog-modal-intro">
-        Edita nombre y correo, activa o desactiva cuentas y restablece contraseñas. Todas las cuentas tienen rol
-        administrador.
+        Edita nombre y correo, activa o desactiva cuentas y restablece contraseñas. Las cuentas que se crean aquí
+        tienen rol de administrador; las de rol estándar ven Ajustes en solo lectura.
       </p>
       {error && (
         <p className="catalog-error" role="alert">
@@ -143,11 +143,12 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
                     </form>
                   )}
                 </td>
-                <td data-etiqueta="Estado"><span className={`status ${usuario.activo ? 'aprobada' : 'anulada'}`}>{usuario.activo ? 'Activa' : 'Desactivada'}</span>{usuario.id === actual && <small> · Tu cuenta</small>}</td>
+                <td data-etiqueta="Estado"><span className={`status ${usuario.activo ? 'aprobada' : 'anulada'}`}>{usuario.activo ? 'Activa' : 'Desactivada'}</span><small>{usuario.rol === 'admin' ? 'Administrador' : 'Estándar'}{usuario.id === actual ? ' · Tu cuenta' : ''}</small></td>
                 <td className="celda-acciones">
                   {editandoEsta ? <><button type="button" className="button primary small" onClick={() => void accion({ accion: 'editar', id: usuario.id, nombre, email }, 'Cuenta actualizada.')} disabled={ocupado === usuario.id}>Guardar</button><button type="button" className="button secondary small" onClick={() => setEditando(null)} disabled={!!ocupado}>Cancelar</button></> : <button type="button" className="button secondary small" onClick={() => { setEditando(usuario.id); setNombre(usuario.nombre); setEmail(usuario.email); }} disabled={!!ocupado}>Editar</button>}
                   {!claveEsta && <button type="button" className="button secondary small" onClick={() => { cerrarClave(); setClaveId(usuario.id); }} disabled={!!ocupado}>Restablecer clave</button>}
-                  <button type="button" className="button secondary small" onClick={() => void cambiarEstado(usuario)} disabled={!!ocupado || (usuario.id === actual && usuario.activo)} title={usuario.id === actual && usuario.activo ? 'No puedes desactivar tu propia cuenta' : undefined}>{usuario.activo ? 'Desactivar' : 'Activar'}</button>
+                  {/* La propia cuenta no se puede desactivar: sin botón (el motivo solo estaba en un title, invisible en táctil). */}
+                  {!(usuario.id === actual && usuario.activo) && <button type="button" className="button secondary small" onClick={() => void cambiarEstado(usuario)} disabled={!!ocupado}>{usuario.activo ? 'Desactivar' : 'Activar'}</button>}
                 </td>
               </tr>;
             })}</tbody>

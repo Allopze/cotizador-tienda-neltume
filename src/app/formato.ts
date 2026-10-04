@@ -187,20 +187,32 @@ export function autoria(
   return texto.charAt(0).toUpperCase() + texto.slice(1);
 }
 
-/** Texto breve de lo que cambió: «Agregado: Marco · Cantidad: … → … · Datos del cliente: RUT». */
+/** Nombre de cada dato del cliente dentro de una frase («se actualizó el nombre y la comuna»). */
+const DATO_CLIENTE: Record<keyof Cotizacion['cliente'], string> = {
+  nombre: 'nombre',
+  rut: 'RUT',
+  giro: 'giro',
+  telefono: 'teléfono',
+  direccion: 'dirección',
+  comuna: 'comuna',
+  proyecto: 'proyecto',
+};
+
+/** «a», «a y b», «a, b y c». */
+const enumerar = (partes: string[]) =>
+  partes.length < 2 ? (partes[0] ?? '') : `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}`;
+
+/**
+ * Texto breve de lo que cambió, como frase: «Se agregó Marco Pino Oregón · Se actualizó el cliente (RUT)».
+ * Un producto que cambió muestra cómo quedó: «antes → después» repetía dos descripciones casi iguales.
+ */
 export function resumenCambios(c: CambiosCotizacion | undefined) {
   if (!c) return '';
   return [
-    ...c.agregados.map((x) => `Agregado: ${nombreProducto(x.descripcion)}`),
-    ...c.quitados.map((x) => `Quitado: ${nombreProducto(x.descripcion)}`),
-    ...c.modificados.map((x) =>
-      x.antes.descripcion === x.despues.descripcion
-        ? `Modificado: ${nombreProducto(x.despues.descripcion)}`
-        : `${nombreProducto(x.antes.descripcion)} → ${nombreProducto(x.despues.descripcion)}`,
-    ),
-    ...(c.cliente.length
-      ? [`Datos del cliente: ${c.cliente.map((k) => ETIQUETA_CAMPO[k].toLowerCase()).join(', ')}`]
-      : []),
+    ...c.agregados.map((x) => `Se agregó ${nombreProducto(x.descripcion)}`),
+    ...c.quitados.map((x) => `Se quitó ${nombreProducto(x.descripcion)}`),
+    ...c.modificados.map((x) => `Se actualizó ${nombreProducto(x.despues.descripcion)}`),
+    ...(c.cliente.length ? [`Se actualizó el cliente (${enumerar(c.cliente.map((k) => DATO_CLIENTE[k]))})`] : []),
   ].join(' · ');
 }
 

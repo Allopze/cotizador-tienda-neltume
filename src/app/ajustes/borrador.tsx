@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 /**
  * Borrador de un formulario de Ajustes frente a lo guardado. Se reinicia solo cuando cambia lo guardado de
@@ -30,20 +30,31 @@ export function useAvisarCambios(sucio: boolean, alCambiar?: (sucio: boolean) =>
   }, [sucio, alCambiar]);
 }
 
-/** Botonera común: guardar y descartar solo se activan con cambios, y se dice que hay cambios pendientes. */
+/**
+ * Botonera común: guardar y descartar solo se activan con cambios, y se dice que hay cambios pendientes. Con
+ * cambios queda fija al pie de la pantalla: los formularios largos dejaban «Guardar» miles de píxeles más abajo.
+ */
 export function AccionesGuardar({
   sucio,
   ocupado,
   descartar,
   etiqueta = 'Guardar cambios',
+  error,
 }: {
   sucio: boolean;
   ocupado: boolean;
   descartar: () => void;
   etiqueta?: string;
+  /** Error del guardado: va dentro de la barra fija para que se vea sin bajar al final del formulario. */
+  error?: ReactNode;
 }) {
   return (
-    <div className="ia-actions">
+    <div className={`ia-actions acciones-guardar${sucio ? ' sucia' : ''}`}>
+      {error && (
+        <p className="catalog-error acciones-error" role="alert">
+          {error}
+        </p>
+      )}
       {sucio && !ocupado && <span className="cambios-pendientes">Cambios sin guardar</span>}
       <button type="button" className="button secondary" onClick={descartar} disabled={ocupado || !sucio}>
         Descartar cambios
@@ -53,4 +64,9 @@ export function AccionesGuardar({
       </button>
     </div>
   );
+}
+
+/** Aviso de solo lectura para quien no administra: los campos desactivados solos no explican por qué. */
+export function SinPermiso() {
+  return <p className="ia-permiso">Solo quien administra el cotizador puede cambiar estos datos.</p>;
 }

@@ -130,7 +130,7 @@ export function Cotizador({
   const [restaurando, setRestaurando] = useState(true),
     [configurado, setConfigurado] = useState(true);
   const [enfocar, setEnfocar] = useState(0);
-  const { avisos, avisar, cerrar: cerrarAviso, limpiar } = useAvisos();
+  const { avisos, avisar, cerrar: cerrarAviso, limpiar, limpiarInformativos } = useAvisos();
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirAprobacion, dialogoAprobacion] = useAprobacion();
   const [pedirAnulacion, dialogoAnulacion] = useAnulacion();
@@ -261,9 +261,20 @@ export function Cotizador({
 
   // Solo se desplaza el contenedor de mensajes (no la ventana) cuando llega algo nuevo.
   const largoHistorial = actual?.historial.length ?? 0;
+  const largoAnterior = useRef({ id: actualId, largo: largoHistorial });
   useEffect(() => {
     const el = mensajes.current;
-    if (el) el.scrollTo({ top: el.scrollHeight, behavior: comportamientoScroll() });
+    if (!el) return;
+    const anterior = largoAnterior.current;
+    largoAnterior.current = { id: actualId, largo: largoHistorial };
+    if (el.scrollHeight > el.clientHeight + 1) {
+      el.scrollTo({ top: el.scrollHeight, behavior: comportamientoScroll() });
+      return;
+    }
+    // En móvil la conversación no tiene scroll propio (el de la página basta): si llegó una respuesta a la
+    // misma cotización, se acerca el último mensaje sin mover la página al abrir otra.
+    if (anterior.id === actualId && largoHistorial > anterior.largo)
+      el.lastElementChild?.scrollIntoView({ behavior: comportamientoScroll(), block: 'nearest' });
   }, [actualId, largoHistorial, seleccion, notaLocal, charla]);
 
   useEffect(() => {
@@ -381,7 +392,7 @@ export function Cotizador({
       // Sin pedido todavía: se muestra el intercambio, pero no se abre un borrador vacío.
       setActual(null);
       setCharla((c) => [...c, ...q.historial.slice(-2)].slice(-12));
-      for (const a of d.avisos ?? []) avisar('info', a);
+      if (d.avisos?.length) avisar('info', d.avisos.join(' '));
       const ultimo = q.historial.at(-1);
       if (opciones.anunciar && ultimo?.rol === 'asistente') setAnuncio(ultimo.texto);
       return;
@@ -417,7 +428,7 @@ export function Cotizador({
       setActual(null);
       setNotaLocal(null);
     } else setActual(q);
-    for (const a of d.avisos ?? []) avisar('info', a);
+    if (d.avisos?.length) avisar('info', d.avisos.join(' '));
     if (
       previa &&
       !d.eliminada &&
@@ -429,7 +440,7 @@ export function Cotizador({
         clave: 'revision',
       });
     const cambios = resumenCambios(d.cambios);
-    setNotaLocal(cambios ? { id: q.id, texto: `Cambios aplicados: ${cambios}.`, tipo: 'cambios' } : null);
+    setNotaLocal(cambios ? { id: q.id, texto: `${cambios}.`, tipo: 'cambios' } : null);
     const ultimo = q.historial.at(-1);
     if (opciones.anunciar && ultimo?.rol === 'asistente')
       setAnuncio(cambios ? `${ultimo.texto} ${cambios}` : ultimo.texto);
@@ -450,6 +461,8 @@ export function Cotizador({
     setCharla([]);
     idPendiente.current = null;
     limpiar('operacion');
+    // «Documento listo…» y similares eran de la cotización anterior y tapaban el compositor vacío.
+    limpiarInformativos();
     input.current?.focus();
   }
 
@@ -538,16 +551,6 @@ export function Cotizador({
     }
   }
 
-  const EDITAR_EMITIDA = (
-    <>
-      <p>
-        Esta cotización ya fue emitida. El cambio se guardará en una revisión en borrador (se crea o se
-        reutiliza la que ya existe).
-      </p>
-      <p>El PDF emitido se conserva sin cambios.</p>
-    </>
-  );
-
   const acciones: AccionesPanel = {
     async flujo(accion) {
       const q = actual;
@@ -567,7 +570,7 @@ export function Cotizador({
     async emitir() {
       const q = actual;
       if (!q || ocupado) return;
-      const emision = await pedirEmision({ total: q.montos.total });
+      const emision = await pedirEmision({ total: q.montos.total, reemplaza: q.origen });
       if (!emision) return;
       setEnCurso('emitir');
       limpiar('operacion');
@@ -725,15 +728,9 @@ export function Cotizador({
     },
     async editar(cambios: CambiosEdicion, campo: string) {
       const q = actual;
+      // Una emitida solo se edita tras «Modificar», cuyo aviso ya explica que el cambio va a una revisión y el PDF
+      // se conserva: no se vuelve a confirmar en cada campo.
       if (!q || ocupado) return false;
-      if (q.estado === 'emitida') {
-        const ok = await confirmar({
-          titulo: 'Editar una cotización emitida',
-          mensaje: EDITAR_EMITIDA,
-          aceptar: 'Guardar en la revisión',
-        });
-        if (!ok) return false;
-      }
       setGuardando(campo);
       try {
         return await ejecutar('editar', { tipo: 'editar', ...versionDe(q), ...cambios }, q);
@@ -748,15 +745,6 @@ export function Cotizador({
   async function agregarProducto(producto: ProductoElegido) {
     if (ocupado) return false;
     const q = actual;
-    if (
-      q?.estado === 'emitida' &&
-      !(await confirmar({
-        titulo: 'Editar una cotización emitida',
-        mensaje: EDITAR_EMITIDA,
-        aceptar: 'Guardar en la revisión',
-      }))
-    )
-      return false;
     setEnCurso('editar');
     limpiar('operacion');
     try {
@@ -768,6 +756,13 @@ export function Cotizador({
       recibir(d, { previa: q });
       setAgregandoProducto(false);
       setVistaMobile('cotizacion');
+      // El ítem nuevo queda al final del detalle: se lleva a la vista (el aviso solo no decía dónde quedó).
+      const ultimo = d.cotizacion.solicitudes.length - 1;
+      requestAnimationFrame(() =>
+        document
+          .getElementById(`producto-${ultimo}`)
+          ?.scrollIntoView({ behavior: comportamientoScroll(), block: 'center' }),
+      );
       avisar('exito', 'Producto agregado al pedido.', { clave: 'operacion' });
       return true;
     } catch (e) {
@@ -877,7 +872,13 @@ export function Cotizador({
     } catch (e) {
       // Tras cancelar o perder la red el servidor pudo procesarlo: el mismo id evita un duplicado.
       if (!(e instanceof ErrorCancelado || codigoDe(e) === 'red')) idPendiente.current = null;
-      fallo(e, previa, nuevoId);
+      // Sin red, el texto sigue en el compositor: el aviso ofrece reenviarlo con un toque.
+      if (codigoDe(e) === 'red')
+        avisar('error', mensajeDe(e), {
+          clave: 'operacion',
+          accion: { etiqueta: 'Reintentar', fn: () => input.current?.form?.requestSubmit() },
+        });
+      else fallo(e, previa, nuevoId);
     } finally {
       abortar.current = null;
       volverAlCompositor.current = true;
@@ -971,6 +972,8 @@ export function Cotizador({
   const bloqueada = !!actual && !esEditable(actual);
   // Las preguntas con botones solo en un borrador: en una emitida, responder crearía una revisión.
   const preguntasChat = actual?.estado === 'borrador' ? preguntasPendientes(actual) : [];
+  // Una pregunta en texto sigue abierta mientras no hay cotización o el borrador tiene datos faltantes.
+  const preguntaAbierta = !actual || (actual.estado === 'borrador' && actual.incompletos.length > 0);
   const composerDeshabilitado = ocupado || bloqueada || cargando || !!seleccion || !configurado;
   const ayudaCompositor = [!configurado && 'aviso-asistente', mensaje.length >= AVISO_LIMITE && 'contador']
     .filter(Boolean)
@@ -1018,7 +1021,7 @@ export function Cotizador({
           aria-controls="panel-cotizacion"
           onClick={() => setVistaMobile('cotizacion')}
         >
-          Cotización{actual?.incompletos.length ? ` (${actual.incompletos.length} pendientes)` : ''}
+          Cotización{actual?.incompletos.length ? ` (${plural(actual.incompletos.length, 'pendiente')})` : ''}
         </button>
       </nav>
       <main className="workspace" ref={workspace} data-vista={vistaMobile}>
@@ -1098,9 +1101,12 @@ export function Cotizador({
                     {texto && (
                       <TextoMensaje
                         texto={texto}
-                        // Solo la última pregunta ofrece botones: las anteriores ya se respondieron.
+                        // Solo la última pregunta, y solo si sigue abierta, ofrece botones: con la cotización emitida o
+                        // sin datos faltantes, un toque al desplazarse reescribía un ítem ya resuelto.
                         elegir={
-                          ultima && !conPreguntas && !composerDeshabilitado ? responderOpcion : undefined
+                          ultima && !conPreguntas && !composerDeshabilitado && preguntaAbierta
+                            ? responderOpcion
+                            : undefined
                         }
                       />
                     )}
@@ -1228,7 +1234,7 @@ export function Cotizador({
                   });
                 }}
               >
-                Ver cotización <span aria-hidden>↓</span>
+                Ver cotización <span aria-hidden>→</span>
               </button>
             )}
             <form onSubmit={enviar} className="composer">

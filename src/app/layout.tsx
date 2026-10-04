@@ -7,6 +7,8 @@ import './login.css';
 import './movimiento.css';
 import './cotizacion-interfaz.css';
 import './cotizador-pantalla.css';
+// Última: las reglas táctiles deben ganar a cualquier hoja anterior con la misma especificidad.
+import './tactil.css';
 export const metadata: Metadata = {
   title: 'Neltume · Cotizaciones',
   description: 'Asistente interno de cotizaciones de puertas sólidas.',

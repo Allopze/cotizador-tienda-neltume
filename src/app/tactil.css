@@ -1,0 +1,98 @@
+/* Pantallas táctiles: textos de entrada ≥16px (sin zoom en iOS) y blancos de 44px.
+   Se importa al final de layout.tsx: con la misma especificidad, una hoja posterior (login.css,
+   cotizacion-interfaz.css…) volvía a fijar 14px o 36px y anulaba estas reglas. */
+@media (pointer: coarse) {
+  /* Todos los campos, no una lista: cada formulario nuevo quedaba fuera y hacía zoom al tocarlo. Con
+     !important porque es un piso de accesibilidad: selectores con clase (.workflow-comment textarea,
+     .composer textarea…) le ganaban a esta regla de elemento y volvían a 12–14px y 36px. */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not(
+      [type='hidden']
+    ),
+  select,
+  textarea {
+    font-size: max(16px, 1em) !important;
+    min-height: 44px !important;
+  }
+  .solo-tactil {
+    display: inline;
+  }
+  .solo-escritorio {
+    display: none;
+  }
+  .remove,
+  .aviso-cerrar {
+    width: 44px;
+    height: 44px;
+  }
+  .history-filters button,
+  .opciones-chat button,
+  .pendiente-opciones button,
+  .button.small,
+  .ia-settings-button,
+  .logout-button,
+  .composer-bottom button,
+  .catalog-composer button,
+  .masthead .account-toggle,
+  .menu-acciones li button,
+  .header-nav a,
+  .campo-editar,
+  .campo-guardar,
+  .campo-cancelar,
+  .history-duplicar,
+  .campo input,
+  .pendiente-entrada input,
+  .pendiente-entrada select,
+  .history-fechas input {
+    min-height: 44px;
+  }
+  .config-quitar {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .aviso-accion,
+  .item-details > summary {
+    min-height: 44px;
+  }
+  .config-enlace {
+    min-width: 44px;
+    justify-content: center;
+  }
+  /* «×» de cada alias: el chip se ve igual, pero el área que responde al toque crece a 44px. */
+  .config-chip button {
+    position: relative;
+  }
+  .config-chip button::after {
+    content: '';
+    position: absolute;
+    inset: -10px;
+  }
+  /* El valor editable es el botón: sin esto, editar cliente, cantidad o flete era un blanco de 29px. */
+  .campo-valor-boton {
+    min-height: 44px;
+    align-items: center;
+  }
+  /* Resúmenes desplegables y enlaces sueltos: el texto medía 18–21px de alto. Los resúmenes conservan su
+     display (cambiarlo quita el triángulo nativo) y ganan alto con relleno. */
+  .actividad summary,
+  .ajustes-detalle summary {
+    padding-block: 12px;
+  }
+  .header-nav a,
+  .config-indice a,
+  button.link,
+  .config-enlace {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}
+/* Sin mouse, el :hover queda pegado tras tocar: un secundario recién tocado quedaba gris y se leía como
+   deshabilitado (p. ej. «Iniciar producción», «Cotizar con Starken»). */
+@media (hover: none) {
+  .button.secondary:hover:not(:disabled) {
+    background: transparent;
+  }
+  .button.primary:not(.peligro):hover:not(:disabled) {
+    background: var(--green);
+  }
+}

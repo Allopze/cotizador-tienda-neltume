@@ -165,11 +165,18 @@ function Formulario({
             {!editable ? (
               // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
               <div className="ia-model-fijo">
-                <strong>
-                  {catalogo?.modelos.find((m) => m.id === borrador.commandcode.modelo)?.nombre ??
-                    borrador.commandcode.modelo}
-                </strong>
-                <code>{borrador.commandcode.modelo}</code>
+                {(() => {
+                  const nombre = catalogo?.modelos.find((m) => m.id === borrador.commandcode.modelo)?.nombre;
+                  // Sin nombre conocido, el identificador basta: repetido en negrita y en código se leía doble.
+                  return nombre && nombre !== borrador.commandcode.modelo ? (
+                    <>
+                      <strong>{nombre}</strong>
+                      <code>{borrador.commandcode.modelo}</code>
+                    </>
+                  ) : (
+                    <strong>{borrador.commandcode.modelo}</strong>
+                  );
+                })()}
               </div>
             ) : (
               <SelectorModelo

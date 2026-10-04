@@ -24,6 +24,8 @@ interface Props {
   etiquetaOculta?: boolean;
   /** El valor mismo abre la edición (sin botón «Editar» aparte); vacío se lee «Agregar». */
   discreto?: boolean;
+  /** Indicación cuando no hay valor (p. ej. «Agregar dirección»): se ve como campo vacío, nunca como un dato. */
+  vacio?: string;
   className?: string;
   area?: boolean;
 }
@@ -44,6 +46,7 @@ export function CampoEditable({
   sufijo,
   etiquetaOculta,
   discreto,
+  vacio,
   className,
   area = false,
 }: Props) {
@@ -95,7 +98,7 @@ export function CampoEditable({
           ) : valor || mostrar !== undefined ? (
             <span>{mostrar ?? valor}</span>
           ) : (
-            <span className="campo-vacio">Agregar</span>
+            <span className="campo-vacio">{vacio ?? 'Agregar'}</span>
           )}
           <span className="campo-lapiz" aria-hidden>
             ✎
@@ -108,7 +111,12 @@ export function CampoEditable({
       <div className={`campo ${className ?? ''}`}>
         {!etiquetaOculta && <span className="campo-etiqueta">{etiqueta}</span>}
         <span className="campo-valor">
-          <strong>{guardando ? 'Guardando…' : (mostrar ?? (valor || '—'))}</strong>
+          <strong>
+            {guardando
+              ? 'Guardando…'
+              : (mostrar ??
+                (valor || (editable && vacio ? <span className="campo-vacio">{vacio}</span> : '—')))}
+          </strong>
           {editable && (
             <button
               ref={boton}

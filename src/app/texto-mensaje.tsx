@@ -17,7 +17,23 @@ function campoDe(pregunta: string, tipo: string) {
  * respuesta al mensaje en preparación; sin él (mensajes anteriores) se deja el texto tal cual.
  */
 export function TextoMensaje({ texto, elegir }: { texto: string; elegir?: (respuesta: string) => void }) {
-  if (!elegir) return <p>{texto}</p>;
+  // Sin botones, las opciones se separan con «·»: con «, » los decimales se confundían («2, 2,1, 2,2…»).
+  if (!elegir)
+    return (
+      <p>
+        {texto
+          .split('\n')
+          .map((linea) => {
+            const m = LISTA.exec(linea);
+            if (!m) return linea;
+            const [, pregunta, tipo, lista] = m;
+            const resto = RESTO.exec(lista);
+            const opciones = lista.replace(RESTO, '').split(', ').filter(Boolean);
+            return `${pregunta ? `${pregunta} ` : ''}${tipo}: ${opciones.join(' · ')}${resto ? ` y ${resto[1]} más en «Catálogo»` : ''}.`;
+          })
+          .join('\n')}
+      </p>
+    );
   return (
     <>
       {texto.split('\n').map((linea, i) => {

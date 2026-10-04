@@ -312,6 +312,7 @@ export class ProveedorStarken implements ShippingProvider {
     if (!bulto.ok) throw new ErrorStarken(bulto.mensaje, 'paquete');
     const ciudades = await cliente.listarCiudades('destino');
     let ciudad: CiudadStarken;
+    let descartado: string | undefined;
     if (destino.codigoCiudad !== undefined) {
       const elegida = ciudades.find((c) => c.codigoCiudad === destino.codigoCiudad);
       if (!elegida)
@@ -326,6 +327,7 @@ export class ProveedorStarken implements ShippingProvider {
           candidatas: r.estado === 'ambigua' ? r.candidatas : [],
         };
       ciudad = r.ciudad;
+      descartado = r.descartado;
     }
     const tarifas = await cliente.consultarTarifas({
       origen: origen.codigoCiudad,
@@ -337,6 +339,7 @@ export class ProveedorStarken implements ShippingProvider {
       bulto: bulto.bulto,
       textoBulto: textoBulto(bulto.bulto),
       destino: { codigoCiudad: ciudad.codigoCiudad, nombre: ciudad.nombre },
+      ...(descartado ? { destinoDescartado: descartado } : {}),
       tarifas,
     };
   }

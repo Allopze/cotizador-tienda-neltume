@@ -11,7 +11,9 @@ export interface Aviso {
   /** Clave para reemplazar un aviso anterior del mismo tema en vez de apilarlo. */
   clave?: string;
 }
-const DURACION_INFO = 9000;
+const DURACION_INFO = 7000;
+/** Un éxito confirma algo que ya se ve en pantalla: basta un momento. */
+const DURACION_EXITO = 4000;
 
 export function useAvisos() {
   const [avisos, setAvisos] = useState<Aviso[]>([]);
@@ -20,11 +22,15 @@ export function useAvisos() {
   const avisar = useCallback(
     (tipo: TipoAviso, texto: string, extra: Pick<Aviso, 'accion' | 'clave'> = {}) => {
       const id = siguiente.current++;
+      // Un solo aviso informativo a la vez: apilados tapaban media pantalla en el teléfono. Los errores y los que
+      // ofrecen una acción («Deshacer») se quedan hasta cerrarlos.
+      const persiste = (x: Aviso) => x.tipo === 'error' || !!x.accion;
       setAvisos((a) => [
-        ...a.filter((x) => !extra.clave || x.clave !== extra.clave),
+        ...a.filter((x) => (!extra.clave || x.clave !== extra.clave) && (tipo === 'error' || persiste(x))),
         { id, tipo, texto, ...extra },
       ]);
-      if (tipo !== 'error' && !extra.accion) setTimeout(() => cerrar(id), DURACION_INFO);
+      if (tipo !== 'error' && !extra.accion)
+        setTimeout(() => cerrar(id), tipo === 'exito' ? DURACION_EXITO : DURACION_INFO);
       return id;
     },
     [cerrar],
@@ -32,7 +38,9 @@ export function useAvisos() {
   const limpiar = useCallback((clave?: string) => {
     setAvisos((a) => (clave ? a.filter((x) => x.clave !== clave) : a.filter((x) => x.tipo !== 'error')));
   }, []);
-  return { avisos, avisar, cerrar, limpiar };
+  /** Quita los avisos de información y éxito (no los errores): al pasar a otra cotización ya no aplican. */
+  const limpiarInformativos = useCallback(() => setAvisos((a) => a.filter((x) => x.tipo === 'error')), []);
+  return { avisos, avisar, cerrar, limpiar, limpiarInformativos };
 }
 
 export type Avisar = ReturnType<typeof useAvisos>['avisar'];

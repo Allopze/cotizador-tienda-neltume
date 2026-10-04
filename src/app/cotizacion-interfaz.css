@@ -405,3 +405,20 @@
     min-height: 46px;
   }
 }
+
+/* Despacho con las mismas etiquetas y bordes que Cliente: antes una sección iba en versalitas y la otra en
+   tipo frase, con los campos 6px corridos a la izquierda por el margen negativo del botón discreto. */
+.quote-dispatch-fields .campo-etiqueta,
+.quote-dispatch-fields .ia-field > span,
+.quote-details > .campo .campo-etiqueta {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+.quote-dispatch-fields .campo-valor-boton,
+.quote-details > .campo .campo-valor-boton {
+  margin: 0;
+}

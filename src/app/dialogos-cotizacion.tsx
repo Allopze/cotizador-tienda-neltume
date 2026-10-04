@@ -123,6 +123,8 @@ function FormAprobacion({
 interface DatosEmision {
   numero?: number | null;
   total: number;
+  /** N° de la cotización que esta revisión reemplaza al emitirse. */
+  reemplaza?: number | null;
 }
 
 /** Emisión: permite elegir un número nuevo solo por encima del último correlativo reservado. */
@@ -182,6 +184,12 @@ function FormEmision({
         <p>
           Total a emitir: <strong>{new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(datos.total)}</strong> (IVA incluido).
         </p>
+        {datos.reemplaza ? (
+          <p>
+            Es una revisión: al emitirla, la cotización N° {datos.reemplaza} quedará <strong>Reemplazada</strong> y
+            su PDF se conserva.
+          </p>
+        ) : null}
         <p>Si dejas el número vacío se asignará el siguiente correlativo disponible.</p>
         <p>También puedes indicar un número manual, pero debe ser mayor que el último número usado o reservado.</p>
       </div>

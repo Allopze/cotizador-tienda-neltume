@@ -209,6 +209,13 @@
   color: var(--green);
   font-size: var(--fs-md);
 }
+.starken-aviso-destino {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  background: var(--amber-bg);
+  color: var(--pending);
+  font-size: var(--fs-sm);
+}
 .starken-resultado,
 .starken-ciudad {
   display: grid;
@@ -506,7 +513,8 @@ td small {
   }
   .table-wrap tr {
     display: grid;
-    grid-template-columns: auto 1fr 1fr;
+    /* La cantidad es el dato que más se corrige: columna con ancho táctil y su etiqueta visible. */
+    grid-template-columns: minmax(72px, auto) 1fr 1fr;
     align-items: baseline;
     gap: 8px 12px;
     padding: 14px 0;
@@ -526,10 +534,25 @@ td small {
   .table-wrap .celda-cantidad {
     text-align: left;
   }
+  /* Las tres cifras con su etiqueta encima, igual en todas: el total la llevaba en línea y las otras arriba. */
+  .table-wrap .celda-cantidad::before,
   .table-wrap .celda-monto::before {
-    content: attr(data-etiqueta) ' ';
+    content: attr(data-etiqueta);
+    display: block;
+    margin-bottom: 4px;
     color: var(--muted);
     font-size: var(--fs-xs);
+    font-weight: 400;
+  }
+  /* Cada cifra en su columna: al editar una, las otras bajan a la fila siguiente sin cambiar de columna. */
+  .table-wrap .celda-cantidad {
+    grid-column: 1;
+  }
+  .table-wrap .celda-monto {
+    grid-column: 2;
+  }
+  .table-wrap .celda-total {
+    grid-column: 3;
   }
   .table-wrap .celda-total {
     font-weight: 600;
@@ -541,6 +564,18 @@ td small {
     padding: 0;
   }
   .table-wrap .celda-cantidad .campo-discreto {
+    justify-content: flex-start;
+  }
+  .table-wrap .celda-cantidad .campo-valor-boton {
+    min-width: 56px;
+  }
+  /* Al editar una celda, su campo y Guardar/Cancelar ocupan toda la fila en vez de apilarse en una columna. */
+  .table-wrap td.celda-cantidad:has(.campo.editando),
+  .table-wrap td.celda-monto:has(.campo.editando) {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+  .table-wrap td:has(.campo.editando) .campo {
     justify-content: flex-start;
   }
 }
@@ -1164,4 +1199,8 @@ td small {
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+}
+/* Con «Más acciones» abierto, el menú queda sobre los avisos (que de otro modo tapaban «Duplicar»). */
+.quote-toolbar:has(.menu-acciones [aria-expanded='true']) {
+  z-index: 45;
 }

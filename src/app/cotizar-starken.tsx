@@ -31,6 +31,12 @@ interface Props {
  * tarifas de agencia y domicilio y, solo si la persona elige una, deja su valor neto como valor de despacho.
  * El valor sigue pudiéndose escribir a mano.
  */
+/** «PUERTO MONTT» → «Puerto Montt»: Starken nombra las ciudades en mayúsculas. */
+const nombreCiudad = (nombre: string) =>
+  nombre
+    .toLocaleLowerCase('es-CL')
+    .replace(/(^|[\s-])(\p{L})/gu, (_, sep: string, l: string) => sep + l.toLocaleUpperCase('es-CL'));
+
 export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
   const [estado, setEstado] = useState<EstadoStarken | null>(null);
   const [errorEstado, setErrorEstado] = useState('');
@@ -55,8 +61,11 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
 
   const lineas = actual.montos.lineas;
   const bulto = useMemo(() => calcularBulto(lineas, estado?.configuracion.paquete), [lineas, estado]);
-  // Las tarifas valen para el bulto con que se pidieron: si el pedido cambia, hay que volver a cotizar.
-  const claveBulto = bulto.ok ? JSON.stringify(bulto.bulto) : '';
+  // Las tarifas valen para el bulto y el destino con que se pidieron: si cambia el pedido, el destino o la comuna
+  // del cliente, hay que volver a cotizar (antes quedaban a la vista tarifas de otra ciudad).
+  const claveBulto = bulto.ok
+    ? JSON.stringify([bulto.bulto, actual.despacho?.destino ?? '', actual.cliente.comuna ?? ''])
+    : '';
   const vigente = resultado && resultado.clave === claveBulto ? resultado.tarifas : null;
 
   const bloqueo = !estado
@@ -124,7 +133,11 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
 
   async function usar(t: TarifaStarkenFirmada, r: Tarifas) {
     const ok = await aplicar({
-      despacho: { valor: t.neto },
+      // Sin destino escrito, se deja el de la tarifa: el resumen decía «Starken» sin ciudad.
+      despacho: {
+        valor: t.neto,
+        ...(actual.despacho?.destino?.trim() ? {} : { destino: nombreCiudad(r.destino.nombre) }),
+      },
       tarifaStarken: {
         tipoEntrega: t.tipoEntrega,
         ...(t.servicio ? { servicio: t.servicio } : {}),
@@ -195,13 +208,21 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
           {error}
         </p>
       )}
-      {aplicada && (
+      {/* Con un bloqueo nuevo (p. ej. un ítem pendiente) la tarifa aplicada ya no describe el pedido: no se
+          muestra junto al motivo para que los dos mensajes no se contradigan. */}
+      {aplicada && !bloqueo && (
         <p className="starken-aplicada" role="status">
           {aplicada}
         </p>
       )}
       {vigente && resultado && (
         <div className="starken-resultado" aria-label="Tarifas de Starken">
+          {vigente.destinoDescartado && (
+            <p className="starken-aviso-destino" role="status">
+              «{vigente.destinoDescartado}» no coincide con ninguna ciudad de Starken: se cotizó con la comuna
+              del cliente. Si no es el destino correcto, usa «Cambiar ciudad».
+            </p>
+          )}
           <p className="muted">
             Destino: <strong>{vigente.destino.nombre}</strong> ·{' '}
             <button

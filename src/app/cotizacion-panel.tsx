@@ -136,6 +136,10 @@ function notaEstado(q: Cotizacion | null) {
   }
 }
 
+/** Medida en metros con coma decimal, como en el resto de la cotización («0,80»). */
+const decimal = (n: number) =>
+  n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+
 export function CotizacionPanel({
   asistente,
   actual,
@@ -246,7 +250,10 @@ export function CotizacionPanel({
         <div>
           <p className="eyebrow">02 / COTIZACIÓN</p>
           <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
-            {numeroCotizacion(actual.numero)}
+            {/* Una revisión sin emitir se nombra por la cotización que reemplaza, no «Sin número». */}
+            {!actual.numero && actual.origen
+              ? `Revisión de N° ${actual.origen}`
+              : numeroCotizacion(actual.numero)}
           </h2>
           {quien && <p className="autoria">{quien}</p>}
         </div>
@@ -319,7 +326,7 @@ export function CotizacionPanel({
                   <th scope="col">PRODUCTO / CÓDIGO</th>
                   <th scope="col">CANT.</th>
                   <th scope="col">UNITARIO</th>
-                  <th scope="col">TOTAL</th>
+                  <th scope="col">TOTAL NETO</th>
                   {conQuitar && (
                     <th>
                       <span className="sr-only">Acciones</span>
@@ -383,7 +390,7 @@ export function CotizacionPanel({
                               </small>
                             )}
                         </td>
-                        <td className="celda-cantidad">
+                        <td className="celda-cantidad" data-etiqueta="Cant.">
                           <CampoEditable
                             key={`${actual.actualizada}-${i}`}
                             etiqueta={`Cantidad de ${descripcion}`}
@@ -448,7 +455,7 @@ export function CotizacionPanel({
                             '—'
                           )}
                         </td>
-                        <td className="celda-monto celda-total" data-etiqueta="Total">
+                        <td className="celda-monto celda-total" data-etiqueta="Total neto">
                           {linea ? pesos(linea.total) : '—'}
                         </td>
                         {conQuitar && (
@@ -555,7 +562,7 @@ export function CotizacionPanel({
                                     className={`item-campo${falta('modelo')}`}
                                     etiqueta="Modelo"
                                     valor={s.modelo ?? ''}
-                                    mostrar={s.modelo || 'Agregar modelo'}
+                                    vacio="Agregar modelo"
                                     editable={editable}
                                     discreto
                                     guardando={guardando === `item.${i}.modelo`}
@@ -571,7 +578,8 @@ export function CotizacionPanel({
                                     className={`item-campo${falta('madera')}`}
                                     etiqueta="Madera"
                                     valor={s.madera ?? ''}
-                                    mostrar={s.madera || 'Agregar madera'}
+                                    mostrar={s.madera ? nombreProducto(s.madera) : undefined}
+                                    vacio="Agregar madera"
                                     editable={editable}
                                     discreto
                                     guardando={guardando === `item.${i}.madera`}
@@ -591,7 +599,8 @@ export function CotizacionPanel({
                                       className={`item-campo${falta('ancho')}`}
                                       etiqueta="Ancho (m)"
                                       valor={anchoMetros === null ? '' : String(anchoMetros)}
-                                      mostrar={anchoMetros ?? 'Agregar ancho'}
+                                      mostrar={anchoMetros === null ? undefined : decimal(anchoMetros)}
+                                      vacio="Agregar ancho"
                                       editable={editable}
                                       discreto
                                       tipo="number"
@@ -619,7 +628,7 @@ export function CotizacionPanel({
                                       className={`item-campo${falta('medida')}`}
                                       etiqueta="Medida"
                                       valor={s.medida ?? ''}
-                                      mostrar={s.medida || 'Agregar medida'}
+                                      vacio="Agregar medida"
                                       editable={editable}
                                       discreto
                                       guardando={guardando === `item.${i}.medida`}
@@ -636,7 +645,8 @@ export function CotizacionPanel({
                                     className={`item-campo${falta('alto')}`}
                                     etiqueta="Alto / largo (m)"
                                     valor={altoMetros === null ? '' : String(altoMetros)}
-                                    mostrar={altoMetros ?? 'Agregar alto o largo'}
+                                    mostrar={altoMetros === null ? undefined : decimal(altoMetros)}
+                                    vacio="Agregar alto o largo"
                                     editable={editable}
                                     discreto
                                     tipo="number"
@@ -778,7 +788,7 @@ export function CotizacionPanel({
               <CampoEditable
                 etiqueta="Observaciones"
                 valor={actual.observaciones ?? ''}
-                mostrar={actual.observaciones || 'Agregar observaciones'}
+                vacio="Agregar observaciones"
                 editable={editable}
                 discreto
                 area
@@ -806,7 +816,7 @@ export function CotizacionPanel({
                 <CampoEditable
                   etiqueta="Destino"
                   valor={actual.despacho?.destino ?? ''}
-                  mostrar={actual.despacho?.destino || 'Agregar comuna o destino'}
+                  vacio="Agregar comuna o destino"
                   editable={editaDespacho}
                   discreto
                   guardando={guardando === 'despacho.destino'}
@@ -816,7 +826,7 @@ export function CotizacionPanel({
                 <CampoEditable
                   etiqueta="Dirección de despacho"
                   valor={actual.despacho?.direccion ?? ''}
-                  mostrar={actual.despacho?.direccion || 'Agregar dirección'}
+                  vacio="Agregar dirección"
                   editable={editaDespacho}
                   discreto
                   guardando={guardando === 'despacho.direccion'}
@@ -890,6 +900,18 @@ export function CotizacionPanel({
                     acciones.editar({ despacho: { valor: v ? leerPesos(v) : 0 } }, 'despacho.valor')
                   }
                 />
+                <CampoEditable
+                  etiqueta="Entrega comprometida"
+                  valor={actual.despacho?.entregaComprometida ?? ''}
+                  vacio="Agregar fecha o compromiso"
+                  editable={editaDespacho}
+                  discreto
+                  guardando={guardando === 'despacho.entregaComprometida'}
+                  maxLength={120}
+                  guardar={(v) =>
+                    guardarDespacho({ entregaComprometida: v || null }, 'despacho.entregaComprometida')
+                  }
+                />
                 {/* `admiteCambios` y no `editable`: durante cada guardado `editable` se apaga y el bloque perdería su estado. */}
                 {admiteCambios && esStarken(actual.despacho?.transporte) && (
                   <CotizarStarken
@@ -900,18 +922,6 @@ export function CotizacionPanel({
                     guardando={guardando === 'despacho.valor'}
                   />
                 )}
-                <CampoEditable
-                  etiqueta="Entrega comprometida"
-                  valor={actual.despacho?.entregaComprometida ?? ''}
-                  mostrar={actual.despacho?.entregaComprometida || 'Agregar fecha o compromiso'}
-                  editable={editaDespacho}
-                  discreto
-                  guardando={guardando === 'despacho.entregaComprometida'}
-                  maxLength={120}
-                  guardar={(v) =>
-                    guardarDespacho({ entregaComprometida: v || null }, 'despacho.entregaComprometida')
-                  }
-                />
               </div>
             </details>
           )}

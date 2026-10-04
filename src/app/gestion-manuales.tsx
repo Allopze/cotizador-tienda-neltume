@@ -164,7 +164,12 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
         <p className="muted">
           {termino
             ? 'No se encontraron productos.'
-            : 'Aún no hay productos agregados a mano. Busca un código, modelo, madera o medida para corregir uno de la planilla.'}
+            : (
+              <>
+                Aún no hay productos agregados a mano. Busca un código, modelo, madera o medida para corregir uno de
+                la planilla, o <a href="/catalogo?seccion=agregar">agrega un producto</a>.
+              </>
+            )}
         </p>
       ) : (
         <p className="muted" aria-live="polite" aria-busy={cargando}>

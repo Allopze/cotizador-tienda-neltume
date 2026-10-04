@@ -177,6 +177,15 @@
 .pantalla-cotizador .item-actualizado > td {
   background: var(--pale);
 }
+@media (max-width: 520px) {
+  /* En la tarjeta del ítem las celdas dejan huecos: se resalta la fila entera, no cada celda. */
+  .pantalla-cotizador .item-actualizado {
+    background: var(--pale);
+  }
+  .pantalla-cotizador .item-actualizado > td {
+    background: transparent;
+  }
+}
 .quote-details {
   padding: 0;
   border-top: 1px solid var(--line);
@@ -545,5 +554,26 @@
   .producto-medidas input,
   .producto-medidas select {
     font-size: 16px;
+  }
+}
+@media (max-width: 800px) {
+  /* Vacía, la nota de cambios reservaba 36px que se sumaban a un hueco de ~100px bajo el cliente. */
+  .quote-change-note:empty {
+    min-height: 0;
+    padding: 0;
+  }
+  .quote-overview {
+    padding-bottom: 12px;
+  }
+}
+/* La barra fija de total y acciones no debe tapar el campo que se está editando: el desplazamiento al enfocar
+   deja ese margen libre al pie. */
+html:has(.pantalla-cotizador.con-pedido) {
+  scroll-padding-bottom: 200px;
+}
+@media (max-width: 800px) {
+  /* Las pestañas Pedido/Cotización ya nombran cada panel: la sobrelínea «01 / …» solo empujaba el contenido. */
+  .pantalla-cotizador .panel-heading .eyebrow {
+    display: none;
   }
 }
