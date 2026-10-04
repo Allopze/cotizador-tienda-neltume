@@ -28,6 +28,19 @@ export const claveTolerante = (s: string) => {
 export const nombreCanonicoModelo = (s: string) =>
   normalizarCatalogo(s) === 'HUILOHUILO' ? 'Huilo Huilo' : s;
 
+/**
+ * Terminación de puerta que una familia no tiene, con la que sí tiene: un «marco enchapado» es el set de
+ * Pino Finger enchapado en mara, porque los marcos no vienen en MARA ENCHAPADA. Solo se usa si el modelo no
+ * tiene la madera pedida.
+ */
+const MADERA_EQUIVALENTE: Partial<Record<Familia, Record<string, string>>> = {
+  MARCO: { 'MARA ENCHAPADA': 'PINO FINGER ENCHAPADO MARA' },
+};
+export const maderaEquivalente = (familia: Familia | null | undefined, madera: string) =>
+  Object.entries((familia && MADERA_EQUIVALENTE[familia]) ?? {}).find(
+    ([pedida]) => normalizarCatalogo(pedida) === normalizarCatalogo(madera),
+  )?.[1] ?? null;
+
 const maderaSchema = z.object({
   nombre: z.string().trim().min(1),
   codigo: z.string().trim().regex(/^[A-Z0-9]+$/i),

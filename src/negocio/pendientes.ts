@@ -189,11 +189,14 @@ const listaItems = (indices: number[]) => {
 
 /**
  * Sugiere el valor que ya tiene otro ítem del pedido («Como el ítem 1»), si es una respuesta válida. No se
- * aplica sola: la persona lo elige. Las cantidades no se sugieren: rara vez se repiten.
+ * aplica sola: la persona lo elige. Las cantidades no se sugieren: rara vez se repiten. Una madera que la
+ * persona ya dijo y no se pudo usar tampoco: una Huilo Huilo enchapada no pasa a ser de Lenga porque otra
+ * puerta lo sea.
  */
 function sugerir(q: Pick<Cotizacion, 'solicitudes'>, indices: number[], parte: Parte): OpcionPendiente[] {
   const campo = parte.campo;
   if (!campo || campo === 'cantidad' || campo === 'modelo') return parte.opciones;
+  if (campo === 'madera' && indices.some((i) => q.solicitudes[i]?.madera)) return parte.opciones;
   const primero = Math.min(...indices);
   const otros = q.solicitudes
     .map((s, i) => ({ i, valor: valorDe(s, campo) }))

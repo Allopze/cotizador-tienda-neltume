@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { Servicio } from '../src/servidor/servicio';
 import type { Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
-import { clienteVacio, type Catalogo, type SolicitudItem } from '../src/catalogo/tipos';
+import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import { generarPdf, plantilla } from '../src/servidor/pdf';
 import { preguntasPendientes } from '../src/negocio/pendientes';
 import { ServicioAltaCatalogo } from '../src/servidor/alta-catalogo';
@@ -77,7 +77,7 @@ afterEach(async () => {
   }
 });
 describe('Persistencia y flujo del asistente', () => {
-  it('agrega el marco pendiente de 2,27 m y lo cotiza con una edición sin cambios de campos', async () => {
+  it('agrega el marco pendiente de sección 30x100 y lo cotiza con una edición sin cambios de campos', async () => {
     const { almacen, llm } = await setup();
     const puerta = catalogo.productos[0];
     const marco = {
@@ -100,20 +100,21 @@ describe('Persistencia y flujo del asistente', () => {
     const servicio = new Servicio(repositorio, llm, almacen);
     const items: SolicitudItem[] = [
       { modelo: 'Huilo Huilo', madera: 'MARA ENCHAPADA', ancho: 0.82, alto: 2.27, medida: null, cantidad: 2, tipoMedida: 'vano' },
-      { modelo: 'Marco', madera: 'PINO FINGER ENCHAPADO MARA', ancho: null, alto: 2.27, medida: '30X90', cantidad: 2 },
+      // «Marco enchapado» llega como MARA ENCHAPADA: se guarda y se da de alta como Pino Finger enchapado.
+      { modelo: 'Marco', madera: 'MARA ENCHAPADA', ancho: null, alto: 2.27, medida: '30X100', cantidad: 2 },
       { modelo: 'Ranco', madera: 'LENGA', ancho: 0.87, alto: 2.44, medida: null, cantidad: 1 },
       { modelo: 'Marco', madera: 'LENGA', ancho: null, alto: 2.44, medida: '2X5', cantidad: 1 },
     ];
     llm.interpretar.mockResolvedValueOnce({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
     let q = (await servicio.ejecutar({
       tipo: 'chat',
-      mensaje: '2 Huilo Huilo enchapada 0,82×2,27 vano con marco 30x90 enchapado de 2,27; 1 Ranco lenga 0,87×2,44 con marco 2x5 lenga',
+      mensaje: '2 Huilo Huilo enchapada 0,82×2,27 vano con marco 30x100 enchapado de 2,27; 1 Ranco lenga 0,87×2,44 con marco 2x5 lenga',
     })).cotizacion;
     expect(q.incompletos).toHaveLength(1);
-    expect(q.incompletos[0]).toMatchObject({ indice: 1, rechazo: { tipo: 'medida_no_disponible', campo: 'alto', familia: 'MARCO', valor: 2.27 } });
+    expect(q.incompletos[0]).toMatchObject({ indice: 1, rechazo: { tipo: 'medida_no_disponible', campo: 'medida', familia: 'MARCO', valor: '30X100' } });
     const [pregunta] = preguntasPendientes(q);
     expect(pregunta.alta).toEqual({
-      familia: 'MARCO', modelo: 'Marco', madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X90',
+      familia: 'MARCO', modelo: 'Marco', madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X100',
       anchoMin: null, anchoMax: null, largo: 2.27,
     });
     q = almacen.obtener(q.id)!;
@@ -146,6 +147,64 @@ describe('Persistencia y flujo del asistente', () => {
     const eventos = almacen.eventos(q.id);
     expect((await actualizado.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada })).cotizacion).toEqual(q);
     expect(almacen.eventos(q.id)).toEqual(eventos);
+  });
+
+  it('pasar un marco de Pino Finger enchapado a Mara Enchapada no es cambiar de producto: conserva precio y descripción', async () => {
+    const { almacen, llm } = await setup();
+    const marco: Producto = {
+      codigo: 'MAR-FE-250', modelo: 'MARCO', familia: 'MARCO', tipo: 'SET DE MARCO ENCHAPADO',
+      madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X90', anchoMin: null, anchoMax: null, largo: 2.5,
+      precioNeto: 50_000, descripcion: 'MARCO PINO FINGER ENCHAPADO MARA 30X90', filaOrigen: 1,
+    };
+    guardarCatalogo(almacen.baseDatos(), { ...catalogo, productos: [...catalogo.productos, marco] });
+    const servicio = new Servicio(new RepositorioCatalogoSqlite(almacen.baseDatos()), llm, almacen);
+    const items: SolicitudItem[] = [
+      { modelo: 'Marco', madera: 'MARA ENCHAPADA', ancho: null, alto: 2.27, medida: '30X90', cantidad: 2 },
+    ];
+    llm.interpretar.mockResolvedValueOnce({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: '2 marcos 30x90 enchapados de 2,27' })).cotizacion;
+    expect(q.montos.lineas[0].producto.codigo).toBe('MAR-FE-250');
+    const editar = async (cambios: Record<string, unknown>) =>
+      (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, items: [{ indice: 0, cambios }] })).cotizacion;
+    q = await editar({ precioUnitario: 70_000, descripcion: 'Set acordado en obra' });
+    q = await editar({ madera: 'MARA ENCHAPADA' });
+    expect(q.solicitudes[0]).toMatchObject({ madera: 'PINO FINGER ENCHAPADO MARA', precioUnitario: 70_000, descripcion: 'Set acordado en obra' });
+    expect(q.montos.lineas[0]).toMatchObject({ producto: { codigo: 'MAR-FE-250' }, precioUnitario: 70_000 });
+
+    // Completar el modelo de un ítem «enchapado» tampoco cambia la madera: precio y descripción siguen.
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'actualizar_cotizacion',
+      input: { items: [{ ...items[0], modelo: null }], cliente: clienteVacio() },
+    });
+    q = (await servicio.ejecutar({ tipo: 'chat', mensaje: '2 enchapados 30x90 de 2,27' })).cotizacion;
+    expect(q.solicitudes[0]).toMatchObject({ modelo: null, madera: 'MARA ENCHAPADA' });
+    q = await editar({ precioUnitario: 70_000, descripcion: 'Set acordado en obra' });
+    q = await editar({ modelo: 'Marco' });
+    expect(q.incompletos).toEqual([]);
+    expect(q.solicitudes[0]).toMatchObject({ madera: 'PINO FINGER ENCHAPADO MARA', precioUnitario: 70_000, descripcion: 'Set acordado en obra' });
+  });
+
+  it('si el marco también viene en Mara Enchapada, pasar a ella sí es cambiar de producto', async () => {
+    const { almacen, llm } = await setup();
+    const marco: Producto = {
+      codigo: 'MAR-FE-250', modelo: 'MARCO', familia: 'MARCO', tipo: 'SET DE MARCO ENCHAPADO',
+      madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X90', anchoMin: null, anchoMax: null, largo: 2.5,
+      precioNeto: 50_000, descripcion: 'MARCO PINO FINGER ENCHAPADO MARA 30X90', filaOrigen: 1,
+    };
+    const enchapado = { ...marco, codigo: 'MAR-EM-250', madera: 'MARA ENCHAPADA', descripcion: 'MARCO MARA ENCHAPADA 30X90', filaOrigen: 2 };
+    guardarCatalogo(almacen.baseDatos(), { ...catalogo, productos: [...catalogo.productos, marco, enchapado] });
+    const servicio = new Servicio(new RepositorioCatalogoSqlite(almacen.baseDatos()), llm, almacen);
+    const items: SolicitudItem[] = [
+      { modelo: 'Marco', madera: 'PINO FINGER ENCHAPADO MARA', ancho: null, alto: 2.27, medida: '30X90', cantidad: 2 },
+    ];
+    llm.interpretar.mockResolvedValueOnce({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: '2 marcos finger enchapados 30x90 de 2,27' })).cotizacion;
+    const editar = async (cambios: Record<string, unknown>) =>
+      (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, items: [{ indice: 0, cambios }] })).cotizacion;
+    q = await editar({ precioUnitario: 70_000, descripcion: 'Set acordado en obra' });
+    q = await editar({ madera: 'MARA ENCHAPADA' });
+    expect(q.montos.lineas[0].producto.codigo).toBe('MAR-EM-250');
+    expect(q.solicitudes[0]).toMatchObject({ madera: 'MARA ENCHAPADA', precioUnitario: null, descripcion: null });
   });
 
   it('cotiza un pendiente tras reimportar la planilla y registra el producto del catálogo vigente', async () => {

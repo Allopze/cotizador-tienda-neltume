@@ -590,6 +590,22 @@ describe('resolución y márgenes con las dos planillas', () => {
     expect(oregon.producto.madera).toBe('PINO OREGON');
   });
 
+  it('la puerta enchapada y su marco del pedido de Paula Lastra quedan completos con el anclaje de nombres y cifras activo', async () => {
+    const s = await servicio();
+    Object.assign(s.llm, { verificarCifras: true });
+    s.llm.interpretar.mockResolvedValueOnce(lista(
+      pedido('HUILO HUILO', 'MARA ENCHAPADA', { ancho: 0.82, alto: 2.27, tipoMedida: 'vano' }),
+      pedido('MARCO', 'MARA ENCHAPADA', { medida: '30x90', alto: 2.27 }),
+    ));
+    const q = (await s.servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: 'Cotizar a Paula Lastra\nDespacho a Chillan\n2 unidades Huilo Huilo enchapada de\n0.82x2.27 mts (vano) con su marco de\n30x90 enchapado\n1 unidad ranco lenga solida 0.87x2.44 mts\n(vano) con su marco de 2x5 pulgadas en\nlenga',
+    })).cotizacion;
+    expect(q.incompletos).toEqual([]);
+    expect(q.montos.lineas.map((l) => l.producto.codigo)).toEqual(['HUIL-EM-085-240', 'MARC-FE-30X90-250']);
+    expect(q.solicitudes[1].madera).toBe('PINO FINGER ENCHAPADO MARA');
+  });
+
   it('fuera del catálogo se pregunta describiendo el tramo que se cotiza, también con rangos de alto', async () => {
     const s = await servicio();
     const pregunta1 = async (item: object) => (await cotizar(s, item)).incompletos[0]?.pregunta;
@@ -599,9 +615,14 @@ describe('resolución y márgenes con las dos planillas', () => {
     expect(await pregunta1(pedido('Huilo Huilo', 'enchapada en Mara', { ancho: 95, alto: 230 }))).toBe(
       'Huilo Huilo no viene en 0,95 m de ancho. Se cotizan anchos entre 0,70 y 0,90 m.',
     );
-    expect(await pregunta1(pedido('Marco', 'pino finger', { medida: '30x70', alto: 2 }))).toBe(
-      'Marco no viene en 2,00 m de alto o largo. Se cotizan altos o largos entre 2,20 y 3,00 m.',
-    );
+    // Un marco más corto que el set menor se cotiza con ese set: no se pregunta.
+    const corto = await cotizar(s, pedido('Marco', 'pino finger', { medida: '30x70', alto: 2 }));
+    expect(corto.incompletos).toEqual([]);
+    expect(linea(corto).producto.codigo).toBe('MARC-PF-30X70-220');
+    // El marco de una puerta enchapada (Paula Lastra: 30x90 para 2,27 m) es el set Pino Finger enchapado de 2,5 m.
+    const enchapado = await cotizar(s, pedido('Marco', 'enchapado en mara', { medida: '30x90', alto: 2.27 }));
+    expect(enchapado.incompletos).toEqual([]);
+    expect(linea(enchapado).producto.codigo).toBe('MARC-FE-30X90-250');
     // Sin la madera se pregunta por ella, con las terminaciones entre las opciones.
     const faltante = await pregunta1(pedido('Huilo Huilo', null, { ancho: 80, alto: 230 }));
     expect(faltante).toMatch(/Prepintada/);

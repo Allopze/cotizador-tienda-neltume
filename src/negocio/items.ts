@@ -6,7 +6,8 @@ export interface ProductoItem {
   modelo: string;
   madera: string;
 }
-type IdentidadProducto = (s: SolicitudItem) => ProductoItem;
+/** `pareja` es el otro estado del mismo ítem: si a `s` le falta el modelo, su madera se interpreta con el de la pareja. */
+type IdentidadProducto = (s: SolicitudItem, pareja?: SolicitudItem) => ProductoItem;
 
 const MAX_TEXTO = {
   modelo: 300,
@@ -86,9 +87,21 @@ export const avisoProductoCambiado = (numero: number, { descripcion, precio }: D
  * margen ni precio, y deja en null lo que no cambia. Sin pareja, el ítem es nuevo y no hereda nada.
  */
 export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[], identidad: IdentidadProducto) {
-  const productoPrevio = previos.map(identidad),
-    productoNuevo = nuevos.map(identidad),
-    medidasPrevias = previos.map(medidasDelItem),
+  // Identidad de la pareja (nuevo i, previo j): cada lado completa el modelo que le falte con el del otro. Se
+  // calcula una vez por ítem y por modelo con que se interpreta: el emparejamiento compara todos con todos.
+  const memoria = new Map<SolicitudItem, Map<string | null, ProductoItem>>();
+  const identidadDe = (s: SolicitudItem, pareja: SolicitudItem) => {
+    const modeloPareja = s.modelo ? null : (pareja.modelo ?? null);
+    let porModelo = memoria.get(s);
+    if (!porModelo) memoria.set(s, (porModelo = new Map()));
+    if (!porModelo.has(modeloPareja)) porModelo.set(modeloPareja, identidad(s, modeloPareja === null ? undefined : pareja));
+    return porModelo.get(modeloPareja)!;
+  };
+  const par = (i: number, j: number) => ({
+    antes: identidadDe(previos[j], nuevos[i]),
+    despues: identidadDe(nuevos[i], previos[j]),
+  });
+  const medidasPrevias = previos.map(medidasDelItem),
     medidasNuevas = nuevos.map(medidasDelItem);
   const pareja = new Map<number, number>(),
     usados = new Set<number>();
@@ -103,16 +116,19 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       usados.add(j);
     }
   };
-  const mismaIdentidad = (i: number, j: number) =>
-    productoNuevo[i].modelo === productoPrevio[j].modelo &&
-    productoNuevo[i].madera === productoPrevio[j].madera &&
-    medidasNuevas[i] === medidasPrevias[j];
+  const mismaIdentidad = (i: number, j: number) => {
+    const { antes, despues } = par(i, j);
+    return despues.modelo === antes.modelo && despues.madera === antes.madera && medidasNuevas[i] === medidasPrevias[j];
+  };
   // 1. Misma posición y misma identidad (modelo, madera y medidas).
   emparejar('misma', mismaIdentidad);
   // 2. Misma identidad en otra posición: la lista se reordenó o se insertó un ítem.
   emparejar('cualquiera', mismaIdentidad);
   // 3. Misma posición con las medidas cambiadas, o con un modelo o madera completado.
-  emparejar('misma', (i, j) => !cambioDeProducto(productoPrevio[j], productoNuevo[i]));
+  emparejar('misma', (i, j) => {
+    const { antes, despues } = par(i, j);
+    return !cambioDeProducto(antes, despues);
+  });
   // 4. Misma posición con otro modelo o madera pero las mismas medidas: hereda, salvo descripción y precio manual.
   emparejar('misma', (i, j) => medidasNuevas[i] === medidasPrevias[j]);
   const avisos: string[] = [];
@@ -123,14 +139,15 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       const item = { ...nuevo };
       const descartes =
         i < previos.length
-          ? descartarDelProducto(previos[i], item, { antes: productoPrevio[i], despues: productoNuevo[i] })
+          ? descartarDelProducto(previos[i], item, par(i, i))
           : null;
       if (!descartes) return nuevo;
       avisos.push(avisoProductoCambiado(i + 1, descartes));
       return item;
     }
     const previo = previos[j];
-    const mismoModelo = productoPrevio[j].modelo !== '' && productoPrevio[j].modelo === productoNuevo[i].modelo;
+    const identidades = par(i, j);
+    const mismoModelo = identidades.antes.modelo !== '' && identidades.antes.modelo === identidades.despues.modelo;
     const item: SolicitudItem = {
       ...nuevo,
       margen: previo.margen ?? null,
@@ -144,7 +161,7 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
         ? { modeloOriginal: previo.modeloOriginal ?? null, coincidenciaModelo: previo.coincidenciaModelo ?? null }
         : {}),
     };
-    const descartes = descartarDelProducto(previo, item, { antes: productoPrevio[j], despues: productoNuevo[i] });
+    const descartes = descartarDelProducto(previo, item, identidades);
     if (descartes) avisos.push(avisoProductoCambiado(i + 1, descartes));
     return item;
   });

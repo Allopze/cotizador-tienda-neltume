@@ -12,6 +12,7 @@ import {
   aliasMaderasCatalogo,
   aliasModelosCatalogo,
   maderaDelCatalogo,
+  maderaEfectiva,
   maderasCatalogo,
   metros,
   modeloDelCatalogo,
@@ -366,6 +367,11 @@ export class Servicio {
     const validos: ItemPrecio[] = [];
     q.incompletos = [];
     for (const [indice, s] of q.solicitudes.entries()) {
+      // Un marco «en Mara Enchapada» se guarda con la madera con que se cotiza, también si queda pendiente:
+      // el alta desde el pendiente y las preguntas parten de ella.
+      const madera = s.madera ? maderaDelCatalogo(this.catalogo, s.madera) : null,
+        efectiva = maderaEfectiva(this.catalogo, s);
+      if (madera && efectiva && efectiva !== madera) s.madera = efectiva;
       const res = resolverItem(this.catalogo, s);
       if (res.ok) {
         if (res.coincidenciaModelo !== 'canonico') {
@@ -446,13 +452,18 @@ export class Servicio {
 
   /**
    * Modelo y madera comparables: los del catálogo aunque el ítem esté incompleto, así un alias no cuenta como cambio.
-   * Un alias dudoso cuenta como el modelo que se sugiere: confirmarlo no es cambiar de producto.
+   * Un alias dudoso cuenta como el modelo que se sugiere: confirmarlo no es cambiar de producto. La madera es
+   * con la que se cotiza (un marco en Mara Enchapada es Pino Finger enchapado); si falta el modelo, se usa el
+   * de `pareja`, el otro estado del ítem, así completarlo no parece un cambio de madera.
    */
-  private producto(s: SolicitudItem): ProductoItem {
+  private producto(s: SolicitudItem, pareja?: SolicitudItem): ProductoItem {
     const modelo = s.modelo ? modeloDelCatalogo(this.catalogo, s.modelo) : null;
+    const madera = s.madera
+      ? maderaEfectiva(this.catalogo, { modelo: s.modelo ?? pareja?.modelo ?? null, madera: s.madera }, { sugerido: true })
+      : null;
     return {
       modelo: modelo ? normalizar(modelo.posible ?? modelo.modelo) : '',
-      madera: s.madera ? normalizar(maderaDelCatalogo(this.catalogo, s.madera) ?? s.madera) : '',
+      madera: s.madera ? normalizar(madera ?? s.madera) : '',
     };
   }
 
@@ -892,8 +903,8 @@ export class Servicio {
         }
         const anterior = solicitudes[cambio.indice];
         const descartes = descartarDelProducto(anterior, siguiente, {
-          antes: this.producto(anterior),
-          despues: this.producto(siguiente),
+          antes: this.producto(anterior, siguiente),
+          despues: this.producto(siguiente, anterior),
         });
         if (descartes) avisosItems.push(avisoProductoCambiado(cambio.indice + 1, descartes));
         solicitudes[cambio.indice] = siguiente;
@@ -1603,8 +1614,8 @@ export class Servicio {
       if (cambio.cambios.modelo !== undefined) reiniciarOrigenModelo(siguiente);
       const anterior = items[cambio.indice];
       const descartes = descartarDelProducto(anterior, siguiente, {
-        antes: this.producto(anterior),
-        despues: this.producto(siguiente),
+        antes: this.producto(anterior, siguiente),
+        despues: this.producto(siguiente, anterior),
       });
       if (descartes) descartados.push([siguiente, descartes]);
       items[cambio.indice] = siguiente;
@@ -1763,7 +1774,7 @@ export class Servicio {
         const { items, avisos: avisosFusion } = fusionarItems(
           q.solicitudes,
           res.input.items.map(sanearTextos),
-          (s) => this.producto(s),
+          (s, pareja) => this.producto(s, pareja),
         );
         propuesta = {
           items,

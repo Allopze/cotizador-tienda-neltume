@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { pregunta } from '../src/asistente/preguntas';
-import { resolverItem } from '../src/catalogo/resolver';
+import { maderaEfectiva, resolverItem } from '../src/catalogo/resolver';
 import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
 import { preguntasPendientes } from '../src/negocio/pendientes';
 import { PreguntasPendientes } from '../src/app/preguntas-pendientes';
@@ -22,20 +22,22 @@ const catalogo = catalogoDe([
   producto({ codigo: 'MAR-L', madera: 'LENGA', medida: '2X4', largo: 2.1 }),
   producto({ codigo: 'MAR-M', madera: 'MARA', medida: '2X5', largo: 2.1 }),
   producto({ codigo: 'PU-EM', modelo: 'HUILO HUILO', familia: 'PUERTA', madera: 'MARA ENCHAPADA' }),
+  producto({ codigo: 'PU-PP', modelo: 'HUILO HUILO', familia: 'PUERTA', madera: 'PREPINTADA' }),
 ]);
 const item = (cambios: Partial<SolicitudItem>): SolicitudItem => ({
-  modelo: 'Marco', madera: 'Mara Enchapada', ancho: null, alto: null, medida: null, cantidad: 1,
+  modelo: 'Marco', madera: 'Prepintada', ancho: null, alto: null, medida: null, cantidad: 1,
   ...cambios,
 });
 
 describe('maderas compatibles con las medidas pedidas', () => {
   it.each([
     ['Roble inexistente', 'madera_desconocida'],
-    ['Mara Enchapada', 'madera_no_disponible'],
+    ['Prepintada', 'madera_no_disponible'],
   ])('%s ofrece solo las maderas que calzan con la sección y el escalón de alto', (madera, tipo) => {
     const solicitud = item({ madera, medida: '30 x 90', alto: 227 });
+    // 2,27 m queda bajo el set enchapado más corto (2,5 m): un marco se cotiza con ese set.
     expect(resolverItem(catalogo, solicitud)).toMatchObject({
-      ok: false, rechazo: { tipo, disponibles: ['PINO FINGER'] },
+      ok: false, rechazo: { tipo, disponibles: ['PINO FINGER ENCHAPADO MARA', 'PINO FINGER'] },
     });
     expect(resolverItem(catalogo, { ...solicitud, madera: 'PINO FINGER' })).toMatchObject({
       ok: true, producto: { largo: 2.4 }, ajusteAlto: 'siguiente',
@@ -68,9 +70,9 @@ describe('maderas compatibles con las medidas pedidas', () => {
   });
 
   it.each([
-    [2.27, ['PINO FINGER']],
-    [2.1, ['LENGA', 'MARA']],
-    [2, []],
+    [2.27, ['PINO FINGER ENCHAPADO MARA', 'PINO FINGER']],
+    [2.1, ['PINO FINGER ENCHAPADO MARA', 'PINO FINGER', 'LENGA', 'MARA']],
+    [1.9, ['PINO FINGER ENCHAPADO MARA', 'PINO FINGER', 'LENGA', 'MARA']],
     [3.01, []],
   ])('filtra solo por alto %s si no se pidió sección', (alto, disponibles) => {
     expect(resolverItem(catalogo, item({ alto }))).toMatchObject({ ok: false, rechazo: { disponibles } });
@@ -104,7 +106,7 @@ describe('maderas compatibles con las medidas pedidas', () => {
     });
   });
 
-  it.each(['Mara Enchapada', 'Roble inexistente'])('sin ninguna madera compatible explica el motivo y conserva el alta (%s)', (madera) => {
+  it.each(['Prepintada', 'Roble inexistente'])('sin ninguna madera compatible explica el motivo y conserva el alta (%s)', (madera) => {
     const solicitud = item({ madera, medida: '30X100', alto: 2.27 });
     const res = resolverItem(catalogo, solicitud);
     expect(res).toMatchObject({ ok: false, rechazo: { disponibles: [] } });
@@ -129,6 +131,47 @@ describe('maderas compatibles con las medidas pedidas', () => {
     const res = resolverItem(catalogo, item({ medida: '4', cantidad: 0 }));
     if (res.ok) throw new Error('El ítem debe quedar pendiente');
     expect(res.rechazo.tipo).toBe('madera_no_disponible');
-    expect(pregunta(res.rechazo, 'Marco')).toBe('Marco no viene en Mara Enchapada. Maderas disponibles: Lenga.');
+    expect(pregunta(res.rechazo, 'Marco')).toBe('Marco no viene en Prepintada. Maderas disponibles: Lenga.');
+  });
+
+  it('un marco en Mara Enchapada se cotiza con el set Pino Finger enchapado, también bajo su largo menor', () => {
+    expect(resolverItem(catalogo, item({ madera: 'Mara Enchapada', medida: '30x90', alto: 2.27 }))).toMatchObject({
+      ok: true, producto: { codigo: 'MAR-FE-2.5' }, ajusteAlto: 'siguiente',
+    });
+    // Sin la sección del set, se pregunta por las del Pino Finger enchapado, no por otra madera.
+    expect(resolverItem(catalogo, item({ madera: 'Mara Enchapada', medida: '2x4', alto: 2.27 }))).toMatchObject({
+      ok: false, rechazo: { tipo: 'medida_no_disponible', campo: 'medida', disponibles: ['30X90'] },
+    });
+  });
+
+  it('sin madera, cada una aporta su propio escalón: el mínimo de una no oculta a la otra', () => {
+    // 2,1 m: el Pino Finger sube a su set de 2,2 m y el enchapado al suyo de 2,5 m.
+    expect(resolverItem(catalogo, item({ madera: null, medida: '30x90', alto: 2.1 }))).toMatchObject({
+      ok: false, rechazo: { tipo: 'faltan_datos', campos: ['madera'], disponibles: { madera: ['PINO FINGER ENCHAPADO MARA', 'PINO FINGER'] } },
+    });
+    // 2,4 m es exacto en Pino Finger, y el enchapado igual se ofrece con su set de 2,5 m.
+    expect(resolverItem(catalogo, item({ madera: null, medida: '30x90', alto: 2.4 }))).toMatchObject({
+      ok: false, rechazo: { disponibles: { madera: ['PINO FINGER ENCHAPADO MARA', 'PINO FINGER'] } },
+    });
+  });
+
+  it('la madera efectiva de un marco en Mara Enchapada es el Pino Finger enchapado; la de una puerta, la pedida', () => {
+    expect(maderaEfectiva(catalogo, { modelo: 'Marco', madera: 'Mara Enchapada' })).toBe('PINO FINGER ENCHAPADO MARA');
+    expect(maderaEfectiva(catalogo, { modelo: 'Marco', madera: 'enchapada' })).toBe('PINO FINGER ENCHAPADO MARA');
+    expect(maderaEfectiva(catalogo, { modelo: 'Huilo Huilo', madera: 'Mara Enchapada' })).toBe('MARA ENCHAPADA');
+    expect(maderaEfectiva(catalogo, { modelo: 'Marco', madera: 'Prepintada' })).toBe('PREPINTADA');
+    // Un modelo por confirmar («¿Te refieres a Marco?») no cambia la madera guardada; para comparar, sí cuenta.
+    expect(maderaEfectiva(catalogo, { modelo: 'Maroc', madera: 'Mara Enchapada' })).toBe('MARA ENCHAPADA');
+    expect(maderaEfectiva(catalogo, { modelo: 'Maroc', madera: 'Mara Enchapada' }, { sugerido: true })).toBe('PINO FINGER ENCHAPADO MARA');
+    // Si el modelo ya tiene la madera pedida, se respeta.
+    const conEnchapada = catalogoDe([...catalogo.productos, producto({ codigo: 'MAR-EM', madera: 'MARA ENCHAPADA', medida: '30X100' })]);
+    expect(maderaEfectiva(conEnchapada, { modelo: 'Marco', madera: 'Mara Enchapada' })).toBe('MARA ENCHAPADA');
+  });
+
+  it('una puerta no cambia de madera: Mara Enchapada sigue siendo suya', () => {
+    // Solo falta el ancho: la madera pedida se acepta tal cual.
+    expect(resolverItem(catalogo, item({ modelo: 'Huilo Huilo', madera: 'Mara Enchapada', alto: 2.2 }))).toMatchObject({
+      ok: false, rechazo: { tipo: 'faltan_datos', campos: ['ancho'], disponibles: { madera: ['MARA ENCHAPADA'] } },
+    });
   });
 });

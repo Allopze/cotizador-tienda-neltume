@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { contextoSeguro, SYSTEM } from '../src/asistente/llm';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
-import { avisoProductoCambiado } from '../src/negocio/items';
+import { avisoProductoCambiado, fusionarItems } from '../src/negocio/items';
 import type { Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
@@ -444,5 +444,15 @@ describe('contexto de la IA', () => {
 
   it('el prompt pide conservar esos textos', () => {
     expect(SYSTEM).toMatch(/tipoMedida, descripcion y observaciones[^.]*salvo que el mensaje pida cambiarlos/);
+  });
+});
+
+describe('fusión de ítems', () => {
+  it('calcula la identidad de cada ítem una vez, aunque la lista llegue invertida', () => {
+    const previos = Array.from({ length: 60 }, (_, i) => item({ modelo: `MODELO ${i}`, precioUnitario: 1_000 + i }));
+    const identidad = vi.fn((s: SolicitudItem) => ({ modelo: s.modelo ?? '', madera: s.madera ?? '' }));
+    const { items } = fusionarItems(previos, [...previos].reverse().map((p) => ({ ...p, precioUnitario: null })), identidad);
+    expect(items.map((s) => s.precioUnitario)).toEqual(previos.map((p) => p.precioUnitario).reverse());
+    expect(identidad.mock.calls.length).toBeLessThanOrEqual(2 * previos.length);
   });
 });

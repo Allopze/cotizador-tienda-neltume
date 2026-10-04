@@ -3,6 +3,7 @@ import { ajusteMedida, enEscalon, escalon, esKit, LARGO_PIEZA, vieneEnKit, type 
 import {
   aliasMaderasConfiguradas,
   CONFIGURACION_CATALOGO_BASE,
+  maderaEquivalente,
   modeloParecido,
   nombreCanonicoModelo,
   normalizarCatalogo,
@@ -88,26 +89,40 @@ export const aliasModelosCatalogo = (catalogo: CatalogoConsultable) =>
   'productos' in catalogo ? CONFIGURACION_CATALOGO_BASE.aliasModelos : (catalogo.aliasModelos?.() ?? {});
 /**
  * Cada medida distinta de los candidatos es un escalón. Se usa el que contiene la medida pedida; en el
- * hueco entre dos, el siguiente hacia arriba. Bajo el menor o sobre el mayor no hay precio: no se extrapola.
+ * hueco entre dos, el siguiente hacia arriba. Sobre el mayor no hay precio: no se extrapola. Bajo el menor
+ * tampoco, salvo el largo de un marco: un marco para una puerta de 2,27 m se cotiza con el set más corto
+ * (2,5 m), porque el marco se corta en obra.
  * Un kit y una pieza lineal son productos distintos: el siguiente escalón nunca salta de uno a otro.
  * Ancho y alto se resuelven en orden: si el ancho elegido no tiene ese alto, no se prueba otro ancho.
+ * Cada madera (y, en accesorios, cada sección) tiene sus propios escalones: si todavía falta elegirla, cada
+ * alternativa aporta su escalón y ninguna queda oculta por el mínimo de otra.
  */
 function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
   const todos = ps.flatMap((p) => {
     const e = escalon(p, campo);
     return e ? [{ p, e }] : [];
   });
-  const dentro = todos.filter(({ e }) => enEscalon(valor, e));
-  if (dentro.length) return { productos: dentro.map(({ p }) => p), rango: null };
-  const candidatos = todos.filter(({ p }) => !vieneEnKit(p.familia) || esKit(p) === (valor < LARGO_PIEZA));
-  const minimos = candidatos.map(({ e }) => e.min);
-  const rango = candidatos.length
-    ? { min: Math.min(...minimos), max: Math.max(...candidatos.map(({ e }) => e.max)) }
-    : null;
-  if (!rango || valor < rango.min || valor > rango.max) return { productos: [], rango };
-  const siguiente = Math.min(...minimos.filter((min) => min > valor));
-  const productos = candidatos.filter(({ e }) => Math.abs(e.min - siguiente) < 1e-9).map(({ p }) => p);
-  return { productos, rango };
+  const esCandidato = ({ p }: (typeof todos)[number]) =>
+    !vieneEnKit(p.familia) || esKit(p) === (valor < LARGO_PIEZA);
+  const rangoDe = (ts: typeof todos) =>
+    ts.length ? { min: Math.min(...ts.map(({ e }) => e.min)), max: Math.max(...ts.map(({ e }) => e.max)) } : null;
+  const grupos = new Map<string, typeof todos>();
+  for (const t of todos) {
+    const clave = `${t.p.madera}|${campo === 'alto' && t.p.familia !== 'PUERTA' ? t.p.medida : ''}`;
+    grupos.set(clave, [...(grupos.get(clave) ?? []), t]);
+  }
+  const elegidos = new Set([...grupos.values()].flatMap((grupo) => {
+    const dentro = grupo.filter(({ e }) => enEscalon(valor, e));
+    if (dentro.length) return dentro;
+    const candidatos = grupo.filter(esCandidato);
+    const rango = rangoDe(candidatos);
+    const subeAlMenor = campo === 'alto' && candidatos.every(({ p }) => p.familia === 'MARCO');
+    if (!rango || (valor < rango.min && !subeAlMenor) || valor > rango.max) return [];
+    const siguiente = Math.min(...candidatos.map(({ e }) => e.min).filter((min) => min > valor));
+    return candidatos.filter(({ e }) => Math.abs(e.min - siguiente) < 1e-9);
+  }));
+  const productos = todos.filter((t) => elegidos.has(t)).map(({ p }) => p);
+  return { productos, rango: productos.length ? null : rangoDe(todos.filter(esCandidato)) };
 }
 /**
  * Un nombre canónico existente siempre gana frente a cualquier alias (p. ej. «Pillo» si fuera un modelo real).
@@ -196,6 +211,31 @@ export function maderaDelCatalogo(catalogo: CatalogoConsultable, valor: string) 
     resolverMaderaConfigurada(valor, CONFIGURACION_CATALOGO_BASE)
   );
 }
+/** La madera pedida o, si el modelo no la tiene, la equivalente de su familia (un marco en Mara Enchapada). */
+function conEquivalente(opciones: Producto[], madera: string) {
+  if (opciones.some((p) => p.madera === madera)) return madera;
+  const equivalente = maderaEquivalente(opciones[0]?.familia, madera);
+  return equivalente && opciones.some((p) => p.madera === equivalente) ? equivalente : madera;
+}
+/**
+ * Madera canónica con que se cotiza el ítem, aunque esté incompleto; null si no dice una conocida. Un modelo
+ * por confirmar («¿Te refieres a Marco?») solo cuenta con `sugerido`: para comparar, no para guardar.
+ */
+export function maderaEfectiva(
+  catalogo: CatalogoConsultable,
+  s: Pick<SolicitudItem, 'modelo' | 'madera'>,
+  { sugerido = false }: { sugerido?: boolean } = {},
+) {
+  const madera = s.madera ? maderaDelCatalogo(catalogo, s.madera) : null;
+  if (!madera || !s.modelo) return madera;
+  const { modelo, posible } = modeloDelCatalogo(catalogo, s.modelo);
+  if (posible && !sugerido) return madera;
+  const clave = normalizar(posible ?? modelo);
+  const opciones = 'productos' in catalogo
+    ? catalogo.productos.filter((p) => normalizar(p.modelo) === clave)
+    : catalogo.productosDeModelo(clave);
+  return conEquivalente(opciones, madera);
+}
 export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<SolicitudItem>): Resolucion {
   const s: SolicitudItem = {
     modelo: entrada.modelo ?? null,
@@ -257,7 +297,8 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
   if (s.madera && !madera)
     return no({ tipo: 'madera_desconocida', valor: s.madera, disponibles: maderasCompatibles(), familia });
   if (madera) {
-    const conMadera = opciones.filter((p) => p.madera === madera);
+    const efectiva = conEquivalente(opciones, madera);
+    const conMadera = opciones.filter((p) => p.madera === efectiva);
     if (!conMadera.length)
       return no({ tipo: 'madera_no_disponible', valor: madera, disponibles: maderasCompatibles(), familia });
     opciones = conMadera;

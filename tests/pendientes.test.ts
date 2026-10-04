@@ -290,6 +290,23 @@ describe('preguntas de los ítems pendientes', () => {
     expect(p.opciones).toEqual([{ etiqueta: '0,82 m', valor: 0.82, sugerencia: 'Como el ítem 1' }]);
   });
 
+  it('no sugiere la madera de otro ítem si la persona ya dijo una que no se pudo usar', () => {
+    const [p] = preguntasPendientes({
+      solicitudes: [item({ madera: 'MARA ENCHAPADA' }), item({ modelo: 'Ranco', madera: 'LENGA' })],
+      incompletos: [
+        {
+          indice: 0,
+          rechazo: { tipo: 'madera_no_disponible', valor: 'MARA ENCHAPADA', disponibles: ['LENGA', 'MARA'] },
+          pregunta: 'Huilo Huilo no viene en Mara Enchapada. Maderas disponibles: Lenga, Mara.',
+        },
+      ],
+    });
+    expect(p.opciones).toEqual([
+      { etiqueta: 'Lenga', valor: 'LENGA' },
+      { etiqueta: 'Mara', valor: 'MARA' },
+    ]);
+  });
+
   it('un producto ambiguo no se responde con un control: queda el texto', () => {
     const [p] = preguntasPendientes({
       solicitudes: [item({ madera: 'LENGA' })],
