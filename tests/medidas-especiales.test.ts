@@ -114,7 +114,10 @@ describe('medidas especiales por escalones del catálogo', () => {
     expect(elegido(accesorio('Marco', '2x4', 3.0))).toEqual(['MAR-M-2X4-H', null, 'exacto']);
     // 2,8 m supera el kit mayor (2,6): la pieza lineal de 3 m es otro producto, no el siguiente kit.
     expect(accesorio('Marco', '2x4', 2.8)).toMatchObject(noDisponible('alto'));
-    expect(accesorio('Marco', '2x4', 2.45)).toMatchObject(noDisponible('alto'));
+    // Bajo el kit menor, un marco se cotiza con ese kit: el marco se corta en obra.
+    expect(elegido(accesorio('Marco', '2x4', 2.45))).toEqual(['MAR-M-2X4-F', null, 'siguiente']);
+    // La regla es solo de marcos: las piezas T bajo su kit menor siguen sin precio.
+    expect(accesorio('Piezas T', '2x4', 2.45)).toMatchObject(noDisponible('alto'));
     // Sobre 3 m ya es una medida implausible (RANGO_METROS): tampoco tiene precio.
     expect(accesorio('Marco', '2x4', 3.1)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_implausible', campo: 'alto' } });
     expect(accesorio('Marco', '2x5', 2.6)).toMatchObject(noDisponible('medida'));

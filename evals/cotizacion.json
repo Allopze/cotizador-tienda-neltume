@@ -665,7 +665,7 @@
   },
   {
     "id": "paula-lastra-enchapadas",
-    "descripcion": "Pedido real con enchapadas, marcos finger y medidas de vano: el largo de los marcos no se dice y no se inventa",
+    "descripcion": "Pedido real con enchapadas, marcos finger y medidas de vano: el marco enchapado se guarda como Pino Finger enchapado (la IA lo pide en Mara Enchapada y el sistema lo cotiza con ese set) y, sin largo propio, toma el alto de su puerta",
     "mensajes": [
       "Cotizar a Paula Lastra\nDespacho a Chillan\n2 unidades Huilo Huilo enchapada de\n0.82x2.27 mts (vano) con su marco de\n30x90 enchapado\n1 unidad ranco lenga solida 0.87x2.44 mts\n(vano) con su marco de 2x5 pulgadas en\nlenga"
     ],
@@ -684,7 +684,7 @@
           "modelo": "MARCO",
           "madera": "PINO FINGER ENCHAPADO MARA",
           "ancho": null,
-          "alto": null,
+          "alto": 2.27,
           "medida": "30X90",
           "cantidad": 2
         },
@@ -701,7 +701,7 @@
           "modelo": "MARCO",
           "madera": "LENGA",
           "ancho": null,
-          "alto": null,
+          "alto": 2.44,
           "medida": "2X5",
           "cantidad": 1
         }
