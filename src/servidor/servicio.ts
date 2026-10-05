@@ -6,7 +6,9 @@ import { pregunta } from '../asistente/preguntas';
 import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { salidaSchema } from '../asistente/esquemas';
 import { contextoSeguro, type LLM } from '../asistente/llm';
-import { anclarCifras, anclarNombres } from '../asistente/anclaje';
+import { anclarCifras, anclarFrases, anclarNombres, nombresDichos, type ResolverNombre } from '../asistente/anclaje';
+import { pareceUnPedido, pedidosSinRegistrar } from '../asistente/cobertura';
+import { respuestaDirecta } from '../asistente/respuesta-directa';
 import { mapaCatalogo } from '../catalogo/mapa';
 import {
   aliasMaderasCatalogo,
@@ -1622,6 +1624,75 @@ export class Servicio {
     }
   }
 
+  /** Familia de un modelo del catálogo (PUERTA, MARCO…); null si el catálogo no lo tiene. */
+  private familiaDe(modelo: string) {
+    const clave = normalizar(modelo);
+    const productos =
+      'productos' in this.catalogo
+        ? this.catalogo.productos.filter((p) => normalizar(p.modelo) === clave)
+        : this.catalogo.productosDeModelo(clave);
+    return productos[0]?.familia ?? null;
+  }
+
+  /**
+   * Corrección para la IA si su respuesta deja fuera pedidos del mensaje o pregunta por el chat lo que debía
+   * registrar como ítem pendiente; null si la respuesta sirve.
+   */
+  private revisarSalida(
+    salida: unknown,
+    mensaje: string,
+    base: Cotizacion,
+    modo: 'cotizacion_nueva' | 'modificacion_anterior',
+    resolver: Record<'modelo' | 'madera', ResolverNombre>,
+  ): string | null {
+    const parsed = salidaSchema.safeParse(salida);
+    if (!parsed.success) return null;
+    const res = parsed.data;
+    if (res.name === 'modificar_cotizacion') {
+      const faltan = this.pedidosOmitidos(res.input, mensaje, base, resolver);
+      return faltan.length
+        ? `Tu respuesta anterior no registró estos pedidos del mensaje: ${faltan.map((f) => `«${f}»`).join(', ')}. Responde de nuevo con modificar_cotizacion e incluye en agregar todos los ítems del mensaje (también los que ya habías registrado), cada uno con su propia fuente.`
+        : null;
+    }
+    if (res.name === 'responder' && modo === 'cotizacion_nueva' && pareceUnPedido(mensaje, resolver)) {
+      const enBorrador = new Set(base.solicitudes.flatMap((s) => (s.modelo ? [normalizar(s.modelo)] : [])));
+      const nombrados = [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()];
+      if (nombrados.some((m) => !enBorrador.has(m)))
+        return 'El mensaje pide productos: regístralos con modificar_cotizacion y deja en null lo que no se dijo; el sistema pregunta lo que falta con botones. No uses responder para pedir datos de un ítem.';
+    }
+    return null;
+  }
+
+  /**
+   * Trozos del mensaje que piden productos y no quedaron en ningún ítem nuevo. Solo se revisa cuando la IA
+   * agrega ítems (o el borrador está vacío): una edición o un «saca los marcos» no tiene por qué cubrirlo.
+   */
+  private pedidosOmitidos(
+    cambios: ModificacionCotizacion,
+    mensaje: string,
+    base: Cotizacion,
+    resolver: Record<'modelo' | 'madera', ResolverNombre>,
+  ): string[] {
+    if (cambios.items?.length || cambios.quitar?.length) return [];
+    if (!cambios.agregar?.length && base.solicitudes.length) return [];
+    const frases = (cambios.agregar ?? []).map((s) => s.fuente?.trim() ?? '');
+    // Sin la frase de cada ítem no se puede saber qué parte del mensaje cubre.
+    if (frases.some((f) => !f)) return [];
+    const cliente = { ...base.cliente, ...(cambios.cliente ?? {}) };
+    const otros = [
+      ...base.solicitudes.map((s) => s.fuente ?? ''),
+      ...Object.values(cliente).filter((v): v is string => typeof v === 'string'),
+    ];
+    const faltan = pedidosSinRegistrar(mensaje, frases, otros, resolver) ?? [];
+    // «… con su marco 2x5» suele quedar dentro de la frase de la puerta: si no hay ningún marco, falta.
+    const conMarco = /\bcon\s+(?:sus?\s+)?marcos?\b[^,.;\n]*/i.exec(mensaje);
+    const hayMarco = [...(cambios.agregar ?? []), ...base.solicitudes].some(
+      (s) => !!s.modelo && this.familiaDe(resolver.modelo(s.modelo) ?? s.modelo) === 'MARCO',
+    );
+    if (conMarco && !hayMarco) faltan.push(conMarco[0].trim());
+    return faltan;
+  }
+
   private aplicarModificacion(base: Cotizacion, cambios: ModificacionCotizacion) {
     const items = structuredClone(base.solicitudes);
     const descartados: [SolicitudItem, Descartes][] = [];
@@ -1722,31 +1793,42 @@ export class Servicio {
     const base = previo ?? nuevo!;
     // Sin borrador, el contexto de la conversación es el intercambio previo que no se guardó.
     const historialIA = nuevo ? (accion.contexto ?? []) : base.historial;
-    let salida: unknown;
-    try {
-      salida = await this.llm.interpretar(
-        contextoSeguro(
-          accion.mensaje,
-          base.solicitudes,
-          base.cliente,
-          modelosCatalogo(this.catalogo),
-          maderasCatalogo(this.catalogo),
-          historialIA,
-          modo,
-          modo === 'modificacion_anterior'
-            ? { numero: base.numero ?? base.origen ?? null, estado: base.estado }
-            : null,
-          {
-            modelos: aliasModelosCatalogo(this.catalogo),
-            maderas: aliasMaderasCatalogo(this.catalogo),
-            catalogo: mapaCatalogo(this.catalogo),
-          },
-        ),
-      );
-    } catch (error) {
-      if (error instanceof ErrorIA) throw error;
-      throw errorProveedor();
-    }
+    const resolver = resolverNombres(this.catalogo);
+    // Un dato suelto que responde la pregunta pendiente («lenga», «son 3») se aplica sin consultar a la IA,
+    // igual que los botones. Los dobles de prueba (sin verificarCifras) siempre pasan por la IA.
+    const directa =
+      this.llm.verificarCifras && previo?.estado === 'borrador' && modo === 'cotizacion_nueva'
+        ? respuestaDirecta(base, accion.mensaje, resolver)
+        : null;
+    let salida: unknown = directa;
+    if (!directa)
+      try {
+        salida = await this.llm.interpretar(
+          contextoSeguro(
+            accion.mensaje,
+            base.solicitudes,
+            base.cliente,
+            modelosCatalogo(this.catalogo),
+            maderasCatalogo(this.catalogo),
+            historialIA,
+            modo,
+            modo === 'modificacion_anterior'
+              ? { numero: base.numero ?? base.origen ?? null, estado: base.estado }
+              : null,
+            {
+              modelos: aliasModelosCatalogo(this.catalogo),
+              maderas: aliasMaderasCatalogo(this.catalogo),
+              catalogo: mapaCatalogo(this.catalogo),
+            },
+          ),
+          this.llm.verificarCifras
+            ? { revisar: (s) => this.revisarSalida(s, accion.mensaje, base, modo, resolver) }
+            : {},
+        );
+      } catch (error) {
+        if (error instanceof ErrorIA) throw error;
+        throw errorProveedor();
+      }
     return this.almacen.transaccion((u): Resultado => {
       let q: Cotizacion;
       if (nuevo) {
@@ -1839,19 +1921,32 @@ export class Servicio {
             ? 'Puedo ayudarte con modelos, maderas, medidas, cantidades y datos del cliente. Los montos se muestran en la cotización.'
             : res.input.texto,
         );
-      if (this.llm.verificarCifras) {
+      if (this.llm.verificarCifras && !directa) {
         // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
         const textosIA = [accion.mensaje, ...historialIA.map((m) => m.texto)];
-        const anclado = anclarCifras(propuesta.items, q.solicitudes, textosIA);
+        // Primero cada ítem contra su propia frase, para que no tome la madera o la cantidad de otro.
+        const anteriores = historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto);
+        const porFrase = anclarFrases(propuesta.items, q.solicitudes, accion.mensaje, resolver, anteriores, (m) =>
+          this.familiaDe(resolver.modelo(m) ?? m),
+        );
+        const anclado = anclarCifras(porFrase.items, q.solicitudes, textosIA);
         const nombres = anclarNombres(anclado.items, q.solicitudes, textosIA, {
           modelo: aliasModelosCatalogo(this.catalogo),
           madera: aliasMaderasCatalogo(this.catalogo),
-        }, resolverNombres(this.catalogo));
+        }, resolver);
         propuesta = {
           ...propuesta,
           items: nombres.items,
-          avisos: [...propuesta.avisos, ...anclado.avisos, ...nombres.avisos],
+          avisos: [...propuesta.avisos, ...porFrase.avisos, ...anclado.avisos, ...nombres.avisos],
         };
+        // Lo que la IA no registró ni tras la corrección se avisa: la cotización no debe verse completa.
+        if (res.name === 'modificar_cotizacion') {
+          const faltan = this.pedidosOmitidos(res.input, accion.mensaje, base, resolver);
+          if (faltan.length)
+            propuesta.avisos.push(
+              `No registré: ${faltan.map((f) => `«${f}»`).join(', ')}. Revisa si falta y escríbelo de nuevo.`,
+            );
+        }
       }
       const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);

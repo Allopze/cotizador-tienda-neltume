@@ -82,7 +82,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
           z
             .object({ rol: z.enum(['usuario', 'asistente']), texto: z.string().max(6000) })
             .strict()
-            .transform((m) => ({ ...m, texto: m.texto.slice(0, 500) })),
+            // Un pedido largo de la persona debe llegar completo; la IA recorta lo suyo (MAX_TEXTO_HISTORIAL).
+            .transform((m) => ({ ...m, texto: m.texto.slice(0, m.rol === 'usuario' ? 1500 : 500) })),
         )
         .max(12)
         .transform((ms) => ms.slice(-6))

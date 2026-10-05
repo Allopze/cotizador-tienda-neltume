@@ -2,7 +2,11 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ajustesPredeterminados } from '../src/asistente/ajustes';
+import {
+  ajustesPredeterminados,
+  MODELO_RESPALDO_PREDETERMINADO,
+  modeloRespaldo,
+} from '../src/asistente/ajustes';
 import { CommandCodeLLM } from '../src/asistente/llm';
 import { asistenteConfigurado, crearLLM, guardarAjustesIA, leerAjustesIA } from '../src/servidor/ajustes-ia';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
@@ -25,6 +29,21 @@ describe('Ajustes del asistente', () => {
     expect(leerAjustesIA(db)).toEqual(ajustesPredeterminados('claude-opus-5-5'));
     guardarAjustesIA({ commandcode: { modelo: 'claude-sonnet-5' } }, db);
     expect(leerAjustesIA(db)).toEqual({ commandcode: { modelo: 'claude-sonnet-5' } });
+    db.close();
+  });
+
+  it('guarda el modelo de respaldo; sin indicarlo usa el predeterminado y null lo desactiva', async () => {
+    const db = await base();
+    guardarAjustesIA({ commandcode: { modelo: 'Qwen/Qwen3.7-Flash', respaldo: 'gpt-6-luna' } }, db);
+    expect(leerAjustesIA(db).commandcode.respaldo).toBe('gpt-6-luna');
+    // Lo guardado antes de existir el respaldo sigue valiendo y toma el predeterminado.
+    guardarAjustesIA({ commandcode: { modelo: 'Qwen/Qwen3.7-Flash' } }, db);
+    expect(modeloRespaldo(leerAjustesIA(db))).toBe(MODELO_RESPALDO_PREDETERMINADO);
+    guardarAjustesIA({ commandcode: { modelo: 'Qwen/Qwen3.7-Flash', respaldo: null } }, db);
+    expect(modeloRespaldo(leerAjustesIA(db))).toBeNull();
+    // El mismo modelo principal no es un respaldo.
+    expect(modeloRespaldo({ commandcode: { modelo: 'gpt-6-luna', respaldo: 'gpt-6-luna' } })).toBeNull();
+    expect(() => guardarAjustesIA({ commandcode: { modelo: 'x', respaldo: 'no válido' } }, db)).toThrow();
     db.close();
   });
 

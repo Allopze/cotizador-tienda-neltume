@@ -48,6 +48,7 @@ describe('Proveedor CommandCode', () => {
     const body = JSON.parse(String(options?.body));
     expect(body.model).toBe('claude-sonnet-4-6');
     expect(body.tool_choice).toEqual({ type: 'any', disable_parallel_tool_use: true });
+    expect(body.temperature).toBe(0);
     // La IA solo informa cambios: la lista completa del pedido ya no se ofrece.
     expect(body.tools.map((t: { name: string }) => t.name)).toEqual([
       'modificar_cotizacion',
@@ -88,6 +89,206 @@ describe('Proveedor CommandCode', () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('claude-sonnet-5');
   });
+
+  it('reintenta una vez un límite o una caída momentánea del proveedor', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    const saturado = () =>
+      Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'x' } }, { status: 429 });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(saturado())
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    // Sin respaldo, dos caídas seguidas se informan.
+    fetchMock.mockReset();
+    fetchMock.mockImplementation(async () => Response.json({ error: 'caído' }, { status: 500 }));
+    await expect(new CommandCodeLLM().interpretar(contexto)).rejects.toMatchObject({
+      codigo: 'ia_no_disponible',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('usa el modelo de respaldo si el principal no sirve, también para la corrección', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    const retirado = Response.json(
+      { error: { message: 'No endpoints found for stealth/x.' } },
+      { status: 404 },
+    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(retirado)
+      .mockResolvedValueOnce(respuesta([llamada, llamada]))
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    const llm = new CommandCodeLLM('stealth/x', undefined, { respaldo: 'claude-sonnet-5' });
+    expect(await llm.interpretar(contexto)).toEqual({ name: llamada.name, input: llamada.input });
+    const modelos = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)).model);
+    expect(modelos).toEqual(['stealth/x', 'claude-sonnet-5', 'claude-sonnet-5']);
+  });
+
+  it('no usa el respaldo si la clave no sirve, y pasa a él tras un plazo agotado', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    const noAutorizado = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { type: 'error', error: { type: 'authentication_error', message: 'x' } },
+          { status: 401 },
+        ),
+      );
+    vi.stubGlobal('fetch', noAutorizado);
+    const llm = new CommandCodeLLM('claude-sonnet-5', undefined, { respaldo: 'gpt-6-luna' });
+    await expect(llm.interpretar(contexto)).rejects.toMatchObject({ codigo: 'ia_autenticacion' });
+    expect(noAutorizado).toHaveBeenCalledTimes(1);
+    const lento = vi
+      .fn<typeof fetch>()
+      .mockRejectedValueOnce(new DOMException('Request timed out', 'TimeoutError'))
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', lento);
+    const conRespaldo = new CommandCodeLLM('claude-sonnet-5', undefined, { respaldo: 'claude-haiku-4-5' });
+    expect(await conRespaldo.interpretar(contexto)).toEqual({ name: llamada.name, input: llamada.input });
+    expect(lento.mock.calls.map((c) => JSON.parse(String(c[1]?.body)).model)).toEqual([
+      'claude-sonnet-5',
+      'claude-haiku-4-5',
+    ]);
+  });
+
+  it('no inicia otro intento si se agotó el plazo total del mensaje', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    vi.stubEnv('CMD_TIMEOUT_MS', '1000');
+    vi.stubEnv('CMD_PLAZO_TOTAL_MS', '1000');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json({ type: 'error', error: { type: 'rate_limit_error', message: 'x' } }, { status: 429 }),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(
+      new CommandCodeLLM(undefined, undefined, { respaldo: 'gpt-6-luna' }).interpretar(contexto),
+    ).rejects.toMatchObject({
+      codigo: 'ia_limite',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('envía temperature 0 y la quita si el modelo no la acepta', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    const rechazo = (mensaje: string) =>
+      Response.json(
+        { type: 'error', error: { type: 'invalid_request_error', message: mensaje } },
+        { status: 400 },
+      );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(rechazo('tool_choice: type "any" is not supported for this model.'))
+      .mockResolvedValueOnce(rechazo('temperature is not supported for this model.'))
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies.map((b) => [b.tool_choice.type, b.temperature])).toEqual([
+      ['any', 0],
+      ['auto', 0],
+      ['auto', undefined],
+    ]);
+  });
+
+  it('un rechazo 400 por otra causa no se reintenta y se informa como configuración', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        Response.json(
+          { type: 'error', error: { type: 'invalid_request_error', message: 'max_tokens too large' } },
+          { status: 400 },
+        ),
+      );
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(new CommandCodeLLM().interpretar(contexto)).rejects.toMatchObject({
+      codigo: 'ia_configuracion',
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('reintenta una vez con la corrección de la revisión del servidor', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    const parcial = {
+      ...llamada,
+      name: 'modificar_cotizacion',
+      input: { agregar: [] as unknown[], cliente: { nombre: 'Ana' } },
+    };
+    const completa = {
+      ...llamada,
+      id: 'otra',
+      name: 'modificar_cotizacion',
+      input: { cliente: { nombre: 'Ana Soto' } },
+    };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(respuesta([parcial]))
+      .mockResolvedValueOnce(respuesta([completa]));
+    vi.stubGlobal('fetch', fetchMock);
+    const revisar = vi.fn((s: unknown) =>
+      (s as { input: { cliente: { nombre: string } } }).input.cliente.nombre === 'Ana'
+        ? 'Falta «2 Molco».'
+        : null,
+    );
+    expect(await new CommandCodeLLM().interpretar(contexto, { revisar })).toEqual({
+      name: completa.name,
+      input: completa.input,
+    });
+    expect(
+      JSON.parse(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).messages[0].content).correccion,
+    ).toBe('Falta «2 Molco».');
+    // Si la corrección llega inutilizable, se conserva la primera respuesta, que ya era válida.
+    fetchMock.mockReset();
+    fetchMock
+      .mockResolvedValueOnce(respuesta([parcial]))
+      .mockResolvedValueOnce(respuesta([llamada, llamada]));
+    expect(await new CommandCodeLLM().interpretar(contexto, { revisar })).toEqual({
+      name: parcial.name,
+      input: parcial.input,
+    });
+  });
+
+  it('reintenta con tool_choice «auto» si el modelo Claude no acepta «any»', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5-5');
+    const rechazo = Response.json(
+      {
+        type: 'error',
+        error: {
+          type: 'invalid_request_error',
+          message: 'tool_choice: type "tool" and "any" are not supported for this model.',
+        },
+      },
+      { status: 400 },
+    );
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(rechazo)
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    const elecciones = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)).tool_choice.type);
+    expect(elecciones).toEqual(['any', 'auto']);
+  });
 });
 
 describe('Modelos Chat Completions de CommandCode', () => {
@@ -122,9 +323,43 @@ describe('Modelos Chat Completions de CommandCode', () => {
     const body = JSON.parse(String(options?.body));
     expect(body.model).toBe('poolside/laguna-s-2.1-free');
     expect(body.tool_choice).toBe('required');
+    expect(body.temperature).toBe(0);
     expect(body.parallel_tool_calls).toBe(false);
     expect(body.tools[0].function.name).toBe('modificar_cotizacion');
     expect(JSON.parse(body.messages[1].content)).toEqual(contexto);
+  });
+  it('reintenta con tool_choice «auto» si el modelo no acepta «required»', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'meta/muse-spark-1.3-contributor');
+    const rechazo = Response.json(
+      { error: { message: 'only `"auto"` is supported for `tool_choice`.', type: 'invalid_request_error' } },
+      { status: 400 },
+    );
+    const exito = Response.json({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            tool_calls: [
+              {
+                type: 'function',
+                function: { name: llamada.name, arguments: JSON.stringify(llamada.input) },
+              },
+            ],
+          },
+        },
+      ],
+    });
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(rechazo).mockResolvedValueOnce(exito);
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    expect(fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)).tool_choice)).toEqual([
+      'required',
+      'auto',
+    ]);
   });
   it.each([401, 403, 429, 500])('traduce el error %i sin revelar el cuerpo del proveedor', async (status) => {
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');

@@ -8,7 +8,7 @@ import {
   type KeyboardEvent,
   type RefObject,
 } from 'react';
-import type { AjustesIA } from '@/asistente/ajustes';
+import { MODELO_RESPALDO_PREDETERMINADO, type AjustesIA } from '@/asistente/ajustes';
 import type { ModeloCommandCode } from '@/asistente/modelos-commandcode';
 import { useConfirmacion } from './dialogo';
 import type { TipoAviso } from './avisos';
@@ -75,7 +75,14 @@ function Formulario({
   const [errorApiKey, setErrorApiKey] = useState('');
   const [confirmar, dialogoConfirmacion] = useConfirmacion();
   const editable = estado.puedeEditar !== false;
-  const cambiado = borrador.commandcode.modelo !== estado.ajustes.commandcode.modelo;
+  const campoRespaldo = useRef<HTMLButtonElement>(null);
+  /** Sin indicar se usa el respaldo predeterminado; null es «sin respaldo». */
+  const respaldoDe = (a: AjustesIA) =>
+    a.commandcode.respaldo === undefined ? MODELO_RESPALDO_PREDETERMINADO : a.commandcode.respaldo;
+  const respaldo = respaldoDe(borrador);
+  const cambiado =
+    borrador.commandcode.modelo !== estado.ajustes.commandcode.modelo || respaldo !== respaldoDe(estado.ajustes);
+  const nombreDe = (id: string) => catalogo?.modelos.find((m) => m.id === id)?.nombre;
   useAvisarCambios(cambiado, alCambiar);
 
   useEffect(() => {
@@ -88,6 +95,13 @@ function Formulario({
     });
     return () => controlador.abort();
   }, [intentoCatalogo]);
+
+  function reintentarCatalogo() {
+    // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
+    setCatalogo(null);
+    setErrorCatalogo('');
+    setIntentoCatalogo((actual) => actual + 1);
+  }
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
@@ -165,18 +179,7 @@ function Formulario({
             {!editable ? (
               // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
               <div className="ia-model-fijo">
-                {(() => {
-                  const nombre = catalogo?.modelos.find((m) => m.id === borrador.commandcode.modelo)?.nombre;
-                  // Sin nombre conocido, el identificador basta: repetido en negrita y en código se leía doble.
-                  return nombre && nombre !== borrador.commandcode.modelo ? (
-                    <>
-                      <strong>{nombre}</strong>
-                      <code>{borrador.commandcode.modelo}</code>
-                    </>
-                  ) : (
-                    <strong>{borrador.commandcode.modelo}</strong>
-                  );
-                })()}
+                <ModeloFijo id={borrador.commandcode.modelo} nombre={nombreDe(borrador.commandcode.modelo)} />
               </div>
             ) : (
               <SelectorModelo
@@ -187,13 +190,17 @@ function Formulario({
                 error={errorCatalogo}
                 desactualizado={catalogo?.desactualizado ?? false}
                 editable={editable && !ocupado && !guardandoApiKey}
-                seleccionar={(modelo) => setBorrador({ commandcode: { modelo } })}
-                reintentar={() => {
-                  // Se limpia aquí y no en el efecto: el efecto solo sincroniza con la API.
-                  setCatalogo(null);
-                  setErrorCatalogo('');
-                  setIntentoCatalogo((actual) => actual + 1);
-                }}
+                // Se conserva el respaldo: elegir el modelo principal no lo borra.
+                seleccionar={(modelo) => setBorrador((b) => ({ commandcode: { ...b.commandcode, modelo } }))}
+                reintentar={reintentarCatalogo}
+              />
+            )}
+            {editable && (
+              <ProbarModelo
+                modelo={borrador.commandcode.modelo}
+                modelos={catalogo?.modelos ?? []}
+                deshabilitado={ocupado || guardandoApiKey}
+                confirmar={confirmar}
               />
             )}
             {!editable && (
@@ -201,6 +208,61 @@ function Formulario({
                 Solo quien administra el cotizador puede cambiar el modelo.
               </p>
             )}
+          </div>
+          <div className="ia-field">
+            <span id="ia-respaldo-label">Modelo de respaldo</span>
+            {!editable ? (
+              respaldo ? (
+                <ModeloFijo id={respaldo} nombre={nombreDe(respaldo)} />
+              ) : (
+                <div className="ia-model-fijo">
+                  <strong>Sin respaldo</strong>
+                </div>
+              )
+            ) : (
+              <SelectorModelo
+                idBase="ia-respaldo"
+                descripcionId="ia-respaldo-nota"
+                refTrigger={campoRespaldo}
+                modelo={respaldo ?? ''}
+                vacio="Sin respaldo"
+                modelos={catalogo?.modelos ?? []}
+                cargando={catalogo === null && !errorCatalogo}
+                error={errorCatalogo}
+                desactualizado={catalogo?.desactualizado ?? false}
+                editable={editable && !ocupado && !guardandoApiKey}
+                seleccionar={(modelo) => setBorrador((b) => ({ commandcode: { ...b.commandcode, respaldo: modelo } }))}
+                reintentar={reintentarCatalogo}
+              />
+            )}
+            {editable && respaldo && (
+              <ProbarModelo
+                modelo={respaldo}
+                modelos={catalogo?.modelos ?? []}
+                deshabilitado={ocupado || guardandoApiKey}
+                confirmar={confirmar}
+              />
+            )}
+            <p id="ia-respaldo-nota" className="ia-permiso">
+              {!respaldo
+                ? 'Sin respaldo: si el modelo del asistente falla, se muestra el error y hay que reenviar el mensaje.'
+                : respaldo === borrador.commandcode.modelo
+                  ? 'Es el mismo modelo del asistente: no hay respaldo.'
+                  : 'Responde solo si el modelo del asistente falla: límite de uso, caída, demora o modelo retirado.'}
+              {editable && respaldo && (
+                <>
+                  {' '}
+                  <button
+                    type="button"
+                    className="link"
+                    disabled={ocupado || guardandoApiKey}
+                    onClick={() => setBorrador((b) => ({ commandcode: { ...b.commandcode, respaldo: null } }))}
+                  >
+                    Quitar respaldo
+                  </button>
+                </>
+              )}
+            </p>
           </div>
           {catalogo?.desactualizado && (
             <p className="ia-status falta" role="status">
@@ -291,6 +353,133 @@ function Formulario({
   );
 }
 
+interface ResultadoPrueba {
+  totalCasos: number;
+  caso: { id: string; descripcion: string };
+  correcto: boolean;
+  aciertos: number;
+  total: number;
+  ms: number;
+  compatible: boolean;
+  error?: { codigo: string; mensaje: string };
+}
+/** Un modelo que no responde con herramientas, sin acceso o sin clave no necesita más casos. */
+const SIN_SENTIDO_SEGUIR = ['ia_configuracion', 'ia_acceso', 'ia_autenticacion', 'ia_sin_clave'];
+
+/**
+ * «Probar modelo»: unos pedidos de prueba con el modelo elegido (aunque no esté guardado), uno por petición
+ * para mostrar el avance. Dice si funciona con el cotizador, cuánto acierta y cuánto tarda.
+ */
+function ProbarModelo({
+  modelo,
+  modelos,
+  deshabilitado,
+  confirmar,
+}: {
+  modelo: string;
+  modelos: ModeloCommandCode[];
+  deshabilitado: boolean;
+  confirmar: ReturnType<typeof useConfirmacion>[0];
+}) {
+  const [prueba, setPrueba] = useState<{
+    modelo: string;
+    resultados: ResultadoPrueba[];
+    total: number | null;
+    corriendo: boolean;
+    error: string;
+  } | null>(null);
+  // El resultado es del modelo probado: al elegir otro deja de mostrarse.
+  const vigente = prueba?.modelo === modelo ? prueba : null;
+
+  async function probar() {
+    const info = modelos.find((m) => m.id === modelo);
+    const aceptado = await confirmar({
+      eyebrow: 'PROBAR MODELO',
+      titulo: `Probar ${info?.nombre ?? modelo}`,
+      mensaje: (
+        <p>
+          Se envían 5 pedidos de prueba (unas 5 a 8 consultas) a este modelo, sin respaldo y sin crear
+          cotizaciones.{info ? ` Precio del modelo: ${precioModelo(info)}.` : ''}
+        </p>
+      ),
+      aceptar: 'Probar',
+    });
+    if (!aceptado) return;
+    let estado = { modelo, resultados: [] as ResultadoPrueba[], total: null as number | null, corriendo: true, error: '' };
+    setPrueba(estado);
+    try {
+      for (let caso = 0; estado.total === null || caso < estado.total; caso++) {
+        const r = await pedirJSON<ResultadoPrueba>('/api/ajustes/probar', { json: { modelo, caso } });
+        estado = { ...estado, total: r.totalCasos, resultados: [...estado.resultados, r] };
+        setPrueba(estado);
+        if (r.error && SIN_SENTIDO_SEGUIR.includes(r.error.codigo)) break;
+      }
+    } catch (causa) {
+      if (!esSilencioso(causa)) estado = { ...estado, error: mensajeDe(causa) };
+    }
+    setPrueba({ ...estado, corriendo: false });
+  }
+
+  const resultados = vigente?.resultados ?? [];
+  const compatible = resultados.some((r) => r.compatible);
+  const correctos = resultados.filter((r) => r.correcto).length;
+  const promedio = resultados.length ? resultados.reduce((s, r) => s + r.ms, 0) / resultados.length / 1000 : 0;
+  const segundos = (n: number) => new Intl.NumberFormat('es-CL', { maximumFractionDigits: 1 }).format(n);
+  return (
+    <div className="ia-prueba">
+      <button
+        type="button"
+        className="button secondary"
+        onClick={probar}
+        disabled={deshabilitado || !modelo || !!vigente?.corriendo}
+      >
+        {vigente?.corriendo
+          ? `Probando ${Math.min(resultados.length + 1, vigente.total ?? 5)} de ${vigente.total ?? 5}…`
+          : 'Probar modelo'}
+      </button>
+      {resultados.length > 0 && !vigente?.corriendo && (
+        <p className={`ia-status ${compatible && correctos === resultados.length ? 'ok' : 'falta'}`} role="status">
+          {compatible
+            ? `Funciona con el cotizador · ${correctos} de ${resultados.length} pedidos correctos · ${segundos(promedio)} s promedio por pedido`
+            : `No funciona con el cotizador: ${resultados.find((r) => r.error)?.error?.mensaje ?? 'no respondió con la herramienta.'}`}
+        </p>
+      )}
+      {resultados.length > 0 && (
+        <ul className="ia-prueba-casos">
+          {resultados.map((r) => (
+            <li key={r.caso.id}>
+              <span aria-hidden="true">{r.correcto ? '✓' : '✗'}</span> {r.caso.descripcion} ·{' '}
+              {r.error ? r.error.codigo : `${r.aciertos}/${r.total}`} · {segundos(r.ms / 1000)} s
+            </li>
+          ))}
+        </ul>
+      )}
+      {vigente?.error && (
+        <p className="catalog-error" role="alert">
+          {vigente.error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Un modelo como dato (sin permiso para cambiarlo). */
+function ModeloFijo({ id, nombre }: { id: string; nombre?: string }) {
+  // Sin nombre conocido, el identificador basta: repetido en negrita y en código se leía doble.
+  return (
+    <div className="ia-model-fijo">
+      {nombre && nombre !== id ? (
+        <>
+          <strong>{nombre}</strong>
+          <code>{id}</code>
+        </>
+      ) : (
+        <strong>{id}</strong>
+      )}
+    </div>
+  );
+}
+
 function precioModelo(modelo: ModeloCommandCode) {
   if (modelo.gratis) return 'Gratis';
   if (modelo.precioEntrada === null || modelo.precioSalida === null) return 'Precio no publicado';
@@ -300,6 +489,9 @@ function precioModelo(modelo: ModeloCommandCode) {
 }
 
 function SelectorModelo({
+  idBase = 'ia-modelo',
+  descripcionId = 'ia-nota',
+  vacio,
   refTrigger,
   modelo,
   modelos,
@@ -310,6 +502,11 @@ function SelectorModelo({
   seleccionar,
   reintentar,
 }: {
+  /** Prefijo de los id del selector: permite más de uno en la pantalla. */
+  idBase?: string;
+  descripcionId?: string;
+  /** Texto del botón cuando no hay modelo elegido (p. ej. «Sin respaldo»). */
+  vacio?: string;
   refTrigger: RefObject<HTMLButtonElement | null>;
   modelo: string;
   modelos: ModeloCommandCode[];
@@ -375,7 +572,7 @@ function SelectorModelo({
       },
       [],
     );
-  const seleccionadoNoDisponible = !actual && modelo.trim() !== '';
+  const seleccionadoNoDisponible = !actual && modelo.trim() !== '' && !cargando;
 
   useEffect(() => {
     if (abierto) filtro.current?.focus();
@@ -429,8 +626,8 @@ function SelectorModelo({
         ref={refTrigger}
         type="button"
         className="ia-model-trigger"
-        aria-labelledby="ia-modelo-label"
-        aria-describedby="ia-nota"
+        aria-labelledby={`${idBase}-label`}
+        aria-describedby={descripcionId}
         aria-haspopup="listbox"
         aria-expanded={abierto}
         disabled={!editable}
@@ -444,8 +641,8 @@ function SelectorModelo({
         }}
       >
         <span className="ia-model-selection">
-          <strong>{actual?.nombre ?? modelo}</strong>
-          <code>{modelo}</code>
+          <strong>{actual?.nombre ?? (modelo || vacio)}</strong>
+          {modelo && <code>{modelo}</code>}
         </span>
         <span className="ia-model-chevron" aria-hidden="true">
           {abierto ? '⌃' : '⌄'}
@@ -464,9 +661,9 @@ function SelectorModelo({
             role="combobox"
             aria-label="Buscar modelo de CommandCode"
             aria-autocomplete="list"
-            aria-controls={!cargando && !error ? 'ia-modelos-lista' : undefined}
+            aria-controls={!cargando && !error ? `${idBase}s-lista` : undefined}
             aria-expanded="true"
-            aria-activedescendant={filtrados.length > 0 ? `ia-modelo-opcion-${activo}` : undefined}
+            aria-activedescendant={filtrados.length > 0 ? `${idBase}-opcion-${activo}` : undefined}
             autoComplete="off"
             placeholder="Buscar modelo o identificador…"
             value={busqueda}
@@ -492,7 +689,7 @@ function SelectorModelo({
             </p>
           ) : (
             <div
-              id="ia-modelos-lista"
+              id={`${idBase}s-lista`}
               className="ia-model-options"
               role="listbox"
               aria-label="Modelos de CommandCode"
@@ -509,7 +706,7 @@ function SelectorModelo({
                     {grupo.opciones.map(({ opcion, indice }) => {
                       return (
                         <div
-                          id={`ia-modelo-opcion-${indice}`}
+                          id={`${idBase}-opcion-${indice}`}
                           key={opcion.id}
                           className="ia-model-option"
                           role="option"

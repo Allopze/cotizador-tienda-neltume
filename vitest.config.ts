@@ -9,6 +9,7 @@ export default defineConfig({
     hookTimeout: 30000,
     fileParallelism: false,
     // Sin red en las pruebas: la sincronización de feriados se prueba con una fuente simulada.
-    env: { NELTUME_FERIADOS_SYNC: '0' },
+    // Los reintentos de la IA no esperan en las pruebas.
+    env: { NELTUME_FERIADOS_SYNC: '0', CMD_REINTENTO_MS: '0' },
   },
 });

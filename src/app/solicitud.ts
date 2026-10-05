@@ -82,7 +82,9 @@ async function pedir(url: string, init?: RequestInit & { json?: unknown }) {
   }
 }
 
-function mensajePorEstado(status: number, delServidor?: string) {
+function mensajePorEstado(status: number, delServidor?: string, codigo?: string) {
+  // Un 502/504 de un proxy trae HTML; los de la IA traen su código y un mensaje que dice qué hacer.
+  if (codigo?.startsWith('ia_') && delServidor) return delServidor;
   if (status === 504 || status === 502) return status === 504 ? MENSAJES.tiempo : MENSAJES.servidor(status);
   if (delServidor) return delServidor;
   if (status === 409) return MENSAJES.conflicto;
@@ -115,7 +117,7 @@ export async function pedirJSON<T>(url: string, init?: RequestInit & { json?: un
     cuerpo.detalle && typeof cuerpo.detalle === 'object'
       ? (cuerpo.detalle as Record<string, unknown>)
       : undefined;
-  if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status, error), r.status, codigo, detalle);
+  if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status, error, codigo), r.status, codigo, detalle);
   if (data === null) throw new ErrorSolicitud(MENSAJES.servidor(r.status), r.status, 'respuesta_invalida');
   return data as T;
 }

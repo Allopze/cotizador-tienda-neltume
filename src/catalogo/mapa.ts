@@ -9,10 +9,15 @@ export interface ModeloMapa {
   maderas: string[];
   /** Puertas: anchos que se cotizan, en metros («0,60–1,35»). */
   anchos?: string;
-  /** Alto de las puertas o largo de los accesorios, en metros. */
-  altos: string;
-  /** Accesorios: secciones o escuadrías («2X4»). */
+  /** Alto de las puertas o largo de los accesorios, en metros. Falta si hay `variantes`. */
+  altos?: string;
+  /** Accesorios: secciones o escuadrías («2X4»). Falta si hay `variantes`. */
   medidas?: string[];
+  /**
+   * Accesorios cuyas maderas no comparten secciones: marcos sólidos 2X4–2X8 por un lado y finger 30X70/30X90
+   * por otro. Así la IA no lee «marco 2x5 pino» como un marco finger.
+   */
+  variantes?: { maderas: string[]; medidas: string[]; altos: string }[];
 }
 
 /** Hasta este número de valores distintos se listan; con más, se informa el tramo. */
@@ -25,13 +30,17 @@ function textoValores(valores: number[]) {
   return `${metrosTexto(unicos[0])}–${metrosTexto(unicos.at(-1)!)}`;
 }
 
+const altosDe = (productos: Producto[]) =>
+  textoValores(
+    productos.flatMap((p) => {
+      const e = escalon(p, 'alto');
+      return e.exacto ? [e.min] : [e.min, e.max];
+    }),
+  );
+
 function resumir(modelo: string, productos: Producto[]): ModeloMapa {
   const familia = productos[0].familia;
   const maderas = [...new Set(productos.map((p) => p.madera))];
-  const altos = productos.flatMap((p) => {
-    const e = escalon(p, 'alto');
-    return e.exacto ? [e.min] : [e.min, e.max];
-  });
   if (familia === 'PUERTA') {
     const anchos = productos.flatMap((p) => {
       const e = escalon(p, 'ancho');
@@ -40,14 +49,25 @@ function resumir(modelo: string, productos: Producto[]): ModeloMapa {
     const rango = anchos.length
       ? `${metrosTexto(Math.min(...anchos))}–${metrosTexto(Math.max(...anchos))}`
       : undefined;
-    return { modelo, familia, maderas, ...(rango ? { anchos: rango } : {}), altos: textoValores(altos) };
+    return { modelo, familia, maderas, ...(rango ? { anchos: rango } : {}), altos: altosDe(productos) };
   }
+  // Maderas agrupadas por el conjunto de secciones en que vienen.
+  const grupos = new Map<string, string[]>();
+  for (const madera of maderas) {
+    const secciones = [...new Set(productos.filter((p) => p.madera === madera).map((p) => p.medida))].sort();
+    const clave = secciones.join('|');
+    grupos.set(clave, [...(grupos.get(clave) ?? []), madera]);
+  }
+  if (grupos.size <= 1)
+    return { modelo, familia, maderas, medidas: [...new Set(productos.map((p) => p.medida))], altos: altosDe(productos) };
   return {
     modelo,
     familia,
     maderas,
-    medidas: [...new Set(productos.map((p) => p.medida))],
-    altos: textoValores(altos),
+    variantes: [...grupos.values()].map((grupo) => {
+      const delGrupo = productos.filter((p) => grupo.includes(p.madera));
+      return { maderas: grupo, medidas: [...new Set(delGrupo.map((p) => p.medida))], altos: altosDe(delGrupo) };
+    }),
   };
 }
 

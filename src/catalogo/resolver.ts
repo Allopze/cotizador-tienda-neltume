@@ -24,9 +24,17 @@ export const metros = (n: number): number | null => {
   const m = n <= 10 ? n : n <= 300 ? n / 100 : n <= 3000 ? n / 1000 : NaN;
   return m >= RANGO_METROS.min - 1e-9 && m <= RANGO_METROS.max + 1e-9 ? m : null;
 };
-/** Forma canónica de una escuadría: «6 x 4.5», «6×4,5» y «6*4.5» → «6X4,5». */
+/**
+ * Forma canónica de una escuadría: «6 x 4.5», «6×4,5» y «6*4.5» → «6X4,5». La unidad en pulgadas se omite:
+ * «6 pulgadas» y «2x6"» son «6» y «2X6» (en marcos y piezas T, «6» ya es la sección 2x6).
+ */
 export const normalizarMedida = (s: string) =>
-  s.toUpperCase().replace(/[×*]/g, 'X').replace(/\s/g, '').replace(/\./g, ',');
+  s
+    .toUpperCase()
+    .replace(/[×*]/g, 'X')
+    .replace(/\s/g, '')
+    .replace(/PULGADAS?|PULG\.?|["”″]|''/g, '')
+    .replace(/\./g, ',');
 export type Rechazo =
   | { tipo: 'faltan_datos'; campos: string[]; disponibles: Record<string, string[]> }
   | { tipo: 'modelo_desconocido'; valor: string; disponibles: string[] }

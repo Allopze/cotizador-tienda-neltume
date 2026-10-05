@@ -8,25 +8,13 @@
 //
 // Usa la clave y el catálogo de la base configurada (NELTUME_DATA_DIR). Cada caso corre en una base temporal:
 // no crea cotizaciones en la base real. Llama al proveedor de IA: tiene un costo (pequeño) por ejecución.
-import { randomUUID } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { CommandCodeLLM } from '../src/asistente/llm';
-import {
-  casosSchema,
-  puntuar,
-  resumen,
-  type CasoEvaluacion,
-  type ResultadoCaso,
-} from '../src/asistente/evaluacion';
-import { clienteVacio } from '../src/catalogo/tipos';
-import type { Cotizacion, Mensaje } from '../src/negocio/estado';
-import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { casosSchema, resumen, type CasoEvaluacion } from '../src/asistente/evaluacion';
 import { leerAjustesIA, leerClaveCommandCode } from '../src/servidor/ajustes-ia';
 import { cargarCatalogo } from '../src/servidor/catalogo';
-import { Servicio } from '../src/servidor/servicio';
+import { correrCaso } from '../src/servidor/evaluar-caso';
 
 const { values } = parseArgs({
   options: {
@@ -50,38 +38,8 @@ const modelos = values.modelos
   .filter(Boolean) ?? [leerAjustesIA().commandcode.modelo];
 const catalogo = await cargarCatalogo();
 
-async function correr(caso: CasoEvaluacion, modelo: string): Promise<ResultadoCaso & { error?: string }> {
-  const dir = await mkdtemp(join(tmpdir(), 'neltume-eval-'));
-  const almacen = new Almacen(dir);
-  try {
-    const servicio = new Servicio(catalogo, new CommandCodeLLM(modelo, clave), almacen);
-    let q: Cotizacion | null = null;
-    // Mientras no hay borrador, el intercambio previo viaja como contexto, igual que en la interfaz.
-    let charla: Mensaje[] = [];
-    for (const mensaje of caso.mensajes) {
-      const r = await servicio.ejecutar(
-        q
-          ? { tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje }
-          : { tipo: 'chat', mensaje, nuevoId: randomUUID(), contexto: charla },
-      );
-      if (r.efimera) charla = r.cotizacion.historial;
-      else q = r.cotizacion;
-    }
-    return puntuar(caso, {
-      items: q?.solicitudes ?? [],
-      cliente: q?.cliente ?? clienteVacio(),
-    });
-  } catch (e) {
-    const resultado = puntuar(caso, {
-      items: [],
-      cliente: clienteVacio(),
-    });
-    return { ...resultado, aciertos: 0, error: e instanceof Error ? e.message : String(e) };
-  } finally {
-    cerrarAlmacen(join(dir, 'cotizador.sqlite'));
-    await rm(dir, { recursive: true, force: true });
-  }
-}
+const correr = (caso: CasoEvaluacion, modelo: string) =>
+  correrCaso(caso, new CommandCodeLLM(modelo, clave), catalogo);
 
 /** Corre en paralelo acotado: el proveedor limita las solicitudes simultáneas. */
 async function enParalelo<T, R>(lista: T[], limite: number, f: (x: T) => Promise<R>) {
@@ -107,7 +65,7 @@ for (const modelo of modelos) {
   for (const [i, r] of resultados.entries()) {
     const ok = !r.diferencias.length && !r.error;
     console.log(`${ok ? '✓' : '✗'} ${r.id} — ${r.aciertos}/${r.total}  ${casos[i].descripcion}`);
-    if (r.error) console.log(`    error: ${r.error}`);
+    if (r.error) console.log(`    error: ${r.error.mensaje}`);
     else
       for (const d of r.diferencias)
         console.log(

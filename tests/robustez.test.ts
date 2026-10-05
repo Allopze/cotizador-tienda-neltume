@@ -98,7 +98,10 @@ describe('Contexto e IA', () => {
     const c = contextoSeguro('323', [], clienteVacio(), [], [], historial);
     expect(c.historial).toHaveLength(TURNOS_HISTORIAL);
     expect(c.historial[0].texto.startsWith('m4')).toBe(true);
-    expect(c.historial[0].texto.length).toBe(500);
+    // Un pedido largo de la persona llega completo (hasta 1.500); lo del asistente se recorta a 500.
+    expect(c.historial[0].texto.length).toBe(900);
+    const asistente = contextoSeguro('323', [], clienteVacio(), [], [], [{ rol: 'asistente', texto: 'r'.padEnd(900, 'x') }]);
+    expect(asistente.historial[0].texto.length).toBe(500);
     expect(JSON.stringify(c)).not.toContain('precio');
   });
   it('acepta finish_reason stop con una única llamada a herramienta', async () => {

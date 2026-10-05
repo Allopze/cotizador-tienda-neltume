@@ -74,6 +74,13 @@ async function setup(verificarCifras = true) {
   const llm = { interpretar: vi.fn(), verificarCifras };
   return { llm, servicio: new Servicio(catalogo, llm, new Almacen(dir)) };
 }
+async function setupConAlmacen() {
+  const dir = await mkdtemp(join(tmpdir(), 'neltume-precision-'));
+  dirs.push(dir);
+  const llm = { interpretar: vi.fn(), verificarCifras: true };
+  const almacen = new Almacen(dir);
+  return { llm, almacen, servicio: new Servicio(catalogo, llm, almacen) };
+}
 afterEach(async () => {
   vi.clearAllMocks();
   for (const dir of dirs.splice(0)) {
@@ -223,6 +230,19 @@ describe('contexto de la IA', () => {
     ]);
     expect(JSON.stringify(mapa)).not.toMatch(/precio|codigo|100000|MOL-/);
   });
+  it('separa las secciones de un accesorio por grupo de maderas', () => {
+    const finger: Producto = { ...marco('30X70', 2.2), codigo: 'MARC-PF-30X70-220', madera: 'PINO FINGER' };
+    const mapa = mapaCatalogo({ ...catalogo, productos: [...catalogo.productos, finger] });
+    expect(mapa.find((m) => m.modelo === 'MARCO')).toEqual({
+      modelo: 'MARCO',
+      familia: 'MARCO',
+      maderas: ['PINO OREGON', 'PINO FINGER'],
+      variantes: [
+        { maderas: ['PINO OREGON'], medidas: ['2X4', '2X5'], altos: '2,10' },
+        { maderas: ['PINO FINGER'], medidas: ['30X70'], altos: '2,20' },
+      ],
+    });
+  });
   it('el prompt trae ejemplos y pide la frase de origen de cada ítem', () => {
     expect(SYSTEM).toMatch(/## Ejemplos/);
     expect(SYSTEM).toMatch(/fuente: copia literal/);
@@ -249,13 +269,14 @@ describe('servicio con un modelo real (cifras verificadas)', () => {
     expect(q.solicitudes[0].fuente).toBe('3 Molco de 80 por 200');
     llm.interpretar.mockResolvedValueOnce({
       name: 'modificar_cotizacion',
-      input: { items: [{ indice: 0, cambios: { madera: 'LENGA', fuente: 'lenga' } }] },
+      input: { items: [{ indice: 0, cambios: { madera: 'LENGA', fuente: 'cámbiala a lenga' } }] },
     });
-    q = (await servicio.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje: 'lenga' }))
-      .cotizacion;
+    q = (
+      await servicio.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje: 'cámbiala a lenga' })
+    ).cotizacion;
     expect(q.incompletos).toEqual([]);
     expect(q.solicitudes).toHaveLength(1);
-    expect(q.solicitudes[0]).toMatchObject({ madera: 'LENGA', fuente: '3 Molco de 80 por 200 · lenga' });
+    expect(q.solicitudes[0]).toMatchObject({ madera: 'LENGA', fuente: '3 Molco de 80 por 200 · cámbiala a lenga' });
     expect(q.cliente.nombre).toBe('Juan Pérez');
     expect(llm.interpretar.mock.calls[1][0].borrador.items[0]).toMatchObject({
       indice: 0,
@@ -299,6 +320,73 @@ describe('servicio con un modelo real (cifras verificadas)', () => {
       cantidades: [{ indice: 0, cantidad: 4 }],
     });
     expect(detalle.cotizacion.solicitudes[0]).toMatchObject({ cantidad: 4, fuente: '3 Molco oregón 80x200' });
+  });
+});
+
+describe('servicio: respuestas directas, pedidos omitidos y preguntas por el chat', () => {
+  it('un dato suelto que responde la pregunta pendiente se aplica sin consultar a la IA', async () => {
+    const { servicio, llm, almacen } = await setupConAlmacen();
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: { agregar: [{ ...item({ madera: null }), fuente: '3 Molco de 80 por 200' }] },
+    });
+    const q = (await servicio.ejecutar({ tipo: 'chat', mensaje: '3 Molco de 80 por 200' })).cotizacion;
+    expect(q.incompletos).toHaveLength(1);
+    const r = await servicio.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje: 'en lenga' });
+    expect(llm.interpretar).toHaveBeenCalledTimes(1);
+    expect(r.cotizacion.incompletos).toEqual([]);
+    expect(r.cotizacion.solicitudes[0]).toMatchObject({ madera: 'LENGA', fuente: '3 Molco de 80 por 200 · en lenga' });
+    expect(r.cotizacion.historial.slice(-2).map((m) => m.rol)).toEqual(['usuario', 'asistente']);
+    expect(almacen.eventos(q.id).map((e) => e.tipo)).toEqual(['creada', 'modificada']);
+  });
+
+  it('avisa los pedidos del mensaje que la IA no registró y le pide corregirlos', async () => {
+    const { servicio, llm } = await setup();
+    const mensaje = '3 Molco oregón 80x200 y 2 Molco lenga 80x200';
+    const parcial = {
+      name: 'modificar_cotizacion',
+      input: { agregar: [{ ...item(), fuente: '3 Molco oregón 80x200' }] },
+    };
+    // La misma revisión es la que el cliente de IA usa para pedir una corrección (antes de guardar nada).
+    const revisiones: (string | null)[] = [];
+    llm.interpretar.mockImplementationOnce(async (_ctx: unknown, opciones: { revisar: (s: unknown) => string | null }) => {
+      revisiones.push(
+        opciones.revisar(parcial),
+        opciones.revisar({ name: 'responder', input: { texto: '¿Qué madera?' } }),
+        opciones.revisar({
+          name: 'modificar_cotizacion',
+          input: {
+            agregar: [
+              { ...item(), fuente: '3 Molco oregón 80x200' },
+              { ...item({ madera: 'LENGA', cantidad: 2 }), fuente: '2 Molco lenga 80x200' },
+            ],
+          },
+        }),
+      );
+      return parcial;
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(revisiones[0]).toMatch(/no registró .*«2 Molco lenga 80x200».*agregar todos los ítems/);
+    expect(revisiones[1]).toMatch(/regístralos con modificar_cotizacion/);
+    expect(revisiones[2]).toBeNull();
+    // Lo que sigue sin registrar tras la corrección se avisa.
+    expect(r.avisos).toEqual(expect.arrayContaining([expect.stringMatching(/No registré: «2 Molco lenga 80x200»/)]));
+  });
+});
+
+describe('servicio: el marco de «con su marco»', () => {
+  it('si la IA no crea el marco, pide corregir y avisa que falta', async () => {
+    const { servicio, llm } = await setup();
+    const mensaje = 'Cotiza 3 Molco oregón 80x200 con su marco 2x4 en oregón';
+    const sinMarco = { name: 'modificar_cotizacion', input: { agregar: [{ ...item(), fuente: '3 Molco oregón 80x200 con su marco 2x4 en oregón' }] } };
+    let correccion: string | null = null;
+    llm.interpretar.mockImplementationOnce(async (_ctx: unknown, opciones: { revisar: (s: unknown) => string | null }) => {
+      correccion = opciones.revisar(sinMarco);
+      return sinMarco;
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(correccion).toMatch(/no registró .*«con su marco 2x4 en oregón»/);
+    expect(r.avisos).toEqual(expect.arrayContaining([expect.stringMatching(/No registré: «con su marco 2x4 en oregón»/)]));
   });
 });
 

@@ -11,7 +11,7 @@
           "modelo": "COZ COZ",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 4
         }
@@ -30,7 +30,7 @@
           "modelo": "COZ COZ",
           "madera": null,
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 4
         }
@@ -91,7 +91,7 @@
           "modelo": "MOLCO",
           "madera": "MARA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         }
@@ -130,7 +130,7 @@
           "modelo": "RANCO",
           "madera": "LENGA",
           "ancho": 0.7,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 5,
           "tipoMedida": "hoja"
@@ -261,7 +261,7 @@
           "modelo": "YELCHO",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 3
         }
@@ -280,7 +280,7 @@
           "modelo": "TOLEDO",
           "madera": "MARA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 12
         }
@@ -299,7 +299,7 @@
           "modelo": "ENCO",
           "madera": "PINO OREGON",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 2
         }
@@ -327,7 +327,7 @@
           "modelo": "COZ COZ",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 4
         }
@@ -367,7 +367,7 @@
           "modelo": "MOLCO",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 2
         }
@@ -387,7 +387,7 @@
           "modelo": "PALENA",
           "madera": "RAULI",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 2
         },
@@ -395,7 +395,7 @@
           "modelo": "PALENA",
           "madera": "RAULI",
           "ancho": 0.9,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         }
@@ -415,7 +415,7 @@
           "modelo": "BAKER",
           "madera": "LENGA",
           "ancho": 0.7,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         },
@@ -423,7 +423,7 @@
           "modelo": "BAKER",
           "madera": "LENGA",
           "ancho": 0.85,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         },
@@ -431,7 +431,7 @@
           "modelo": "BAKER",
           "madera": "LENGA",
           "ancho": 0.9,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         }
@@ -469,7 +469,7 @@
           "modelo": "PIRIHUEICO",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         },
@@ -477,7 +477,7 @@
           "modelo": "PIRIHUEICO",
           "madera": "MARA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         }
@@ -496,7 +496,7 @@
           "modelo": "PANGUIPULLI",
           "madera": "PINO OREGON",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 2
         }
@@ -518,7 +518,7 @@
         {
           "modelo": "RIÑIHUE",
           "madera": "RAULI",
-          "ancho": 1.0,
+          "ancho": 1,
           "alto": 2.1,
           "medida": null,
           "cantidad": 8
@@ -538,7 +538,7 @@
           "modelo": "COZ COZ",
           "madera": null,
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 6
         }
@@ -557,7 +557,7 @@
           "modelo": "PILASTRA",
           "madera": "PINO OREGON",
           "ancho": null,
-          "alto": 3.0,
+          "alto": 3,
           "medida": "6X1",
           "cantidad": 10
         }
@@ -596,7 +596,7 @@
           "modelo": "LICAN",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 2
         },
@@ -604,7 +604,7 @@
           "modelo": "LICAN",
           "madera": "LENGA",
           "ancho": 0.7,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 2
         }
@@ -648,7 +648,7 @@
           "modelo": "HUERQUEHUE",
           "madera": "LENGA",
           "ancho": 0.8,
-          "alto": 2.0,
+          "alto": 2,
           "medida": null,
           "cantidad": 1
         },
@@ -656,7 +656,7 @@
           "modelo": "MARCO",
           "madera": "LENGA",
           "ancho": null,
-          "alto": 2.0,
+          "alto": 2,
           "medida": "2X4",
           "cantidad": 1
         }
@@ -710,6 +710,221 @@
         "nombre": "Paula Lastra",
         "comuna": "Chillán"
       }
+    }
+  },
+  {
+    "id": "marcos-mara",
+    "descripcion": "Prueba de paridad: «marcos mara» es Mara sólida, nunca Mara enchapada",
+    "mensajes": [
+      "Cotiza 15 marcos mara 2x6 de 2,5"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MARCO",
+          "madera": "MARA",
+          "ancho": null,
+          "alto": 2.5,
+          "medida": "2X6",
+          "cantidad": 15
+        }
+      ]
+    }
+  },
+  {
+    "id": "marco-6-pulgadas",
+    "descripcion": "Prueba de paridad: «de 6 pulgadas» en marcos es la sección 2x6",
+    "mensajes": [
+      "9 marcos de 6 pulgadas en raulí de 2,3"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MARCO",
+          "madera": "RAULI",
+          "ancho": null,
+          "alto": 2.3,
+          "medida": "2X6",
+          "cantidad": 9
+        }
+      ]
+    }
+  },
+  {
+    "id": "pino-radiata",
+    "descripcion": "Prueba de paridad: «pino radiata» no es Pino Oregón; se conserva para preguntar",
+    "mensajes": [
+      "2 Petrohue en pino radiata de 140 x 250"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "PETROHUE",
+          "madera": "PINO RADIATA",
+          "ancho": 1.4,
+          "alto": 2.5,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "omision-tres-marcos",
+    "descripcion": "Prueba de paridad: tres ítems separados por punto y coma; ninguno se omite",
+    "mensajes": [
+      "Cotiza 8 marcos de 4 en oregón de 2; 6 marcos pino 2x8 de 2; 5 juegos de marco 2x6 oregon de 3 m"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MARCO",
+          "madera": "PINO OREGON",
+          "ancho": null,
+          "alto": 2,
+          "medida": "2X4",
+          "cantidad": 8
+        },
+        {
+          "modelo": "MARCO",
+          "madera": "PINO OREGON",
+          "ancho": null,
+          "alto": 2,
+          "medida": "2X8",
+          "cantidad": 6
+        },
+        {
+          "modelo": "MARCO",
+          "madera": "PINO OREGON",
+          "ancho": null,
+          "alto": 3,
+          "medida": "2X6",
+          "cantidad": 5
+        }
+      ]
+    }
+  },
+  {
+    "id": "con-su-marco",
+    "descripcion": "Prueba de paridad: «con su marco» es un ítem aparte con la cantidad y el alto de las puertas",
+    "mensajes": [
+      "Cotiza 9 Baker de raulí de 105 x 240 con su marco 2x8 en raulí"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "BAKER",
+          "madera": "RAULI",
+          "ancho": 1.05,
+          "alto": 2.4,
+          "medida": null,
+          "cantidad": 9
+        },
+        {
+          "modelo": "MARCO",
+          "madera": "RAULI",
+          "ancho": null,
+          "alto": 2.4,
+          "medida": "2X8",
+          "cantidad": 9
+        }
+      ]
+    }
+  },
+  {
+    "id": "media-docena",
+    "descripcion": "Prueba de paridad: «media docena» son 6",
+    "mensajes": [
+      "media docena de Pirihueico de mara medida 1,24 x 2,3"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "PIRIHUEICO",
+          "madera": "MARA",
+          "ancho": 1.24,
+          "alto": 2.3,
+          "medida": null,
+          "cantidad": 6
+        }
+      ]
+    }
+  },
+  {
+    "id": "milimetros-futaleufu",
+    "descripcion": "Prueba de paridad: medidas en milímetros de cuatro dígitos",
+    "mensajes": [
+      "9 Futaleufu en lenga de 1230 x 2600 mm"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "FUTALEUFU",
+          "madera": "LENGA",
+          "ancho": 1.23,
+          "alto": 2.6,
+          "medida": null,
+          "cantidad": 9
+        }
+      ]
+    }
+  },
+  {
+    "id": "marco-2x5-pino",
+    "descripcion": "Prueba de paridad: «marco 2x5 pino» es Pino Oregón 2x5, no un marco finger",
+    "mensajes": [
+      "11 juegos de marco 2x5 pino de 2,5 m"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MARCO",
+          "madera": "PINO OREGON",
+          "ancho": null,
+          "alto": 2.5,
+          "medida": "2X5",
+          "cantidad": 11
+        }
+      ]
+    }
+  },
+  {
+    "id": "responder-indebido",
+    "descripcion": "Prueba de paridad: un pedido sin madera se registra con la madera pendiente en vez de preguntar solo por el chat",
+    "mensajes": [
+      "precio de 3 Rupanco de 83 x 240"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RUPANCO",
+          "madera": null,
+          "ancho": 0.83,
+          "alto": 2.4,
+          "medida": null,
+          "cantidad": 3
+        }
+      ]
+    }
+  },
+  {
+    "id": "completa-madera-frase",
+    "descripcion": "Prueba de paridad: la madera que faltaba llega en una frase («de rauli por favor»)",
+    "mensajes": [
+      "2 Ranco de 70 x 210",
+      "de rauli por favor"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": "RAULI",
+          "ancho": 0.7,
+          "alto": 2.1,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
     }
   }
 ]

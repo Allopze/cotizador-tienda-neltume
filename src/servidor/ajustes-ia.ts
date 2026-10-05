@@ -5,6 +5,7 @@ import {
   ajustesIAGuardadosSchema,
   ajustesIASchema,
   ajustesPredeterminados,
+  modeloRespaldo,
   type AjustesIA,
 } from '../asistente/ajustes';
 import { CommandCodeLLM, type LLM } from '../asistente/llm';
@@ -156,5 +157,7 @@ export function asistenteConfigurado(): boolean {
 }
 
 export function crearLLM(ajustes: AjustesIA = leerAjustesIA()): LLM {
-  return new CommandCodeLLM(ajustes.commandcode.modelo, leerClaveCommandCode());
+  return new CommandCodeLLM(ajustes.commandcode.modelo, leerClaveCommandCode(), {
+    respaldo: modeloRespaldo(ajustes),
+  });
 }

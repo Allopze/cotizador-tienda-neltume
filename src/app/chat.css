@@ -1221,6 +1221,19 @@ p + .pregunta-opciones {
   font-size: var(--fs-xs);
   line-height: 1.5;
 }
+.ia-prueba {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.ia-prueba-casos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.6;
+}
 .ia-model-trigger {
   display: flex;
   width: 100%;
