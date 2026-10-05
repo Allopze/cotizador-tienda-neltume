@@ -167,6 +167,15 @@ const accionSchema = z.discriminatedUnion('tipo', [
       descuento: z.number().min(0).max(100).optional(),
       descuentoAutomatico: z.literal(true).optional(),
       flete: z.number().int().min(0).max(100_000_000).optional(),
+      fleteLinea: z
+        .object({
+          descripcion: z.string().max(300).nullable().optional(),
+          cantidad: z.number().int().min(1).max(10000).optional(),
+          unitario: z.number().int().min(0).max(100_000_000).optional(),
+        })
+        .strict()
+        .nullable()
+        .optional(),
       margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
       observaciones: z.string().max(2000).nullable().optional(),
       despacho: despachoSchema.nullable().optional(),

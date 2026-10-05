@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 16;
+export const VERSION_ESQUEMA = 17;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -322,6 +322,19 @@ function crearEsquema(db: Database.Database) {
       );
       if (!tieneColumna) db.exec('ALTER TABLE solicitudes ADD COLUMN fuente TEXT;');
       db.exec('PRAGMA user_version = 16;');
+    }).immediate();
+  if (version < 17)
+    db.transaction(() => {
+      // v17: el flete es una línea más del detalle, con descripción y cantidad propias. Las cotizaciones
+      // existentes quedan con una unidad y la descripción automática (destino y transportista).
+      const columnas = (db.pragma('table_info(cotizaciones)') as { name: string }[]).map((c) => c.name);
+      if (!columnas.includes('flete_descripcion'))
+        db.exec('ALTER TABLE cotizaciones ADD COLUMN flete_descripcion TEXT;');
+      if (!columnas.includes('flete_cantidad'))
+        db.exec(
+          'ALTER TABLE cotizaciones ADD COLUMN flete_cantidad INTEGER NOT NULL DEFAULT 1 CHECK (flete_cantidad >= 1);',
+        );
+      db.exec('PRAGMA user_version = 17;');
     }).immediate();
 }
 

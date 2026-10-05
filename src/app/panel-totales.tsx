@@ -1,6 +1,6 @@
 'use client';
 import type { Cotizacion } from '@/negocio/estado';
-import { conDosDecimales, leerPesos, leerPorcentaje } from '@/negocio/cifras';
+import { conDosDecimales, leerPorcentaje } from '@/negocio/cifras';
 import {
   contarPuertas,
   descuentoAutomatico,
@@ -69,16 +69,18 @@ function OrigenDescuento({ actual, editable, guardando, editar }: Props & { actu
   );
 }
 
-/** Totales con descuento (%) y flete (CLP neto) editables. */
+/**
+ * Totales con el descuento (%) editable. El flete es una línea del detalle: el subtotal la incluye, pero el
+ * descuento se calcula solo sobre los productos.
+ */
 export function Totales({ actual, editable, guardando, editar }: Props) {
   const m = actual?.montos;
-  const ajustes = !!(m?.descuento || m?.flete);
   return (
     <div className="totals">
-      {(ajustes || editable) && (
+      {(!!m?.descuento || editable) && (
         <div>
           <span>Subtotal</span>
-          <span>{pesos(m?.subtotal ?? 0)}</span>
+          <span>{pesos((m?.subtotal ?? 0) + (m?.flete ?? 0))}</span>
         </div>
       )}
       {(!!m?.descuento || editable) && (
@@ -88,7 +90,9 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
               etiqueta="Descuento"
               valor={String(actual?.descuento ?? 0).replace('.', ',')}
               mostrar={
-                m?.descuento ? `${pct(m.descuentoPorcentaje)} · −${pesos(m.descuento)}` : 'Sin descuento'
+                m?.descuento
+                  ? `${pct(m.descuentoPorcentaje)}${m.flete ? ' sobre productos' : ''} · −${pesos(m.descuento)}`
+                  : 'Sin descuento'
               }
               editable={editable}
               discreto
@@ -110,27 +114,6 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
             <OrigenDescuento actual={actual} editable={editable} guardando={guardando} editar={editar} />
           )}
         </>
-      )}
-      {(!!m?.flete || editable) && (
-        <div className="total-editable">
-          <CampoEditable
-            etiqueta="Flete (neto)"
-            valor={String(actual?.flete ?? 0)}
-            mostrar={m?.flete ? pesos(m.flete) : 'Sin flete'}
-            editable={editable}
-            discreto
-            guardando={guardando === 'flete'}
-            tipo="text"
-            sufijo="$"
-            validar={(v) => {
-              const n = leerPesos(v);
-              if (!Number.isInteger(n) || n < 0 || n > 100_000_000)
-                return 'El flete debe ser un monto entero en pesos, sin decimales.';
-              return null;
-            }}
-            guardar={(v) => editar({ flete: leerPesos(v) }, 'flete')}
-          />
-        </div>
       )}
       <div>
         <span>Neto</span>

@@ -1,6 +1,15 @@
 'use client';
-import { Fragment, useEffect, useState, type RefObject } from 'react';
-import { despachoEditable, esEditable, etiquetaEstado, type Cotizacion } from '@/negocio/estado';
+import { Fragment, useEffect, useRef, useState, type RefObject } from 'react';
+import {
+  CODIGO_FLETE,
+  cantidadFlete,
+  descripcionFlete,
+  despachoEditable,
+  esEditable,
+  etiquetaEstado,
+  unitarioFlete,
+  type Cotizacion,
+} from '@/negocio/estado';
 import { descripcionLinea, pesos } from '@/negocio/precios';
 import { metros } from '@/catalogo/resolver';
 import { leerPesos } from '@/negocio/cifras';
@@ -107,6 +116,115 @@ const textoFaltan = (campos: CampoPendiente[]) =>
 /** Frase que el panel sugiere agregar a las puertas sin tipo de medida; la escribe la persona, no el sistema. */
 const RECTIFICAR_MEDIDA = 'Rectificar si la medida corresponde a hoja o vano.';
 
+/**
+ * El flete como una línea más del detalle: descripción, cantidad y unitario se editan igual que en un
+ * producto, y su total es cantidad × unitario. No lleva descuento ni entra en la nota de pedido.
+ */
+function FilaFlete({
+  actual,
+  editable,
+  conQuitar,
+  guardando,
+  editar,
+  quitar,
+  recienAgregada,
+}: {
+  actual: Cotizacion;
+  editable: boolean;
+  conQuitar: boolean;
+  guardando: string | null;
+  editar: AccionesPanel['editar'];
+  quitar: () => void;
+  /** Recién pedida con «Agregar flete»: abre el unitario para escribirlo. */
+  recienAgregada: boolean;
+}) {
+  const descripcion = descripcionFlete(actual);
+  const unitario = unitarioFlete(actual);
+  const fila = useRef<HTMLTableRowElement>(null);
+  useEffect(() => {
+    if (recienAgregada) fila.current?.querySelector<HTMLButtonElement>('.celda-monto button')?.click();
+  }, [recienAgregada]);
+  return (
+    <tr ref={fila} id="linea-flete" className="linea-flete">
+      <td>
+        <CampoEditable
+          key={`${actual.actualizada}-flete-descripcion`}
+          etiqueta="Descripción del flete"
+          etiquetaOculta
+          discreto
+          valor={descripcion}
+          mostrar={<strong>{descripcion}</strong>}
+          editable={editable}
+          guardando={guardando === 'flete.descripcion'}
+          maxLength={300}
+          guardar={(v) => editar({ fleteLinea: { descripcion: v || null } }, 'flete.descripcion')}
+        />
+        <small>{CODIGO_FLETE}</small>
+        <small>Neto · sin descuento</small>
+      </td>
+      <td className="celda-cantidad" data-etiqueta="Cant.">
+        <CampoEditable
+          key={`${actual.actualizada}-flete-cantidad`}
+          etiqueta="Cantidad del flete"
+          etiquetaOculta
+          discreto
+          valor={String(cantidadFlete(actual))}
+          editable={editable}
+          guardando={guardando === 'flete.cantidad'}
+          tipo="number"
+          min={1}
+          max={10000}
+          paso={1}
+          validar={(v) => {
+            const n = Number(v);
+            return Number.isInteger(n) && n >= 1 && n <= 10000
+              ? null
+              : 'La cantidad debe ser un número entero entre 1 y 10.000.';
+          }}
+          guardar={(v) => editar({ fleteLinea: { cantidad: Number(v) } }, 'flete.cantidad')}
+        />
+      </td>
+      <td className="celda-monto" data-etiqueta="Unitario">
+        <CampoEditable
+          key={`${actual.actualizada}-flete-unitario`}
+          etiqueta="Unitario del flete"
+          etiquetaOculta
+          discreto
+          valor={unitario ? String(unitario) : ''}
+          mostrar={pesos(unitario)}
+          editable={editable}
+          guardando={guardando === 'flete.unitario'}
+          tipo="text"
+          sufijo="$"
+          validar={(v) => {
+            const n = v ? leerPesos(v) : 0;
+            return Number.isSafeInteger(n) && n >= 0 && n <= 100_000_000
+              ? null
+              : 'El flete debe ser un monto entero en pesos, entre $0 y $100.000.000.';
+          }}
+          guardar={(v) => editar({ fleteLinea: { unitario: v ? leerPesos(v) : 0 } }, 'flete.unitario')}
+        />
+      </td>
+      <td className="celda-monto celda-total" data-etiqueta="Total neto">
+        {pesos(actual.flete)}
+      </td>
+      {conQuitar && (
+        <td className="celda-acciones">
+          <button
+            type="button"
+            className="remove"
+            onClick={quitar}
+            disabled={!editable}
+            aria-label={`Quitar línea de flete: ${descripcion}`}
+          >
+            ×
+          </button>
+        </td>
+      )}
+    </tr>
+  );
+}
+
 const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'direccion', 'telefono', 'proyecto'] as const;
 
 function notaEstado(q: Cotizacion | null) {
@@ -156,6 +274,8 @@ export function CotizacionPanel({
   const ocupado = enCurso !== null;
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
+  /** Cotización en la que se pidió «Agregar flete»: muestra la línea en $0 hasta que se guarde un valor. */
+  const [agregandoFlete, setAgregandoFlete] = useState<string | null>(null);
   const [transportistas, setTransportistas] = useState(['Starken', 'Transportes Paredes', 'Ignacio', 'Otro']);
   useEffect(() => {
     const abort = new AbortController();
@@ -237,6 +357,8 @@ export function CotizacionPanel({
     .join(' · ');
   // Las bloqueadas no muestran el botón de quitar: no hay nada que hacer con él.
   const conQuitar = !!actual && esEditable(actual) && puedeModificar;
+  const conFlete =
+    !!actual && (actual.flete > 0 || !!actual.fleteDescripcion || agregandoFlete === actual.id);
   const despacho = actual?.nota?.despacho;
   const condicionDespacho =
     despacho && (despacho.direccion || despacho.transporte)
@@ -314,6 +436,16 @@ export function CotizacionPanel({
                 onClick={agregarProducto}
               >
                 + Agregar producto
+              </button>
+            )}
+            {admiteCambios && conItems && !conFlete && (
+              <button
+                type="button"
+                className="button secondary small"
+                disabled={ocupado}
+                onClick={() => setAgregandoFlete(actual.id)}
+              >
+                + Agregar flete
               </button>
             )}
           </div>
@@ -732,6 +864,21 @@ export function CotizacionPanel({
                     </Fragment>
                   );
                 })}
+                {conItems && conFlete && (
+                  <FilaFlete
+                    actual={actual}
+                    editable={editable}
+                    conQuitar={conQuitar}
+                    guardando={guardando}
+                    editar={acciones.editar}
+                    recienAgregada={agregandoFlete === actual.id && !actual.flete && !actual.fleteDescripcion}
+                    quitar={() => {
+                      setAgregandoFlete(null);
+                      if (actual.flete > 0 || actual.fleteDescripcion)
+                        void acciones.editar({ fleteLinea: null }, 'flete.quitar');
+                    }}
+                  />
+                )}
               </tbody>
             </table>
           </div>
@@ -881,25 +1028,10 @@ export function CotizacionPanel({
                     guardar={(v) => guardarDespacho({ transporte: v || null }, 'despacho.transporte')}
                   />
                 )}
-                <CampoEditable
-                  etiqueta="Valor de despacho"
-                  valor={String(actual.flete)}
-                  mostrar={pesos(actual.flete)}
-                  editable={editable}
-                  discreto
-                  guardando={guardando === 'despacho.valor'}
-                  tipo="text"
-                  sufijo="$"
-                  validar={(v) => {
-                    const n = v ? leerPesos(v) : 0;
-                    return Number.isSafeInteger(n) && n >= 0 && n <= 100_000_000
-                      ? null
-                      : 'Indica un monto entre $0 y $100.000.000.';
-                  }}
-                  guardar={(v) =>
-                    acciones.editar({ despacho: { valor: v ? leerPesos(v) : 0 } }, 'despacho.valor')
-                  }
-                />
+                <p className="muted">
+                  Valor de despacho: {actual.flete ? `${pesos(actual.flete)} neto` : 'sin flete'}. Se edita en
+                  la línea de flete del detalle del pedido.
+                </p>
                 <CampoEditable
                   etiqueta="Entrega comprometida"
                   valor={actual.despacho?.entregaComprometida ?? ''}

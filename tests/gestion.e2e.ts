@@ -47,11 +47,19 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
     data: { tipo: 'editar', id, actualizada: cotizacion.actualizada, cliente: { proyecto: 'Casa Soto' } },
   });
   expect(cambio.ok()).toBe(true);
-  await guardarCampo('Editar flete (neto)', 'Flete (neto)', '20000');
+  // El flete es una línea más del detalle: «Agregar flete» abre su unitario para escribirlo.
+  await panel.getByRole('button', { name: '+ Agregar flete' }).click();
+  await panel.getByLabel('Unitario del flete').fill('20000');
+  await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Se cargó la versión actual' })).toBeVisible();
   await panel.locator('.quote-client-section > summary').click();
   await expect(panel.getByText('Casa Soto', { exact: true })).toBeVisible();
-  await guardarCampo('Editar flete (neto)', 'Flete (neto)', '20000');
+  await guardarCampo(/^Editar unitario del flete/, 'Unitario del flete', '20000');
+  await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));
+  await guardarCampo(/^Editar cantidad del flete/, 'Cantidad del flete', '2');
+  await expect(panel.locator('#linea-flete .celda-total')).toHaveText('$40.000');
+  await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 40000 }).total));
+  await guardarCampo(/^Editar cantidad del flete/, 'Cantidad del flete', '1');
   await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));
 
   // Emitir para poder anular después.

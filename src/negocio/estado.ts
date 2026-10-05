@@ -119,8 +119,12 @@ export interface Cotizacion {
    * (0 si sus reglas no tienen tramos).
    */
   descuentoManual?: boolean;
-  /** Flete neto en pesos enteros; se suma como fila propia. */
+  /** Flete neto en pesos enteros (total de su línea): se suma al neto y no lleva descuento. */
   flete: number;
+  /** Texto de la línea de flete; null (o ausente) usa el que se arma con el destino y el transportista. */
+  fleteDescripcion?: string | null;
+  /** Unidades de la línea de flete (1 si falta); el unitario es `flete / fleteCantidad`. */
+  fleteCantidad?: number;
   /**
    * Margen especial de toda la cotización, como fracción (0,42 = 42 %). Pasa por encima del margen de la
    * categoría y por debajo del de cada línea; null (o ausente) usa el de cada categoría. La nota de pedido
@@ -156,6 +160,25 @@ export const anticipoMinimo = (total: number) => Math.ceil(total * 0.5);
 /** «Otro» solo indica que falta el nombre: no identifica a quien lleva el pedido. */
 export const sinTransportista = (transporte: string | null | undefined) =>
   !transporte?.trim() || transporte.trim().toLowerCase() === 'otro';
+/** Código que muestra la línea de flete junto a los productos. */
+export const CODIGO_FLETE = 'FLETE';
+export const cantidadFlete = (q: Pick<Cotizacion, 'fleteCantidad'>) =>
+  q.fleteCantidad && q.fleteCantidad > 0 ? q.fleteCantidad : 1;
+/** El servidor guarda siempre `flete = cantidad × unitario`, así que la división es exacta. */
+export const unitarioFlete = (q: Pick<Cotizacion, 'flete' | 'fleteCantidad'>) =>
+  Math.round(q.flete / cantidadFlete(q));
+/** Descripción de la línea de flete: la escrita por la persona o «Flete / despacho a Temuco · Starken». */
+export function descripcionFlete(q: Pick<Cotizacion, 'fleteDescripcion' | 'despacho'>) {
+  if (q.fleteDescripcion?.trim()) return q.fleteDescripcion.trim();
+  const destino = q.despacho?.destino?.trim();
+  const transporte = q.despacho?.transporte;
+  return [
+    `Flete / despacho${destino ? ` a ${destino}` : ''}`,
+    !sinTransportista(transporte) && transporte!.trim(),
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
 type FaseOperativa = Pick<Cotizacion, 'estado' | 'estadoOperativo'>;
 /** Un pago se anula mientras la operación no llegue a «Lista para despacho» (ahí el saldo ya está pagado). */
 export const pagoAnulable = (q: FaseOperativa) =>

@@ -161,6 +161,8 @@ export const cotizacionSchema = z.looseObject({
   /** Ausente: el descuento de quien lo guardó antes de existir el automático (se deriva al guardar). */
   descuentoManual: z.boolean().optional(),
   flete: z.number().int().nonnegative(),
+  fleteDescripcion: z.string().max(300).nullable().optional(),
+  fleteCantidad: z.number().int().min(1).max(10000).optional(),
   /** Margen especial de toda la cotización (fracción); ausente o null usa el de cada categoría. */
   margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
   observaciones: z.string().nullable().optional(),
@@ -287,6 +289,8 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         vence: fechaEmision ? calcularVence(fechaEmision) : null,
         descuento: 0,
         flete: 0,
+        fleteDescripcion: null,
+        fleteCantidad: 1,
         margenCotizacion: null,
         observaciones: null,
         despacho: null,

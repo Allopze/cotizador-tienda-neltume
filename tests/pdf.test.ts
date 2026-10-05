@@ -119,7 +119,10 @@ describe('Plantillas', () => {
     expect(html).toContain('Medida solicitada: 0,82 × 2,00 m · medida de vano');
     expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
     expect(html).toContain('FLETE');
-    expect(html).toMatch(/FLETE<\/span><b>\$15\.000/);
+    // El flete es una línea del detalle y el subtotal la incluye; el descuento es solo de los productos.
+    expect(html).toMatch(/<td class="codigo">FLETE<\/td><td>Flete \/ despacho<\/td><td class="num">1<\/td><td class="num">\$15\.000<\/td><td class="num">\$15\.000/);
+    expect(html).toMatch(/SUBTOTAL<\/span><b>\$265\.000/);
+    expect(html).toContain('SOBRE PRODUCTOS');
     expect(html).toContain('Incluye flete por despacho');
     expect(html).not.toContain('Flete por despacho</td>');
   });

@@ -62,6 +62,8 @@ export interface CambiosEdicion {
   /** Restaura el descuento por cantidad (automático). */
   descuentoAutomatico?: true;
   flete?: number;
+  /** Línea de flete del detalle; null la quita. */
+  fleteLinea?: { descripcion?: string | null; cantidad?: number; unitario?: number } | null;
   /** Fracción (0,42 = 42 %); null vuelve al margen de cada categoría. */
   margenCotizacion?: number | null;
   observaciones?: string | null;

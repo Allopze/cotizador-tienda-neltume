@@ -42,10 +42,12 @@ import {
 } from '../negocio/items';
 import {
   anticipoMinimo,
+  cantidadFlete,
   despachoEditable,
   etiquetaComercial,
   etiquetaFacturacion,
   etiquetaOperativo,
+  unitarioFlete,
   pagoAnulable,
   sinTransportista,
   type Cotizacion,
@@ -134,6 +136,11 @@ export type Accion =
       /** Vuelve al descuento por cantidad que corresponde a las puertas de la cotización. */
       descuentoAutomatico?: true;
       flete?: number;
+      /**
+       * Línea de flete del detalle: lo que se indique reemplaza su descripción, cantidad o unitario y el flete
+       * pasa a ser cantidad × unitario; null la quita (flete $0). Tiene prioridad sobre `flete` y `despacho.valor`.
+       */
+      fleteLinea?: { descripcion?: string | null; cantidad?: number; unitario?: number } | null;
       /** Margen especial de toda la cotización (fracción); null vuelve al margen de cada categoría. */
       margenCotizacion?: number | null;
       observaciones?: string | null;
@@ -328,6 +335,8 @@ export class Servicio {
       descuento: 0,
       descuentoManual: false,
       flete: 0,
+      fleteDescripcion: null,
+      fleteCantidad: 1,
       margenCotizacion: null,
       observaciones: null,
       despacho: null,
@@ -512,6 +521,8 @@ export class Servicio {
       a.descuento === b.descuento &&
       descuentoEsManual(a) === descuentoEsManual(b) &&
       a.flete === b.flete &&
+      (a.fleteDescripcion ?? null) === (b.fleteDescripcion ?? null) &&
+      cantidadFlete(a) === cantidadFlete(b) &&
       (a.margenCotizacion ?? null) === (b.margenCotizacion ?? null) &&
       a.observaciones === b.observaciones &&
       JSON.stringify(a.despacho) === JSON.stringify(b.despacho)
@@ -718,6 +729,8 @@ export class Servicio {
           q.descuento = origen.descuento;
           q.descuentoManual = descuentoEsManual(origen);
           q.flete = origen.flete;
+          q.fleteDescripcion = origen.fleteDescripcion ?? null;
+          q.fleteCantidad = cantidadFlete(origen);
           q.margenCotizacion = origen.margenCotizacion ?? null;
           q.observaciones = origen.observaciones;
           q.despacho = structuredClone(origen.despacho);
@@ -922,8 +935,28 @@ export class Servicio {
         : accion.descuento !== undefined && aCentesimas(accion.descuento) !== q.descuento
           ? true
           : descuentoEsManual(q);
-      const descuento = accion.descuento ?? q.descuento,
-        flete = accion.flete ?? (accion.despacho?.valor === undefined ? q.flete : accion.despacho.valor ?? 0);
+      const descuento = accion.descuento ?? q.descuento;
+      let flete = accion.flete ?? (accion.despacho?.valor === undefined ? q.flete : accion.despacho.valor ?? 0),
+        fleteCantidad = cantidadFlete(q),
+        fleteDescripcion = q.fleteDescripcion ?? null;
+      // Un valor de despacho (a mano o de Starken) es el total del flete: una sola unidad.
+      if (flete !== q.flete) fleteCantidad = 1;
+      const linea = accion.fleteLinea;
+      if (linea === null) {
+        flete = 0;
+        fleteCantidad = 1;
+        fleteDescripcion = null;
+      } else if (linea) {
+        const cantidad = linea.cantidad ?? cantidadFlete(q);
+        if (!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 10000)
+          throw new ErrorUsuario('La cantidad del flete debe ser un número entero entre 1 y 10.000.');
+        const unitario = linea.unitario ?? unitarioFlete(q);
+        if (!fleteValido(unitario))
+          throw new ErrorUsuario('El unitario del flete debe ser un monto neto entero en pesos, desde $0.');
+        fleteCantidad = cantidad;
+        flete = cantidad * unitario;
+        if (linea.descripcion !== undefined) fleteDescripcion = limpiarTexto(linea.descripcion, 300);
+      }
       const reglas = q.reglas ?? REGLAS;
       if (!descuentoValido(descuento, reglas.descuentoMaximo))
         throw new ErrorUsuario(
@@ -974,6 +1007,8 @@ export class Servicio {
         descuentoNuevo === q.descuento &&
         descuentoManual === descuentoEsManual(q) &&
         flete === q.flete &&
+        fleteCantidad === cantidadFlete(q) &&
+        fleteDescripcion === (q.fleteDescripcion ?? null) &&
         margenCotizacion === margenAntes
       ) {
         if (!q.incompletos.length) return { cotizacion: q, ...extra };
@@ -1009,6 +1044,12 @@ export class Servicio {
       const descuentoAntes = descuentoDe(destino);
       const extras = [
         ...(flete !== destino.flete ? [`Flete ${pesos(destino.flete)} → ${pesos(flete)}`] : []),
+        ...(fleteCantidad !== cantidadFlete(destino)
+          ? [`Cantidad del flete: ${cantidadFlete(destino)} → ${fleteCantidad}`]
+          : []),
+        ...(fleteDescripcion !== (destino.fleteDescripcion ?? null)
+          ? [`Descripción del flete: ${fleteDescripcion ?? 'automática'}`]
+          : []),
         ...(margenCotizacion !== margenAntes
           ? [
               `Margen especial de la cotización: ${margenAntes === null ? ESTANDAR_CATEGORIA : margenTexto(margenAntes)} → ${margenCotizacion === null ? ESTANDAR_CATEGORIA : margenTexto(margenCotizacion)}`,
@@ -1036,6 +1077,8 @@ export class Servicio {
       destino.descuento = descuentoNuevo;
       destino.descuentoManual = descuentoManual;
       destino.flete = flete;
+      destino.fleteCantidad = fleteCantidad;
+      destino.fleteDescripcion = fleteDescripcion;
       destino.margenCotizacion = margenCotizacion;
       destino.observaciones = observaciones;
       destino.despacho = despacho;

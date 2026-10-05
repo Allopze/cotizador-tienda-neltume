@@ -117,8 +117,9 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     await expect(panel.getByTestId('starken-bulto')).toHaveText(
       /^Bulto: 3 puertas · 1 línea · total 13,5 × \d+(?:,\d+)? × \d+(?:,\d+)? cm, 75 kg$/,
     );
-    const valorDespacho = panel.getByRole('button', { name: /^Editar valor de despacho/ });
-    await expect(valorDespacho).toContainText('$0');
+    // El valor de despacho es la línea de flete del detalle: sin flete, no hay línea.
+    const lineaFlete = panel.locator('#linea-flete');
+    await expect(lineaFlete).toHaveCount(0);
     const cotizada = page.waitForResponse((r) => r.url().endsWith('/api/starken/cotizar'));
     await boton.click();
     const tarifasFirmadas = (await (await cotizada).json()) as {
@@ -134,22 +135,22 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
       /Domicilio · 3 días · \$101\.150 IVA incl\. \(\$85\.000 neto\)/,
     ]);
     // Cotizar no aplica nada: el valor sigue en $0 hasta que la persona elige.
-    await expect(valorDespacho).toContainText('$0');
+    await expect(lineaFlete).toHaveCount(0);
 
     // --- Elegir domicilio deja su neto como valor de despacho ---
     await tarifas.getByRole('button', { name: /^Usar esta tarifa: Domicilio/ }).click();
     await expect(
       panel.getByRole('status').filter({ hasText: 'Valor de despacho fijado en $85.000 neto' }),
     ).toBeVisible();
-    await expect(valorDespacho).toContainText('$85.000');
-    await expect(panel.getByRole('button', { name: /^Editar flete \(neto\)/ })).toContainText('$85.000');
+    await expect(lineaFlete.locator('.celda-total')).toHaveText('$85.000');
+    await expect(lineaFlete).toContainText('Starken');
     await expect(tarifas).toHaveCount(0);
 
     // --- Sigue pudiéndose escribir a mano ---
-    await valorDespacho.click();
-    await panel.getByLabel('Valor de despacho').fill('90000');
+    await lineaFlete.getByRole('button', { name: /^Editar unitario del flete/ }).click();
+    await panel.getByLabel('Unitario del flete').fill('90000');
     await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
-    await expect(valorDespacho).toContainText('$90.000');
+    await expect(lineaFlete.locator('.celda-total')).toHaveText('$90.000');
 
     // --- Destino dudoso: se elige la ciudad de una lista con búsqueda ---
     await panel.getByRole('button', { name: /^Editar destino/ }).click();
@@ -176,7 +177,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     await expect(
       panel.getByRole('alert').filter({ hasText: 'Starken: El destino no tiene cobertura' }),
     ).toBeVisible();
-    await expect(valorDespacho).toContainText('$90.000');
+    await expect(lineaFlete.locator('.celda-total')).toHaveText('$90.000');
     await selector.getByRole('button', { name: 'Cancelar' }).click();
 
     // --- La actividad guarda la tarifa elegida: tipo de entrega, días, costo total y ciudad de destino ---

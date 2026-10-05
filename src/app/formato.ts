@@ -2,6 +2,7 @@ import type { KeyboardEvent } from 'react';
 import { ajusteMedida, medidaReferencia, metrosTexto } from '@/catalogo/escalones';
 import { etiquetaDescuento } from '@/negocio/descuento-cantidad';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
+import { cantidadFlete, descripcionFlete, unitarioFlete } from '@/negocio/estado';
 import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
@@ -231,6 +232,10 @@ export function resumenTexto(q: Cotizacion) {
     (l) =>
       `• ${l.cantidad} × ${nombreProducto(descripcionLinea(l))} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
   );
+  if (q.montos.flete)
+    lineas.push(
+      `• ${cantidadFlete(q)} × ${descripcionFlete(q)}: ${pesos(unitarioFlete(q))} c/u = ${pesos(q.montos.flete)}`,
+    );
   return [
     `Cotización ${numeroCotizacion(q.numero)}`,
     `Cliente: ${c.nombre || SIN_CLIENTE}`,
@@ -247,13 +252,10 @@ export function resumenTexto(q: Cotizacion) {
       ? [`(${plural(q.incompletos.length, 'ítem pendiente', 'ítems pendientes')} sin valorizar)`]
       : []),
     '',
-    ...(q.montos.descuento || q.montos.flete
+    ...(q.montos.descuento
       ? [
-          `Subtotal: ${pesos(q.montos.subtotal)}`,
-          ...(q.montos.descuento
-            ? [`${etiquetaDescuento(q)} ${pct(q.montos.descuentoPorcentaje)}: −${pesos(q.montos.descuento)}`]
-            : []),
-          ...(q.montos.flete ? [`Flete: ${pesos(q.montos.flete)}`] : []),
+          `Subtotal: ${pesos(q.montos.subtotal + q.montos.flete)}`,
+          `${etiquetaDescuento(q)} ${pct(q.montos.descuentoPorcentaje)}${q.montos.flete ? ' sobre productos' : ''}: −${pesos(q.montos.descuento)}`,
         ]
       : []),
     `Neto: ${pesos(q.montos.neto)}`,

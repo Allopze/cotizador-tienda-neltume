@@ -511,6 +511,36 @@ describe('Nuevas acciones', () => {
     expect(a.nota!.montos).toMatchObject({ descuento: 0, flete: 0, neto: 400, subtotal: 400 });
   });
 
+  it('la línea de flete se edita como un producto: descripción, cantidad y unitario, sin descuento', async () => {
+    const { servicio, conPedido, almacen } = await setup();
+    const q = await conPedido();
+    const editar = (base: Cotizacion, cambios: Record<string, unknown>) =>
+      servicio.ejecutar({ tipo: 'editar', id: base.id, actualizada: base.actualizada, ...cambios });
+    let r = await editar(q, { descuento: 10, fleteLinea: { unitario: 4000 } });
+    expect([r.cotizacion.flete, r.cotizacion.fleteCantidad]).toEqual([4000, 1]);
+    r = await editar(r.cotizacion, { fleteLinea: { cantidad: 3, descripcion: '  Despacho  a obra ' } });
+    const m = r.cotizacion.montos;
+    expect([r.cotizacion.flete, r.cotizacion.fleteCantidad, r.cotizacion.fleteDescripcion]).toEqual([
+      12000,
+      3,
+      'Despacho a obra',
+    ]);
+    // El descuento sigue siendo solo de los productos.
+    expect([m.subtotal, m.descuento, m.flete, m.neto]).toEqual([m.subtotal, Math.round(m.subtotal * 0.1), 12000, m.subtotal - Math.round(m.subtotal * 0.1) + 12000]);
+    expect(almacen.obtener(q.id)).toMatchObject({ flete: 12000, fleteCantidad: 3, fleteDescripcion: 'Despacho a obra' });
+    // Un valor de despacho (p. ej. la tarifa de Starken) es el total: una unidad.
+    r = await editar(r.cotizacion, { despacho: { valor: 9000 } });
+    expect([r.cotizacion.flete, r.cotizacion.fleteCantidad, r.cotizacion.fleteDescripcion]).toEqual([
+      9000,
+      1,
+      'Despacho a obra',
+    ]);
+    await expect(editar(r.cotizacion, { fleteLinea: { cantidad: 0 } })).rejects.toThrow(/cantidad del flete/);
+    r = await editar(r.cotizacion, { fleteLinea: null });
+    expect([r.cotizacion.flete, r.cotizacion.fleteCantidad, r.cotizacion.fleteDescripcion]).toEqual([0, 1, null]);
+    expect(r.cotizacion.montos.flete).toBe(0);
+  });
+
   it('editar una emitida crea la revisión; sin cambios no crea nada', async () => {
     const { servicio, emitida, almacen } = await setup();
     const e = await emitida();

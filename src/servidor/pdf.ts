@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { etiquetaDescuento } from '../negocio/descuento-cantidad';
 import type { Cotizacion, Despacho } from '../negocio/estado';
+import { CODIGO_FLETE, cantidadFlete, descripcionFlete, unitarioFlete } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { fechaChilena } from '../negocio/vigencia';
@@ -129,18 +130,18 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const campo = ([k, v]: Campo) => `<div><b>${k}:</b> ${esc(v)}</div>`;
   const fila = (etiqueta: string, valor: string, clase = '') =>
     `<p${clase ? ` class="${clase}"` : ''}><span>${etiqueta}</span><b>${valor}</b></p>`;
+  // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
   const totales = [
-    fila('SUBTOTAL', pesos(montos.subtotal)),
+    fila('SUBTOTAL', pesos(montos.subtotal + montos.flete)),
     ...(montos.descuento
       ? [
           fila(
-            `${etiquetaDescuento({ descuento: q.descuento, descuentoManual: q.descuentoManual, reglas }, { corta: true }).toUpperCase()} ${porcentaje(montos.descuentoPorcentaje)}`,
+            `${etiquetaDescuento({ descuento: q.descuento, descuentoManual: q.descuentoManual, reglas }, { corta: true }).toUpperCase()} ${porcentaje(montos.descuentoPorcentaje)}${montos.flete ? ' SOBRE PRODUCTOS' : ''}`,
             `−${pesos(montos.descuento)}`,
           ),
         ]
       : []),
-    ...(montos.flete ? [fila('FLETE', pesos(montos.flete))] : []),
-    ...(montos.descuento || montos.flete ? [fila('NETO', pesos(montos.neto))] : []),
+    ...(montos.descuento ? [fila('NETO', pesos(montos.neto))] : []),
     fila(`I.V.A. ${porcentajeIva(reglas.iva)}`, pesos(montos.iva)),
     fila('TOTAL', pesos(montos.total), 'total'),
   ].join('');
@@ -167,7 +168,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const condiciones = [
     'Valores puestos en fábrica.',
     montos.flete
-      ? 'Incluye flete por despacho (detallado en los totales).'
+      ? 'Incluye flete por despacho (detallado como línea del pedido).'
       : 'Flete por despacho pendiente: valor según unidades de compra.',
     validez,
     ...[
@@ -203,7 +204,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     </style></head><body>${anulacion}<header><div><img alt="Neltume" src="data:image/svg+xml;base64,${logo.toString('base64')}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
     <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
     <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
-    ${montos.lineas.map((l, i) => `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${pesos(l.precioUnitario)}</td><td class="num">${pesos(l.total)}</td>${nota ? '<td class="check"><i></i></td>' : ''}</tr>`).join('')}</tbody></table>
+    ${montos.lineas.map((l, i) => `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${pesos(l.precioUnitario)}</td><td class="num">${pesos(l.total)}</td>${nota ? '<td class="check"><i></i></td>' : ''}</tr>`).join('')}${montos.flete ? `<tr><td>${montos.lineas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
     <div class="totales">${totales}</div>
     <footer>${cierre}<p class="contacto">Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
 }
