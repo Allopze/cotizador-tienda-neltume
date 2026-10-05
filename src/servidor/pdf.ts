@@ -184,10 +184,11 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
   // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
   const descripcion = (l: Linea) => {
-    const pedida = medidaPedida(l);
-    const tipoMedida = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano' ? ` · medida de ${l.tipoMedida}` : '';
+    // El nombre ya lleva la medida pedida; solo una descripción escrita a mano necesita repetirla aparte.
+    const pedida = l.descripcionDocumento ? medidaPedida(l) : null;
+    const tipo = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano' ? `medida de ${l.tipoMedida}` : null;
     const detalles = [
-      pedida && `Medida solicitada: ${pedida}${tipoMedida}`,
+      pedida ? `Medida solicitada: ${pedida}${tipo ? ` · ${tipo}` : ''}` : tipo && `${tipo[0].toUpperCase()}${tipo.slice(1)}`,
       nota && `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`,
       l.observaciones && `Observación: ${l.observaciones}`,
     ];

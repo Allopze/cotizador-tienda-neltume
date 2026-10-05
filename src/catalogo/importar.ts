@@ -9,7 +9,7 @@ import {
   type ConfiguracionCatalogo,
 } from './configuracion';
 import type { Catalogo, Producto } from './tipos';
-import { esKit, esSetDeMarco } from './escalones';
+import { describirProducto } from './escalones';
 export const decimal = (v: unknown) => String(v).replace('.', ',');
 const limpio = (v: unknown) =>
   String(v ?? '')
@@ -36,20 +36,8 @@ export interface Incidencia {
   /** Hoja de la fila, en las planillas con varias hojas de productos. */
   hoja?: string;
 }
-export function descripcion(p: Producto) {
-  const base = `${p.modelo.toUpperCase()} ${p.madera === 'RAULI' ? 'RAULÍ' : p.madera} ${p.familia === 'PUERTA' ? p.medida.split(' A ').map((v) => {
-    const n = Number(v.replace(',', '.'));
-    return decimal(n > 10 ? n / 100 : n);
-  }).join(' A ') : p.medida}`;
-  const altoMin = p.altoMin ?? p.largo;
-  const altoMax = p.altoMax ?? p.largo;
-  const alto = altoMin === altoMax ? decimal(p.largo) : `${decimal(altoMin)} A ${decimal(altoMax)}`;
-  if (p.familia === 'PUERTA') return `${base} MT X ${alto} MT`;
-  if (p.familia === 'MOLDURA') return `${base} CM X ${decimal(p.largo)} MT`;
-  // Los sets de marco Pino Finger se miden en mm y llevan su largo aunque sean kit.
-  if (esSetDeMarco(p)) return `${base} MM SET X ${decimal(p.largo)} MT`;
-  return esKit(p) ? `${base} PULG KIT` : `${base} PULG X ${decimal(p.largo)} MT`;
-}
+/** Descripción de catálogo: con los rangos de medida que cubre el producto. */
+export const descripcion = (p: Producto) => describirProducto(p);
 export async function importar(ruta: string, configEntrada?: ConfiguracionCatalogo, abierto?: Xlsx) {
   const configuracion = validarConfiguracionCatalogo(configEntrada ?? {});
   const x = abierto ?? (await abrirXlsx(ruta));

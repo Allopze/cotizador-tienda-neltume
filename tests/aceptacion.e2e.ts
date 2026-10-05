@@ -69,7 +69,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(panel.getByText('HUIL-M-3-E', { exact: true })).toBeVisible();
   await expect(panel.locator('.quote-overview').getByText('Juan Pérez', { exact: true })).toBeVisible();
   await expect(panel.locator('#producto-0 > td:first-child > strong')).toHaveText(
-    /^Huilo Huilo Mara 0,8 a 0,85/,
+    /^Huilo Huilo Mara 0,835 m × 2,36 m/,
   );
   await expect(panel.getByText(/Normalizado desde|Revisar posible coincidencia|Incompleto/)).toHaveCount(0);
   await expect(

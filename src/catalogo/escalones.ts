@@ -29,6 +29,43 @@ export const esSetDeMarco = (p: Pick<Producto, 'familia'> & { tipo?: string | nu
   p.familia === 'MARCO' && /^SET\b/i.test(p.tipo ?? '');
 export const esKit = (p: Pick<Producto, 'familia' | 'largo'> & { tipo?: string | null }) =>
   vieneEnKit(p.familia) && (p.largo < LARGO_PIEZA || esSetDeMarco(p));
+/** Medidas que pidió la persona (ancho y alto en metros); null o ausente usa la del catálogo. */
+export interface MedidasPedidas {
+  ancho?: number | null;
+  alto?: number | null;
+}
+const coma = (n: number) => String(Math.round(n * 10000) / 10000).replace('.', ',');
+/**
+ * Descripción del producto en el formato de la planilla («HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT»).
+ * Con `pedidas`, las medidas son las que se pidieron, con dos decimales como se escriben («… 0,80 MT X 2,10 MT») en vez del rango del catálogo:
+ * el nombre del ítem dice lo que pidió el cliente, aunque se cobre el producto del rango que lo cubre.
+ */
+export function describirProducto(p: Producto, pedidas: MedidasPedidas = {}) {
+  const madera = p.madera === 'RAULI' ? 'RAULÍ' : p.madera;
+  const anchoCatalogo = p.medida
+    .split(' A ')
+    .map((v) => {
+      const n = Number(v.replace(',', '.'));
+      return Number.isFinite(n) ? coma(n > 10 ? n / 100 : n) : v;
+    })
+    .join(' A ');
+  const ancho = pedidas.ancho != null ? metrosTexto(pedidas.ancho) : anchoCatalogo;
+  const base = `${p.modelo.toUpperCase()} ${madera} ${p.familia === 'PUERTA' ? ancho : p.medida}`;
+  const altoMin = p.altoMin ?? p.largo;
+  const altoMax = p.altoMax ?? p.largo;
+  const alto =
+    pedidas.alto != null
+      ? metrosTexto(pedidas.alto)
+      : altoMin === altoMax
+        ? coma(p.largo)
+        : `${coma(altoMin)} A ${coma(altoMax)}`;
+  const largo = pedidas.alto != null ? metrosTexto(pedidas.alto) : coma(p.largo);
+  if (p.familia === 'PUERTA') return `${base} MT X ${alto} MT`;
+  if (p.familia === 'MOLDURA') return `${base} CM X ${largo} MT`;
+  // Los sets de marco Pino Finger se miden en mm y llevan su largo aunque sean kit.
+  if (esSetDeMarco(p)) return `${base} MM SET X ${largo} MT`;
+  return esKit(p) ? `${base} PULG KIT` : `${base} PULG X ${largo} MT`;
+}
 const holgura = (e: Escalon) => (e.exacto ? HOLGURA : 0);
 export const enEscalon = (valor: number, e: Escalon) =>
   valor >= e.min - holgura(e) - 1e-9 && valor <= e.max + holgura(e) + 1e-9;

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clienteVacio, type Producto } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
-import { cotizar, montosVacios, REGLAS, type ReglasComerciales } from '../src/negocio/precios';
+import { cotizar, descripcionLinea, montosVacios, REGLAS, type ReglasComerciales } from '../src/negocio/precios';
 import { cerrarBaseDatos } from '../src/servidor/base-datos';
 
 const navegador = vi.hoisted(() => ({ demora: 0, cerrado: 0 }));
@@ -115,8 +115,9 @@ describe('Plantillas', () => {
     expect(html).toContain('Revisión de la cotización:</b> N° 323');
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('Emitida por:</b> Paula');
-    expect(html).toContain('Medida solicitada: 0,82 × 2,00 m');
-    expect(html).toContain('Medida solicitada: 0,82 × 2,00 m · medida de vano');
+    // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio.
+    expect(html).toContain('Molco Pino Oregon 0,82 m × 2,00 m<br><small>Medida de vano');
+    expect(html).not.toContain('0,80 a 0,85');
     expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
     expect(html).toContain('FLETE');
     // El flete es una línea del detalle y el subtotal la incluye; el descuento es solo de los productos.
@@ -171,12 +172,25 @@ describe('Plantillas', () => {
     expect(html).toContain('Dirección de despacho:</b> Los Carrera #450');
     expect(html).toContain('Medio de transporte:</b> Camión');
     expect(html).toContain('Aprobada por:</b> Paulette');
-    expect(html).toContain('Medida solicitada: 0,83 × 2,00 m');
-    expect(html).toContain('Medida solicitada: 0,83 × 2,00 m · medida de hoja');
+    expect(html).toContain('Molco Pino Oregon 0,83 m × 2,00 m<br><small>Medida de hoja');
+    // Fábrica ve además la referencia de catálogo (el rango que se cobra).
+    expect(html).toContain('Referencia de catálogo: MOL-O-3-A');
     expect(html).not.toContain('DESCUENTO');
     expect(html).toContain('Ref. cotización:</b> N° 325');
     expect(html).toContain('Recibido por fábrica');
     expect(html).not.toContain('GRACIAS');
+  });
+
+  it('el nombre del ítem lleva la medida pedida y el producto (y su precio) sigue siendo el del rango', () => {
+    const [l] = cotizar([{ producto: puerta, cantidad: 1, anchoSolicitado: 0.82, altoSolicitado: 2 }]).lineas;
+    expect(descripcionLinea(l)).toBe('MOLCO PINO OREGON 0,82 MT X 2,00 MT');
+    expect([l.producto.codigo, l.precioUnitario]).toEqual(['MOL-O-3-A', Math.round(100000 * 1.25)]);
+    const moldura: Producto = { ...puerta, familia: 'MOLDURA', medida: '2X2', altoMin: 2.4, altoMax: 3.2, largo: 3.2 };
+    const [m] = cotizar([{ producto: moldura, cantidad: 1, medidaSolicitada: '2X2', altoSolicitado: 2.75 }]).lineas;
+    expect(descripcionLinea(m)).toBe('MOLCO PINO OREGON 2X2 CM X 2,75 MT');
+    // Escrita por la persona, manda; sin medidas pedidas (registros antiguos), la del catálogo.
+    expect(descripcionLinea({ ...l, descripcionDocumento: 'Puerta principal' })).toBe('Puerta principal');
+    expect(descripcionLinea({ ...l, anchoSolicitado: null, altoSolicitado: null })).toBe(puerta.descripcion);
   });
 
   it('la cotización al cliente muestra la descripción y la medida pedida, sin datos internos ni «No especificado»', async () => {
@@ -209,10 +223,11 @@ describe('Plantillas', () => {
     expect(texto).toContain('Medida solicitada: 0,835 × 2,00 m · medida de vano');
     expect(texto).toContain('Puerta con cerradura');
     expect(texto).toContain('Observación: Abre hacia adentro');
-    // La descripción de catálogo se usa solo donde no hay una escrita por la persona.
-    expect(veces(texto, 'Molco Pino Oregon 0,80 a 0,85 m × 2 m')).toBe(1);
-    expect(sinTipo).toMatch(/Medida solicitada: 0,835 × 2,00 m(?! ·)/);
-    expect(sinTipo).not.toContain('medida de');
+    // Sin descripción escrita, el nombre es el producto con la medida pedida, no el rango del catálogo.
+    expect(veces(texto, 'Molco Pino Oregon 0,835 m × 2,00 m')).toBe(1);
+    expect(texto).not.toContain('0,80 a 0,85');
+    expect(sinTipo).not.toContain('Medida solicitada');
+    expect(sinTipo).not.toContain('edida de');
     expect(sinMedida).not.toContain('Medida solicitada');
     expect(texto).not.toContain('No especificado');
     expect(texto).not.toContain('Tipo de medida');

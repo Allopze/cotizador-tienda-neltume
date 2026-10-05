@@ -1,4 +1,5 @@
 import type { Producto } from '../catalogo/tipos';
+import { describirProducto } from '../catalogo/escalones';
 import { conDosDecimales } from './cifras';
 /**
  * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
@@ -117,9 +118,19 @@ export interface Linea {
   altoSolicitado: number | null;
   medidaSolicitada: string | null;
 }
-/** Lo que muestran los documentos y el panel: la descripción escrita por la persona o, si no hay, la del catálogo. */
-export const descripcionLinea = (l: Pick<Linea, 'producto' | 'descripcionDocumento'>) =>
-  l.descripcionDocumento || l.producto.descripcion;
+/**
+ * Lo que muestran los documentos y el panel: la descripción escrita por la persona o, si no hay, el producto
+ * con las medidas que se pidieron (no el rango del catálogo, que solo define el precio). Sin medidas
+ * pedidas (registros antiguos), la descripción del catálogo.
+ */
+export const descripcionLinea = (
+  l: Pick<Linea, 'producto' | 'descripcionDocumento'> &
+    Partial<Pick<Linea, 'anchoSolicitado' | 'altoSolicitado'>>,
+) =>
+  l.descripcionDocumento ||
+  (l.anchoSolicitado == null && l.altoSolicitado == null
+    ? l.producto.descripcion
+    : describirProducto(l.producto, { ancho: l.anchoSolicitado, alto: l.altoSolicitado }));
 export interface Montos {
   lineas: Linea[];
   /** Suma de líneas antes de descuento y flete. */
