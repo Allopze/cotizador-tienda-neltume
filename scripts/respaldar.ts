@@ -2,10 +2,12 @@ import Database from 'better-sqlite3';
 import { copyFile, cp, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from '../src/servidor/base-datos';
+import { carpetaReferencias } from '../src/servidor/archivos-referencia';
+import { ARCHIVO_REFERENCIA } from '../src/negocio/personalizados';
 
 // Uso: npm run respaldar -- [--destino ruta] [--conservar 30]
 // Copia en caliente la base (API de respaldo de SQLite, segura con el servidor en marcha), los PDF
-// emitidos y config/catalogo.json a <destino>/<fecha>/. Conviene que el destino esté en otro disco.
+// emitidos, las referencias del cliente de cada ítem y config/catalogo.json a <destino>/<fecha>/. Conviene que el destino esté en otro disco.
 const args = process.argv.slice(2);
 const valor = (nombre: string) => {
   const i = args.indexOf(nombre);
@@ -21,7 +23,7 @@ async function main() {
   const carpeta = join(destino, `${PREFIJO}${new Date().toISOString().replace(/[:.]/g, '-')}`);
   await mkdir(carpeta, { recursive: true, mode: 0o700 });
 
-  // Primero la base y después los PDF: todo documento que la copia referencia ya existe en disco.
+  // Primero la base y después los archivos: todo PDF o referencia que la copia nombra ya existe en disco.
   const rutaDb = rutaBaseDatos();
   const copiaDb = join(carpeta, basename(rutaDb));
   await abrirBaseDatos(rutaDb).backup(copiaDb);
@@ -51,6 +53,19 @@ async function main() {
         return true;
       },
     });
+  // Referencias del cliente: solo archivos completos (nombre = sha256), nunca uno a medio escribir.
+  const referencias = carpetaReferencias(directorioDatos());
+  let archivosReferencia = 0;
+  if (await existe(referencias))
+    await cp(referencias, join(carpeta, 'referencias'), {
+      recursive: true,
+      filter: (origen) => {
+        if (origen === referencias) return true;
+        if (!ARCHIVO_REFERENCIA.test(basename(origen))) return false;
+        archivosReferencia++;
+        return true;
+      },
+    });
   const config = resolve(process.env.NELTUME_CATALOGO_CONFIG ?? 'config/catalogo.json');
   if (await existe(config)) await copyFile(config, join(carpeta, basename(config)));
 
@@ -58,7 +73,9 @@ async function main() {
   for (const vieja of anteriores.slice(0, Math.max(anteriores.length - conservar, 0)))
     await rm(join(destino, vieja), { recursive: true, force: true });
 
-  console.log(`Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF.`);
+  console.log(
+    `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF, ${archivosReferencia} referencias del cliente.`,
+  );
 }
 
 const existe = (ruta: string) =>
