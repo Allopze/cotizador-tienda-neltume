@@ -68,7 +68,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await enviar(PEDIDO);
   await expect(panel.getByText('HUIL-M-3-E', { exact: true })).toBeVisible();
   await expect(panel.locator('.quote-overview').getByText('Juan Pérez', { exact: true })).toBeVisible();
-  await expect(panel.locator('#producto-0 > td:first-child > strong')).toHaveText(
+  await expect(panel.locator('#producto-0 > td:first-child .quote-item-title > strong')).toHaveText(
     /^Huilo Huilo Mara 0,835 m × 2,36 m/,
   );
   await expect(panel.getByText(/Normalizado desde|Revisar posible coincidencia|Incompleto/)).toHaveCount(0);
@@ -78,7 +78,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
     }),
   ).toBeVisible();
   await expect(
-    panel.getByText('Medida pedida: 0,835 × 2,36 m · medida de vano', { exact: true }),
+    panel.getByText('835 × 2360 mm (Vano)', { exact: true }),
   ).toBeVisible();
   await panel.locator('.item-details > summary').first().click();
   await expect(panel.getByRole('combobox', { name: /La medida corresponde a/ })).toContainText('Vano');
@@ -136,7 +136,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   expect(cotizacionPdf).toContain('Juan Pérez');
   expect(cotizacionPdf).toContain(DESCRIPCION);
   expect(cotizacionPdf).not.toContain('Huilo Huilo Mara 0,8 a 0,85');
-  expect(cotizacionPdf).toContain('Medida solicitada: 0,835 × 2,36 m · medida de vano');
+  expect(cotizacionPdf).toContain('Medida solicitada: 835 × 2360 mm (Vano)');
   for (const monto of [unitario, especial.lineas[0].total, especial.neto, especial.iva, especial.total])
     expect(cotizacionPdf).toContain(pesos(monto));
   // Ni el precio de fábrica, ni la referencia de catálogo, ni nada de márgenes llegan al cliente.
@@ -180,7 +180,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   expect(notaPdf).toContain(`NOTA DE PEDIDO N° ${numeroNota}`);
   expect(notaPdf).toMatch(new RegExp(`Ref\\. cotización:?\\s*N° ${numero}`));
   expect(notaPdf).toContain('Referencia de catálogo: HUIL-M-3-E');
-  expect(notaPdf).toContain('Medida solicitada: 0,835 × 2,36 m · medida de vano');
+  expect(notaPdf).toContain('Medida solicitada: 835 × 2360 mm (Vano)');
   for (const monto of [
     fabrica.lineas[0].precioUnitario,
     fabrica.lineas[0].total,

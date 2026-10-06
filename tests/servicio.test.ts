@@ -204,7 +204,7 @@ describe('Persistencia y flujo del asistente', () => {
     q = await editar({ precioUnitario: 70_000, descripcion: 'Set acordado en obra' });
     q = await editar({ madera: 'MARA ENCHAPADA' });
     expect(q.montos.lineas[0].producto.codigo).toBe('MAR-EM-250');
-    expect(q.solicitudes[0]).toMatchObject({ madera: 'MARA ENCHAPADA', precioUnitario: null, descripcion: null });
+    expect(q.solicitudes[0]).toMatchObject({ madera: 'MARA ENCHAPADA', precioUnitario: null, descripcion: 'Set acordado en obra' });
   });
 
   it('cotiza un pendiente tras reimportar la planilla y registra el producto del catálogo vigente', async () => {

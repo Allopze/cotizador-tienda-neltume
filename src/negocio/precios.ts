@@ -39,6 +39,8 @@ export type CategoriaMargen =
   | 'puertas_enchapadas_mara'
   | 'marcos_finger_sin_enchape'
   | 'marcos_finger_enchapados'
+  | 'marcos_solidos_oregon'
+  | 'marcos_solidos_lenga'
   | 'accesorios_madera_solida'
   | 'otros';
 export type MargenesCategoria = Record<CategoriaMargen, number>;
@@ -51,6 +53,8 @@ export const MARGENES_INICIALES: MargenesCategoria = {
   puertas_enchapadas_mara: 0.75,
   marcos_finger_sin_enchape: 1,
   marcos_finger_enchapados: 0.75,
+  marcos_solidos_oregon: 0.85,
+  marcos_solidos_lenga: 0.55,
   // Marcos, molduras y piezas T de madera sólida (ni enchapados, ni prepintados, ni finger).
   accesorios_madera_solida: 0.25,
   // Último recurso: conserva el ajuste histórico para lo que ninguna categoría describe.
@@ -260,6 +264,10 @@ export function categoriaMargen(producto: Producto): CategoriaMargen {
     // El marco Pino Finger base es «desnudo»: solo es enchapado si el producto lo dice.
     const enchapado = /ENCHAP/.test(contexto) && !/SIN\s*ENCHAP|DESNUD/.test(contexto);
     return enchapado ? 'marcos_finger_enchapados' : 'marcos_finger_sin_enchape';
+  }
+  if (producto.familia === 'MARCO' && !/ENCHAP|PREPINT/.test(contexto)) {
+    if (madera.includes('OREGON')) return 'marcos_solidos_oregon';
+    if (madera.includes('LENGA')) return 'marcos_solidos_lenga';
   }
   // Marcos, molduras y piezas T: madera sólida salvo que el producto sea enchapado, prepintado o finger.
   // Una madera nueva del catálogo (p. ej. Cedro) es sólida sin tocar esta regla.

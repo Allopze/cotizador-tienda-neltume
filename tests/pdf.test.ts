@@ -116,7 +116,7 @@ describe('Plantillas', () => {
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('Emitida por:</b> Paula');
     // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio.
-    expect(html).toContain('Molco Pino Oregon 0,82 m × 2,00 m<br><small>Medida de vano');
+    expect(html).toContain('Molco Pino Oregon 0,82 m × 2,00 m<br><small>Medida solicitada: 820 × 2000 mm (Vano)');
     expect(html).not.toContain('0,80 a 0,85');
     expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
     expect(html).toContain('FLETE');
@@ -126,6 +126,21 @@ describe('Plantillas', () => {
     expect(html).toContain('SOBRE PRODUCTOS');
     expect(html).toContain('Incluye flete por despacho');
     expect(html).not.toContain('Flete por despacho</td>');
+  });
+
+  it('el PDF mantiene el orden de las líneas que recibió la cotización', async () => {
+    await aislarBaseDatos();
+    const montos = cotizar([
+      { producto: puerta, cantidad: 1, descripcionDocumento: 'Producto C' },
+      { producto: puerta, cantidad: 1, descripcionDocumento: 'Producto A' },
+      { producto: puerta, cantidad: 1, descripcionDocumento: 'Producto B' },
+    ]);
+    const html = await plantilla(cotizacion(), {
+      tipo: 'cotizacion', numero: 325, montos, fecha: '2026-09-28T12:00:00.000Z',
+    });
+    const posiciones = ['Producto C', 'Producto A', 'Producto B'].map((nombre) => html.indexOf(nombre));
+    expect(posiciones.every((p) => p >= 0)).toBe(true);
+    expect(posiciones).toEqual([...posiciones].sort((a, b) => a - b));
   });
 
   it('el descuento se rotula «por cantidad» solo si lo aplicó un tramo, y el cliente nunca ve márgenes', async () => {
@@ -172,7 +187,7 @@ describe('Plantillas', () => {
     expect(html).toContain('Dirección de despacho:</b> Los Carrera #450');
     expect(html).toContain('Medio de transporte:</b> Camión');
     expect(html).toContain('Aprobada por:</b> Paulette');
-    expect(html).toContain('Molco Pino Oregon 0,83 m × 2,00 m<br><small>Medida de hoja');
+    expect(html).toContain('Molco Pino Oregon 0,83 m × 2,00 m<br><small>Medida solicitada: 830 × 2000 mm (Hoja)');
     // Fábrica ve además la referencia de catálogo (el rango que se cobra).
     expect(html).toContain('Referencia de catálogo: MOL-O-3-A');
     expect(html).not.toContain('DESCUENTO');
@@ -220,7 +235,7 @@ describe('Plantillas', () => {
     const html = await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 326, montos, fecha: '2026-09-28T12:00:00.000Z' });
     const texto = textoVisible(html);
     const [sinTipo, , sinMedida] = html.split('<tr><td>').slice(1).map(textoVisible);
-    expect(texto).toContain('Medida solicitada: 0,835 × 2,00 m · medida de vano');
+    expect(texto).toContain('Medida solicitada: 835 × 2000 mm (Vano)');
     expect(texto).toContain('Puerta con cerradura');
     expect(texto).toContain('Observación: Abre hacia adentro');
     // Sin descripción escrita, el nombre es el producto con la medida pedida, no el rango del catálogo.
@@ -248,7 +263,7 @@ describe('Plantillas', () => {
     const html = await plantilla(cotizacion(), { tipo: 'nota', numero: 8, montos, fecha: '2026-09-28T12:00:00.000Z' });
     const texto = textoVisible(html);
     expect(texto).toContain('Puerta con cerradura');
-    expect(texto).toContain('Medida solicitada: 0,835 × 2,00 m · medida de hoja');
+    expect(texto).toContain('Medida solicitada: 835 × 2000 mm (Hoja)');
     expect(texto).toContain('Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m');
     expect(texto).not.toMatch(/margen|No especificado/i);
   });

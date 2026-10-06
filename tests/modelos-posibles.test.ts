@@ -338,9 +338,10 @@ describe('flujo de una coincidencia posible', () => {
     const confirmada = await s.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, items: [{ indice: 0, cambios: { modelo: 'Huilo Huilo' } }] });
     expect(confirmada.avisos).toBeUndefined();
     expect(confirmada.cotizacion.montos.lineas[0]).toMatchObject({ precioUnitario: 150_000, descripcionDocumento: 'Puerta especial' });
-    // Cambiar a otro modelo sí descarta lo manual.
+    // Cambiar a otro modelo descarta el precio manual, pero conserva la descripción personalizada.
     const otro = await s.ejecutar({ tipo: 'editar', id: q.id, actualizada: confirmada.cotizacion.actualizada, items: [{ indice: 0, cambios: { modelo: 'Panguipulli' } }] });
-    expect(otro.avisos?.[0]).toMatch(/se descartó su descripción de documento personalizada y su precio unitario manual/);
+    expect(otro.avisos?.[0]).toMatch(/se descartó su precio unitario manual/);
     expect(otro.cotizacion.montos.lineas[0].precioUnitario).toBe(155_000);
+    expect(otro.cotizacion.solicitudes[0].descripcion).toBe('Puerta especial');
   });
 });

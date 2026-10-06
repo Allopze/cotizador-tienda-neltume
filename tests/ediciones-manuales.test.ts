@@ -33,9 +33,8 @@ const cambiar = (indice: number, cambios: Record<string, unknown>) => ({
   name: 'modificar_cotizacion',
   input: { items: [{ indice, cambios }] },
 });
-const SOLO_DESCRIPCION = { descripcion: true, precio: false };
-const SOLO_PRECIO = { descripcion: false, precio: true };
-const AMBOS = { descripcion: true, precio: true };
+const SIN_DESCARTES = { precio: false };
+const SOLO_PRECIO = { precio: true };
 const EDICIONES = { margen: 0.3, descripcion: 'Puerta especial', observaciones: 'Confirmar apertura', tipoMedida: 'vano' } as const;
 
 const dirs: string[] = [];
@@ -152,7 +151,7 @@ describe('el chat conserva las ediciones manuales', () => {
     expect(r.avisos).toBeUndefined();
   });
 
-  it('un ítem distinto en el lugar de otro quitado no hereda el precio ni los textos', async () => {
+  it('un ítem nuevo en el lugar de otro quitado no hereda el precio ni los textos', async () => {
     const { q, chat } = await preparar();
     // Quita el primero y agrega otro modelo y medidas en su posición; el segundo sigue igual.
     const r = await chat(q, lista(item({ modelo: 'PANGUIPULLI', ancho: 0.82 }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
@@ -163,38 +162,35 @@ describe('el chat conserva las ediciones manuales', () => {
   });
 });
 
-describe('un cambio de modelo o madera descarta la descripción de documento y el precio manual', () => {
-  it('el aviso dice solo lo que se descartó', () => {
-    expect(avisoProductoCambiado(1, SOLO_DESCRIPCION)).toBe(
-      'El ítem 1 cambió de modelo o madera: se descartó su descripción de documento personalizada.',
-    );
+describe('un cambio de producto conserva la descripción y descarta el precio unitario manual', () => {
+  it('el aviso solo menciona el precio que se descartó', () => {
+    expect(avisoProductoCambiado(1, SIN_DESCARTES)).toBe('El ítem 1 cambió de modelo o madera.');
     expect(avisoProductoCambiado(2, SOLO_PRECIO)).toBe(
       'El ítem 2 cambió de modelo o madera: se descartó su precio unitario manual; se usa el precio de catálogo.',
     );
-    expect(avisoProductoCambiado(3, AMBOS)).toBe(
-      'El ítem 3 cambió de modelo o madera: se descartó su descripción de documento personalizada y su precio unitario manual; se usa el precio de catálogo.',
+    expect(avisoProductoCambiado(3, SOLO_PRECIO)).toBe(
+      'El ítem 3 cambió de modelo o madera: se descartó su precio unitario manual; se usa el precio de catálogo.',
     );
   });
 
   it.each([
-    ['sin descripción', null],
+    ['sin descripción nueva', null],
     ['repitiendo la anterior', 'Puerta especial'],
-  ])('lista completa, %s: se descarta con aviso y se conserva lo demás', async (_, descripcion) => {
+  ])('lista completa, %s: conserva el texto manual', async (_, descripcion) => {
     const { q, chat } = await preparar();
     const r = await chat(q, lista(item({ modelo: 'PANGUIPULLI', descripcion }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
     expect(r.cotizacion.solicitudes[0]).toMatchObject({
-      modelo: 'PANGUIPULLI', descripcion: null, margen: 0.3, observaciones: 'Confirmar apertura', tipoMedida: 'vano',
+      modelo: 'PANGUIPULLI', descripcion: 'Puerta especial', margen: 0.3, observaciones: 'Confirmar apertura', tipoMedida: 'vano',
     });
-    expect(r.cotizacion.montos.lineas[0].descripcionDocumento).toBeNull();
-    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION)]);
-    expect(r.cotizacion.historial.at(-1)?.texto).toContain(avisoProductoCambiado(1, SOLO_DESCRIPCION));
+    expect(r.cotizacion.montos.lineas[0].descripcionDocumento).toBe('Puerta especial');
+    expect(r.avisos).toBeUndefined();
   });
 
-  it('lista completa: un cambio de madera también la descarta', async () => {
+  it('lista completa: un cambio de madera tampoco borra la descripción', async () => {
     const { q, chat } = await preparar();
     const r = await chat(q, lista(item({ madera: 'LENGA' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
-    expect(r.cotizacion.solicitudes[0]).toMatchObject({ madera: 'LENGA', descripcion: null, margen: 0.3 });
-    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION)]);
+    expect(r.cotizacion.solicitudes[0]).toMatchObject({ madera: 'LENGA', descripcion: 'Puerta especial', margen: 0.3 });
+    expect(r.avisos).toBeUndefined();
   });
 
   it('lista completa: al cambiar de modelo con las mismas medidas se conserva el margen pero no el precio manual', async () => {
@@ -205,10 +201,10 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
     // El segundo tenía un precio manual de PANGUIPULLI: con otro modelo vuelve al precio de catálogo.
     expect(b).toMatchObject({ modelo: 'MOLCO', precioUnitario: null, observaciones: 'Entrega en obra' });
     expect(r.cotizacion.montos.lineas[1].precioUnitario).not.toBe(150_000);
-    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION), avisoProductoCambiado(2, SOLO_PRECIO)]);
+    expect(r.avisos).toEqual([avisoProductoCambiado(2, SOLO_PRECIO)]);
   });
 
-  it('lista completa: un ítem con descripción y precio manual pierde ambos y el aviso los nombra', async () => {
+  it('lista completa: un ítem con descripción y precio manual conserva la primera y descarta el segundo', async () => {
     const { q, servicio, chat } = await preparar();
     const conDescripcion = (
       await servicio.ejecutar({
@@ -217,18 +213,18 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
       })
     ).cotizacion;
     const r = await chat(conDescripcion, lista(item(), item({ ancho: 0.85 })));
-    expect(r.cotizacion.solicitudes[1]).toMatchObject({ modelo: 'MOLCO', descripcion: null, precioUnitario: null });
-    expect(r.avisos).toEqual([avisoProductoCambiado(2, AMBOS)]);
+    expect(r.cotizacion.solicitudes[1]).toMatchObject({ modelo: 'MOLCO', descripcion: 'Panguipulli especial', precioUnitario: null });
+    expect(r.avisos).toEqual([avisoProductoCambiado(2, SOLO_PRECIO)]);
   });
 
-  it('lista completa: un ítem distinto en la misma posición que repite la descripción anterior la pierde con aviso', async () => {
+  it('lista completa: aun sin pareja exacta conserva la descripción manual repetida por la IA', async () => {
     const { q, chat } = await preparar();
     // Cambian madera y medidas a la vez: no hay pareja, pero la IA copió la descripción del ítem que estaba ahí.
     const r = await chat(q, lista(item({ madera: 'LENGA', ancho: 0.85, descripcion: 'Puerta especial' }), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
     const [nuevo, b] = r.cotizacion.solicitudes;
-    expect([nuevo.descripcion ?? null, nuevo.margen ?? null, nuevo.precioUnitario ?? null, nuevo.observaciones ?? null]).toEqual([null, null, null, null]);
+    expect([nuevo.descripcion ?? null, nuevo.margen ?? null, nuevo.precioUnitario ?? null, nuevo.observaciones ?? null]).toEqual(['Puerta especial', null, null, null]);
     expect(b).toMatchObject({ precioUnitario: 150_000 });
-    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION)]);
+    expect(r.avisos).toBeUndefined();
   });
 
   it('lista completa: un ítem distinto en la misma posición con una descripción nueva la conserva', async () => {
@@ -246,16 +242,16 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
     expect(r.avisos).toBeUndefined();
   });
 
-  it('modificación parcial: se descarta con aviso; un cambio de medida o cantidad no', async () => {
+  it('modificación parcial: la descripción sobrevive al cambio de producto, no solo a medidas y cantidad', async () => {
     const { q, modificar } = await preparar();
     const medida = await modificar(q, cambiar(0, { ancho: 0.85, cantidad: 4 }));
     expect(medida.cotizacion.solicitudes[0]).toMatchObject({ ...EDICIONES, ancho: 0.85, cantidad: 4 });
     expect(medida.avisos).toBeUndefined();
     const modelo = await modificar(medida.cotizacion, cambiar(0, { modelo: 'PANGUIPULLI' }));
     expect(modelo.cotizacion.solicitudes[0]).toMatchObject({
-      modelo: 'PANGUIPULLI', descripcion: null, margen: 0.3, observaciones: 'Confirmar apertura', tipoMedida: 'vano',
+      modelo: 'PANGUIPULLI', descripcion: 'Puerta especial', margen: 0.3, observaciones: 'Confirmar apertura', tipoMedida: 'vano',
     });
-    expect(modelo.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION)]);
+    expect(modelo.avisos).toBeUndefined();
     // El precio manual del segundo ítem sobrevive a medidas y cantidad, pero no a un cambio de modelo.
     const medidas = await modificar(modelo.cotizacion, cambiar(1, { ancho: 0.8, cantidad: 2 }));
     expect(medidas.cotizacion.solicitudes[1]).toMatchObject({ precioUnitario: 150_000, ancho: 0.8, cantidad: 2 });
@@ -277,8 +273,8 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
       name: 'modificar_cotizacion',
       input: { items: [{ indice: 1, cambios: { modelo: 'MOLCO' } }], quitar: [0] },
     });
-    expect(r.cotizacion.solicitudes).toMatchObject([{ modelo: 'MOLCO', descripcion: null, precioUnitario: null }]);
-    expect(r.avisos).toEqual([avisoProductoCambiado(1, AMBOS)]);
+    expect(r.cotizacion.solicitudes).toMatchObject([{ modelo: 'MOLCO', descripcion: 'Panguipulli especial', precioUnitario: null }]);
+    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_PRECIO)]);
   });
 
   it('modificación parcial: un cambio de modelo reinicia el origen del modelo; uno de medidas no', async () => {
@@ -297,7 +293,7 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
     expect(r.avisos).toBeUndefined();
   });
 
-  it('edición directa: se descarta con aviso; medidas, cantidad y una corrección de mayúsculas no', async () => {
+  it('edición directa: conserva la descripción; solo descarta el precio manual al cambiar el producto', async () => {
     const { q, servicio } = await preparar();
     const editar = (desde: Cotizacion, cambios: Record<string, unknown>, indice = 0) =>
       servicio.ejecutar({ tipo: 'editar', id: desde.id, actualizada: desde.actualizada, items: [{ indice, cambios }] });
@@ -307,9 +303,9 @@ describe('un cambio de modelo o madera descarta la descripción de documento y e
     expect(r.avisos).toBeUndefined();
     r = await editar(r.cotizacion, { modelo: 'PANGUIPULLI' });
     expect(r.cotizacion.solicitudes[0]).toMatchObject({
-      modelo: 'PANGUIPULLI', descripcion: null, margen: 0.3, observaciones: 'Confirmar apertura', tipoMedida: 'vano',
+      modelo: 'PANGUIPULLI', descripcion: 'Puerta especial', margen: 0.3, observaciones: 'Confirmar apertura', tipoMedida: 'vano',
     });
-    expect(r.avisos).toEqual([avisoProductoCambiado(1, SOLO_DESCRIPCION)]);
+    expect(r.avisos).toBeUndefined();
     // El precio manual del segundo ítem sobrevive a medidas y cantidad, pero no a un cambio de modelo.
     r = await editar(r.cotizacion, { ancho: 0.8 }, 1);
     expect(r.cotizacion.solicitudes[1]).toMatchObject({ precioUnitario: 150_000 });
@@ -345,15 +341,15 @@ describe('un ítem incompleto con un alias de modelo', () => {
   }
   const CONSERVA = { modelo: 'PANGUIPULLI', madera: 'LENGA', descripcion: 'Puerta especial', precioUnitario: 120_000, observaciones: 'Confirmar apertura' };
 
-  it('edición directa: completar la madera no descarta la descripción ni el precio; otro modelo sí', async () => {
+  it('edición directa: completar la madera conserva los datos; otro modelo conserva el texto y descarta el precio', async () => {
     const editar = ({ q, servicio }: Awaited<ReturnType<typeof incompleto>>, cambios: Record<string, unknown>) =>
       servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, items: [{ indice: 0, cambios }] });
     const completa = await editar(await incompleto(), { madera: 'LENGA' });
     expect(completa.cotizacion.solicitudes[0]).toMatchObject(CONSERVA);
     expect(completa.avisos).toBeUndefined();
     const otro = await editar(await incompleto(), { modelo: 'MOLCO' });
-    expect(otro.cotizacion.solicitudes[0]).toMatchObject({ modelo: 'MOLCO', descripcion: null, precioUnitario: null });
-    expect(otro.avisos).toEqual([avisoProductoCambiado(1, AMBOS)]);
+    expect(otro.cotizacion.solicitudes[0]).toMatchObject({ modelo: 'MOLCO', descripcion: 'Puerta especial', precioUnitario: null });
+    expect(otro.avisos).toEqual([avisoProductoCambiado(1, SOLO_PRECIO)]);
   });
 
   it('modificación parcial: completar la madera no descarta la descripción ni el precio', async () => {

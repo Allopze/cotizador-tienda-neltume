@@ -68,9 +68,13 @@ describe('categorías de margen', () => {
 
   it('marcos, molduras y piezas T son de madera sólida salvo que sean enchapados, prepintados o finger', () => {
     // Regla negativa: una madera nueva del catálogo (Cedro) es sólida sin tocar el código.
-    for (const familia of ['MARCO', 'MOLDURA', 'PIEZAS_T'] as const)
+    for (const familia of ['MOLDURA', 'PIEZAS_T'] as const)
       for (const madera of ['LENGA', 'MARA', 'PINO OREGON', 'RAULI', 'CEDRO'])
         expect(categoria(accesorio(familia, madera))).toBe('accesorios_madera_solida');
+    for (const madera of ['MARA', 'RAULI', 'CEDRO'])
+      expect(categoria(accesorio('MARCO', madera))).toBe('accesorios_madera_solida');
+    expect(categoria(accesorio('MARCO', 'PINO OREGON'))).toBe('marcos_solidos_oregon');
+    expect(categoria(accesorio('MARCO', 'LENGA'))).toBe('marcos_solidos_lenga');
     // Un accesorio enchapado, prepintado o finger (salvo el marco finger, que tiene sus categorías) cae en «otros».
     expect(categoria(accesorio('MARCO', 'MARA ENCHAPADA'))).toBe('otros');
     expect(categoria(accesorio('PIEZAS_T', 'MARA', { tipo: 'PIEZAS T ENCHAPADAS' }))).toBe('otros');
@@ -113,6 +117,8 @@ describe('categorías de margen', () => {
       [producto({ madera: 'MARA ENCHAPADA', tipo: 'PUERTA ENCHAPADA' }), 'puertas_enchapadas_mara', 0.75],
       [accesorio('MARCO', 'PINO FINGER'), 'marcos_finger_sin_enchape', 1],
       [accesorio('MARCO', 'PINO FINGER ENCHAPADO MARA'), 'marcos_finger_enchapados', 0.75],
+      [accesorio('MARCO', 'PINO OREGON'), 'marcos_solidos_oregon', 0.85],
+      [accesorio('MARCO', 'LENGA'), 'marcos_solidos_lenga', 0.55],
       [accesorio('MARCO', 'RAULI'), 'accesorios_madera_solida', 0.25],
       [accesorio('PIEZAS_T', 'PINO OREGON'), 'accesorios_madera_solida', 0.25],
       [accesorio('MARCO', 'CEDRO'), 'accesorios_madera_solida', 0.25],
@@ -125,7 +131,7 @@ describe('categorías de margen', () => {
       expect(linea.margen).toBe(margen);
       expect(linea.precioUnitario).toBe(Math.round(100_000 * (1 + margen)));
     }
-    expect(Object.keys(MARGENES_INICIALES)).toHaveLength(9);
+    expect(Object.keys(MARGENES_INICIALES)).toHaveLength(11);
   });
 });
 
@@ -154,7 +160,7 @@ describe('reglas congeladas antes de las categorías nuevas', () => {
     expect(margenProducto(producto({ madera: 'RAULI' }), { ajuste: 0.4, margenes: {} })).toBe(0.4);
   });
 
-  it('el esquema de cotización acepta los siete márgenes antiguos y los nueve nuevos, y rechaza claves ajenas', () => {
+  it('el esquema de cotización acepta los siete márgenes antiguos y los once nuevos, y rechaza claves ajenas', () => {
     const base = cotizacionMinima();
     expect(cotizacionSchema.safeParse({ ...base, reglas: { ...REGLAS, margenes: LEGADO } }).success).toBe(true);
     expect(cotizacionSchema.safeParse({ ...base, reglas: { ...REGLAS, margenes: MARGENES_INICIALES } }).success).toBe(true);
@@ -186,9 +192,11 @@ describe('reglas congeladas antes de las categorías nuevas', () => {
       const enviada = { ...completa, reglas: { ...completa.reglas, margenes: LEGADO } };
       const valida = configuracionNegocioSchema.parse(enviada);
       expect(valida.reglas.margenes.puertas_solidas_rauli).toBe(MARGENES_INICIALES.puertas_solidas_rauli);
+      expect(valida.reglas.margenes.marcos_solidos_oregon).toBe(0.85);
+      expect(valida.reglas.margenes.marcos_solidos_lenga).toBe(0.55);
       expect(valida.reglas.margenes.accesorios_madera_solida).toBe(MARGENES_INICIALES.accesorios_madera_solida);
       const guardadaDeNuevo = guardarConfiguracionNegocio(enviada, db);
-      expect(Object.keys(guardadaDeNuevo.reglas.margenes)).toHaveLength(9);
+      expect(Object.keys(guardadaDeNuevo.reglas.margenes)).toHaveLength(11);
     } finally {
       db.close();
     }
@@ -518,7 +526,7 @@ describe('margen especial de la cotización en el servicio', () => {
     // Una cotización nueva sí toma la configuración vigente.
     const nueva = (await t.servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara y Raulí' })).cotizacion;
     expect(nueva.montos.lineas.map((l) => l.precioUnitario)).toEqual([155_000, 190_000]);
-    expect(Object.keys(nueva.reglas!.margenes!)).toHaveLength(9);
+    expect(Object.keys(nueva.reglas!.margenes!)).toHaveLength(11);
   });
 
   it('la migración agrega la columna sin tocar las cotizaciones existentes ni sus reglas congeladas', async () => {

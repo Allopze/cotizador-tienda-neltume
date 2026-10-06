@@ -8,6 +8,7 @@ import { CODIGO_FLETE, cantidadFlete, descripcionFlete, unitarioFlete } from '..
 import type { Linea, Montos } from '../negocio/precios';
 import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { fechaChilena } from '../negocio/vigencia';
+import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { chromiumPath } from './chromium';
 import { datosEmpresa } from './empresa';
@@ -39,12 +40,11 @@ function escuadria(medida: string, familia: Linea['producto']['familia']) {
 /** Medida exacta pedida, que la fábrica necesita aunque el producto cubra un rango. */
 export function medidaPedida(l: Linea): string | null {
   if (l.producto.familia === 'PUERTA') {
-    if (l.anchoSolicitado === null && l.altoSolicitado === null) return null;
-    return `${l.anchoSolicitado === null ? '—' : metrosTexto(l.anchoSolicitado)} × ${l.altoSolicitado === null ? '—' : metrosTexto(l.altoSolicitado)} m`;
+    return dimensionesEnMilimetros(l.anchoSolicitado, l.altoSolicitado, l.tipoMedida);
   }
   if (!l.medidaSolicitada && l.altoSolicitado === null) return null;
   const medida = escuadria(l.medidaSolicitada ?? l.producto.medida, l.producto.familia);
-  return `${medida} × ${l.altoSolicitado === null ? '—' : metrosTexto(l.altoSolicitado)} m`;
+  return `${medida} × ${l.altoSolicitado === null ? '—' : metrosTexto(l.altoSolicitado)} m${sufijoTipoMedida(l.tipoMedida)}`;
 }
 
 const MINUSCULAS = new Set(['a', 'de', 'del', 'y', 'kit']);
@@ -166,29 +166,29 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     : '';
   const firma = (rotulo: string) => `<div class="firma"><span></span>${rotulo}</div>`;
   const condiciones = [
-    'Valores puestos en fábrica.',
-    montos.flete
-      ? 'Incluye flete por despacho (detallado como línea del pedido).'
-      : 'Flete por despacho pendiente: valor según unidades de compra.',
     validez,
-    ...[
-      ['Forma de pago', empresa.condicionesPago],
-      ['Plazo de entrega', empresa.plazoEntrega],
-      ['Datos para transferencia', empresa.datosBancarios],
-    ].flatMap(([k, v]) => (v ? [`<b>${k}:</b> ${esc(v)}`] : [])),
+    ...(empresa.datosBancarios ? [`<b>Datos para transferencia:</b> ${esc(empresa.datosBancarios)}`] : []),
+    'No se considera: Instalación, pintura, barniz, protecciones metálicas, vidrios ni estructura para correderas.',
+    'No se consideran elementos no indicados en la cotización.',
+    'Valores puestos en fábrica.',
+    'Consultar valor despacho.',
+    ...(empresa.plazoEntrega ? [`<b>Plazo de entrega:</b> ${esc(empresa.plazoEntrega)}`] : []),
+    ...(empresa.condicionesPago ? [esc(empresa.condicionesPago)] : []),
   ];
-  // La cotización cierra con sus condiciones y la aceptación del cliente; la nota, con lo que fábrica
+  // La cotización cierra con la aceptación seguida de sus condiciones; la nota, con lo que fábrica
   // completa a mano: entrega comprometida, observaciones y recepción.
+  const bloqueCondiciones = `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>`;
   const cierre = nota
     ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="observaciones"><b>Observaciones:</b>${observaciones ? `<p>${esc(observaciones)}</p>` : ''}</div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
-    : `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}`;
+    : `${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}${bloqueCondiciones}`;
   // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
   const descripcion = (l: Linea) => {
     // El nombre ya lleva la medida pedida; solo una descripción escrita a mano necesita repetirla aparte.
-    const pedida = l.descripcionDocumento ? medidaPedida(l) : null;
+    const tipoMedidaExplicita = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano';
+    const pedida = l.descripcionDocumento || tipoMedidaExplicita ? medidaPedida(l) : null;
     const tipo = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano' ? `medida de ${l.tipoMedida}` : null;
     const detalles = [
-      pedida ? `Medida solicitada: ${pedida}${tipo ? ` · ${tipo}` : ''}` : tipo && `${tipo[0].toUpperCase()}${tipo.slice(1)}`,
+      pedida ? `Medida solicitada: ${pedida}` : tipo && `${tipo[0].toUpperCase()}${tipo.slice(1)}`,
       nota && `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`,
       l.observaciones && `Observación: ${l.observaciones}`,
     ];

@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { resolverItem } from '../src/catalogo/resolver';
 import { nombreCanonicoModelo } from '../src/catalogo/configuracion';
-import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
+import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import { cotizar, descripcionLinea, MARGENES_INICIALES, REGLAS } from '../src/negocio/precios';
+import { dimensionesEnMilimetros } from '../src/negocio/medidas';
+import { detectarTipoMedida } from '../src/negocio/items';
 import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 
@@ -121,22 +123,115 @@ describe('descripción de documento y observaciones de línea', () => {
     let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara' })).cotizacion;
     expect(q.montos.lineas[0]).toMatchObject({ descripcionDocumento: null, observaciones: null });
     q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada,
-      items: [{ indice: 0, cambios: { descripcion: 'Puerta prepintada especial' } }],
+      items: [{ indice: 0, cambios: { descripcion: 'Puerta principal sólida de lenga modelo X' } }],
     })).cotizacion;
-    const esperada = { descripcionDocumento: 'Puerta prepintada especial', margen: 0.55, precioUnitario: 155_000 };
+    const esperada = { descripcionDocumento: 'Puerta principal sólida de lenga modelo X', margen: 0.55, precioUnitario: 155_000 };
     expect(q.montos.lineas[0]).toMatchObject(esperada);
     expect(q.montos.lineas[0].producto.descripcion).toBe(puerta().descripcion);
     const recargada = () => new Almacen(dir).obtener(q.id)!;
     expect(recargada().montos.lineas[0]).toMatchObject(esperada);
     expect(recargada().montos.lineas[0].producto.descripcion).toBe(puerta().descripcion);
 
+    q = (await servicio.ejecutar({
+      tipo: 'editar', id: q.id, actualizada: q.actualizada, cantidades: [{ indice: 0, cantidad: 4 }],
+    })).cotizacion;
+    expect(q.solicitudes[0].descripcion).toBe('Puerta principal sólida de lenga modelo X');
+    expect(q.montos.lineas[0]).toMatchObject({ ...esperada, cantidad: 4 });
+    expect(recargada().solicitudes[0].descripcion).toBe('Puerta principal sólida de lenga modelo X');
+
     q = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5), fecha: '2026-09-30' })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
     const nota = recargada().nota!.montos.lineas[0];
-    expect(nota).toMatchObject({ descripcionDocumento: 'Puerta prepintada especial', precioUnitario: 100_000, margen: 0 });
+    expect(nota).toMatchObject({ descripcionDocumento: 'Puerta principal sólida de lenga modelo X', cantidad: 4, precioUnitario: 100_000, margen: 0 });
     expect(nota.producto.descripcion).toBe(puerta().descripcion);
+  });
+});
+
+describe('tipo estructurado de medida', () => {
+  it.each([
+    ['Puerta 90x210 medida de hoja', 'hoja', '900 × 2100 mm (Hoja)'],
+    ['Puerta 90x210 medida de vano', 'vano', '900 × 2100 mm (Vano)'],
+  ] as const)('detecta y conserva el tipo indicado en «%s»', async (mensaje, tipo, esperado) => {
+    expect(detectarTipoMedida(mensaje)).toBe(tipo);
+    expect(dimensionesEnMilimetros(0.9, 2.1, tipo)).toBe(esperado);
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-medida-'));
+    dirs.push(dir);
+    const solicitud: SolicitudItem = {
+      modelo: 'Huilo Huilo', madera: 'Mara', ancho: 0.9, alto: 2.1, medida: null,
+      cantidad: 1, tipoMedida: null,
+    };
+    const llm = {
+      interpretar: vi.fn().mockResolvedValue({
+        name: 'actualizar_cotizacion', input: { items: [solicitud], cliente: clienteVacio() },
+      }),
+    };
+    const catalogoConRango = {
+      ...catalogo,
+      productos: [{ ...puerta(), anchoMin: 0.8, anchoMax: 1, altoMin: 2, altoMax: 2.5 }],
+    };
+    const servicio = new Servicio(catalogoConRango, llm, new Almacen(dir));
+    const q = (await servicio.ejecutar({ tipo: 'chat', mensaje })).cotizacion;
+    expect(q.solicitudes[0].tipoMedida).toBe(tipo);
+    const linea = q.montos.lineas[0];
+    expect(dimensionesEnMilimetros(linea.anchoSolicitado, linea.altoSolicitado, linea.tipoMedida)).toBe(esperado);
+    expect(new Almacen(dir).obtener(q.id)?.solicitudes[0].tipoMedida).toBe(tipo);
+  });
+
+  it('no asigna un tipo cuando el pedido no lo especifica', () => {
+    expect(detectarTipoMedida('Puerta 90x210')).toBeNull();
+    expect(detectarTipoMedida('La medida corresponde al vano')).toBe('vano');
+    expect(detectarTipoMedida('Dimensiones de la hoja')).toBe('hoja');
+    expect(dimensionesEnMilimetros(0.9, 2.1, null)).toBe('900 × 2100 mm');
+  });
+});
+
+describe('orden persistido e historial de ítems', () => {
+  it('mueve C antes de A y B y conserva el orden al recargar SQLite', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-reordenar-'));
+    dirs.push(dir);
+    const solicitudes: SolicitudItem[] = [0.8, 0.81, 0.82].map((ancho, i) => ({
+      modelo: 'Huilo Huilo', madera: 'Mara', ancho, alto: 2.35, medida: null, cantidad: i + 1,
+    }));
+    const llm = {
+      interpretar: vi.fn().mockResolvedValue({
+        name: 'actualizar_cotizacion', input: { items: solicitudes, cliente: clienteVacio() },
+      }),
+    };
+    const servicio = new Servicio(catalogo, llm, new Almacen(dir));
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza los productos A, B y C' })).cotizacion;
+    expect(q.solicitudes.map((s) => s.ancho)).toEqual([0.8, 0.81, 0.82]);
+    q = (await servicio.ejecutar({ tipo: 'reordenar', id: q.id, actualizada: q.actualizada, desde: 2, hasta: 0 })).cotizacion;
+    expect(q.solicitudes.map((s) => s.ancho)).toEqual([0.82, 0.8, 0.81]);
+    expect(q.montos.lineas.map((l) => l.anchoSolicitado)).toEqual([0.82, 0.8, 0.81]);
+    const recargada = new Almacen(dir).obtener(q.id)!;
+    expect(recargada.solicitudes.map((s) => s.ancho)).toEqual([0.82, 0.8, 0.81]);
+    expect(recargada.montos.lineas.map((l) => l.anchoSolicitado)).toEqual([0.82, 0.8, 0.81]);
+  });
+
+  it('restaura y rehace el cambio de cantidad desde instantáneas guardadas', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-deshacer-'));
+    dirs.push(dir);
+    const solicitud: SolicitudItem = {
+      modelo: 'Huilo Huilo', madera: 'Mara', ancho: 0.8, alto: 2.35, medida: null, cantidad: 1,
+    };
+    const llm = {
+      interpretar: vi.fn().mockResolvedValue({
+        name: 'actualizar_cotizacion', input: { items: [solicitud], cliente: clienteVacio() },
+      }),
+    };
+    const servicio = new Servicio(catalogo, llm, new Almacen(dir));
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza una puerta' })).cotizacion;
+    const antes = structuredClone(q.solicitudes);
+    q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, cantidades: [{ indice: 0, cantidad: 3 }] })).cotizacion;
+    const despues = structuredClone(q.solicitudes);
+    expect(q.solicitudes[0].cantidad).toBe(3);
+    q = (await servicio.ejecutar({ tipo: 'restaurar_items', id: q.id, actualizada: q.actualizada, items: antes })).cotizacion;
+    expect(q.solicitudes[0].cantidad).toBe(1);
+    q = (await servicio.ejecutar({ tipo: 'restaurar_items', id: q.id, actualizada: q.actualizada, items: despues })).cotizacion;
+    expect(q.solicitudes[0].cantidad).toBe(3);
+    expect(new Almacen(dir).obtener(q.id)?.solicitudes[0].cantidad).toBe(3);
   });
 });
 

@@ -25,6 +25,7 @@ import {
 } from '@/negocio/pendientes';
 import { bonito } from '@/asistente/preguntas';
 import { metrosTexto } from '@/catalogo/escalones';
+import { dimensionesEnMilimetros } from '@/negocio/medidas';
 import type { CambiosEdicion, Despacho } from './contrato';
 import {
   ETIQUETA_CAMPO,
@@ -48,7 +49,7 @@ import { SeguimientoOperacion } from './seguimiento-operacion';
 import { pedirJSON } from './solicitud';
 
 export type Operacion =
-  'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'duplicar' | 'eliminar' | 'anular' | 'workflow';
+  'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'reordenar' | 'duplicar' | 'eliminar' | 'anular' | 'workflow';
 export interface AccionesPanel {
   emitir: () => void;
   aprobar: () => void;
@@ -58,6 +59,11 @@ export interface AccionesPanel {
   anular: () => void;
   /** Guarda cambios directos; `campo` identifica qué control muestra «Guardando…». */
   editar: (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
+  reordenar: (desde: number, hasta: number) => Promise<boolean>;
+  deshacer: () => Promise<boolean>;
+  rehacer: () => Promise<boolean>;
+  puedeDeshacer: boolean;
+  puedeRehacer: boolean;
   /** Datos de despacho de una cotización aprobada (antes de aprobar se editan con `editar`). */
   despacho: (cambios: Despacho, campo: string) => Promise<boolean>;
   /** Anula un pago registrado por error, previa confirmación. */
@@ -105,9 +111,11 @@ function entendido(s: Cotizacion['solicitudes'][number]) {
   };
   const medidas = s.medida
     ? `${s.medida}${s.alto !== null ? ` × ${medida(s.alto)} m` : ''}`
-    : s.ancho !== null || s.alto !== null
-      ? `${medida(s.ancho)} × ${medida(s.alto)} m`
-      : null;
+    : dimensionesEnMilimetros(
+        s.ancho === null ? null : metros(s.ancho),
+        s.alto === null ? null : metros(s.alto),
+        s.tipoMedida,
+      );
   return [s.madera && bonito(s.madera), medidas].filter(Boolean).join(' · ');
 }
 const textoFaltan = (campos: CampoPendiente[]) =>
@@ -274,6 +282,9 @@ export function CotizacionPanel({
   const ocupado = enCurso !== null;
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
+  const [arrastrado, setArrastrado] = useState<number | null>(null);
+  const [destinoArrastre, setDestinoArrastre] = useState<number | null>(null);
+  const indiceArrastrado = useRef<number | null>(null);
   /** Cotización en la que se pidió «Agregar flete»: muestra la línea en $0 hasta que se guarde un valor. */
   const [agregandoFlete, setAgregandoFlete] = useState<string | null>(null);
   const [transportistas, setTransportistas] = useState(['Starken', 'Transportes Paredes', 'Ignacio', 'Otro']);
@@ -289,6 +300,28 @@ export function CotizacionPanel({
       .catch(() => {});
     return () => abort.abort();
   }, []);
+  useEffect(() => {
+    const alPresionar = (evento: KeyboardEvent) => {
+      if (evento.defaultPrevented || evento.altKey || (!evento.metaKey && !evento.ctrlKey)) return;
+      const objetivo = evento.target;
+      if (
+        objetivo instanceof HTMLElement &&
+        (objetivo.isContentEditable || objetivo.matches('input, textarea, select'))
+      ) return;
+      const tecla = evento.key.toLowerCase();
+      const rehacer = (tecla === 'z' && evento.shiftKey) || (tecla === 'y' && evento.ctrlKey && !evento.metaKey);
+      const deshacer = tecla === 'z' && !evento.shiftKey;
+      if (rehacer && acciones.puedeRehacer) {
+        evento.preventDefault();
+        void acciones.rehacer();
+      } else if (deshacer && acciones.puedeDeshacer) {
+        evento.preventDefault();
+        void acciones.deshacer();
+      }
+    };
+    window.addEventListener('keydown', alPresionar);
+    return () => window.removeEventListener('keydown', alPresionar);
+  }, [acciones]);
   if (!actual)
     return (
       <section
@@ -366,6 +399,7 @@ export function CotizacionPanel({
       : actual?.montos.flete
         ? `Incluye flete por ${pesos(actual.montos.flete)} neto`
         : 'Despacho por confirmar';
+  const ocurrenciasItems = new Map<string, number>();
   return (
     <section id="panel-cotizacion" className="quote-panel" aria-label="Cotización en curso">
       <div className="panel-heading">
@@ -429,6 +463,30 @@ export function CotizacionPanel({
           <div className="items-heading-actions">
             <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
             {admiteCambios && (
+              <div className="quote-edit-history" aria-label="Historial de edición">
+                <button
+                  type="button"
+                  className="button secondary small"
+                  aria-keyshortcuts="Control+Z Meta+Z"
+                  title="Deshacer · Ctrl/Cmd + Z"
+                  disabled={!editable || !acciones.puedeDeshacer}
+                  onClick={() => void acciones.deshacer()}
+                >
+                  Deshacer
+                </button>
+                <button
+                  type="button"
+                  className="button secondary small"
+                  aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
+                  title="Rehacer · Ctrl/Cmd + Shift + Z"
+                  disabled={!editable || !acciones.puedeRehacer}
+                  onClick={() => void acciones.rehacer()}
+                >
+                  Rehacer
+                </button>
+              </div>
+            )}
+            {admiteCambios && (
               <button
                 type="button"
                 className="button secondary small"
@@ -468,6 +526,9 @@ export function CotizacionPanel({
               </thead>
               <tbody>
                 {actual.solicitudes.map((s, i) => {
+                  const identidad = JSON.stringify([s.modelo, s.madera, s.fuente]);
+                  const ocurrencia = ocurrenciasItems.get(identidad) ?? 0;
+                  ocurrenciasItems.set(identidad, ocurrencia + 1);
                   const { pendiente, linea } = lineaDe(actual, i);
                   const medida = linea && medidaPedida(linea);
                   const descripcion = descripcionItem(actual, i);
@@ -481,13 +542,54 @@ export function CotizacionPanel({
                     : [];
                   const sabido = pendiente ? entendido(s) : '';
                   return (
-                    <Fragment key={i}>
+                    <Fragment key={`${identidad}#${ocurrencia}`}>
                       <tr
                         id={`producto-${i}`}
-                        className={`${pendiente ? 'pending' : ''}${cambioVisual?.indices.includes(i) ? ' item-actualizado' : ''}`}
+                        draggable={editable && actual.solicitudes.length > 1}
+                        className={[
+                          pendiente ? 'pending' : '',
+                          cambioVisual?.indices.includes(i) ? 'item-actualizado' : '',
+                          editable && actual.solicitudes.length > 1 ? 'item-arrastrable' : '',
+                          arrastrado === i ? 'item-arrastrando' : '',
+                          destinoArrastre === i && arrastrado !== i ? 'item-destino-arrastre' : '',
+                        ].filter(Boolean).join(' ')}
+                        onDragStart={(evento) => {
+                          if (!editable) return;
+                          evento.dataTransfer.effectAllowed = 'move';
+                          evento.dataTransfer.setData('text/plain', String(i));
+                          indiceArrastrado.current = i;
+                          setArrastrado(i);
+                        }}
+                        onDragOver={(evento) => {
+                          const desde = indiceArrastrado.current;
+                          if (desde === null || desde === i) return;
+                          evento.preventDefault();
+                          evento.dataTransfer.dropEffect = 'move';
+                          setDestinoArrastre(i);
+                        }}
+                        onDrop={(evento) => {
+                          evento.preventDefault();
+                          const desde = indiceArrastrado.current ?? Number(evento.dataTransfer.getData('text/plain'));
+                          indiceArrastrado.current = null;
+                          if (Number.isInteger(desde) && desde !== i) void acciones.reordenar(desde, i);
+                          setArrastrado(null);
+                          setDestinoArrastre(null);
+                        }}
+                        onDragEnd={() => {
+                          indiceArrastrado.current = null;
+                          setArrastrado(null);
+                          setDestinoArrastre(null);
+                        }}
                       >
                         <td>
-                          <strong>{descripcion}</strong>
+                          <div className="quote-item-title">
+                            {editable && actual.solicitudes.length > 1 && (
+                              <span className="item-arrastre" aria-hidden="true" title="Arrastra para reordenar">
+                                ⠿
+                              </span>
+                            )}
+                            <strong>{descripcion}</strong>
+                          </div>
                           <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
                           {linea && <small>{referenciaCatalogo(linea)}</small>}
                           {/* Con la cotización editable, el margen se ve (y se cambia) en el bloque de edición de la línea. */}
@@ -592,15 +694,37 @@ export function CotizacionPanel({
                         </td>
                         {conQuitar && (
                           <td className="celda-acciones">
-                            <button
-                              type="button"
-                              className="remove"
-                              onClick={() => acciones.quitar(i)}
-                              disabled={!editable}
-                              aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
-                            >
-                              ×
-                            </button>
+                            <div className="item-acciones">
+                              <button
+                                type="button"
+                                className="move-item"
+                                onClick={() => void acciones.reordenar(i, i - 1)}
+                                disabled={!editable || i === 0}
+                                aria-label={`Mover ítem ${i + 1} hacia arriba: ${descripcion}`}
+                                title="Mover hacia arriba"
+                              >
+                                ↑
+                              </button>
+                              <button
+                                type="button"
+                                className="move-item"
+                                onClick={() => void acciones.reordenar(i, i + 1)}
+                                disabled={!editable || i === actual.solicitudes.length - 1}
+                                aria-label={`Mover ítem ${i + 1} hacia abajo: ${descripcion}`}
+                                title="Mover hacia abajo"
+                              >
+                                ↓
+                              </button>
+                              <button
+                                type="button"
+                                className="remove"
+                                onClick={() => acciones.quitar(i)}
+                                disabled={!editable}
+                                aria-label={`Quitar ítem ${i + 1}: ${descripcion}`}
+                              >
+                                ×
+                              </button>
+                            </div>
                           </td>
                         )}
                       </tr>

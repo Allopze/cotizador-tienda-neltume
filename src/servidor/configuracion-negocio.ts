@@ -60,6 +60,8 @@ export const configuracionNegocioSchema = z
           puertas_enchapadas_mara: z.number().finite().min(0).max(5),
           marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
           marcos_finger_enchapados: z.number().finite().min(0).max(5),
+          marcos_solidos_oregon: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.marcos_solidos_oregon),
+          marcos_solidos_lenga: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.marcos_solidos_lenga),
           accesorios_madera_solida: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.accesorios_madera_solida),
           otros: z.number().finite().min(0).max(5),
         }).strict(),
@@ -80,7 +82,7 @@ export interface ConfiguracionNegocio {
 
 const leerEntorno = (clave: string) => process.env[clave]?.trim() || null;
 
-export const CORREO_PREDETERMINADO_NEGOCIO = 'Neltume.co@gmail.com';
+export const CORREO_PREDETERMINADO_NEGOCIO = 'neltume.co@gmail.com';
 
 export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
   return {

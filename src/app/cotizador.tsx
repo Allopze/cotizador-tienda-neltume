@@ -9,6 +9,7 @@ import {
   type Despacho,
   type Mensaje,
 } from '@/negocio/estado';
+import type { SolicitudItem } from '@/catalogo/tipos';
 import { pesos } from '@/negocio/precios';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
@@ -82,6 +83,18 @@ interface NotaLocal {
   texto: string;
   tipo?: 'cambios';
 }
+interface HistorialEdicion {
+  id: string | null;
+  version: string | null;
+  deshacer: SolicitudItem[][];
+  rehacer: SolicitudItem[][];
+}
+interface EstadoHistorialEdicion {
+  id: string | null;
+  deshacer: number;
+  rehacer: number;
+}
+const MAX_ACCIONES_HISTORIAL = 30;
 
 /** Id propuesto para el borrador que cree el próximo mensaje (sin contexto seguro no hay UUID). */
 const idNuevo = () =>
@@ -99,6 +112,40 @@ export function Cotizador({
 }) {
   const router = useRouter();
   const [actual, setActual] = useState<Cotizacion | null>(null);
+  const actualRef = useRef(actual);
+  const historialEdicion = useRef<HistorialEdicion>({ id: null, version: null, deshacer: [], rehacer: [] });
+  const [estadoHistorialEdicion, setEstadoHistorialEdicion] = useState<EstadoHistorialEdicion>({
+    id: null,
+    deshacer: 0,
+    rehacer: 0,
+  });
+  function publicarHistorialEdicion(historial: HistorialEdicion) {
+    historialEdicion.current = historial;
+    setEstadoHistorialEdicion({
+      id: historial.id,
+      deshacer: historial.deshacer.length,
+      rehacer: historial.rehacer.length,
+    });
+  }
+  function vaciarHistorialEdicion(id: string | null = null) {
+    publicarHistorialEdicion({ id, version: null, deshacer: [], rehacer: [] });
+  }
+  function registrarCambioItems(anterior: Cotizacion, siguiente: Cotizacion) {
+    if (JSON.stringify(anterior.solicitudes) === JSON.stringify(siguiente.solicitudes)) return;
+    const vigente = historialEdicion.current;
+    const base = vigente.id === anterior.id
+      ? vigente
+      : { id: anterior.id, version: anterior.actualizada, deshacer: [], rehacer: [] };
+    publicarHistorialEdicion({
+      id: siguiente.id,
+      version: siguiente.actualizada,
+      deshacer: [...base.deshacer, structuredClone(anterior.solicitudes)].slice(-MAX_ACCIONES_HISTORIAL),
+      rehacer: [],
+    });
+  }
+  useEffect(() => {
+    actualRef.current = actual;
+  }, [actual]);
   const [asistenteContraido, setAsistenteContraido] = useState(false);
   const [vistaMobile, setVistaMobile] = useState<'pedido' | 'cotizacion'>(abrirId ? 'cotizacion' : 'pedido');
   const [agregandoProducto, setAgregandoProducto] = useState(false);
@@ -169,7 +216,14 @@ export function Cotizador({
   const recargarActual = useCallback(
     async (id: string, forzar = false) => {
       const q = await leerDetalle(id);
-      if (forzar || !ocupadoRef.current) setActual((prev) => (prev?.id === id ? q : prev));
+      if (forzar || !ocupadoRef.current) {
+        const previa = actualRef.current;
+        if (previa?.id === id && previa.actualizada !== q.actualizada) {
+          historialEdicion.current = { id, version: null, deshacer: [], rehacer: [] };
+          setEstadoHistorialEdicion({ id, deshacer: 0, rehacer: 0 });
+        }
+        setActual((prev) => (prev?.id === id ? q : prev));
+      }
       return q;
     },
     [leerDetalle],
@@ -311,6 +365,7 @@ export function Cotizador({
   /** Abre una cotización por id (detalle completo) y lleva la vista a ella. */
   async function abrirPorId(id: string, enfocarTitulo = true) {
     const q = await leerDetalle(id);
+    vaciarHistorialEdicion(q.id);
     setActual(q);
     setSeleccion(null);
     setNotaLocal(null);
@@ -385,7 +440,10 @@ export function Cotizador({
   }
 
   /** Aplica un resultado: cotización nueva (puede ser otra: revisión o duplicado), avisos y cambios. */
-  function recibir(d: Resultado, opciones: { anunciar?: boolean; previa?: Cotizacion | null } = {}) {
+  function recibir(
+    d: Resultado,
+    opciones: { anunciar?: boolean; previa?: Cotizacion | null; sinHistorial?: boolean } = {},
+  ) {
     const q = d.cotizacion,
       previa = opciones.previa ?? actual;
     if (d.efimera) {
@@ -427,7 +485,19 @@ export function Cotizador({
     if (d.eliminada) {
       setActual(null);
       setNotaLocal(null);
-    } else setActual(q);
+      vaciarHistorialEdicion(null);
+    } else {
+      if (!previa || previa.id !== q.id) vaciarHistorialEdicion(q.id);
+      else if (opciones.sinHistorial) {
+        const historial = historialEdicion.current;
+        if (historial.id === q.id) publicarHistorialEdicion({ ...historial, version: q.actualizada });
+      } else if (JSON.stringify(previa.solicitudes) !== JSON.stringify(q.solicitudes)) registrarCambioItems(previa, q);
+      else {
+        const historial = historialEdicion.current;
+        if (historial.id === q.id) publicarHistorialEdicion({ ...historial, version: q.actualizada });
+      }
+      setActual(q);
+    }
     if (d.avisos?.length) avisar('info', d.avisos.join(' '));
     if (
       previa &&
@@ -452,6 +522,7 @@ export function Cotizador({
     // El borrador se crea recién con el primer mensaje: evita acumular cotizaciones vacías.
     // El texto escrito se conserva, pero se señala que venía de otra conversación.
     setTextoConservado(!!mensaje.trim() && (!!actual || charla.length > 0 || !!seleccion));
+    vaciarHistorialEdicion(null);
     setActual(null);
     setAsistenteContraido(false);
     setVistaMobile('pedido');
@@ -480,12 +551,17 @@ export function Cotizador({
   }
 
   /** Ejecuta una acción sobre la cotización abierta con su versión (`actualizada`). */
-  async function ejecutar(op: Operacion, cuerpo: Record<string, unknown>, q = actual) {
+  async function ejecutar(
+    op: Operacion,
+    cuerpo: Record<string, unknown>,
+    q = actual,
+    opciones: { sinHistorial?: boolean } = {},
+  ) {
     if (!q) return false;
     setEnCurso(op);
     limpiar('operacion');
     try {
-      recibir(await peticion({ ...cuerpo, id: q.id }), { previa: q });
+      recibir(await peticion({ ...cuerpo, id: q.id }), { previa: q, ...opciones });
       return true;
     } catch (e) {
       fallo(e, q);
@@ -551,7 +627,47 @@ export function Cotizador({
     }
   }
 
+  async function aplicarHistorial(direccion: 'deshacer' | 'rehacer') {
+    const q = actual;
+    const historial = historialEdicion.current;
+    if (!q || ocupado || historial.id !== q.id || historial.version !== q.actualizada) return false;
+    const pila = direccion === 'deshacer' ? historial.deshacer : historial.rehacer;
+    const objetivo = pila.at(-1);
+    if (!objetivo) return false;
+    const actualGuardado = structuredClone(q.solicitudes);
+    const ok = await ejecutar(
+      'editar',
+      { tipo: 'restaurar_items', ...versionDe(q), items: structuredClone(objetivo) },
+      q,
+      { sinHistorial: true },
+    );
+    if (!ok) return false;
+    const actualizada = historialEdicion.current;
+    publicarHistorialEdicion({
+      id: q.id,
+      version: actualizada.version,
+      deshacer:
+        direccion === 'deshacer'
+          ? actualizada.deshacer.slice(0, -1)
+          : [...actualizada.deshacer, actualGuardado].slice(-MAX_ACCIONES_HISTORIAL),
+      rehacer:
+        direccion === 'deshacer'
+          ? [...actualizada.rehacer, actualGuardado].slice(-MAX_ACCIONES_HISTORIAL)
+          : actualizada.rehacer.slice(0, -1),
+    });
+    return true;
+  }
+
   const acciones: AccionesPanel = {
+    puedeDeshacer: estadoHistorialEdicion.id === actual?.id && estadoHistorialEdicion.deshacer > 0,
+    puedeRehacer: estadoHistorialEdicion.id === actual?.id && estadoHistorialEdicion.rehacer > 0,
+    deshacer: () => aplicarHistorial('deshacer'),
+    rehacer: () => aplicarHistorial('rehacer'),
+    async reordenar(desde, hasta) {
+      const q = actual;
+      if (!q || ocupado) return false;
+      return ejecutar('reordenar', { tipo: 'reordenar', desde, hasta, ...versionDe(q) }, q);
+    },
     async flujo(accion) {
       const q = actual;
       if (!q || ocupado) return false;

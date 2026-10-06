@@ -1,18 +1,78 @@
 import { test, expect, type Page } from '@playwright/test';
 import { iniciarSesion } from './login-e2e';
 
-async function agregarPuerta(page: Page) {
-  await page.getByRole('button', { name: 'Agregar producto del catálogo' }).click();
+async function agregarPuerta(page: Page, cantidad = 3, ancho = '0.8') {
+  await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
   await dialogo.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
   await dialogo.locator('.producto-resultados button').first().click();
-  await dialogo.getByLabel('Cantidad', { exact: true }).fill('3');
-  await dialogo.getByLabel('Ancho (m)', { exact: true }).fill('0.8');
+  await dialogo.getByLabel('Cantidad', { exact: true }).fill(String(cantidad));
+  await dialogo.getByLabel('Ancho (m)', { exact: true }).fill(ancho);
   await dialogo.getByLabel('La medida corresponde a').selectOption('hoja');
   await dialogo.getByRole('button', { name: 'Agregar al pedido' }).click();
   await expect(dialogo).toHaveCount(0);
-  await expect(page.getByLabel('Cotización en curso').getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
+  await expect(page.getByLabel('Cotización en curso').getByText('HUIL-O-3-B', { exact: true }).first()).toBeVisible();
 }
+
+test('reordena con controles accesibles, persiste el orden y deshace/rehace con teclado', async ({ page }) => {
+  const erroresConsola: string[] = [];
+  page.on('console', (mensaje) => {
+    if (mensaje.type() === 'error') erroresConsola.push(mensaje.text());
+  });
+  page.on('pageerror', (error) => erroresConsola.push(error.message));
+  await iniciarSesion(page);
+  const nueva = page.getByRole('button', { name: 'Nueva cotización' });
+  if (await nueva.count()) await nueva.click();
+  await agregarPuerta(page, 1, '0.8');
+  await agregarPuerta(page, 2, '0.81');
+  await agregarPuerta(page, 3, '0.82');
+  const panel = page.getByLabel('Cotización en curso');
+  const cantidades = async () =>
+    Promise.all(
+      [0, 1, 2].map((i) =>
+        panel.locator(`#producto-${i} .celda-cantidad .campo-valor-boton > span:first-child`).innerText(),
+      ),
+  );
+  await expect.poll(cantidades).toEqual(['1', '2', '3']);
+
+  await panel.locator('#producto-2').evaluate((origen) => {
+    const destino = document.querySelector('#producto-0');
+    if (!destino) throw new Error('No se encontró el destino del arrastre.');
+    const dataTransfer = new DataTransfer();
+    origen.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer }));
+    destino.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, dataTransfer }));
+    destino.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer }));
+    origen.dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer }));
+  });
+  await expect.poll(cantidades).toEqual(['3', '1', '2']);
+  await panel.getByRole('button', { name: /Mover ítem 2 hacia arriba/ }).click();
+  await expect.poll(cantidades).toEqual(['1', '3', '2']);
+  await expect(panel.getByRole('button', { name: 'Deshacer', exact: true })).toBeEnabled();
+  await panel.getByRole('button', { name: 'Deshacer', exact: true }).click();
+  await expect.poll(cantidades).toEqual(['3', '1', '2']);
+  await page.keyboard.press('Control+z');
+  await expect.poll(cantidades).toEqual(['1', '2', '3']);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(cantidades).toEqual(['3', '1', '2']);
+  await page.keyboard.press('Control+Shift+z');
+  await expect.poll(cantidades).toEqual(['1', '3', '2']);
+
+  await panel.locator('#producto-0 .celda-cantidad .campo-valor-boton').click();
+  await panel.getByLabel(/^Cantidad de/).fill('4');
+  await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
+  await expect.poll(cantidades).toEqual(['4', '3', '2']);
+  await page.keyboard.press('Control+z');
+  await expect.poll(cantidades).toEqual(['1', '3', '2']);
+  await page.keyboard.press('Control+y');
+  await expect.poll(cantidades).toEqual(['4', '3', '2']);
+
+  const listado = await (await page.request.get('/api/accion?porPagina=1')).json();
+  const id = listado.cotizaciones[0].id as string;
+  await page.goto(`/?cotizacion=${encodeURIComponent(id)}`);
+  await expect(panel.locator('#producto-0')).toBeVisible();
+  await expect.poll(cantidades).toEqual(['4', '3', '2']);
+  expect(erroresConsola).toEqual([]);
+});
 
 test('desktop: catálogo, edición compacta, scroll de página y resumen persistente', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });

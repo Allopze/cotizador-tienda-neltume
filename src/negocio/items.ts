@@ -1,5 +1,6 @@
 import { metros, normalizarMedida } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
+import type { TipoMedida } from './medidas';
 
 /** Modelo y madera normalizados para comparar; vacío si el ítem no los trae. */
 export interface ProductoItem {
@@ -49,14 +50,24 @@ const cambioDeProducto = (antes: ProductoItem, despues: ProductoItem) =>
   (antes.modelo !== '' && despues.modelo !== '' && antes.modelo !== despues.modelo) ||
   (antes.madera !== '' && despues.madera !== '' && antes.madera !== despues.madera);
 
+/** Detecta únicamente una declaración explícita sobre qué dimensión se entregó; las menciones ambiguas no bastan. */
+export function detectarTipoMedida(texto: string | null | undefined): Exclude<TipoMedida, 'no_especificado' | null | undefined> | null {
+  if (!texto) return null;
+  const normalizado = texto.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es-CL');
+  const coincidencia = normalizado.match(
+    /\b(?:medidas?|dimensiones?)\s+(?:(?:corresponden?|son|es)\s+)?(?:(?:de|del|a|al|para)\s+)?(?:(?:la|el)\s+)?(hoja|vano)\b/,
+  );
+  return (coincidencia?.[1] as 'hoja' | 'vano' | undefined) ?? null;
+}
+
 export interface Descartes {
-  descripcion: boolean;
   precio: boolean;
 }
 
 /**
- * La descripción de documento y el precio unitario manual eran del producto anterior: si cambia el modelo o la
- * madera se quitan de `despues`, salvo que el mismo cambio traiga otro valor. Devuelve lo descartado, o null.
+ * La descripción de documento es una personalización que debe prevalecer aunque cambie el producto. El precio
+ * unitario manual sí pertenece a la referencia anterior: se quita al cambiar modelo o madera, salvo que el
+ * mismo cambio traiga un precio nuevo. Devuelve lo descartado, o null.
  */
 export function descartarDelProducto(
   antes: SolicitudItem,
@@ -64,23 +75,16 @@ export function descartarDelProducto(
   producto: { antes: ProductoItem; despues: ProductoItem },
 ): Descartes | null {
   if (!cambioDeProducto(producto.antes, producto.despues)) return null;
-  const descartes = {
-    descripcion: !!antes.descripcion && despues.descripcion === antes.descripcion,
-    precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario,
-  };
-  if (!descartes.descripcion && !descartes.precio) return null;
-  if (descartes.descripcion) despues.descripcion = null;
+  const descartes = { precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario };
+  if (!descartes.precio) return null;
   if (descartes.precio) despues.precioUnitario = null;
   return descartes;
 }
 
-export const avisoProductoCambiado = (numero: number, { descripcion, precio }: Descartes) =>
-  `El ítem ${numero} cambió de modelo o madera: se descartó ${[
-    descripcion && 'su descripción de documento personalizada',
-    precio && 'su precio unitario manual',
-  ]
-    .filter(Boolean)
-    .join(' y ')}${precio ? '; se usa el precio de catálogo' : ''}.`;
+export const avisoProductoCambiado = (numero: number, { precio }: Descartes) =>
+  precio
+    ? `El ítem ${numero} cambió de modelo o madera: se descartó su precio unitario manual; se usa el precio de catálogo.`
+    : `El ítem ${numero} cambió de modelo o madera.`;
 
 /**
  * Devuelve los ítems que propone la IA con las ediciones manuales del ítem anterior que corresponde. La IA no ve
@@ -129,7 +133,7 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
     const { antes, despues } = par(i, j);
     return !cambioDeProducto(antes, despues);
   });
-  // 4. Misma posición con otro modelo o madera pero las mismas medidas: hereda, salvo descripción y precio manual.
+  // 4. Misma posición con otro modelo o madera pero las mismas medidas: hereda los textos y descarta solo el precio.
   emparejar('misma', (i, j) => medidasNuevas[i] === medidasPrevias[j]);
   const avisos: string[] = [];
   const items = nuevos.map((nuevo, i) => {
@@ -141,7 +145,7 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
         i < previos.length
           ? descartarDelProducto(previos[i], item, par(i, i))
           : null;
-      if (!descartes) return nuevo;
+      if (!descartes) return item;
       avisos.push(avisoProductoCambiado(i + 1, descartes));
       return item;
     }

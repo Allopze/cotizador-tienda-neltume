@@ -4,6 +4,7 @@ import { etiquetaDescuento } from '@/negocio/descuento-cantidad';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
 import { cantidadFlete, descripcionFlete, unitarioFlete } from '@/negocio/estado';
 import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
+import { dimensionesEnMilimetros, sufijoTipoMedida } from '@/negocio/medidas';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
 
@@ -137,15 +138,11 @@ export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   proyecto: 'Proyecto',
 };
 
-/** «Medida pedida: 0,835 × 2,36 m» o «Escuadría 2X4 · 2,10 m»: hasta milímetros, tal como se pidió. */
+/** Medida exacta pedida, con (Hoja) o (Vano) solo cuando ese dato se indicó. */
 export function medidaPedida(l: Linea) {
-  const tipo = l.tipoMedida === 'hoja' ? ' · medida de hoja' : l.tipoMedida === 'vano' ? ' · medida de vano' : '';
   if (l.medidaSolicitada)
-    return `Escuadría ${l.medidaSolicitada}${l.altoSolicitado ? ` · ${metrosTexto(l.altoSolicitado)} m` : ''}${tipo}`;
-  if (l.anchoSolicitado && l.altoSolicitado)
-    return `Medida pedida: ${metrosTexto(l.anchoSolicitado)} × ${metrosTexto(l.altoSolicitado)} m${tipo}`;
-  if (l.altoSolicitado) return `Largo pedido: ${metrosTexto(l.altoSolicitado)} m${tipo}`;
-  return null;
+    return `Escuadría ${l.medidaSolicitada}${l.altoSolicitado ? ` · ${metrosTexto(l.altoSolicitado)} m` : ''}${sufijoTipoMedida(l.tipoMedida)}`;
+  return dimensionesEnMilimetros(l.anchoSolicitado, l.altoSolicitado, l.tipoMedida);
 }
 
 /**

@@ -34,6 +34,7 @@ import { contarPuertas, descuentoAutomatico, descuentoEsManual, textoPuertas } f
 import {
   avisoProductoCambiado,
   claveMedida,
+  detectarTipoMedida,
   descartarDelProducto,
   fusionarItems,
   reiniciarOrigenModelo,
@@ -102,6 +103,8 @@ export type Accion =
       contexto?: Mensaje[];
     }
   | { tipo: 'quitar'; id: string; actualizada: string; indice: number }
+  | { tipo: 'reordenar'; id: string; actualizada: string; desde: number; hasta: number }
+  | { tipo: 'restaurar_items'; id: string; actualizada: string; items: SolicitudItem[] }
   | {
       tipo: 'agregar_producto';
       id?: string;
@@ -628,9 +631,11 @@ export class Servicio {
   }
 
   /** Cantidades no enteras o fuera de rango del modelo quedan pendientes, con aviso. */
-  private sanearSolicitudes(items: SolicitudItem[]) {
+  private sanearSolicitudes(items: SolicitudItem[], mensaje?: string) {
     const avisos: string[] = [];
     const solicitudes = items.map((s) => {
+      const tipoMedida = detectarTipoMedida(s.fuente) ?? (items.length === 1 ? detectarTipoMedida(mensaje) : null);
+      if (tipoMedida) s = { ...s, tipoMedida };
       if (s.cantidad === null || (Number.isInteger(s.cantidad) && s.cantidad >= 1 && s.cantidad <= 10000))
         return s;
       avisos.push(
@@ -716,6 +721,10 @@ export class Servicio {
           );
           return { cotizacion: destino, ...(cambios ? { cambios } : {}) };
         });
+      case 'reordenar':
+        return this.reordenar(accion);
+      case 'restaurar_items':
+        return this.restaurarItems(accion);
       case 'editar':
         return this.editar(accion);
       case 'agregar_producto':
@@ -862,6 +871,48 @@ export class Servicio {
         textoCambios(cambios, cambioDescuento(descuentoAntes, destino)),
       );
       return { cotizacion: destino, cambios, ...(avisos.length ? { avisos } : {}) };
+    });
+  }
+
+  /** Reordena el borrador: solicitudes, líneas persistidas y el documento se recalculan en el mismo orden. */
+  private reordenar(accion: Extract<Accion, { tipo: 'reordenar' }>) {
+    return this.almacen.transaccion((u): Resultado => {
+      const q = this.obtener(u, accion.id);
+      this.exigirEditable(q);
+      this.verificarVersion(q, accion.actualizada);
+      if (
+        !Number.isInteger(accion.desde) || !Number.isInteger(accion.hasta) ||
+        accion.desde < 0 || accion.hasta < 0 ||
+        accion.desde >= q.solicitudes.length || accion.hasta >= q.solicitudes.length
+      ) throw new ErrorNoEncontrado('No se encontró la posición del ítem.');
+      if (accion.desde === accion.hasta) return { cotizacion: q };
+      const antes = structuredClone(q.solicitudes);
+      const destino = this.abrirEdicion(q, u);
+      const [item] = destino.solicitudes.splice(accion.desde, 1);
+      destino.solicitudes.splice(accion.hasta, 0, item);
+      this.recalcular(destino);
+      u.guardar(destino);
+      const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
+      u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, ['Se reordenaron los productos']));
+      return { cotizacion: destino, ...(cambios ? { cambios } : {}) };
+    });
+  }
+
+  /** Restaura una instantánea de ítems para Deshacer/Rehacer sin perder descripciones ni atributos manuales. */
+  private restaurarItems(accion: Extract<Accion, { tipo: 'restaurar_items' }>) {
+    return this.almacen.transaccion((u): Resultado => {
+      const q = this.obtener(u, accion.id);
+      this.exigirEditable(q);
+      this.verificarVersion(q, accion.actualizada);
+      if (accion.items.length > 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
+      const antes = structuredClone(q.solicitudes);
+      const destino = this.abrirEdicion(q, u);
+      destino.solicitudes = accion.items.map((item) => sanearTextos(structuredClone(item)));
+      const avisos = this.recalcular(destino);
+      u.guardar(destino);
+      const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
+      u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, ['Se restauró el estado de los productos']));
+      return { cotizacion: destino, ...(cambios ? { cambios } : {}), ...(avisos.length ? { avisos } : {}) };
     });
   }
 
@@ -1948,7 +1999,7 @@ export class Servicio {
             );
         }
       }
-      const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items);
+      const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items, accion.mensaje);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
       const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];
       const extra = avisos.length ? { avisos } : {};

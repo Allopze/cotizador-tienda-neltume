@@ -190,6 +190,9 @@ export const cotizacionSchema = z.looseObject({
         puertas_enchapadas_mara: z.number().finite().min(0).max(5),
         marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
         marcos_finger_enchapados: z.number().finite().min(0).max(5),
+        // Categorías incorporadas después; las cotizaciones antiguas siguen usando su «otros» congelado.
+        marcos_solidos_oregon: z.number().finite().min(0).max(5).optional(),
+        marcos_solidos_lenga: z.number().finite().min(0).max(5).optional(),
         accesorios_madera_solida: z.number().finite().min(0).max(5).optional(),
         otros: z.number().finite().min(0).max(5),
       }).strict().optional(),

@@ -54,6 +54,22 @@ const tarifaStarkenSchema = z
     firma: z.string().min(20).max(100),
   })
   .strict();
+const solicitudRestaurarSchema = z.object({
+  modelo: z.string().max(300).nullable(),
+  madera: z.string().max(300).nullable(),
+  ancho: z.number().finite().nullable(),
+  alto: z.number().finite().nullable(),
+  medida: z.string().max(300).nullable(),
+  cantidad: z.number().int().min(1).max(10000).nullable(),
+  precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
+  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+  descripcion: texto(300),
+  observaciones: texto(1000),
+  modeloOriginal: texto(300),
+  coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
+  fuente: texto(300),
+}).strict();
 const accionSchema = z.discriminatedUnion('tipo', [
   z
     .object({
@@ -100,6 +116,19 @@ const accionSchema = z.discriminatedUnion('tipo', [
       indice: z.number().int().nonnegative(),
     })
     .strict(),
+  z.object({
+    tipo: z.literal('reordenar'),
+    id: z.uuid(),
+    actualizada: version,
+    desde: z.number().int().nonnegative().max(99),
+    hasta: z.number().int().nonnegative().max(99),
+  }).strict(),
+  z.object({
+    tipo: z.literal('restaurar_items'),
+    id: z.uuid(),
+    actualizada: version,
+    items: z.array(solicitudRestaurarSchema).max(100),
+  }).strict(),
   z
     .object({
       tipo: z.literal('emitir'),

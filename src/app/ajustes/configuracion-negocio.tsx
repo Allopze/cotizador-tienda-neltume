@@ -53,6 +53,8 @@ const ETIQUETAS_MARGEN: [string, string][] = [
   ['puertas_enchapadas_mara', 'Puertas enchapadas Mara'],
   ['marcos_finger_sin_enchape', 'Marcos Pino Finger sin enchape'],
   ['marcos_finger_enchapados', 'Marcos Pino Finger enchapados'],
+  ['marcos_solidos_oregon', 'Marcos sólidos Pino Oregón'],
+  ['marcos_solidos_lenga', 'Marcos sólidos Lenga'],
   ['accesorios_madera_solida', 'Marcos, molduras y piezas T de madera sólida'],
   ['otros', 'Otros productos (último recurso)'],
 ];

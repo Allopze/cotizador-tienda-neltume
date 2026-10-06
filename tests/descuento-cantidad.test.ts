@@ -789,7 +789,7 @@ describe('migración v15', () => {
 });
 
 describe('con márgenes y precios manuales', () => {
-  // Puertas: 100.000 + 85 % = 185.000; marco: 20.000 + 25 % = 25.000 (márgenes iniciales de la categoría).
+  // Puertas: 100.000 + 85 % = 185.000; marco Pino Oregón: 20.000 + 85 % = 37.000.
   const pedido = [puertas(6), { ...puertas(4), ancho: 0.83 }, marcos(2)];
   const precios = (q: Cotizacion) => q.montos.lineas.map((l) => l.precioUnitario);
 
@@ -797,7 +797,7 @@ describe('con márgenes y precios manuales', () => {
     const { conPedido, editar, ultimo } = await setup();
     let q = await conPedido(pedido);
     expect([precios(q), q.descuento, contarPuertas(q.montos.lineas)]).toEqual([
-      [185_000, 185_000, 25_000],
+      [185_000, 185_000, 37_000],
       5,
       10,
     ]);
