@@ -49,6 +49,7 @@ const pedido: SolicitudItem = {
   alto: 2,
   medida: null,
   cantidad: 2,
+  tipoMedida: 'hoja',
 };
 const usuario = { nombre: 'Paula', email: 'paula@neltume.cl' };
 const dirs: string[] = [];

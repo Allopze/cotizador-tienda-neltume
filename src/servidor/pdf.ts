@@ -10,6 +10,7 @@ import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type Reglas
 import { fechaChilena } from '../negocio/vigencia';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
+import { CODIGO_PERSONALIZADO } from '../negocio/personalizados';
 import { chromiumPath } from './chromium';
 import { datosEmpresa } from './empresa';
 import { abrirBaseDatos } from './base-datos';
@@ -182,6 +183,13 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="observaciones"><b>Observaciones:</b>${observaciones ? `<p>${esc(observaciones)}</p>` : ''}</div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
     : `${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}${bloqueCondiciones}`;
   // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
+  // Un producto fuera de catálogo no tiene referencia de catálogo: fábrica ve las referencias que entregó el cliente.
+  const referenciaFabrica = (l: Linea) => {
+    if (l.producto.codigo !== CODIGO_PERSONALIZADO)
+      return `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`;
+    const referencias = l.indice === null ? [] : (q.solicitudes[l.indice]?.referencias ?? []);
+    return `Producto personalizado, fuera de catálogo${referencias.length ? ` · Referencias del cliente: ${referencias.map((r) => r.nombre).join(', ')}` : ''}`;
+  };
   const descripcion = (l: Linea) => {
     // El nombre ya lleva la medida pedida; solo una descripción escrita a mano necesita repetirla aparte.
     const tipoMedidaExplicita = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano';
@@ -189,7 +197,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     const tipo = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano' ? `medida de ${l.tipoMedida}` : null;
     const detalles = [
       pedida ? `Medida solicitada: ${pedida}` : tipo && `${tipo[0].toUpperCase()}${tipo.slice(1)}`,
-      nota && `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`,
+      nota && referenciaFabrica(l),
       l.observaciones && `Observación: ${l.observaciones}`,
     ];
     return `${esc(descripcionLegible(descripcionLinea(l)))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}`;

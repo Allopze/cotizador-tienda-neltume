@@ -349,6 +349,30 @@ p + .pregunta-opciones {
 .dialogo-mensaje p + p {
   margin-top: 8px;
 }
+.emission-review {
+  margin: 14px 0;
+  padding: 12px 14px;
+  background: var(--panel);
+}
+.emission-review > strong {
+  font-size: var(--fs-sm);
+}
+.emission-review ul {
+  max-height: 220px;
+  overflow-y: auto;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.emission-review li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.emission-review small {
+  color: var(--muted);
+}
 .dialogo-acciones,
 .ia-actions {
   display: flex;

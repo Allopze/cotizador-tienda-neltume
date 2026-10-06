@@ -25,7 +25,7 @@ import {
 } from '@/negocio/pendientes';
 import { bonito } from '@/asistente/preguntas';
 import { metrosTexto } from '@/catalogo/escalones';
-import { dimensionesEnMilimetros } from '@/negocio/medidas';
+import { dimensionesEnMilimetros, indicesMedidaSinTipo } from '@/negocio/medidas';
 import type { CambiosEdicion, Despacho } from './contrato';
 import {
   ETIQUETA_CAMPO,
@@ -42,6 +42,8 @@ import {
   vencida,
 } from './formato';
 import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
+import { esPersonalizado } from '@/negocio/personalizados';
+import { ReferenciasItem } from './referencias-item';
 import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales } from './panel-totales';
 import { SelectorDesplegable } from './selector-desplegable';
@@ -362,20 +364,24 @@ export function CotizacionPanel({
   const admiteCambios = !!actual && esEditable(actual) && puedeModificar;
   const editable = admiteCambios && !ocupado;
   const conItems = !!actual?.montos.lineas.length;
-  const listo = conItems && !actual.incompletos.length;
+  const medidasPendientes = indicesMedidaSinTipo(actual);
+  const listo = conItems && !actual.incompletos.length && !medidasPendientes.length;
   const estado = actual.estado;
   const esVencida = vencida(actual);
   const ayudaEmitir = !actual?.solicitudes.length
     ? 'Agrega al menos un producto para generar el PDF.'
     : actual.incompletos.length
       ? 'Completa o quita los ítems pendientes para generar el PDF.'
+      : medidasPendientes.length
+        ? 'Confirma si la medida corresponde a la hoja o al vano antes de emitir.'
       : null; // Lista para emitir: el diálogo de confirmación explica qué pasa.
   const irAPendiente = (indice: number) => {
     mostrarCotizacion();
     requestAnimationFrame(() => {
       const el = document.getElementById(`producto-${indice}`);
       el?.scrollIntoView({ behavior: comportamientoScroll(), block: 'center' });
-      el?.nextElementSibling?.querySelector('summary')?.focus({ preventScroll: true });
+      (el?.querySelector<HTMLButtonElement>('.measure-choice button') ??
+        el?.nextElementSibling?.querySelector<HTMLElement>('summary'))?.focus({ preventScroll: true });
     });
   };
   // Desde la aprobación y hasta registrar el despacho, los datos logísticos se editan sin crear revisión.
@@ -392,6 +398,47 @@ export function CotizacionPanel({
   const conQuitar = !!actual && esEditable(actual) && puedeModificar;
   const conFlete =
     !!actual && (actual.flete > 0 || !!actual.fleteDescripcion || agregandoFlete === actual.id);
+  const indicePendiente = actual.incompletos[0]?.indice ?? medidasPendientes[0];
+  const cantidadPendientes = actual.incompletos.length + medidasPendientes.length;
+  const controlesEdicion = () => (
+    <>
+      <div className="quote-edit-history" aria-label="Historial de edición">
+        <button
+          type="button"
+          className="button secondary small"
+          aria-keyshortcuts="Control+Z Meta+Z"
+          title="Deshacer · Ctrl/Cmd + Z"
+          disabled={!editable || !acciones.puedeDeshacer}
+          onClick={() => void acciones.deshacer()}
+        >
+          Deshacer
+        </button>
+        <button
+          type="button"
+          className="button secondary small"
+          aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
+          title="Rehacer · Ctrl/Cmd + Shift + Z"
+          disabled={!editable || !acciones.puedeRehacer}
+          onClick={() => void acciones.rehacer()}
+        >
+          Rehacer
+        </button>
+      </div>
+      <button type="button" className="button secondary small" disabled={ocupado} onClick={agregarProducto}>
+        + Agregar producto
+      </button>
+      {conItems && !conFlete && (
+        <button
+          type="button"
+          className="button secondary small"
+          disabled={ocupado}
+          onClick={() => setAgregandoFlete(actual.id)}
+        >
+          + Agregar flete
+        </button>
+      )}
+    </>
+  );
   const despacho = actual?.nota?.despacho;
   const condicionDespacho =
     despacho && (despacho.direccion || despacho.transporte)
@@ -401,7 +448,7 @@ export function CotizacionPanel({
         : 'Despacho por confirmar';
   const ocurrenciasItems = new Map<string, number>();
   return (
-    <section id="panel-cotizacion" className="quote-panel" aria-label="Cotización en curso">
+    <section id="panel-cotizacion" className={`quote-panel estado-${estado}`} aria-label="Cotización en curso">
       <div className="panel-heading">
         <div>
           <p className="eyebrow">02 / COTIZACIÓN</p>
@@ -459,52 +506,24 @@ export function CotizacionPanel({
       {/* El detalle mantiene juntos los importes y los campos editables de cada producto. */}
       <div className="quote-cuerpo">
         <div className="items-top">
-          <span>Detalle del pedido</span>
+          <span>Productos</span>
           <div className="items-heading-actions">
             <span>{plural(actual?.solicitudes.length ?? 0, 'ítem')}</span>
             {admiteCambios && (
-              <div className="quote-edit-history" aria-label="Historial de edición">
-                <button
-                  type="button"
-                  className="button secondary small"
-                  aria-keyshortcuts="Control+Z Meta+Z"
-                  title="Deshacer · Ctrl/Cmd + Z"
-                  disabled={!editable || !acciones.puedeDeshacer}
-                  onClick={() => void acciones.deshacer()}
-                >
-                  Deshacer
-                </button>
-                <button
-                  type="button"
-                  className="button secondary small"
-                  aria-keyshortcuts="Control+Shift+Z Meta+Shift+Z Control+Y"
-                  title="Rehacer · Ctrl/Cmd + Shift + Z"
-                  disabled={!editable || !acciones.puedeRehacer}
-                  onClick={() => void acciones.rehacer()}
-                >
-                  Rehacer
-                </button>
+              <button type="button" className="button secondary small quote-add-mobile" aria-label="Agregar producto" disabled={ocupado} onClick={agregarProducto}>
+                + Producto
+              </button>
+            )}
+            {admiteCambios && (
+              <div className="items-heading-actions-desktop">
+                {controlesEdicion()}
               </div>
             )}
             {admiteCambios && (
-              <button
-                type="button"
-                className="button secondary small"
-                disabled={ocupado}
-                onClick={agregarProducto}
-              >
-                + Agregar producto
-              </button>
-            )}
-            {admiteCambios && conItems && !conFlete && (
-              <button
-                type="button"
-                className="button secondary small"
-                disabled={ocupado}
-                onClick={() => setAgregandoFlete(actual.id)}
-              >
-                + Agregar flete
-              </button>
+              <details className="quote-edit-menu">
+                <summary>Editar</summary>
+                <div>{controlesEdicion()}</div>
+              </details>
             )}
           </div>
         </div>
@@ -541,6 +560,9 @@ export function CotizacionPanel({
                     ? preguntasPendientes({ solicitudes: actual.solicitudes, incompletos: [pendiente] })
                     : [];
                   const sabido = pendiente ? entendido(s) : '';
+                  const medidaSinTipo = medidasPendientes.includes(i);
+                  // Fuera de catálogo: se titula con su nombre y su precio es el escrito, sin margen ni referencia de catálogo.
+                  const personalizado = esPersonalizado(s);
                   return (
                     <Fragment key={`${identidad}#${ocurrencia}`}>
                       <tr
@@ -588,28 +610,53 @@ export function CotizacionPanel({
                                 ⠿
                               </span>
                             )}
-                            <strong>{descripcion}</strong>
+                            <strong>{personalizado ? s.modelo || 'Producto personalizado' : descripcion}</strong>
                           </div>
-                          <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
-                          {linea && <small>{referenciaCatalogo(linea)}</small>}
+                          {personalizado ? (
+                            <small className="item-personalizado">
+                              Personalizado · fuera de catálogo{s.madera ? ` · ${s.madera}` : ''}
+                            </small>
+                          ) : (
+                            <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
+                          )}
+                          {personalizado && s.descripcion && <small className="item-descripcion">{s.descripcion}</small>}
+                          {medida && <small>{medida}</small>}
                           {/* Con la cotización editable, el margen se ve (y se cambia) en el bloque de edición de la línea. */}
-                          {!editable && linea && textoMargenLinea(actual, linea) && (
+                          {!editable && linea && !personalizado && textoMargenLinea(actual, linea) && (
                             <small className="margen-manual">{textoMargenLinea(actual, linea)}</small>
                           )}
-                          {s.modeloOriginal && s.coincidenciaModelo && (
-                            <small className={`match-confidence ${s.coincidenciaModelo}`}>
-                              {s.coincidenciaModelo === 'alias'
-                                ? 'Normalizado desde'
-                                : 'Revisar posible coincidencia'}
-                              : {s.modeloOriginal}
-                            </small>
+                          {((linea && !personalizado) || s.modeloOriginal || s.fuente) && (
+                            <details className="item-provenance">
+                              <summary>Ver referencia y origen del pedido</summary>
+                              {linea && !personalizado && <small>{referenciaCatalogo(linea)}</small>}
+                              {s.modeloOriginal && s.coincidenciaModelo && (
+                                <small className={`match-confidence ${s.coincidenciaModelo}`}>
+                                  {s.coincidenciaModelo === 'alias'
+                                    ? 'Normalizado desde'
+                                    : 'Revisar posible coincidencia'}
+                                  : {s.modeloOriginal}
+                                </small>
+                              )}
+                              {s.fuente && (
+                                <small className="item-fuente" title="Lo que se escribió en el pedido">
+                                  «{s.fuente}»
+                                </small>
+                              )}
+                            </details>
                           )}
-                          {medida && <small>{medida}</small>}
-                          {s.fuente && (
-                            <small className="item-fuente" title="Lo que se escribió en el pedido">
-                              «{s.fuente}»
-                            </small>
-                          )}
+                          {/* `admiteCambios` y no `editable`: mientras se guarda, el bloque conserva su estado. */}
+                          <ReferenciasItem
+                            referencias={s.referencias ?? []}
+                            editable={admiteCambios}
+                            ocupado={ocupado}
+                            producto={`ítem ${i + 1}: ${descripcion}`}
+                            guardar={(referencias) =>
+                              acciones.editar(
+                                { items: [{ indice: i, cambios: { referencias } }] },
+                                `item.${i}.referencias`,
+                              )
+                            }
+                          />
                           {pendiente && <span className="pending-label">Incompleto · no suma al total</span>}
                           {pendiente && (
                             <small className="pending-resumen">
@@ -617,12 +664,24 @@ export function CotizacionPanel({
                               {faltan.length ? `Falta: ${textoFaltan(faltan)}.` : null}
                             </small>
                           )}
-                          {linea?.producto.familia === 'PUERTA' &&
-                            (s.tipoMedida ?? 'no_especificado') === 'no_especificado' && (
-                              <small className="medida-por-confirmar">
-                                Medida de hoja o vano por confirmar
-                              </small>
-                            )}
+                          {medidaSinTipo && (
+                            <div className="measure-choice" role="group" aria-label={`Medida del ítem ${i + 1}`}>
+                              <strong>Falta confirmar la medida</strong>
+                              <span>¿La medida solicitada corresponde a la hoja o al vano?</span>
+                              {editable ? (
+                                <div>
+                                  <button type="button" disabled={ocupado} onClick={() => void acciones.editar(
+                                    { items: [{ indice: i, cambios: { tipoMedida: 'hoja' } }] },
+                                    `item.${i}.tipoMedida`,
+                                  )}>Medida de hoja</button>
+                                  <button type="button" disabled={ocupado} onClick={() => void acciones.editar(
+                                    { items: [{ indice: i, cambios: { tipoMedida: 'vano' } }] },
+                                    `item.${i}.tipoMedida`,
+                                  )}>Medida de vano</button>
+                                </div>
+                              ) : <span>Tipo de medida no especificado en esta cotización.</span>}
+                            </div>
+                          )}
                         </td>
                         <td className="celda-cantidad" data-etiqueta="Cant.">
                           <CampoEditable
@@ -670,6 +729,8 @@ export function CotizacionPanel({
                               sufijo="$"
                               validar={(v) => {
                                 const n = v ? leerPesos(v) : null;
+                                if (n === null && personalizado)
+                                  return 'Un producto personalizado necesita su precio unitario.';
                                 return n === null || (Number.isSafeInteger(n) && n > 0 && n <= 100_000_000)
                                   ? null
                                   : 'El precio debe ser un entero entre $1 y $100.000.000.';
@@ -790,7 +851,7 @@ export function CotizacionPanel({
                                   )}
                                 <div className="item-editor-heading">
                                   <strong>Datos del producto</strong>
-                                  {linea && (
+                                  {linea && !personalizado && (
                                     <small className="precio-trazabilidad">
                                       Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} →
                                       cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}
@@ -816,7 +877,7 @@ export function CotizacionPanel({
                                   />
                                   <CampoEditable
                                     className={`item-campo${falta('modelo')}`}
-                                    etiqueta="Modelo"
+                                    etiqueta={personalizado ? 'Nombre del producto' : 'Modelo'}
                                     valor={s.modelo ?? ''}
                                     vacio="Agregar modelo"
                                     editable={editable}
@@ -970,7 +1031,7 @@ export function CotizacionPanel({
                                       )
                                     }
                                   />
-                                  {linea && (
+                                  {linea && !personalizado && (
                                     <MargenLinea
                                       actual={actual}
                                       linea={linea}
@@ -1070,7 +1131,7 @@ export function CotizacionPanel({
             </details>
           )}
           {(admiteCambios || despachoEditable(actual) || actual.despacho) && (
-            <details key={`despacho-${actual.id}`} className="quote-details">
+            <details id="despacho-details" key={`despacho-${actual.id}`} className="quote-details">
               <summary>
                 <span>Despacho</span>
                 <small>
@@ -1240,26 +1301,32 @@ export function CotizacionPanel({
           <strong>{pesos(actual.montos.total)}</strong>
           <small>IVA incluido · CLP</small>
         </div>
-        {actual.incompletos.length > 0 && (
+        {indicePendiente !== undefined && (
           <button
             type="button"
             className="quote-pending-link"
-            onClick={() => irAPendiente(actual.incompletos[0].indice)}
+            onClick={() => irAPendiente(indicePendiente)}
           >
-            {plural(actual.incompletos.length, 'pendiente')} ↑
+            {plural(cantidadPendientes, 'pendiente')} ↑
           </button>
         )}
         <div className="quote-actions">
           {estado === 'borrador' && (
-            <button
-              type="button"
-              className="button primary"
-              disabled={!listo || ocupado}
-              aria-describedby={ayudaEmitir ? 'ayuda-emitir' : undefined}
-              onClick={acciones.emitir}
-            >
-              {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
-            </button>
+            medidasPendientes.length > 0 && !actual.incompletos.length ? (
+              <button type="button" className="button primary" onClick={() => irAPendiente(medidasPendientes[0])}>
+                Resolver medida
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="button primary"
+                disabled={!listo || ocupado}
+                aria-describedby={ayudaEmitir ? 'ayuda-emitir' : undefined}
+                onClick={acciones.emitir}
+              >
+                {enCurso === 'emitir' ? 'Emitiendo…' : 'Emitir y generar PDF'}
+              </button>
+            )
           )}
           {estado === 'emitida' && (
             <button

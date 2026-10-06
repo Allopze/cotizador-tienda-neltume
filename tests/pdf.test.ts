@@ -6,6 +6,7 @@ import { clienteVacio, type Producto } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
 import { cotizar, descripcionLinea, montosVacios, REGLAS, type ReglasComerciales } from '../src/negocio/precios';
 import { cerrarBaseDatos } from '../src/servidor/base-datos';
+import { productoPersonalizado } from '../src/negocio/personalizados';
 
 const navegador = vi.hoisted(() => ({ demora: 0, cerrado: 0 }));
 vi.mock('playwright', () => ({
@@ -266,6 +267,25 @@ describe('Plantillas', () => {
     expect(texto).toContain('Medida solicitada: 835 × 2000 mm (Hoja)');
     expect(texto).toContain('Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m');
     expect(texto).not.toMatch(/margen|No especificado/i);
+  });
+
+  it('la nota de un producto personalizado nombra las referencias del cliente en vez del catálogo', async () => {
+    const q = cotizacion();
+    const { producto } = productoPersonalizado(
+      { modelo: 'Puerta japonesa', madera: 'Roble', ancho: 0.8, alto: 2.1, medida: null, cantidad: 1, precioUnitario: 300000 },
+      'PUERTA',
+    ) as Extract<ReturnType<typeof productoPersonalizado>, { ok: true }>;
+    q.solicitudes = [
+      {
+        modelo: 'Puerta japonesa', madera: 'Roble', ancho: 0.8, alto: 2.1, medida: null, cantidad: 1,
+        personalizado: { familia: 'PUERTA' },
+        referencias: [{ archivo: `${'c'.repeat(64)}.pdf`, nombre: 'croquis.pdf', tipo: 'application/pdf', tamano: 10, fecha: '2026-10-06T00:00:00.000Z' }],
+      },
+    ];
+    const montos = cotizar([{ producto, cantidad: 1, indice: 0, anchoSolicitado: 0.8, altoSolicitado: 2.1 }], { ajuste: 0, iva: 0.19 });
+    const texto = textoVisible(await plantilla(q, { tipo: 'nota', numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' }));
+    expect(texto).toContain('Producto personalizado, fuera de catálogo · Referencias del cliente: croquis.pdf');
+    expect(texto).not.toContain('Referencia de catálogo');
   });
 
   it('las descripciones en mayúsculas se muestran legibles y las escuadrías llevan unidad', () => {

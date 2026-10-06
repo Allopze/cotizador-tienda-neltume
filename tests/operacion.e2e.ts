@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { pesos } from '../src/negocio/precios';
 import { iniciarSesion } from './login-e2e';
+import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 
 test('operación: pagos tras la aprobación, anular un pago, despacho con transportista y facturación', async ({
   page,
@@ -16,6 +17,7 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await page.getByLabel('Escribe tu pedido').fill('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
   await page.getByRole('button', { name: 'Enviar mensaje' }).click();
   await expect(panel.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
+  await resolverMedidasAntesDeEmitir(page);
   await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
@@ -63,7 +65,7 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await dialogoPago.getByRole('button', { name: 'Anular pago' }).click();
   await expect(libro).toHaveCount(0);
   await expect(estados).toContainText('Operación: Sin nota de pedido');
-  await expect(flujo.getByRole('button', { name: 'Generar nota de pedido' })).toBeDisabled();
+  await expect(flujo.getByRole('button', { name: 'Ir a pagos' })).toBeVisible();
 
   await flujo.getByLabel(/^Monto recibido/).fill(String(anticipo));
   await flujo.getByRole('button', { name: 'Registrar pago' }).click();
@@ -90,8 +92,8 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await expect(flujo.getByRole('button', { name: /^Anular el pago de/ })).toHaveCount(0);
 
   // Registrar el despacho exige transportista; se elige en «Despacho» y el botón se habilita.
-  await expect(flujo.getByRole('button', { name: 'Registrar despacho' })).toBeDisabled();
-  await expect(flujo.getByText('Indica el transportista en «Despacho»', { exact: false })).toBeVisible();
+  await expect(flujo.getByRole('button', { name: 'Completar despacho' })).toBeVisible();
+  await expect(flujo.getByText('Completa el transportista en Despacho antes de registrar la salida.')).toBeVisible();
   await panel.getByRole('combobox', { name: 'Transportista' }).click();
   await panel.getByRole('option', { name: 'Starken', exact: true }).click();
   await expect(flujo.getByRole('button', { name: 'Registrar despacho' })).toBeEnabled();
@@ -116,6 +118,7 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await page.getByLabel('Escribe tu pedido').fill('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
   await page.getByRole('button', { name: 'Enviar mensaje' }).click();
   await expect(panel.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
+  await resolverMedidasAntesDeEmitir(page);
   await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })

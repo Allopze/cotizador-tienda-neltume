@@ -6,6 +6,7 @@ import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
 import { DIR_E2E, iniciarSesion } from './login-e2e';
+import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 async function textoPdf(ruta: string) {
   const task = getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: true });
   const doc = await task.promise;
@@ -37,6 +38,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     panel = page.getByLabel('Cotización en curso');
   // Emitir consume un correlativo: la interfaz pide confirmarlo en un diálogo.
   async function emitir() {
+    await resolverMedidasAntesDeEmitir(page);
     await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
     await page
       .getByRole('alertdialog', { name: 'Emitir la cotización' })
@@ -99,7 +101,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
   await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
   expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-1.pdf');
-  await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
   // Una aprobada no ofrece quitar ítems.
   await expect(page.getByRole('button', { name: /^Quitar ítem 1:/ })).toHaveCount(0);
   const fabrica = cotizar(
@@ -126,11 +128,11 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await page.getByRole('link', { name: 'Historial' }).click();
   await page.getByRole('link', { name: /^N° 323/ }).click();
   await expect(page.getByRole('heading', { name: 'N° 323' })).toBeFocused();
-  await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
   await page.screenshot({ path: 'test-results/cotizacion-aprobada.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.getByRole('button', { name: 'Pedido', exact: true }).click();
+  await page.getByRole('button', { name: 'Conversación', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Nueva cotización' })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
@@ -143,6 +145,7 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
     await expect(page.getByRole('button', { name: 'Enviar mensaje' })).toBeDisabled();
   };
   const emitir = async () => {
+    await resolverMedidasAntesDeEmitir(page);
     await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
     await page
       .getByRole('alertdialog', { name: 'Emitir la cotización' })
@@ -208,6 +211,7 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
   await enviar('2 Huilo Huilo oregón 80×210 para Ana Soto, Osorno');
   await expect(page.getByLabel('Cotización en curso').getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
   const descarga = page.waitForEvent('download');
+  await resolverMedidasAntesDeEmitir(page);
   await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
@@ -227,5 +231,5 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
   await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
   expect((await nota).suggestedFilename()).toMatch(/^nota-pedido-\d+\.pdf$/);
-  await expect(page.getByLabel('Escribe tu pedido')).toBeDisabled();
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
 });

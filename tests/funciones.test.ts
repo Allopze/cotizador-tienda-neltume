@@ -60,6 +60,7 @@ const molco: SolicitudItem = {
   alto: 2,
   medida: null,
   cantidad: 3,
+  tipoMedida: 'hoja',
 };
 const marco: SolicitudItem = {
   modelo: 'MARCO',

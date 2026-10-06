@@ -38,6 +38,8 @@ export interface SolicitudItem {
   precioUnitario?: number | null;
   margen?: number | null;
   tipoMedida?: 'hoja' | 'vano' | 'no_especificado' | null;
+  /** Medidas tomadas del catálogo sin que la persona haya indicado dimensiones. */
+  medidaPorDefecto?: boolean;
   descripcion?: string | null;
   observaciones?: string | null;
   modeloOriginal?: string | null;
@@ -45,6 +47,24 @@ export interface SolicitudItem {
   coincidenciaModelo?: 'canonico' | 'alias' | 'posible' | null;
   /** Frase del pedido de la que salió el ítem, tal como la escribió la persona (la extrae la IA). */
   fuente?: string | null;
+  /**
+   * Producto fuera de catálogo: no se busca en el catálogo, `modelo` es su nombre y `precioUnitario` su precio
+   * neto al cliente. Ausente (o null) en los ítems de catálogo.
+   */
+  personalizado?: { familia: Familia } | null;
+  /** Imágenes o documentos que entregó el cliente para este ítem; nunca pasan al catálogo. */
+  referencias?: ReferenciaItem[];
+}
+/** Archivo de referencia de un ítem. El archivo se guarda por su contenido: varias cotizaciones pueden compartirlo. */
+export interface ReferenciaItem {
+  /** Nombre en disco: sha256 del contenido y extensión («<64 hex>.jpg»). */
+  archivo: string;
+  /** Nombre original, como lo eligió la persona. */
+  nombre: string;
+  tipo: 'image/jpeg' | 'image/png' | 'image/webp' | 'application/pdf';
+  /** Bytes. */
+  tamano: number;
+  fecha: string;
 }
 export interface Cliente {
   nombre: string | null;

@@ -38,11 +38,25 @@ const solicitudSchema = z.object({
   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
   margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+  medidaPorDefecto: z.boolean().optional(),
   descripcion: z.string().max(300).nullable().optional(),
   observaciones: z.string().max(1000).nullable().optional(),
   modeloOriginal: z.string().max(300).nullable().optional(),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: z.string().max(300).nullable().optional(),
+  personalizado: z.object({ familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']) }).nullable().optional(),
+  referencias: z
+    .array(
+      z.object({
+        archivo: z.string().regex(/^[0-9a-f]{64}\.(jpg|png|webp|pdf)$/),
+        nombre: z.string().min(1).max(200),
+        tipo: z.enum(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']),
+        tamano: z.number().int().positive(),
+        fecha: z.string(),
+      }),
+    )
+    .max(10)
+    .optional(),
 });
 
 const productoSchema = z.object({

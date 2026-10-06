@@ -27,8 +27,10 @@ import {
   type Resolucion,
 } from '../catalogo/resolver';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
-import { clienteVacio, type Cliente, type SolicitudItem } from '../catalogo/tipos';
+import { clienteVacio, type Cliente, type Familia, type ReferenciaItem, type SolicitudItem } from '../catalogo/tipos';
+import { mismasReferencias, productoPersonalizado } from '../negocio/personalizados';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
+import { indicesMedidaSinTipo } from '../negocio/medidas';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
 import { contarPuertas, descuentoAutomatico, descuentoEsManual, textoPuertas } from '../negocio/descuento-cantidad';
 import {
@@ -72,6 +74,7 @@ import {
 } from '../negocio/precios';
 import { calcularVence, estaVencida, fechaChilena } from '../negocio/vigencia';
 import { Almacen, type Unidad } from './almacen';
+import { sanearReferencias } from './archivos-referencia';
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
 import { prepararFeriados } from './feriados-sync';
 import { generarPdf, plantilla } from './pdf';
@@ -115,6 +118,13 @@ export type Accion =
       alto?: number;
       tipoMedida?: 'hoja' | 'vano' | 'no_especificado';
     }
+  /** Producto fuera de catálogo con su precio y, opcionalmente, las referencias que entregó el cliente. */
+  | {
+      tipo: 'agregar_personalizado';
+      id?: string;
+      actualizada?: string;
+      item: ProductoPersonalizado;
+    }
   | { tipo: 'emitir'; id: string; actualizada: string; numero?: number }
   | {
       tipo: 'aprobar';
@@ -134,7 +144,7 @@ export type Accion =
       cantidades?: { indice: number; cantidad: number }[];
       items?: {
         indice: number;
-        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones'>>;
+        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias'>>;
       }[];
       /** Fija el descuento (%) a mano: deja de seguir al descuento por cantidad. */
       descuento?: number;
@@ -164,6 +174,20 @@ export type Accion =
   | { tipo: 'operacion'; id: string; actualizada: string; paso: 'iniciar_produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada'; despacho?: Partial<Despacho> }
   | { tipo: 'facturacion'; id: string; actualizada: string; estado: 'pendiente' | 'facturada'; tipoDocumento?: 'factura' | 'boleta' | null; identificadorExterno?: string | null; fecha?: string | null };
 
+/** Datos de un producto fuera de catálogo, tal como se escriben al agregarlo. Las medidas van en metros. */
+export interface ProductoPersonalizado {
+  nombre: string;
+  familia: Familia;
+  madera: string;
+  descripcion?: string | null;
+  ancho?: number | null;
+  alto?: number | null;
+  tipoMedida?: 'hoja' | 'vano' | 'no_especificado';
+  cantidad: number;
+  precioUnitario: number;
+  observaciones?: string | null;
+  referencias?: ReferenciaItem[];
+}
 export interface ItemCambio {
   indice: number;
   descripcion: string;
@@ -229,6 +253,23 @@ const decimal = (n: number) => n.toFixed(2).replace('.', ',');
 function avisoMedidaEspecial(r: Extract<Resolucion, { ok: true }>) {
   const pedida = [r.anchoSolicitado, r.altoSolicitado].filter((n) => n !== null).map(metrosTexto).join(' × ');
   return `${r.producto.familia === 'PUERTA' ? 'Medida' : 'Largo'} especial ${pedida} m: se cotiza con la referencia ${r.producto.codigo} (${medidaReferencia(r.producto)}), la siguiente medida del catálogo.`;
+}
+
+/** «Ítem 2 · referencia agregada: foto.jpg · quitada: plano.pdf», para el registro de actividad. */
+function textoReferencias(indice: number, antes: ReferenciaItem[] = [], despues: ReferenciaItem[] = []) {
+  const clave = (r: ReferenciaItem) => `${r.archivo}|${r.nombre}`;
+  const previas = new Set(antes.map(clave)),
+    nuevas = new Set(despues.map(clave));
+  const agregadas = despues.filter((r) => !previas.has(clave(r))).map((r) => r.nombre);
+  const quitadas = antes.filter((r) => !nuevas.has(clave(r))).map((r) => r.nombre);
+  return [
+    `Ítem ${indice + 1}`,
+    agregadas.length && `referencia agregada: ${agregadas.join(', ')}`,
+    quitadas.length && `referencia quitada: ${quitadas.join(', ')}`,
+    !agregadas.length && !quitadas.length && 'referencias reordenadas',
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 /** Texto breve de las diferencias, para el registro de actividad. */
@@ -381,6 +422,32 @@ export class Servicio {
     const validos: ItemPrecio[] = [];
     q.incompletos = [];
     for (const [indice, s] of q.solicitudes.entries()) {
+      if (s.personalizado) {
+        // Fuera de catálogo: no se busca ni se normaliza contra el catálogo; vale el precio escrito.
+        const r = productoPersonalizado(s, s.personalizado.familia);
+        if (!r.ok) {
+          q.incompletos.push({
+            indice,
+            rechazo: { tipo: 'faltan_datos', campos: r.campos.filter((c) => c !== 'precio'), disponibles: {} },
+            pregunta: 'Completa el nombre, la madera, las medidas, la cantidad y el precio del producto personalizado.',
+          });
+          continue;
+        }
+        validos.push({
+          producto: r.producto,
+          cantidad: s.cantidad!,
+          indice,
+          anchoSolicitado: r.ancho,
+          altoSolicitado: r.alto,
+          medidaSolicitada: null,
+          precioUnitario: s.precioUnitario ?? null,
+          margen: null,
+          tipoMedida: s.tipoMedida ?? null,
+          observaciones: s.observaciones ?? null,
+          descripcionDocumento: s.descripcion ?? r.producto.descripcion,
+        });
+        continue;
+      }
       // Un marco «en Mara Enchapada» se guarda con la madera con que se cotiza, también si queda pendiente:
       // el alta desde el pendiente y las preguntas parten de ella.
       const madera = s.madera ? maderaDelCatalogo(this.catalogo, s.madera) : null,
@@ -482,6 +549,20 @@ export class Servicio {
   }
 
   private firma(s: SolicitudItem) {
+    if (s.personalizado)
+      return [
+        'personalizado',
+        s.personalizado.familia,
+        normalizar(s.modelo ?? ''),
+        normalizar(s.madera ?? ''),
+        claveMedida(s.ancho),
+        claveMedida(s.alto),
+        s.tipoMedida ?? '',
+        s.descripcion ?? '',
+        s.observaciones ?? '',
+        s.cantidad ?? '',
+        s.precioUnitario ?? '',
+      ].join('|');
     const r = resolverItem(this.catalogo, s);
     if (r.ok)
       return [
@@ -729,6 +810,8 @@ export class Servicio {
         return this.editar(accion);
       case 'agregar_producto':
         return this.agregarProducto(accion);
+      case 'agregar_personalizado':
+        return this.agregarPersonalizado(accion);
       case 'duplicar':
         return this.almacen.transaccion((u) => {
           const origen = this.obtener(u, accion.id);
@@ -847,31 +930,79 @@ export class Servicio {
         alto: accion.alto ?? p.altoMax ?? p.largo,
         medida: p.familia === 'PUERTA' ? null : p.medida,
         tipoMedida: accion.tipoMedida ?? 'no_especificado',
+        ...(p.familia === 'PUERTA' && accion.ancho == null && accion.alto == null ? { medidaPorDefecto: true } : {}),
       };
       const res = resolverItem(this.catalogo, item);
       if (!res.ok || res.producto.codigo !== p.codigo)
         throw new ErrorUsuario(
           'Las medidas no corresponden a esta referencia. Selecciona el producto adecuado del catálogo.',
         );
-      const q = accion.id ? this.obtener(u, accion.id) : this.nueva();
-      this.exigirEditable(q);
-      if (accion.id) this.verificarVersion(q, accion.actualizada!);
-      if (q.solicitudes.length >= 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
-      const antes = structuredClone(q.solicitudes);
-      const destino = this.abrirEdicion(q, u);
-      const descuentoAntes = descuentoDe(destino);
-      destino.solicitudes.push(item);
-      const avisos = this.recalcular(destino);
-      const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
-      u.guardar(destino);
-      u.registrarEvento(
-        destino.id,
-        'modificada',
-        this.autor,
-        textoCambios(cambios, cambioDescuento(descuentoAntes, destino)),
-      );
-      return { cotizacion: destino, cambios, ...(avisos.length ? { avisos } : {}) };
+      return this.agregarItem(u, accion, item);
     });
+  }
+
+  /**
+   * Producto fuera de catálogo: queda solo en esta cotización (no se crea en el catálogo) con el precio escrito
+   * y las referencias que entregó el cliente.
+   */
+  private agregarPersonalizado(accion: Extract<Accion, { tipo: 'agregar_personalizado' }>) {
+    return this.almacen.transaccion((u): Resultado => {
+      if (Boolean(accion.id) !== Boolean(accion.actualizada))
+        throw new ErrorUsuario('Indica la versión de la cotización.');
+      const d = accion.item;
+      if (!Number.isInteger(d.cantidad) || d.cantidad < 1 || d.cantidad > 10000)
+        throw new ErrorUsuario('La cantidad debe ser un entero entre 1 y 10.000.');
+      if (!Number.isSafeInteger(d.precioUnitario) || d.precioUnitario <= 0 || d.precioUnitario > 100_000_000)
+        throw new ErrorUsuario('El precio unitario debe ser un entero entre $1 y $100.000.000.');
+      const item: SolicitudItem = {
+        modelo: textoCampo('modelo', d.nombre),
+        madera: textoCampo('madera', d.madera),
+        ancho: d.ancho ?? null,
+        alto: d.alto ?? null,
+        medida: null,
+        cantidad: d.cantidad,
+        precioUnitario: d.precioUnitario,
+        margen: null,
+        tipoMedida: d.tipoMedida ?? 'no_especificado',
+        descripcion: textoCampo('descripcion', d.descripcion),
+        observaciones: textoCampo('observaciones', d.observaciones),
+        personalizado: { familia: d.familia },
+        ...(d.referencias?.length ? { referencias: sanearReferencias(this.almacen.directorio, d.referencias) } : {}),
+      };
+      const r = productoPersonalizado(item, d.familia);
+      if (!r.ok)
+        throw new ErrorUsuario(
+          r.campos.includes('ancho') || r.campos.includes('alto')
+            ? 'Revisa las medidas: escríbelas en metros, entre 0,3 y 3 (por ejemplo 0,80 × 2,10).'
+            : 'Indica el nombre, la madera, la cantidad y el precio del producto personalizado.',
+        );
+      return this.agregarItem(u, accion, item);
+    });
+  }
+
+  /** Suma un ítem al final de la cotización (o de un borrador nuevo) y registra el cambio. */
+  private agregarItem(u: Unidad, accion: { id?: string; actualizada?: string }, item: SolicitudItem): Resultado {
+    const q = accion.id ? this.obtener(u, accion.id) : this.nueva();
+    this.exigirEditable(q);
+    if (accion.id) this.verificarVersion(q, accion.actualizada!);
+    if (q.solicitudes.length >= 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
+    const antes = structuredClone(q.solicitudes);
+    const destino = this.abrirEdicion(q, u);
+    const descuentoAntes = descuentoDe(destino);
+    destino.solicitudes.push(item);
+    const avisos = this.recalcular(destino);
+    const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
+    u.guardar(destino);
+    const referencias = item.referencias?.length
+      ? [`Referencias del cliente: ${item.referencias.map((r) => r.nombre).join(', ')}`]
+      : [];
+    u.registrarEvento(
+      destino.id,
+      'modificada',
+      this.autor,
+      textoCambios(cambios, [...cambioDescuento(descuentoAntes, destino), ...referencias]),
+    );
+    return { cotizacion: destino, cambios, ...(avisos.length ? { avisos } : {}) };
   }
 
   /** Reordena el borrador: solicitudes, líneas persistidas y el documento se recalculan en el mismo orden. */
@@ -907,7 +1038,11 @@ export class Servicio {
       if (accion.items.length > 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
       const antes = structuredClone(q.solicitudes);
       const destino = this.abrirEdicion(q, u);
-      destino.solicitudes = accion.items.map((item) => sanearTextos(structuredClone(item)));
+      destino.solicitudes = accion.items.map((item) => {
+        const limpio = sanearTextos(structuredClone(item));
+        if (limpio.referencias) limpio.referencias = sanearReferencias(this.almacen.directorio, limpio.referencias);
+        return limpio;
+      });
       const avisos = this.recalcular(destino);
       u.guardar(destino);
       const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
@@ -936,6 +1071,23 @@ export class Servicio {
         indicesEditados.add(cambio.indice);
         const cambios = cambio.cambios;
         const siguiente = { ...solicitudes[cambio.indice] };
+        if (siguiente.personalizado) {
+          // Fuera de catálogo el precio es el dato de origen: no hay precio de catálogo al que volver.
+          if (cambios.precioUnitario === null)
+            throw new ErrorUsuario('Un producto personalizado necesita un precio unitario.');
+          if (cambios.margen !== undefined && cambios.margen !== null)
+            throw new ErrorUsuario('Un producto personalizado no usa margen: cambia directamente su precio unitario.');
+          for (const campo of ['modelo', 'madera'] as const)
+            if (cambios[campo] !== undefined && !textoCampo(campo, cambios[campo]))
+              throw new ErrorUsuario(
+                campo === 'modelo' ? 'El producto personalizado necesita un nombre.' : 'Indica la madera del producto personalizado.',
+              );
+        }
+        if (cambios.referencias !== undefined) {
+          const referencias = sanearReferencias(this.almacen.directorio, cambios.referencias ?? []);
+          if (referencias.length) siguiente.referencias = referencias;
+          else delete siguiente.referencias;
+        }
         for (const campo of ['modelo', 'madera', 'medida', 'descripcion', 'observaciones'] as const)
           if (cambios[campo] !== undefined) {
             siguiente[campo] = textoCampo(campo, cambios[campo]);
@@ -951,6 +1103,7 @@ export class Servicio {
             const valor = cambios[campo];
             if (valor !== null && !Number.isFinite(valor)) throw new ErrorUsuario(`La medida ${campo} no es válida.`);
             siguiente[campo] = valor ?? null;
+            delete siguiente.medidaPorDefecto;
           }
         if (cambios.precioUnitario !== undefined) {
           const valor = cambios.precioUnitario;
@@ -1124,6 +1277,8 @@ export class Servicio {
           const margenNuevo = margenLinea === null ? sinMargenPropio : margenTexto(margenLinea);
           extras.push(`Margen de ${this.describir(anterior)}: ${margenAnterior} → ${margenNuevo}`);
         }
+        if (cambio.cambios.referencias !== undefined && !mismasReferencias(anterior.referencias, solicitudes[cambio.indice].referencias))
+          extras.push(textoReferencias(cambio.indice, anterior.referencias, solicitudes[cambio.indice].referencias));
         if (cambio.cambios.precioUnitario !== undefined && cambio.cambios.precioUnitario !== anterior.precioUnitario)
           extras.push(`Precio cliente de ${this.describir(anterior)} actualizado${cambio.cambios.precioUnitario === null ? ' según margen aplicado' : ` a ${pesos(cambio.cambios.precioUnitario)}`}`);
       }
@@ -1160,6 +1315,12 @@ export class Servicio {
           throw new ErrorUsuario(
             'Completa o quita los ítems pendientes antes de generar el PDF.',
             'incompleta',
+          );
+        const medidasSinTipo = indicesMedidaSinTipo(copia);
+        if (medidasSinTipo.length)
+          throw new ErrorUsuario(
+            `Confirma si la medida del ítem ${medidasSinTipo[0] + 1} corresponde a la hoja o al vano antes de emitir.`,
+            'medida_sin_tipo',
           );
         const avisos = this.diferenciasPrecio(q.montos, copia.montos);
         if (!avisos.length && q.montos.total !== copia.montos.total)

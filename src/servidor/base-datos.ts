@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 17;
+export const VERSION_ESQUEMA = 19;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -335,6 +335,43 @@ function crearEsquema(db: Database.Database) {
           'ALTER TABLE cotizaciones ADD COLUMN flete_cantidad INTEGER NOT NULL DEFAULT 1 CHECK (flete_cantidad >= 1);',
         );
       db.exec('PRAGMA user_version = 17;');
+    }).immediate();
+  if (version < 18)
+    db.transaction(() => {
+      // v18: distingue las medidas predeterminadas del catálogo de las ingresadas por la persona.
+      const tieneColumna = (db.pragma('table_info(solicitudes)') as { name: string }[]).some(
+        (columna) => columna.name === 'medida_por_defecto',
+      );
+      if (!tieneColumna)
+        db.exec('ALTER TABLE solicitudes ADD COLUMN medida_por_defecto INTEGER NOT NULL DEFAULT 0 CHECK (medida_por_defecto IN (0, 1));');
+      db.exec('PRAGMA user_version = 18;');
+    }).immediate();
+  if (version < 19)
+    db.transaction(() => {
+      // v19: productos fuera de catálogo (con la familia con que se cotizan) y referencias del cliente por ítem.
+      // Los archivos viven en data/referencias/; aquí solo su relación con cada ítem de cada cotización.
+      const tieneColumna = (db.pragma('table_info(solicitudes)') as { name: string }[]).some(
+        (columna) => columna.name === 'familia_personalizada',
+      );
+      if (!tieneColumna)
+        db.exec(
+          "ALTER TABLE solicitudes ADD COLUMN familia_personalizada TEXT CHECK (familia_personalizada IN ('PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'));",
+        );
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS referencias_item (
+          cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          item_orden INTEGER NOT NULL CHECK (item_orden >= 0),
+          orden INTEGER NOT NULL CHECK (orden >= 0),
+          archivo TEXT NOT NULL,
+          nombre TEXT NOT NULL,
+          tipo TEXT NOT NULL CHECK (tipo IN ('image/jpeg', 'image/png', 'image/webp', 'application/pdf')),
+          tamano INTEGER NOT NULL CHECK (tamano > 0),
+          fecha TEXT NOT NULL,
+          PRIMARY KEY (cotizacion_id, item_orden, orden)
+        );
+        CREATE INDEX IF NOT EXISTS referencias_item_archivo ON referencias_item(archivo);
+        PRAGMA user_version = 19;
+      `);
     }).immediate();
 }
 

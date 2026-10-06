@@ -117,7 +117,7 @@ describe('descripción de documento y observaciones de línea', () => {
     const dir = await mkdtemp(join(tmpdir(), 'neltume-mejoras-'));
     dirs.push(dir);
     const almacen = new Almacen(dir);
-    const solicitud: SolicitudItem = { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, medida: null, cantidad: 2 };
+    const solicitud: SolicitudItem = { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, medida: null, cantidad: 2, tipoMedida: 'hoja' };
     const llm = { interpretar: vi.fn().mockResolvedValue({ name: 'actualizar_cotizacion', input: { items: [solicitud], cliente: { nombre: 'Ana Soto', rut: null, giro: null, telefono: null, direccion: null, comuna: null, proyecto: null } } }) };
     const servicio = new Servicio(catalogo, llm, almacen);
     let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara' })).cotizacion;

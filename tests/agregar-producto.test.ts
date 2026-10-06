@@ -77,6 +77,34 @@ describe('agregar un producto del catálogo', () => {
     expect(almacen.obtener(q.id)?.montos).toEqual(q.montos);
     expect(llm.interpretar).not.toHaveBeenCalled();
   });
+  it('exige confirmar hoja o vano en una puerta con medidas antes de emitir', async () => {
+    const { servicio } = await preparar();
+    let q = (await servicio.ejecutar({
+      tipo: 'agregar_producto',
+      codigo: puerta.codigo,
+      cantidad: 1,
+      ancho: 0.82,
+      alto: 2,
+    })).cotizacion;
+    await expect(servicio.ejecutar({
+      tipo: 'emitir',
+      id: q.id,
+      actualizada: q.actualizada,
+    })).rejects.toMatchObject({ codigo: 'medida_sin_tipo' });
+    q = (await servicio.ejecutar({
+      tipo: 'editar',
+      id: q.id,
+      actualizada: q.actualizada,
+      items: [{ indice: 0, cambios: { tipoMedida: 'hoja' } }],
+    })).cotizacion;
+    expect(q.montos.lineas[0].tipoMedida).toBe('hoja');
+    const emitida = (await servicio.ejecutar({
+      tipo: 'emitir',
+      id: q.id,
+      actualizada: q.actualizada,
+    })).cotizacion;
+    expect(emitida.estado).toBe('emitida');
+  });
   it('agrega accesorios y conserva los productos anteriores', async () => {
     const { servicio } = await preparar();
     const { cotizacion: q } = await servicio.ejecutar({

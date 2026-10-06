@@ -6,6 +6,7 @@ export type CodigoError =
   | 'no_editable'
   | 'estado_invalido'
   | 'incompleta'
+  | 'medida_sin_tipo'
   | 'revision_abierta'
   | 'serie_aprobada'
   | 'cotizacion_vencida'
@@ -13,7 +14,8 @@ export type CodigoError =
   | 'ocupado'
   | 'mensaje_procesado'
   | 'pdf_no_disponible'
-  | 'numero_invalido';
+  | 'numero_invalido'
+  | 'archivo_invalido';
 
 export class ErrorUsuario extends Error {
   constructor(

@@ -3,6 +3,7 @@ import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
 import { DIR_E2E, iniciarSesion } from './login-e2e';
+import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 
 // Corre después de flujo.e2e.ts (orden alfabético, un solo worker): no asume números fijos.
 test('edición directa, conflicto de versión, duplicar, eliminar y anular', async ({ page }) => {
@@ -63,6 +64,7 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));
 
   // Emitir para poder anular después.
+  await resolverMedidasAntesDeEmitir(page);
   const descarga = page.waitForEvent('download');
   await panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
@@ -131,6 +133,7 @@ test('si el catálogo cambia antes de emitir, muestra los montos nuevos y pide c
     .fill('Cotiza 3 Huilo Huilo oregón de 80×210 para Rosa Díaz, Valdivia');
   await page.getByRole('button', { name: 'Enviar mensaje' }).click();
   await expect(total).toHaveText(pesos(antes.total));
+  await resolverMedidasAntesDeEmitir(page);
   precio.run(puerta.precioNeto + 1000, puerta.codigo);
   try {
     await page.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();

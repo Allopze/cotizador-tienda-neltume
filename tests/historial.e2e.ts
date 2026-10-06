@@ -5,6 +5,7 @@ import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
 import { DIR_E2E, iniciarSesion } from './login-e2e';
+import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 
 async function textoPdf(ruta: string) {
   const task = getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: true });
@@ -87,6 +88,7 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   );
 
   const descarga = page.waitForEvent('download');
+  await resolverMedidasAntesDeEmitir(page);
   await panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
   await page
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
