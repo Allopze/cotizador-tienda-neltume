@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Propuesta visual · Cotizador Neltume</title>
+  <style>
+    :root {
+      --ink:#263a30; --green:#2d4938; --muted:#5f665c; --paper:#fafaf6;
+      --surface:#fff; --panel:#f6f7f1; --line:#dedfd5; --line-strong:#cfd5c4;
+      --amber:#fbefd6; --amber-ink:#5e4312; --quiet:#eef0e8;
+    }
+    * {box-sizing:border-box}
+    body {margin:0;background:#eeefe9;color:var(--ink);font:14px/1.45 Arial,Helvetica,sans-serif}
+    h1,h2,h3,p {margin:0}
+    button {font:inherit;cursor:default}
+    .board {max-width:1600px;margin:auto;padding:48px 52px 72px}
+    .board-head {display:flex;align-items:end;justify-content:space-between;gap:30px;padding-bottom:24px;border-bottom:1px solid #c8cfc2}
+    .board-head h1 {font:40px/1.3 Georgia,serif;letter-spacing:-.025em}
+    .board-head p {max-width:650px;margin-top:10px;color:var(--muted);font-size:16px}
+    .board-head .tag {white-space:nowrap;padding:8px 12px;border:1px solid #c8cfc2;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.08em}
+    .section-title {display:flex;align-items:baseline;gap:18px;margin:34px 0 18px}
+    .section-title h2 {font:27px/1.3 Georgia,serif}
+    .section-title p {color:var(--muted);font-size:14px}
+    .phones {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px;align-items:start}
+    .concept {min-width:0}
+    .concept > .caption {min-height:70px;padding:0 4px}
+    .caption strong {display:block;font-size:15px}
+    .caption span {display:block;margin-top:3px;color:var(--muted);font-size:13px}
+    .phone {width:100%;min-height:790px;overflow:hidden;background:var(--paper);border:1px solid #c8cfc2;box-shadow:0 16px 38px #263a3015}
+    .phone-header {min-height:76px;display:flex;align-items:center;justify-content:space-between;padding:8px 20px;background:var(--surface);border-bottom:1px solid var(--line)}
+    .wordmark {display:block;width:53px;height:59px;object-fit:contain}
+    .account {font-size:12px;color:var(--muted)}
+    .phone-nav {display:flex;justify-content:space-between;padding:0 18px;background:var(--surface);border-bottom:1px solid var(--line)}
+    .phone-nav span {padding:12px 0 10px;font-size:12px;letter-spacing:.06em;color:var(--muted)}
+    .phone-nav .active {color:var(--ink);border-bottom:2px solid var(--green)}
+    .phone-tabs {display:flex;gap:3px;padding:12px 16px;background:var(--paper)}
+    .phone-tabs span {flex:1;padding:10px;text-align:center;border:1px solid var(--line);background:var(--surface);font-size:12px;color:var(--muted)}
+    .phone-tabs .active {background:var(--green);color:#fff;border-color:var(--green)}
+    .phone-content {padding:4px 18px 18px}
+    .statebar {display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:15px}
+    .statebar h3 {font:26px/1.3 Georgia,serif;letter-spacing:-.025em}
+    .statebar p {margin-top:4px;color:var(--muted);font-size:12px}
+    .status {padding:5px 8px;background:var(--quiet);color:var(--ink);font-size:12px;font-weight:700}
+    .status.approved {background:#e4efdf}
+    .client {padding-bottom:14px;border-bottom:1px solid var(--line)}
+    .client strong {display:block;font-size:14px}
+    .client span {display:block;margin-top:3px;color:var(--muted);font-size:12px}
+    .rowhead {display:flex;align-items:center;justify-content:space-between;margin:15px 0 8px}
+    .rowhead h4 {margin:0;font:19px/1.3 Georgia,serif}
+    .rowhead button,.inline-button {padding:7px 10px;border:1px solid var(--line);background:var(--surface);color:var(--ink);font-size:12px;font-weight:700}
+    .product {padding:15px;background:var(--surface);border:1px solid var(--line)}
+    .product-top {display:flex;justify-content:space-between;gap:8px}
+    .product strong {display:block;max-width:275px;line-height:1.32}
+    .product small {display:block;margin-top:4px;color:var(--muted)}
+    .product .price {margin-top:10px;display:flex;justify-content:space-between;gap:10px;padding-top:9px;border-top:1px solid var(--line);font-size:12px}
+    .product .price b {font-size:15px}
+    .product .meta {margin-top:9px;color:var(--muted);font-size:12px}
+    .issue {display:flex;gap:10px;margin-top:10px;padding:12px;background:var(--amber);color:var(--amber-ink);font-size:12px;line-height:1.4}
+    .issue svg {flex:none;margin-top:1px}
+    .issue strong {display:block;margin-bottom:3px}
+    .issue .link {display:block;margin-top:6px;text-decoration:underline;font-weight:700}
+    .toolbar {display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:15px;padding:13px;background:var(--surface);border:1px solid var(--line)}
+    .toolbar .total-label {color:var(--muted);font-size:12px}
+    .toolbar .total {display:block;font-size:21px;line-height:1.35}
+    .toolbar .tax {display:block;margin-top:3px;color:var(--muted);font-size:12px}
+    .primary {min-height:40px;padding:8px 13px;border:1px solid var(--green);background:var(--green);color:#fff;font-size:12px;font-weight:700;text-align:center}
+    .secondary {min-height:38px;padding:8px 12px;border:1px solid var(--line-strong);background:var(--surface);color:var(--ink);font-size:12px;font-weight:700}
+    .muted-area {margin-top:14px;padding:12px 0;border-top:1px solid var(--line);color:var(--muted);font-size:12px}
+    .muted-area strong {color:var(--ink)}
+    .mobile-bottom {display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;background:var(--surface);border-top:1px solid var(--line);box-shadow:0 -9px 24px #263a3014}
+    .mobile-bottom strong {font-size:18px}
+    .mobile-bottom span {display:block;color:var(--muted);font-size:12px}
+    .mobile-bottom .primary {max-width:185px}
+    .review-heading {margin:12px 0 15px}
+    .review-heading h3 {font:26px/1.3 Georgia,serif}
+    .review-heading p {margin-top:7px;color:var(--muted);font-size:12px}
+    .review-block {margin-top:13px;padding:13px 14px;background:var(--surface);border:1px solid var(--line)}
+    .review-block label {display:block;margin-bottom:7px;font-size:12px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+    .review-block strong {font-size:13px}
+    .review-block small {display:block;margin-top:5px;color:var(--muted)}
+    .choices {display:flex;gap:7px;margin-top:11px}
+    .choices span {flex:1;padding:10px;border:1px solid var(--line-strong);text-align:center;font-size:12px}
+    .choices .selected {background:var(--green);border-color:var(--green);color:#fff;font-weight:700}
+    .review-note {margin-top:13px;color:var(--amber-ink);font-size:12px;line-height:1.45}
+    .review-summary {margin-top:13px;background:var(--panel);padding:13px}
+    .review-summary div {display:flex;justify-content:space-between;gap:10px;padding:6px 0;font-size:12px}
+    .review-summary div:last-child {border-top:1px solid var(--line-strong);font-weight:700;font-size:15px}
+    .full {width:100%;margin-top:14px}
+    .quietlink {margin-top:12px;text-align:center;font-size:12px;text-decoration:underline;color:var(--muted)}
+    .progress {margin:17px 0 12px;padding:15px;background:var(--green);color:#fff}
+    .progress small {display:block;color:#d7e5d5;font-size:12px}
+    .progress strong {display:block;margin-top:3px;font:21px/1.35 Georgia,serif}
+    .progress .rule {height:5px;margin:12px 0;background:#78917c}
+    .progress .rule span {display:block;width:50%;height:5px;background:#d7e5d5}
+    .progress p {font-size:12px;color:#e4eee1}
+    .next {padding:15px;background:var(--surface);border:1px solid var(--line)}
+    .next small {font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+    .next strong {display:block;margin:5px 0 7px;font:19px/1.35 Georgia,serif}
+    .next p {font-size:12px;color:var(--muted)}
+    .next .primary {width:100%;margin-top:13px}
+    .step-list {margin-top:13px;border-top:1px solid var(--line)}
+    .step {display:flex;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid var(--line);font-size:12px}
+    .dot {width:8px;height:8px;border-radius:50%;background:#aab4a3;flex:none}
+    .dot.done {background:var(--green)}
+    .step b {margin-left:auto;font-size:12px}
+    .desktop {padding:8px;background:#e7eae1;border:1px solid #c8cfc2;box-shadow:0 16px 38px #263a3015}
+    .desktop-head {display:flex;align-items:center;gap:50px;min-height:82px;padding:8px 32px;border-bottom:1px solid var(--line);background:var(--surface)}
+    .desktop-head nav {display:flex;gap:25px;font-size:12px;letter-spacing:.08em;color:var(--muted)}
+    .desktop-head nav .active {color:var(--ink);text-decoration:underline;text-underline-offset:15px}
+    .desktop-head .account {margin-left:auto}
+    .desktop-body {display:grid;grid-template-columns:190px minmax(0,1fr);min-height:520px}
+    .side {padding:26px 20px;border-right:1px solid var(--line);background:var(--panel)}
+    .side h3 {font:20px/1.35 Georgia,serif}
+    .side p {margin-top:9px;color:var(--muted);font-size:12px}
+    .side .secondary {width:100%;margin-top:18px}
+    .desktop-main {padding:27px 34px 32px}
+    .desktop-top {display:flex;align-items:start;justify-content:space-between}
+    .desktop-top h3 {font:28px/1.35 Georgia,serif}
+    .desktop-top p {margin-top:4px;color:var(--muted);font-size:12px}
+    .desktop-top .status {font-size:12px}
+    .desktop-grid {display:grid;grid-template-columns:minmax(0,1.3fr) minmax(260px,.7fr);gap:22px;margin-top:22px}
+    .desktop .next {background:var(--panel)}
+    .desktop .progress {margin:0}
+    .desktop .step-list {margin-top:16px}
+    .desk-quote {margin-top:20px;padding-top:17px;border-top:1px solid var(--line)}
+    .desk-quote .rowhead {margin:0 0 10px}
+    .desk-product {display:flex;justify-content:space-between;gap:20px;padding:12px 0;border-top:1px solid var(--line);font-size:12px}
+    .desk-product small {display:block;color:var(--muted);margin-top:3px}
+    .desk-product strong:last-child {white-space:nowrap}
+    .legend {display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+    .legend span {padding:7px 10px;background:#e7eae1;color:var(--muted);font-size:12px}
+    .footnote {margin-top:22px;color:var(--muted);font-size:12px}
+    @media(max-width:1050px){.phones{grid-template-columns:1fr}.phone{max-width:390px}.board{padding:28px 22px}.board-head{flex-wrap:wrap}.board-head .tag{white-space:normal}.desktop{overflow-x:auto}.desktop-head,.desktop-body{min-width:900px}.desktop-body{grid-template-columns:1fr}.side{display:none}.desktop-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+<main class="board">
+  <header class="board-head">
+    <div>
+      <h1>Una cotización que se deja revisar</h1>
+      <p>Propuesta visual para el cotizador de Neltume. Conserva la paleta, la tipografía y el lenguaje actual; cambia el orden de lectura según la tarea.</p>
+    </div>
+    <span class="tag">Concepto · datos ilustrativos</span>
+  </header>
+
+  <div class="section-title"><h2>Flujo móvil</h2><p>Producto primero → resolver ambigüedad → actuar según el estado</p></div>
+  <div class="phones">
+    <section class="concept">
+      <div class="caption"><strong>1 · Revisar el pedido</strong><span>El producto y lo pendiente aparecen antes que las acciones secundarias.</span></div>
+      <div class="phone">
+        <div class="phone-header"><img class="wordmark" src="../public/logo-neltume.svg" alt="Neltume"><span class="account">Cuenta ▾</span></div>
+        <div class="phone-nav"><span class="active">COTIZAR</span><span>HISTORIAL</span><span>CATÁLOGO</span><span>AJUSTES</span></div>
+        <div class="phone-tabs"><span>Pedido</span><span class="active">Cotización · 1</span></div>
+        <div class="phone-content">
+          <div class="statebar"><div><h3>Cotización nueva</h3><p>Juan Pérez · Temuco</p></div><span class="status">Borrador</span></div>
+          <div class="rowhead"><h4>Productos</h4><button>Editar ▾</button></div>
+          <div class="product">
+            <div class="product-top"><strong>Huilo Huilo · Pino Oregón</strong><span>× 3</span></div>
+            <small>0,80 × 2,10 m · HUIL-O-3-B</small>
+            <div class="price"><span>Unitario $287.861</span><b>$863.583</b></div>
+            <div class="issue"><svg width="17" height="17" viewBox="0 0 17 17" fill="none" aria-hidden="true"><circle cx="8.5" cy="8.5" r="7" stroke="currentColor"/><path d="M8.5 4.5v5M8.5 12.2h.01" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg><div><strong>Falta confirmar la medida</strong>¿0,80 × 2,10 m corresponde a la hoja o al vano?<span class="link">Resolver medida →</span></div></div>
+            <div class="meta">Ver referencia y origen del pedido ▾</div>
+          </div>
+          <div class="muted-area"><strong>Cliente y facturación</strong><br>Juan Pérez · agregar RUT y dirección</div>
+          <div class="toolbar"><div><span class="total-label">Total del pedido · IVA incluido</span><strong class="total">$1.027.664</strong></div><button class="secondary">+ Producto</button></div>
+        </div>
+        <div class="mobile-bottom"><div><strong>1 pendiente</strong><span>Antes de emitir el PDF</span></div><button class="primary">Resolver medida →</button></div>
+      </div>
+    </section>
+
+    <section class="concept">
+      <div class="caption"><strong>2 · Confirmar para emitir</strong><span>Una revisión breve muestra el dato resuelto y el importe final.</span></div>
+      <div class="phone">
+        <div class="phone-header"><img class="wordmark" src="../public/logo-neltume.svg" alt="Neltume"><span class="account">Cuenta ▾</span></div>
+        <div class="phone-nav"><span class="active">COTIZAR</span><span>HISTORIAL</span><span>CATÁLOGO</span><span>AJUSTES</span></div>
+        <div class="phone-content">
+          <div class="review-heading"><h3>Antes de emitir</h3><p>Revisa la medida del producto y el total que verá el cliente.</p></div>
+          <div class="review-block">
+            <label>Producto 1 de 1</label>
+            <strong>3 × Huilo Huilo · Pino Oregón</strong>
+            <small>Medida solicitada: 0,80 × 2,10 m</small>
+            <div class="choices"><span class="selected">Medida de hoja</span><span>Medida de vano</span></div>
+          </div>
+          <p class="review-note">Esta elección quedará indicada junto a la medida en el PDF.</p>
+          <div class="review-block"><label>Cliente</label><strong>Juan Pérez</strong><small>Temuco · retiro en fábrica</small></div>
+          <div class="review-summary">
+            <div><span>Subtotal neto</span><span>$863.583</span></div>
+            <div><span>IVA 19 %</span><span>$164.081</span></div>
+            <div><span>Total a emitir</span><span>$1.027.664</span></div>
+          </div>
+          <button class="primary full">Emitir y generar PDF</button>
+          <p class="quietlink">Volver a editar la cotización</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="concept">
+      <div class="caption"><strong>3 · Seguir el pedido</strong><span>Al aprobar, el próximo trabajo reemplaza al chat como foco principal.</span></div>
+      <div class="phone">
+        <div class="phone-header"><img class="wordmark" src="../public/logo-neltume.svg" alt="Neltume"><span class="account">Cuenta ▾</span></div>
+        <div class="phone-nav"><span class="active">COTIZAR</span><span>HISTORIAL</span><span>CATÁLOGO</span><span>AJUSTES</span></div>
+        <div class="phone-tabs"><span class="active">Seguimiento</span><span>Cotización</span></div>
+        <div class="phone-content">
+          <div class="statebar"><div><h3>Cotización N° 323</h3><p>Juan Pérez · Temuco</p></div><span class="status approved">Aprobada</span></div>
+          <div class="progress"><small>Pago recibido</small><strong>$600.690 de $1.201.380</strong><div class="rule"><span></span></div><p>50 % pagado · $600.690 pendiente</p></div>
+          <div class="next"><small>Siguiente acción</small><strong>Iniciar producción</strong><p>La nota de pedido N° 1 ya está generada. Registra el inicio cuando el pedido pase a fábrica.</p><button class="primary">Iniciar producción →</button></div>
+          <div class="step-list">
+            <div class="step"><span class="dot done"></span>Cliente aprobó<b>Listo</b></div>
+            <div class="step"><span class="dot done"></span>Nota de pedido<b>Ver PDF ↗</b></div>
+            <div class="step"><span class="dot"></span>Producción<b>Pendiente</b></div>
+            <div class="step"><span class="dot"></span>Facturación<b>Pendiente</b></div>
+          </div>
+          <div class="muted-area"><strong>Detalle y documentos</strong><br>2 productos · total $1.201.380 <span style="float:right">Ver cotización →</span></div>
+          <div class="muted-area"><strong>Conversación original</strong><br>Disponible para consultar <span style="float:right">Abrir ▾</span></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div class="section-title"><h2>Estado aprobado en escritorio</h2><p>El seguimiento toma el espacio principal; los documentos y el pedido siguen a un clic.</p></div>
+  <section class="desktop">
+    <header class="desktop-head"><img class="wordmark" src="../public/logo-neltume.svg" alt="Neltume"><nav><span class="active">COTIZAR</span><span>HISTORIAL</span><span>CATÁLOGO</span><span>AJUSTES</span></nav><span class="account">Usuario de prueba · Cuenta ▾</span></header>
+    <div class="desktop-body">
+      <aside class="side"><h3>Pedido original</h3><p>“3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco”</p><button class="secondary">Ver conversación ▾</button><p style="margin-top:25px">La cotización aprobada ya no admite cambios. Puedes duplicarla si necesitas una nueva versión.</p></aside>
+      <div class="desktop-main">
+        <div class="desktop-top"><div><h3>Cotización N° 323 · Juan Pérez</h3><p>Temuco · Aprobada el 6 de octubre de 2026</p></div><span class="status approved">Aprobada</span></div>
+        <div class="desktop-grid">
+          <div>
+            <div class="progress"><small>Pago recibido</small><strong>$600.690 de $1.201.380</strong><div class="rule"><span></span></div><p>50 % pagado · $600.690 pendiente</p></div>
+            <div class="step-list"><div class="step"><span class="dot done"></span>Cliente aprobó<b>Listo</b></div><div class="step"><span class="dot done"></span>Nota de pedido generada<b>Ver PDF ↗</b></div><div class="step"><span class="dot"></span>Producción<b>Pendiente</b></div><div class="step"><span class="dot"></span>Facturación<b>Pendiente</b></div></div>
+          </div>
+          <div class="next"><small>Siguiente acción</small><strong>Iniciar producción</strong><p>La nota de pedido está lista para fábrica. Registra el inicio para continuar el seguimiento.</p><button class="primary">Iniciar producción →</button><div class="muted-area"><strong>También puedes</strong><br>Registrar otro pago · ver documentos</div></div>
+        </div>
+        <div class="desk-quote"><div class="rowhead"><h4>Resumen de la cotización</h4><button>Ver detalle completo →</button></div><div class="desk-product"><div><strong>Huilo Huilo · Pino Oregón</strong><small>3 unidades · 0,80 × 2,10 m · hoja</small></div><strong>$863.583</strong></div><div class="desk-product"><div><strong>Marco Pino Oregón 2×4</strong><small>3 unidades</small></div><strong>$145.980</strong></div></div>
+      </div>
+    </div>
+  </section>
+  <p class="footnote">Propuesta conceptual, sin cambios en la aplicación. Los nombres, productos y montos proceden de datos de prueba; la regla de medida debe confirmarse antes de implementar.</p>
+</main>
+</body>
+</html>
