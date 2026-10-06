@@ -211,7 +211,7 @@ Para restaurar: detén el servidor, borra `data/cotizador.sqlite-wal` y `data/co
 
 ### Limpieza de borradores
 
-`npm run limpiar-borradores` lista los borradores vacíos (sin ítems ni cliente) sin actividad en 30 días; `--dias N` cambia el plazo, `--con-items` incluye borradores con ítems y `--confirmar` los elimina. Nunca toca cotizaciones con número.
+`npm run limpiar-borradores` lista los borradores vacíos (sin ítems ni cliente) sin actividad en 30 días; `--dias N` cambia el plazo, `--con-items` incluye borradores con ítems y `--confirmar` los elimina. Nunca toca cotizaciones con número. En la misma pasada lista (y con `--confirmar` borra) las referencias del cliente de `data/referencias/` que ningún ítem de ninguna cotización usa, si llevan más de 24 horas sin uso: así no se borra un archivo recién subido que todavía se está adjuntando.
 
 ## Errores confirmados y supuestos
 

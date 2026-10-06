@@ -27,6 +27,7 @@ import type {
   Despacho as CambiosDespacho,
   Detalle,
   ProductoElegido,
+  ProductoPersonalizadoElegido,
   Resultado,
 } from './contrato';
 import {
@@ -36,6 +37,7 @@ import {
   enterEnvia,
   fechaCorta,
   fechaLarga,
+  medidaPedida,
   numeroCotizacion,
   plural,
   resumenCambios,
@@ -146,7 +148,14 @@ export function Cotizador({
   useEffect(() => {
     actualRef.current = actual;
   }, [actual]);
-  const [asistenteContraido, setAsistenteContraido] = useState(false);
+  const [asistentePreferencia, setAsistentePreferencia] = useState<{
+    id: string | null;
+    contraido: boolean;
+  } | null>(null);
+  const asistenteContraido =
+    asistentePreferencia && asistentePreferencia.id === actual?.id
+      ? asistentePreferencia.contraido
+      : actual?.estado === 'aprobada';
   const [vistaMobile, setVistaMobile] = useState<'pedido' | 'cotizacion'>(abrirId ? 'cotizacion' : 'pedido');
   const [agregandoProducto, setAgregandoProducto] = useState(false);
   const [cambioVisual, setCambioVisual] = useState<{
@@ -242,7 +251,11 @@ export function Cotizador({
     Promise.resolve()
       .then(async () => {
         if (b && (!abrirId || b.id === abrirId)) setMensaje(b.texto);
-        if (id) setActual(await leerDetalle(id, control.signal));
+        if (id) {
+          const q = await leerDetalle(id, control.signal);
+          setActual(q);
+          if (q.estado === 'aprobada') setVistaMobile('cotizacion');
+        }
         if (abrirId) setEnfocar((n) => n + 1);
       })
       .catch((e) => {
@@ -497,6 +510,7 @@ export function Cotizador({
         if (historial.id === q.id) publicarHistorialEdicion({ ...historial, version: q.actualizada });
       }
       setActual(q);
+      if (q.estado === 'aprobada') setVistaMobile('cotizacion');
     }
     if (d.avisos?.length) avisar('info', d.avisos.join(' '));
     if (
@@ -524,7 +538,7 @@ export function Cotizador({
     setTextoConservado(!!mensaje.trim() && (!!actual || charla.length > 0 || !!seleccion));
     vaciarHistorialEdicion(null);
     setActual(null);
-    setAsistenteContraido(false);
+    setAsistentePreferencia(null);
     setVistaMobile('pedido');
     setCambioVisual(null);
     setSeleccion(null);
@@ -686,7 +700,15 @@ export function Cotizador({
     async emitir() {
       const q = actual;
       if (!q || ocupado) return;
-      const emision = await pedirEmision({ total: q.montos.total, reemplaza: q.origen });
+      const emision = await pedirEmision({
+        total: q.montos.total,
+        reemplaza: q.origen,
+        cliente: q.cliente.nombre,
+        productos: q.montos.lineas.map((linea, i) => ({
+          nombre: descripcionItem(q, linea.indice ?? i),
+          medida: medidaPedida(linea),
+        })),
+      });
       if (!emision) return;
       setEnCurso('emitir');
       limpiar('operacion');
@@ -858,16 +880,20 @@ export function Cotizador({
     copiar: () => void copiar(),
   };
 
-  async function agregarProducto(producto: ProductoElegido) {
+  const agregarProducto = (producto: ProductoElegido) => agregarItem({ tipo: 'agregar_producto', ...producto });
+  /** Fuera de catálogo: queda solo en esta cotización, con sus referencias del cliente. */
+  const agregarPersonalizado = (item: ProductoPersonalizadoElegido) =>
+    agregarItem({ tipo: 'agregar_personalizado', item });
+
+  async function agregarItem(accion: Record<string, unknown>) {
     if (ocupado) return false;
     const q = actual;
     setEnCurso('editar');
     limpiar('operacion');
     try {
       const d = await peticion({
-        tipo: 'agregar_producto',
+        ...accion,
         ...(q ? { id: q.id, ...versionDe(q) } : {}),
-        ...producto,
       });
       recibir(d, { previa: q });
       setAgregandoProducto(false);
@@ -1109,9 +1135,11 @@ export function Cotizador({
       ? `${numeroCotizacion(actual.numero)} emitida${actual.fechaEmision ? ` el ${fechaLarga(actual.fechaEmision)}` : ''}. Si escribes un cambio, se creará una revisión en borrador y se conservará este PDF.`
       : null;
   const mostrarNueva = !!actual || !!charla.length || !!seleccion;
+  const aprobada = actual?.estado === 'aprobada';
+  const pedidoOriginal = actual?.historial.find((m) => m.rol === 'usuario')?.texto;
   return (
     <div
-      className={`app-shell pantalla-cotizador${actual ? ' con-pedido' : ''}${asistenteContraido ? ' asistente-contraido' : ''}`}
+      className={`app-shell pantalla-cotizador${actual ? ' con-pedido' : ''}${asistenteContraido ? ' asistente-contraido' : ''}${aprobada ? ' estado-aprobada' : ''}`}
     >
       <Encabezado
         email={email}
@@ -1129,7 +1157,7 @@ export function Cotizador({
           aria-controls="panel-pedido"
           onClick={() => setVistaMobile('pedido')}
         >
-          Pedido
+          {aprobada ? 'Conversación' : 'Pedido'}
         </button>
         <button
           type="button"
@@ -1137,7 +1165,7 @@ export function Cotizador({
           aria-controls="panel-cotizacion"
           onClick={() => setVistaMobile('cotizacion')}
         >
-          Cotización{actual?.incompletos.length ? ` (${plural(actual.incompletos.length, 'pendiente')})` : ''}
+          {aprobada ? 'Seguimiento' : 'Cotización'}{actual?.incompletos.length ? ` (${plural(actual.incompletos.length, 'pendiente')})` : ''}
         </button>
       </nav>
       <main className="workspace" ref={workspace} data-vista={vistaMobile}>
@@ -1151,15 +1179,28 @@ export function Cotizador({
             className="chat-toggle"
             aria-expanded={!asistenteContraido}
             aria-controls="chat-contenido"
-            onClick={() => setAsistenteContraido((v) => !v)}
+            onClick={() => setAsistentePreferencia({ id: actual?.id ?? null, contraido: !asistenteContraido })}
           >
-            {asistenteContraido ? 'Abrir asistente →' : '← Contraer asistente'}
+            {asistenteContraido
+              ? aprobada ? 'Ver conversación →' : 'Abrir asistente →'
+              : aprobada ? '← Contraer conversación' : '← Contraer asistente'}
           </button>
+          {aprobada && asistenteContraido && (
+            <button type="button" className="button secondary small chat-new-quote" onClick={nuevaCotizacion} disabled={ocupado || cargando}>
+              + Nueva cotización
+            </button>
+          )}
+          {aprobada && asistenteContraido && (
+            <div className="chat-summary">
+              <strong>Pedido original</strong>
+              <p>{pedidoOriginal || 'La conversación del pedido está disponible para consultar.'}</p>
+            </div>
+          )}
           <div id="chat-contenido" className="chat-contenido">
             <div className="panel-heading">
               <div>
                 <p className="eyebrow">01 / CONVERSACIÓN</p>
-                <h2>Cuéntame el pedido</h2>
+                <h2>{aprobada ? 'Conversación original' : 'Cuéntame el pedido'}</h2>
               </div>
               {mostrarNueva && (
                 <button
@@ -1353,6 +1394,12 @@ export function Cotizador({
                 Ver cotización <span aria-hidden>→</span>
               </button>
             )}
+            {aprobada ? (
+              <p className="chat-readonly-note">
+                Esta cotización está aprobada. Puedes consultar la conversación o duplicar la cotización
+                si necesitas preparar una nueva versión.
+              </p>
+            ) : (
             <form onSubmit={enviar} className="composer">
               {textoConservado && (
                 <div className="composer-retained" id="texto-conservado">
@@ -1424,6 +1471,7 @@ export function Cotizador({
                 </span>
               </div>
             </form>
+            )}
           </div>
         </section>
         <CotizacionPanel
@@ -1451,6 +1499,7 @@ export function Cotizador({
         <AgregarProducto
           alCerrar={() => setAgregandoProducto(false)}
           agregar={agregarProducto}
+          agregarPersonalizado={agregarPersonalizado}
           ocupado={ocupado}
         />
       )}

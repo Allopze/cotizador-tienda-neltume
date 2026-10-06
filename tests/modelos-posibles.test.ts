@@ -39,7 +39,7 @@ const catalogo: Catalogo = {
   productos: [puerta('HUI-M-3-A', 'Huilo Huilo'), puerta('PAN-M-3-A', 'PANGUIPULLI')],
 };
 const pedido = (modelo: string | null, extra: Record<string, unknown> = {}) => ({
-  modelo, madera: 'Mara', ancho: 83, alto: 236, medida: null, cantidad: 2, ...extra,
+  modelo, madera: 'Mara', ancho: 83, alto: 236, medida: null, cantidad: 2, tipoMedida: 'hoja' as const, ...extra,
 });
 const lista = (...items: object[]) => ({ name: 'actualizar_cotizacion', input: { items, cliente: clienteVacio() } });
 /** Alias seguros de fábrica; el nombre canónico de los documentos sigue siendo «Huilo Huilo». */

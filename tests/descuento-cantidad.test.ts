@@ -84,6 +84,7 @@ const puertas = (cantidad: number | null): SolicitudItem => ({
   alto: 2,
   medida: null,
   cantidad,
+  tipoMedida: 'hoja',
 });
 const marcos = (cantidad: number): SolicitudItem => ({
   modelo: 'MARCO',

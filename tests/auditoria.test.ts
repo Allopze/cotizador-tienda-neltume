@@ -46,6 +46,7 @@ const molco: SolicitudItem = {
   alto: 2,
   medida: null,
   cantidad: 3,
+  tipoMedida: 'hoja',
 };
 const actualizar = (items: SolicitudItem[], cliente: object = clienteVacio()) => ({
   name: 'actualizar_cotizacion',

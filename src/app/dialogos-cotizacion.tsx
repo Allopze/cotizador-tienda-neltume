@@ -123,6 +123,8 @@ function FormAprobacion({
 interface DatosEmision {
   numero?: number | null;
   total: number;
+  cliente?: string | null;
+  productos?: { nombre: string; medida: string | null }[];
   /** N° de la cotización que esta revisión reemplaza al emitirse. */
   reemplaza?: number | null;
 }
@@ -181,6 +183,21 @@ function FormEmision({
   return (
     <form onSubmit={enviar}>
       <div className="dialogo-mensaje">
+        <p>Revisa los datos que verá el cliente antes de generar el documento.</p>
+        <p>Cliente: <strong>{datos.cliente || 'Sin nombre'}</strong></p>
+        {!!datos.productos?.length && (
+          <div className="emission-review">
+            <strong>Productos y medidas</strong>
+            <ul>
+              {datos.productos.map((producto, i) => (
+                <li key={i}>
+                  <span>{producto.nombre}</span>
+                  {producto.medida && <small>{producto.medida}</small>}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         <p>
           Total a emitir: <strong>{new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(datos.total)}</strong> (IVA incluido).
         </p>

@@ -133,6 +133,8 @@ test('los pendientes abren su editor y el total se identifica como parcial', asy
   await expect(panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeDisabled();
   await panel.getByRole('button', { name: /^Confirmar Huilo Huilo/ }).click();
   await expect(panel.locator('.quote-toolbar')).toContainText('Total del pedido');
+  await panel.getByRole('button', { name: 'Resolver medida' }).click();
+  await panel.getByRole('button', { name: 'Medida de hoja' }).click();
   await expect(panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeEnabled();
 });
 
@@ -163,4 +165,31 @@ test('móvil: cambia entre pedido y cotización conservando texto y resumen', as
   );
   await expect(page.getByLabel('Escribe tu pedido')).toBeHidden();
   await page.screenshot({ path: 'test-results/cotizador-mobile.png' });
+});
+
+test('móvil: resuelve hoja o vano en la línea y revisa las medidas antes de emitir', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await iniciarSesion(page);
+  await page.getByRole('button', { name: 'Cotización', exact: true }).click();
+  await page.getByRole('button', { name: /Agregar producto/ }).first().click();
+  const producto = page.getByRole('dialog', { name: 'Agregar producto' });
+  await producto.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
+  await producto.locator('.producto-resultados button').first().click();
+  await producto.getByLabel('Ancho (m)', { exact: true }).fill('0.82');
+  await producto.getByRole('button', { name: 'Agregar al pedido' }).click();
+  const panel = page.getByLabel('Cotización en curso');
+  await expect(panel.getByRole('button', { name: 'Resolver medida' })).toBeVisible();
+  await expect(panel.getByRole('group', { name: 'Medida del ítem 1' })).toBeVisible();
+  await panel.getByRole('button', { name: 'Resolver medida' }).click();
+  await expect(panel.getByRole('button', { name: 'Medida de hoja' })).toBeFocused();
+  await panel.getByRole('button', { name: 'Medida de hoja' }).click();
+  await expect(panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeEnabled();
+  await panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true }).click();
+  const confirmar = page.getByRole('alertdialog', { name: 'Emitir la cotización' });
+  await expect(confirmar).toContainText('Productos y medidas');
+  await expect(confirmar).toContainText('Hoja');
+  await expect(confirmar).toContainText('Total a emitir');
+  await confirmar.getByRole('button', { name: 'Cancelar' }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: 'test-results/cotizador-mobile-medida.png' });
 });

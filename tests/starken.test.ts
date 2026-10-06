@@ -882,6 +882,7 @@ const molco = (cantidad: number): SolicitudItem => ({
   alto: 2,
   medida: null,
   cantidad,
+  tipoMedida: 'hoja',
 });
 
 async function setup(comuna: string | null = 'Temuco') {

@@ -948,6 +948,76 @@ td small {
   margin: 0 0 5px;
   font-size: var(--fs-xs);
 }
+.workflow-focus {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.75fr);
+  gap: 18px;
+}
+.workflow-progress {
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 20px;
+  background: var(--green);
+  color: white;
+}
+.workflow-progress > span,
+.workflow-progress small {
+  color: #e8f0e8;
+  font-size: var(--fs-sm);
+}
+.workflow-progress strong {
+  font: var(--serif-3) / 1.3 var(--serif);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-progress-track {
+  height: 6px;
+  margin: 5px 0;
+  background: #82988a;
+}
+.workflow-progress-track span {
+  display: block;
+  height: 100%;
+  background: white;
+}
+.workflow-next {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 7px;
+  padding: 20px;
+  background: var(--panel);
+}
+.workflow-next > span {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
+}
+.workflow-next h4 {
+  font: var(--serif-3) / 1.3 var(--serif);
+}
+.workflow-next p {
+  color: var(--muted);
+  line-height: 1.5;
+}
+.workflow-next .button {
+  margin-top: 4px;
+}
+@media (max-width: 800px) {
+  .workflow-focus {
+    grid-template-columns: 1fr;
+  }
+  .workflow-progress,
+  .workflow-next {
+    padding: 16px;
+  }
+  .workflow-next .button {
+    width: 100%;
+  }
+}
 .workflow-states {
   justify-content: flex-start;
   flex-wrap: wrap;

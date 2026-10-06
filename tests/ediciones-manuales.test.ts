@@ -111,7 +111,11 @@ describe('el chat conserva las ediciones manuales', () => {
   });
 
   it('reenviar la misma lista sobre ítems con margen y precio manual no cambia nada', async () => {
-    const { q, servicio, chat } = await preparar();
+    const { q: borrador, servicio, chat } = await preparar();
+    const q = (await servicio.ejecutar({
+      tipo: 'editar', id: borrador.id, actualizada: borrador.actualizada,
+      items: [{ indice: 1, cambios: { tipoMedida: 'hoja' } }],
+    })).cotizacion;
     const emitida = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
     const r = await chat(emitida, lista(item(), item({ modelo: 'PANGUIPULLI', ancho: 0.85 })));
     expect(r.cotizacion.id).toBe(emitida.id);

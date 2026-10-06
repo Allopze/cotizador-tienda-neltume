@@ -332,8 +332,8 @@ const catalogo: Catalogo = {
   productos: [producto({ madera: 'MARA' }), producto({ codigo: 'HUI-R-3-A', madera: 'RAULI', descripcion: 'HUILO HUILO RAULI 0,80 A 0,85 MT X 2,30 A 2,40 MT' })],
 };
 const itemsPedido: SolicitudItem[] = [
-  { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, medida: null, cantidad: 1 },
-  { modelo: 'Huilo Huilo', madera: 'Rauli', ancho: 83.5, alto: 236, medida: null, cantidad: 2 },
+  { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, medida: null, cantidad: 1, tipoMedida: 'hoja' },
+  { modelo: 'Huilo Huilo', madera: 'Rauli', ancho: 83.5, alto: 236, medida: null, cantidad: 2, tipoMedida: 'hoja' },
 ];
 
 async function preparar() {

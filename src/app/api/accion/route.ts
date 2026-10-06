@@ -54,6 +54,18 @@ const tarifaStarkenSchema = z
     firma: z.string().min(20).max(100),
   })
   .strict();
+/** Referencia ya subida con /api/referencias; el servicio comprueba que el archivo exista. */
+const referenciaSchema = z
+  .object({
+    archivo: z.string().regex(/^[0-9a-f]{64}\.(jpg|png|webp|pdf)$/),
+    nombre: z.string().trim().min(1).max(200),
+    tipo: z.enum(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']),
+    tamano: z.number().int().positive(),
+    fecha: z.string().max(40),
+  })
+  .strict();
+const referenciasSchema = z.array(referenciaSchema).max(10);
+const familiaSchema = z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']);
 const solicitudRestaurarSchema = z.object({
   modelo: z.string().max(300).nullable(),
   madera: z.string().max(300).nullable(),
@@ -69,6 +81,9 @@ const solicitudRestaurarSchema = z.object({
   modeloOriginal: texto(300),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: texto(300),
+  medidaPorDefecto: z.boolean().optional(),
+  personalizado: z.object({ familia: familiaSchema }).strict().nullable().optional(),
+  referencias: referenciasSchema.optional(),
 }).strict();
 const accionSchema = z.discriminatedUnion('tipo', [
   z
@@ -81,6 +96,29 @@ const accionSchema = z.discriminatedUnion('tipo', [
       ancho: z.number().finite().min(0.3).max(3).optional(),
       alto: z.number().finite().min(0.3).max(3).optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
+    })
+    .strict()
+    .refine((a) => Boolean(a.id) === Boolean(a.actualizada)),
+  z
+    .object({
+      tipo: z.literal('agregar_personalizado'),
+      id: z.uuid().optional(),
+      actualizada: version.optional(),
+      item: z
+        .object({
+          nombre: z.string().trim().min(1).max(300),
+          familia: familiaSchema,
+          madera: z.string().trim().min(1).max(300),
+          descripcion: texto(300),
+          ancho: z.number().finite().min(0.3).max(3).nullable().optional(),
+          alto: z.number().finite().min(0.3).max(3).nullable().optional(),
+          tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
+          cantidad: z.number().int().min(1).max(10000),
+          precioUnitario: z.number().int().positive().max(100_000_000),
+          observaciones: texto(1000),
+          referencias: referenciasSchema.optional(),
+        })
+        .strict(),
     })
     .strict()
     .refine((a) => Boolean(a.id) === Boolean(a.actualizada)),
@@ -187,6 +225,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
                   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
                   descripcion: texto(300),
                   observaciones: texto(1000),
+                  referencias: referenciasSchema.optional(),
                 })
                 .strict(),
             })

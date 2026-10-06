@@ -46,6 +46,7 @@ const solicitud: SolicitudItem = {
   alto: 2,
   medida: null,
   cantidad: 3,
+  tipoMedida: 'hoja',
 };
 const actualizar = { name: 'actualizar_cotizacion', input: { items: [solicitud], cliente: clienteVacio() } };
 const modificarCantidad = (cantidad: number) => ({

@@ -1,5 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 import { iniciarSesion } from './login-e2e';
+import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 
 /** El documento no es más alto que la ventana: el cotizador se ve completo sin desplazar la página. */
 async function sinScrollDePagina(page: Page) {
@@ -35,6 +36,7 @@ test('el cotizador permite scroll de página y conserva su barra de acciones', a
   await enviar('agrega marcos de oregón');
   await enviar('3 de 2x4 de 2,1');
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
+  await resolverMedidasAntesDeEmitir(page);
   // Acciones y totales siguen a la vista con varios ítems.
   await sinScrollHorizontal();
   await expect(panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeInViewport();

@@ -76,17 +76,91 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
     if (await flujo({ tipo: 'comentario', texto: comentario.trim() })) setComentario('');
   }
   const operar = (paso: string, extra: Record<string, unknown> = {}) => flujo({ tipo: 'operacion', paso, ...extra });
+  const irAPago = () => {
+    const campo = document.getElementById('monto-recibido') as HTMLInputElement | null;
+    campo?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    campo?.focus({ preventScroll: true });
+  };
+  const irADespacho = () => {
+    const detalle = document.getElementById('despacho-details') as HTMLDetailsElement | null;
+    if (!detalle) return;
+    detalle.open = true;
+    detalle.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    detalle.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true });
+  };
+  const irAFacturacion = () => {
+    const campo = document.getElementById('facturacion-identificador') as HTMLInputElement | null;
+    campo?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    campo?.focus({ preventScroll: true });
+  };
+  const siguiente = (() => {
+    if (!aprobada) return null;
+    if (!actual.nota || actual.nota.anulada)
+      return pagado < pagoMinimoNP
+        ? { titulo: 'Registrar anticipo', detalle: `La nota de pedido se habilita al registrar ${pesos(pagoMinimoNP)} (50 %).`, etiqueta: 'Ir a pagos', accion: irAPago }
+        : { titulo: 'Generar nota de pedido', detalle: 'El anticipo está registrado. Prepara el documento para fábrica.', etiqueta: 'Generar nota de pedido', accion: () => void flujo({ tipo: 'generar_nota' }) };
+    if (pagado < pagoMinimoNP)
+      return { titulo: 'Completar anticipo', detalle: `La producción requiere al menos ${pesos(pagoMinimoNP)} pagado.`, etiqueta: 'Ir a pagos', accion: irAPago };
+    switch (operacionActual) {
+      case 'pedido_generado':
+        return { titulo: 'Iniciar producción', detalle: `La nota de pedido N° ${actual.nota.numero} ya está generada. Registra el inicio cuando pase a fábrica.`, etiqueta: 'Iniciar producción', accion: () => void operar('iniciar_produccion') };
+      case 'en_produccion':
+        return { titulo: 'Cerrar producción', detalle: 'Confirma que fábrica terminó el pedido.', etiqueta: 'Marcar producción terminada', accion: () => void operar('produccion_terminada') };
+      case 'saldo_pendiente':
+        return { titulo: 'Registrar saldo', detalle: `Faltan ${pesos(saldo)} para continuar con el despacho.`, etiqueta: 'Ir a pagos', accion: irAPago };
+      case 'pagada':
+      case 'produccion_terminada':
+        return pagado >= actual.montos.total
+          ? { titulo: 'Preparar despacho', detalle: 'El pedido está pagado. Indica que está listo para despacho.', etiqueta: 'Marcar lista para despacho', accion: () => void operar('lista_despacho') }
+          : { titulo: 'Registrar saldo', detalle: `Faltan ${pesos(saldo)} para continuar con el despacho.`, etiqueta: 'Ir a pagos', accion: irAPago };
+      case 'lista_despacho':
+        return faltaTransportista
+          ? { titulo: 'Indicar transportista', detalle: 'Completa el transportista en Despacho antes de registrar la salida.', etiqueta: 'Completar despacho', accion: irADespacho }
+          : { titulo: 'Registrar despacho', detalle: 'El pedido está listo y tiene transportista asignado.', etiqueta: 'Registrar despacho', accion: () => void operar('despachada') };
+      case 'despachada':
+        return { titulo: 'Completar operación', detalle: 'Confirma el cierre del pedido despachado.', etiqueta: 'Completar operación', accion: () => void operar('completada') };
+      case 'completada':
+        return actual.facturacion?.estado === 'facturada'
+          ? { titulo: 'Operación completada', detalle: 'El pedido y su facturación están registrados.', etiqueta: null, accion: null }
+          : { titulo: 'Registrar facturación', detalle: 'El pedido está completo; falta registrar la factura o boleta.', etiqueta: 'Ir a facturación', accion: irAFacturacion };
+      default:
+        return { titulo: 'Revisar el siguiente paso', detalle: 'Revisa pagos, producción y despacho para continuar.', etiqueta: 'Ir a pagos', accion: irAPago };
+    }
+  })();
   return (
     <section className="quote-workflow" aria-labelledby="seguimiento-title">
       <div className="workflow-heading">
         <div>
-          <p className="eyebrow">SEGUIMIENTO DE LA OPERACIÓN</p>
           <h3 id="seguimiento-title">
-            {aprobada || pagado > 0 ? `${pesos(pagado)} pagado · ${pesos(saldo)} pendiente` : 'Esperando la aprobación del cliente'}
+            {aprobada ? 'Seguimiento del pedido' : 'Esperando la aprobación del cliente'}
           </h3>
         </div>
         {(aprobada || pagado > 0) && <span className="status">{porcentaje(porcentajePagado)} pagado</span>}
       </div>
+      {aprobada && (
+        <div className="workflow-focus">
+          <div className="workflow-progress">
+            <span>Pago recibido</span>
+            <strong>{pesos(pagado)} de {pesos(actual.montos.total)}</strong>
+            <div className="workflow-progress-track" role="progressbar" aria-label="Porcentaje pagado" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(porcentajePagado)}>
+              <span style={{ width: `${porcentajePagado}%` }} />
+            </div>
+            <small>{porcentaje(porcentajePagado)} pagado · {pesos(saldo)} pendiente</small>
+          </div>
+          {siguiente && (
+            <div className="workflow-next">
+              <span>Siguiente acción</span>
+              <h4>{siguiente.titulo}</h4>
+              <p>{siguiente.detalle}</p>
+              {siguiente.accion && siguiente.etiqueta && (
+                <button type="button" className="button primary" disabled={ocupado} onClick={siguiente.accion}>
+                  {siguiente.etiqueta}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className="workflow-states">
         <span>Comercial: <strong>{etiquetaComercial[estadoComercial]}</strong></span>
         <span>Operación: <strong>{etiquetaOperativo[operacionActual]}</strong></span>
@@ -101,7 +175,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       )}
       {aprobada && (
         <form className="workflow-payment" onSubmit={registrarPago}>
-          <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input inputMode="numeric" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} onBlur={() => { const n = leerPesos(montoPago); if (n > 0) setMontoPago(n.toLocaleString('es-CL')); }} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
+          <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input id="monto-recibido" inputMode="numeric" value={montoPago} onChange={(e) => setMontoPago(e.target.value)} onBlur={() => { const n = leerPesos(montoPago); if (n > 0) setMontoPago(n.toLocaleString('es-CL')); }} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
           <label className="ia-field"><span>Fecha del pago</span><input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} disabled={ocupado || saldo <= 0} /></label>
           <label className="ia-field"><span>Observación</span><input value={observacionPago} onChange={(e) => setObservacionPago(e.target.value)} maxLength={500} placeholder="Transferencia, anticipo…" disabled={ocupado || saldo <= 0} /></label>
           <button type="submit" className="button secondary" disabled={ocupado || saldo <= 0 || leerPesos(montoPago) <= 0}>Registrar pago</button>
@@ -130,24 +204,6 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           ))}
         </ul>
       )}
-      {aprobada && !actual.nota && (
-        <div className="workflow-actions">
-          <p className="muted">Nota de pedido disponible desde {pesos(pagoMinimoNP)} (50 %).</p>
-          <button type="button" className="button primary" disabled={ocupado || pagado < pagoMinimoNP} onClick={() => void flujo({ tipo: 'generar_nota' })}>Generar nota de pedido</button>
-        </div>
-      )}
-      {actual.nota && (
-        <div className="workflow-actions">
-          {operacionActual === 'pedido_generado' && <button type="button" className="button secondary" disabled={ocupado || pagado < pagoMinimoNP} onClick={() => void operar('iniciar_produccion')}>Iniciar producción</button>}
-          {operacionActual === 'en_produccion' && <button type="button" className="button secondary" disabled={ocupado || pagado < pagoMinimoNP} onClick={() => void operar('produccion_terminada')}>Marcar producción terminada</button>}
-          {(operacionActual === 'pedido_generado' || operacionActual === 'en_produccion') && pagado < pagoMinimoNP && <p className="muted">La producción se habilita con al menos {pesos(pagoMinimoNP)} (50 %) pagado.</p>}
-          {operacionActual === 'saldo_pendiente' && <p className="muted">La producción terminó. Registra el saldo antes de habilitar el despacho.</p>}
-          {(operacionActual === 'pagada' || operacionActual === 'produccion_terminada') && pagado >= actual.montos.total && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('lista_despacho')}>Marcar lista para despacho</button>}
-          {operacionActual === 'lista_despacho' && <button type="button" className="button primary" disabled={ocupado || faltaTransportista} onClick={() => void operar('despachada')}>Registrar despacho</button>}
-          {operacionActual === 'lista_despacho' && faltaTransportista && <p className="muted">Indica el transportista en «Despacho» para registrar el despacho.</p>}
-          {operacionActual === 'despachada' && <button type="button" className="button secondary" disabled={ocupado} onClick={() => void operar('completada')}>Completar operación</button>}
-        </div>
-      )}
       {aprobada && (
         actual.facturacion?.estado === 'facturada' ? (
           <div className="workflow-actions">
@@ -172,7 +228,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
                 disabled={ocupado}
               />
             </div>
-            <label className="ia-field"><span>N° o identificador externo</span><input value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} maxLength={120} placeholder="Ej. 1234" disabled={ocupado} /></label>
+            <label className="ia-field"><span>N° o identificador externo</span><input id="facturacion-identificador" value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} maxLength={120} placeholder="Ej. 1234" disabled={ocupado} /></label>
             <label className="ia-field"><span>Fecha de emisión</span><input type="date" value={fechaFactura} onChange={(e) => setFechaFactura(e.target.value)} disabled={ocupado} /></label>
             <button type="submit" className="button secondary" disabled={ocupado}>Marcar como facturada</button>
           </form>

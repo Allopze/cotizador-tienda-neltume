@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
-import type { Producto, SolicitudItem } from '../catalogo/tipos';
+import type { Familia, Producto, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
 import type {
   Cotizacion,
@@ -275,9 +275,12 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     if (!filas.length) return [];
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
-    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente FROM solicitudes $FILTRO
+    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null }>(`
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
+    const referencias = hijos<ReferenciaItem & { cotizacion_id: string; item_orden: number }>(`
+      SELECT cotizacion_id, item_orden, archivo, nombre, tipo, tamano, fecha FROM referencias_item $FILTRO
+      ORDER BY cotizacion_id, item_orden, orden`);
     const incompletos = hijos<{
       cotizacion_id: string;
       indice: number;
@@ -300,7 +303,13 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
       try {
         const m = montos.get(f.id)?.[0];
         if (!m) throw new Error('faltan los montos guardados');
-        const reparadas = (solicitudes.get(f.id) ?? []).map((fila): SolicitudItem => {
+        const referenciasPorItem = new Map<number, ReferenciaItem[]>();
+        for (const { item_orden, archivo, nombre, tipo, tamano, fecha } of referencias.get(f.id) ?? [])
+          referenciasPorItem.set(item_orden, [
+            ...(referenciasPorItem.get(item_orden) ?? []),
+            { archivo, nombre, tipo, tamano, fecha },
+          ]);
+        const reparadas = (solicitudes.get(f.id) ?? []).map((fila, orden): SolicitudItem => {
           const s: SolicitudItem = {
             modelo: fila.modelo,
             madera: fila.madera,
@@ -309,12 +318,15 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
             medida: fila.medida,
             cantidad: fila.cantidad,
             tipoMedida: fila.tipoMedida,
+            ...(fila.medida_por_defecto === 1 ? { medidaPorDefecto: true } : {}),
             descripcion: fila.descripcion,
             observaciones: fila.observaciones,
             margen: fila.margen,
             modeloOriginal: fila.modeloOriginal,
             coincidenciaModelo: fila.coincidenciaModelo,
             fuente: fila.fuente ?? null,
+            ...(fila.familia_personalizada ? { personalizado: { familia: fila.familia_personalizada } } : {}),
+            ...(referenciasPorItem.has(orden) ? { referencias: referenciasPorItem.get(orden) } : {}),
           };
           if (fila.precio_unitario !== null) s.precioUnitario = fila.precio_unitario;
           if (s.cantidad === null || cantidadValida(s.cantidad)) return s;
@@ -656,6 +668,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
 
   for (const tabla of [
     'solicitudes',
+    'referencias_item',
     'incompletos',
     'historial',
     'cotizacion_montos',
@@ -668,8 +681,12 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente)
+    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente)
+    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente)
+  `);
+  const insReferencia = db.prepare(`
+    INSERT INTO referencias_item (cotizacion_id, item_orden, orden, archivo, nombre, tipo, tamano, fecha)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
   q.solicitudes.forEach((s, i) =>
     insSolicitud.run({
@@ -684,12 +701,19 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       precio_unitario: s.precioUnitario ?? null,
       margen: s.margen ?? null,
       tipo_medida: s.tipoMedida ?? null,
+      medida_por_defecto: s.medidaPorDefecto ? 1 : 0,
+      familia_personalizada: s.personalizado?.familia ?? null,
       descripcion: s.descripcion ?? null,
       observaciones: s.observaciones ?? null,
       modelo_original: s.modeloOriginal ?? null,
       coincidencia_modelo: s.coincidenciaModelo ?? null,
       fuente: s.fuente ?? null,
     }),
+  );
+  q.solicitudes.forEach((s, i) =>
+    s.referencias?.forEach((r, orden) =>
+      insReferencia.run(q.id, i, orden, r.archivo, r.nombre, r.tipo, r.tamano, r.fecha),
+    ),
   );
   const insIncompleto = db.prepare(
     'INSERT INTO incompletos (cotizacion_id, indice, rechazo_json, pregunta) VALUES (?, ?, ?, ?)',
@@ -1019,6 +1043,12 @@ export class Almacen {
       }
       return eliminados;
     });
+  }
+
+  /** Archivos de referencia del cliente que usa algún ítem de alguna cotización. */
+  archivosReferencia(): Set<string> {
+    const filas = this.db.prepare('SELECT DISTINCT archivo FROM referencias_item').all() as { archivo: string }[];
+    return new Set(filas.map((f) => f.archivo));
   }
 
   /** Cotización dueña de un PDF emitido (cotización o nota de pedido). */

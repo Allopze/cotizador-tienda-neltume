@@ -74,6 +74,8 @@ export function descartarDelProducto(
   despues: SolicitudItem,
   producto: { antes: ProductoItem; despues: ProductoItem },
 ): Descartes | null {
+  // Un producto personalizado no tiene precio de catálogo: su precio escrito se conserva siempre.
+  if (antes.personalizado || despues.personalizado) return null;
   if (!cambioDeProducto(producto.antes, producto.despues)) return null;
   const descartes = { precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario };
   if (!descartes.precio) return null;
@@ -160,6 +162,16 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       descripcion: nuevo.descripcion ?? previo.descripcion ?? null,
       observaciones: nuevo.observaciones ?? previo.observaciones ?? null,
       fuente: nuevo.fuente ?? previo.fuente ?? null,
+      // La IA no ve las referencias del cliente ni sabe qué ítem es personalizado: los conserva el mismo ítem.
+      // Un personalizado sigue siéndolo mientras no pase a nombrar un modelo del catálogo.
+      ...(previo.referencias?.length ? { referencias: previo.referencias } : {}),
+      ...(previo.personalizado && identidades.despues.modelo === ''
+        ? {
+            personalizado: previo.personalizado,
+            modelo: nuevo.modelo ?? previo.modelo,
+            madera: nuevo.madera ?? previo.madera,
+          }
+        : {}),
       // La IA no ve cómo se interpretó el modelo: se conserva mientras el modelo sea el mismo.
       ...(mismoModelo
         ? { modeloOriginal: previo.modeloOriginal ?? null, coincidenciaModelo: previo.coincidenciaModelo ?? null }

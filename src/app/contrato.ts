@@ -1,7 +1,7 @@
 // Formas de las respuestas de la API usadas por la interfaz (copiadas de src/servidor: no se importa
 // código de servidor en el cliente). Ver contrato-api del backend v6.
 import type { Cotizacion, EventoCotizacion, ResumenCotizacion } from '@/negocio/estado';
-import type { Producto, SolicitudItem } from '@/catalogo/tipos';
+import type { Familia, Producto, ReferenciaItem, SolicitudItem } from '@/catalogo/tipos';
 import type { Cliente } from '@/catalogo/tipos';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import type { TarifaStarkenAplicada } from '@/negocio/starken';
@@ -55,7 +55,7 @@ export interface CambiosEdicion {
   cantidades?: { indice: number; cantidad: number }[];
   items?: {
     indice: number;
-    cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones'>>;
+    cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias'>>;
   }[];
   /** Fija el descuento a mano: deja de seguir al descuento por cantidad. */
   descuento?: number;
@@ -101,4 +101,18 @@ export interface Despacho {
   entregaComprometida?: string | null;
   destino?: string | null;
   valor?: number | null;
+}
+/** Producto fuera de catálogo (acción `agregar_personalizado`); medidas en metros, precio neto unitario. */
+export interface ProductoPersonalizadoElegido {
+  nombre: string;
+  familia: Familia;
+  madera: string;
+  descripcion: string | null;
+  ancho: number | null;
+  alto: number | null;
+  tipoMedida: 'hoja' | 'vano' | 'no_especificado';
+  cantidad: number;
+  precioUnitario: number;
+  observaciones: string | null;
+  referencias: ReferenciaItem[];
 }

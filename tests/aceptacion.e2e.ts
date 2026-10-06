@@ -72,6 +72,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
     /^Huilo Huilo Mara 0,835 m × 2,36 m/,
   );
   await expect(panel.getByText(/Normalizado desde|Revisar posible coincidencia|Incompleto/)).toHaveCount(0);
+  await panel.locator('#producto-0 .item-provenance > summary').click();
   await expect(
     panel.getByText('Referencia HUIL-M-3-E · 0,80–0,85 × 2,40 m · siguiente medida del catálogo en alto', {
       exact: true,
@@ -167,7 +168,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
     .click();
   await expect(estados).toContainText('Comercial: Aprobada');
   await expect(estados).toContainText('Operación: Sin nota de pedido');
-  await expect(flujo.getByRole('button', { name: 'Generar nota de pedido' })).toBeDisabled();
+  await expect(flujo.getByRole('button', { name: 'Ir a pagos' })).toBeVisible();
   const anticipo = Math.ceil(especial.total * 0.5);
   await flujo.getByLabel(/^Monto recibido/).fill(String(anticipo));
   await flujo.getByRole('button', { name: 'Registrar pago' }).click();
@@ -199,7 +200,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await flujo.getByRole('button', { name: 'Marcar producción terminada' }).click();
   await expect(estados).toContainText('Operación: Saldo pendiente');
   await expect(
-    flujo.getByText('La producción terminó. Registra el saldo antes de habilitar el despacho.'),
+    flujo.getByText(/Faltan .* para continuar con el despacho/),
   ).toBeVisible();
   await expect(flujo.getByRole('button', { name: 'Marcar lista para despacho' })).toHaveCount(0);
   await flujo.getByLabel(/^Monto recibido/).fill(String(especial.total - anticipo));
