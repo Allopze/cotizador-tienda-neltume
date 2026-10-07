@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { ErrorIA, errorProveedor } from '../asistente/errores';
 import { pregunta } from '../asistente/preguntas';
 import type { ModificacionCotizacion } from '../asistente/esquemas';
+import { fleteDelChat } from '../asistente/flete';
 import { salidaSchema } from '../asistente/esquemas';
 import { contextoSeguro, type LLM } from '../asistente/llm';
 import { anclarCifras, anclarFrases, anclarNombres, nombresDichos, type ResolverNombre } from '../asistente/anclaje';
@@ -48,6 +49,7 @@ import {
 import {
   anticipoMinimo,
   cantidadFlete,
+  descripcionFlete,
   despachoEditable,
   etiquetaComercial,
   etiquetaFacturacion,
@@ -1916,7 +1918,8 @@ export class Servicio {
       !actualizar.length &&
       !quitar.length &&
       !cambios.agregar?.length &&
-      !Object.keys(cambios.cliente ?? {}).length
+      !Object.keys(cambios.cliente ?? {}).length &&
+      cambios.flete === undefined
     )
       return null;
     for (const cambio of actualizar) {
@@ -2133,9 +2136,20 @@ export class Servicio {
             ? 'Puedo ayudarte con modelos, maderas, medidas, cantidades y datos del cliente. Los montos se muestran en la cotización.'
             : res.input.texto,
         );
+      // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
+      const textosIA = [accion.mensaje, ...historialIA.map((m) => m.texto)];
+      const { linea: flete, avisos: avisosFlete } = fleteDelChat(
+        res.name === 'modificar_cotizacion' ? res.input.flete : undefined,
+        q,
+        { textos: this.llm.verificarCifras && !directa ? textosIA : null, iva: (q.reglas ?? REGLAS).iva },
+      );
+      const cambiaFlete =
+        !!flete &&
+        (flete.flete !== q.flete ||
+          flete.fleteCantidad !== cantidadFlete(q) ||
+          flete.fleteDescripcion !== (q.fleteDescripcion ?? null));
+      propuesta.avisos.push(...avisosFlete);
       if (this.llm.verificarCifras && !directa) {
-        // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
-        const textosIA = [accion.mensaje, ...historialIA.map((m) => m.texto)];
         // Primero cada ítem contra su propia frase, para que no tome la madera o la cantidad de otro.
         const anteriores = historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto);
         const porFrase = anclarFrases(propuesta.items, q.solicitudes, accion.mensaje, resolver, anteriores, (m) =>
@@ -2164,13 +2178,14 @@ export class Servicio {
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
       const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];
       const extra = avisos.length ? { avisos } : {};
-      if (q === nuevo && !solicitudes.length && Object.values(cliente).every((v) => v === null))
+      if (q === nuevo && !solicitudes.length && !cambiaFlete && Object.values(cliente).every((v) => v === null))
         return responder(
           'Cuéntame qué necesitas cotizar: modelo, madera, medidas y cantidad. También puedes agregar los datos del cliente.',
           extra,
         );
       if (
         this.sinCambios(q, solicitudes, cliente) &&
+        !cambiaFlete &&
         (q.estado !== 'borrador' || modo === 'modificacion_anterior')
       )
         return responder(
@@ -2186,6 +2201,15 @@ export class Servicio {
       const descuentoAntes = descuentoDe(destino);
       destino.solicitudes = solicitudes;
       destino.cliente = cliente;
+      const extrasFlete: string[] = [];
+      if (flete && cambiaFlete) {
+        if (flete.flete !== destino.flete) extrasFlete.push(`Flete ${pesos(destino.flete)} → ${pesos(flete.flete)}`);
+        if (flete.fleteCantidad !== cantidadFlete(destino))
+          extrasFlete.push(`Cantidad del flete: ${cantidadFlete(destino)} → ${flete.fleteCantidad}`);
+        if (flete.fleteDescripcion !== (destino.fleteDescripcion ?? null))
+          extrasFlete.push(`Descripción del flete: ${flete.fleteDescripcion ?? 'automática'}`);
+        Object.assign(destino, flete);
+      }
       const todos = [...avisos, ...this.recalcular(destino)];
       const exito =
         modo === 'modificacion_anterior'
@@ -2196,12 +2220,15 @@ export class Servicio {
         accion.mensaje,
         [
           ...todos,
+          ...(extrasFlete.length
+            ? [`Flete: ${cantidadFlete(destino)} × ${descripcionFlete(destino)}, ${pesos(unitarioFlete(destino))} neto c/u.`]
+            : []),
           destino.incompletos.length ? destino.incompletos.map((i) => i.pregunta).join('\n\n') : exito,
         ].join('\n\n'),
       );
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
-      const detalle = textoCambios(cambios, cambioDescuento(descuentoAntes, destino));
+      const detalle = textoCambios(cambios, [...cambioDescuento(descuentoAntes, destino), ...extrasFlete]);
       if (destino === nuevo) u.registrarEvento(destino.id, 'creada', this.autor, detalle);
       else u.registrarEvento(destino.id, 'modificada', this.autor, detalle);
       return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };

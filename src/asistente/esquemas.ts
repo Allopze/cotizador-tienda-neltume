@@ -56,6 +56,21 @@ const clienteCambioSchema = z
     proyecto: texto.optional(),
   })
   .strict();
+/**
+ * Línea de flete pedida en el chat. Es la única cifra en pesos que la IA devuelve: el servidor solo la acepta
+ * si está escrita en la conversación y la guarda neta según `iva`.
+ */
+export const fleteChatSchema = z
+  .object({
+    descripcion: texto,
+    cantidad: z.number().nullable(),
+    /** Valor de una unidad, tal como lo escribió la persona. */
+    valor: z.number().nullable(),
+    /** «+ IVA» o «neto» es "neto"; «IVA incluido» o «con IVA» es "incluido"; null si no lo dice. */
+    iva: z.enum(['neto', 'incluido']).nullable(),
+  })
+  .strict();
+export type FleteChat = z.infer<typeof fleteChatSchema>;
 export const modificarSchema = z
   .object({
     items: z
@@ -72,6 +87,8 @@ export const modificarSchema = z
     agregar: z.array(solicitudSchema).max(100).optional(),
     quitar: z.array(z.number().int().nonnegative()).max(100).optional(),
     cliente: clienteCambioSchema.optional(),
+    /** Agrega o cambia la línea de flete; null la quita. */
+    flete: fleteChatSchema.nullable().optional(),
   })
   .strict();
 export type ModificacionCotizacion = z.infer<typeof modificarSchema>;
