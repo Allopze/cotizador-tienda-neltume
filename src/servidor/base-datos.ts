@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 19;
+export const VERSION_ESQUEMA = 20;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -372,6 +372,27 @@ function crearEsquema(db: Database.Database) {
         CREATE INDEX IF NOT EXISTS referencias_item_archivo ON referencias_item(archivo);
         PRAGMA user_version = 19;
       `);
+    }).immediate();
+  if (version < 20)
+    db.transaction(() => {
+      // v20: descuento especial por ítem (porcentaje o monto fijo por unidad). Lo pedido vive en `solicitudes`; las
+      // líneas guardan además cuánto descontó por unidad. Lo existente queda sin descuento (NULL).
+      const columnas = (tabla: string) =>
+        (db.pragma(`table_info(${tabla})`) as { name: string }[]).map((c) => c.name);
+      const tipo = "TEXT CHECK (descuento_tipo IN ('porcentaje', 'monto'))";
+      if (!columnas('solicitudes').includes('descuento_tipo'))
+        db.exec(`
+          ALTER TABLE solicitudes ADD COLUMN descuento_tipo ${tipo};
+          ALTER TABLE solicitudes ADD COLUMN descuento_valor REAL;
+        `);
+      for (const tabla of ['cotizacion_lineas', 'nota_lineas'])
+        if (!columnas(tabla).includes('descuento_tipo'))
+          db.exec(`
+            ALTER TABLE ${tabla} ADD COLUMN descuento_tipo ${tipo};
+            ALTER TABLE ${tabla} ADD COLUMN descuento_valor REAL;
+            ALTER TABLE ${tabla} ADD COLUMN descuento_unitario INTEGER CHECK (descuento_unitario >= 0);
+          `);
+      db.exec('PRAGMA user_version = 20;');
     }).immediate();
 }
 

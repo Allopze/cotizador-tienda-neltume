@@ -1274,3 +1274,24 @@ td small {
 .quote-toolbar:has(.menu-acciones [aria-expanded='true']) {
   z-index: 45;
 }
+/* Descuento especial por ítem: el precio original queda tachado y el rebajado debajo, en la misma celda. */
+.precio-original {
+  display: block;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.celda-monto .precio-original + * {
+  margin-top: 2px;
+}
+.precio-descuento {
+  display: block;
+  color: var(--warm-text);
+  font-weight: 600;
+}
+.descuento-item-texto,
+.totals > .total-ahorro {
+  color: var(--warm-text) !important;
+}
+.descuento-item-texto {
+  font-weight: 600;
+}

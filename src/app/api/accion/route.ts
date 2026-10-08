@@ -10,6 +10,7 @@ import { leerJson } from '@/servidor/cuerpo';
 import type { LLM } from '@/asistente/llm';
 import { asistenteConfigurado, crearLLM } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
+import { descuentoItemSchema } from '@/servidor/persistencia-esquemas';
 import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
 import { ErrorPrecio } from '@/negocio/precios';
 import { ESTADOS, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
@@ -84,6 +85,7 @@ const solicitudRestaurarSchema = z.object({
   medidaPorDefecto: z.boolean().optional(),
   personalizado: z.object({ familia: familiaSchema }).strict().nullable().optional(),
   referencias: referenciasSchema.optional(),
+  descuento: descuentoItemSchema.nullable().optional(),
 }).strict();
 const accionSchema = z.discriminatedUnion('tipo', [
   z
@@ -226,6 +228,12 @@ const accionSchema = z.discriminatedUnion('tipo', [
                   descripcion: texto(300),
                   observaciones: texto(1000),
                   referencias: referenciasSchema.optional(),
+                  // Monto 0 o null quitan el descuento; el servidor valida rangos y decimales con mensajes propios.
+                  descuento: z
+                    .object({ tipo: z.enum(['porcentaje', 'monto']), valor: z.number().finite().min(0).max(100_000_000) })
+                    .strict()
+                    .nullable()
+                    .optional(),
                 })
                 .strict(),
             })

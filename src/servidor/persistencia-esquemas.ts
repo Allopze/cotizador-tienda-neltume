@@ -18,6 +18,12 @@ export const tramoDescuentoSchema = z.object({
 });
 export const tramosDescuentoSchema = z.array(tramoDescuentoSchema);
 
+/** Descuento especial de un ítem (ver `descuentoItemValido`, que además limita los decimales). */
+export const descuentoItemSchema = z.discriminatedUnion('tipo', [
+  z.object({ tipo: z.literal('porcentaje'), valor: z.number().positive().max(100) }).strict(),
+  z.object({ tipo: z.literal('monto'), valor: z.number().int().positive().max(100_000_000) }).strict(),
+]);
+
 const clienteSchema = z.object({
   nombre: z.string().nullable(),
   rut: z.string().nullable(),
@@ -57,6 +63,7 @@ const solicitudSchema = z.object({
     )
     .max(10)
     .optional(),
+  descuento: descuentoItemSchema.nullable().optional(),
 });
 
 const productoSchema = z.object({
@@ -91,6 +98,8 @@ const montosSchema = z.object({
       descripcionDocumento: z.string().max(300).nullable().optional(),
       total: z.number().int(),
       precioUnitarioPersonalizado: z.number().int().positive().max(100_000_000).nullable().optional(),
+      descuentoItem: descuentoItemSchema.nullable().optional(),
+      descuentoUnitario: z.number().int().nonnegative().optional(),
       indice: z.number().int().nonnegative().nullable(),
       anchoSolicitado: z.number().nullable(),
       altoSolicitado: z.number().nullable(),

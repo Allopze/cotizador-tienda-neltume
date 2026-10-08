@@ -1,10 +1,12 @@
-import type { Producto } from '../catalogo/tipos';
+import type { DescuentoItem, Producto } from '../catalogo/tipos';
 import { describirProducto } from '../catalogo/escalones';
 import { conDosDecimales } from './cifras';
 /**
  * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
- * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × unitario.
- * 2. subtotal = suma de líneas; descuento = round(subtotal × porcentaje / 100). El porcentaje es el fijado a mano o,
+ * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × (unitario − descuento del ítem).
+ *    El descuento especial de un ítem es por unidad: round(unitario × % / 100) o un monto fijo, nunca más que el
+ *    unitario. Así el total de la línea siempre es cantidad × precio con descuento, sin centavos sueltos.
+ * 2. subtotal = suma de líneas (ya con sus descuentos especiales); descuento = round(subtotal × porcentaje / 100). El porcentaje es el fijado a mano o,
  *    si no, el del tramo por cantidad de puertas (descuento-cantidad.ts): `cotizar` solo recibe el resultado.
  * 3. neto = subtotal − descuento + flete (el flete ya es neto entero); IVA = round(neto × iva).
  * La nota de pedido usa ajuste 0, sin descuento ni flete.
@@ -99,6 +101,7 @@ export interface ItemPrecio extends MedidasSolicitadas {
   observaciones?: string | null;
   /** Texto escrito por la persona para los documentos; no cambia el producto ni su categoría de margen. */
   descripcionDocumento?: string | null;
+  descuento?: DescuentoItem | null;
 }
 export interface Linea {
   producto: Producto;
@@ -115,6 +118,13 @@ export interface Linea {
   descripcionDocumento?: string | null;
   /** Precio unitario fijado solo para esta cotización; null si viene de catálogo. */
   precioUnitarioPersonalizado?: number | null;
+  /**
+   * Descuento especial del ítem y lo que descuenta por unidad, en pesos. `precioUnitario` sigue siendo el
+   * precio original; ausentes en las líneas sin descuento (y en las guardadas antes de existir).
+   */
+  descuentoItem?: DescuentoItem | null;
+  descuentoUnitario?: number;
+  /** cantidad × (precioUnitario − descuentoUnitario). */
   total: number;
   /** Índice de la solicitud que originó la línea; null en registros anteriores. */
   indice: number | null;
@@ -165,6 +175,20 @@ export const montosVacios = (): Montos => ({
 });
 export const descuentoValido = (d: number, maximo = REGLAS.descuentoMaximo) =>
   Number.isFinite(d) && d >= 0 && d <= maximo && conDosDecimales(d);
+/** Descuento especial de un ítem: más de 0 y hasta 100 % con dos decimales, o un monto entero de pesos. */
+export const descuentoItemValido = (d: DescuentoItem) =>
+  d.tipo === 'porcentaje'
+    ? Number.isFinite(d.valor) && d.valor > 0 && d.valor <= 100 && conDosDecimales(d.valor)
+    : d.tipo === 'monto' && Number.isSafeInteger(d.valor) && d.valor > 0 && d.valor <= 100_000_000;
+/**
+ * Pesos que descuenta por unidad. En centésimas de punto, como el descuento general. Un monto fijo mayor que
+ * el precio (el precio bajó después de fijarlo) se limita al precio: el resultado nunca es negativo.
+ */
+export function descuentoPorUnidad(precioUnitario: number, d: DescuentoItem | null | undefined) {
+  if (!d) return 0;
+  const monto = d.tipo === 'porcentaje' ? Math.round((precioUnitario * Math.round(d.valor * 100)) / 10000) : d.valor;
+  return Math.min(monto, precioUnitario);
+}
 export const fleteValido = (f: number) => Number.isSafeInteger(f) && f >= 0 && f <= 100_000_000;
 /** Margen manual (de una línea o de la cotización), como fracción: −50 %…500 % con hasta dos decimales. */
 export const margenValido = (m: number) => Number.isFinite(m) && m >= -0.5 && m <= 5 && conDosDecimales(m * 100);
@@ -207,6 +231,9 @@ export function cotizar(
     const precioUnitario = precioUnitarioPersonalizado ?? Math.round(producto.precioNeto * (1 + margenCalculado));
     const margen = precioUnitarioPersonalizado === null ? margenCalculado : precioUnitario / producto.precioNeto - 1;
     if (margen < -0.5 || margen > 5) throw new ErrorPrecio('margen_invalido');
+    const descuentoItem = item.descuento ?? null;
+    if (descuentoItem && !descuentoItemValido(descuentoItem)) throw new ErrorPrecio('descuento_invalido');
+    const descuentoUnitario = descuentoPorUnidad(precioUnitario, descuentoItem);
     return {
       producto,
       cantidad,
@@ -219,7 +246,8 @@ export function cotizar(
       observaciones: item.observaciones?.trim() || null,
       descripcionDocumento: item.descripcionDocumento?.trim() || null,
       ...(precioUnitarioPersonalizado !== null ? { precioUnitarioPersonalizado } : {}),
-      total: cantidad * precioUnitario,
+      ...(descuentoItem ? { descuentoItem, descuentoUnitario } : {}),
+      total: cantidad * (precioUnitario - descuentoUnitario),
       indice: item.indice ?? null,
       anchoSolicitado: item.anchoSolicitado ?? null,
       altoSolicitado: item.altoSolicitado ?? null,
@@ -240,6 +268,25 @@ export function cotizar(
     throw new ErrorPrecio('desbordamiento');
   return { lineas, subtotal, descuentoPorcentaje, descuento, flete, neto, iva, total };
 }
+
+/** Precio unitario con el descuento especial del ítem (el original si no tiene). */
+export const precioConDescuento = (l: Pick<Linea, 'precioUnitario' | 'descuentoUnitario'>) =>
+  l.precioUnitario - (l.descuentoUnitario ?? 0);
+/** Lo que el descuento especial ahorra en toda la línea (cantidad × descuento por unidad). */
+export const ahorroLinea = (l: Pick<Linea, 'cantidad' | 'descuentoUnitario'>) => l.cantidad * (l.descuentoUnitario ?? 0);
+/** La línea muestra precio original y rebajado: tiene un descuento que efectivamente descuenta. */
+export const conDescuentoItem = (l: Pick<Linea, 'descuentoUnitario'>) => (l.descuentoUnitario ?? 0) > 0;
+/**
+ * Descuentos especiales de las líneas: el subtotal antes de ellos y el ahorro total. `subtotal` de los montos
+ * ya los incluye (subtotalOriginal − ahorro), así que el descuento general nunca vuelve a contarlos.
+ */
+export function resumenDescuentosItems(m: Pick<Montos, 'lineas' | 'subtotal'>) {
+  const ahorro = m.lineas.reduce((s, l) => s + ahorroLinea(l), 0);
+  return { ahorro, subtotalOriginal: m.subtotal + ahorro };
+}
+/** «15 %» o «$5.000 c/u». */
+export const textoDescuentoItem = (d: DescuentoItem) =>
+  d.tipo === 'porcentaje' ? porcentaje(d.valor) : `${pesos(d.valor)} c/u`;
 
 const textoNormalizado = (s: string) =>
   s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();

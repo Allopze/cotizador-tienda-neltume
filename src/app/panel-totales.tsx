@@ -10,7 +10,7 @@ import {
   textoTramo,
   tramoAplicable,
 } from '@/negocio/descuento-cantidad';
-import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
+import { pesos, porcentaje, REGLAS, resumenDescuentosItems } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
 import type { CambiosEdicion } from './contrato';
 import { iva, pct } from './formato';
@@ -75,9 +75,23 @@ function OrigenDescuento({ actual, editable, guardando, editar }: Props & { actu
  */
 export function Totales({ actual, editable, guardando, editar }: Props) {
   const m = actual?.montos;
+  // Descuentos especiales por ítem: lo que habría costado sin ellos y lo que ahorran (ya restado del subtotal).
+  const { ahorro, subtotalOriginal } = m ? resumenDescuentosItems(m) : { ahorro: 0, subtotalOriginal: 0 };
   return (
     <div className="totals">
-      {(!!m?.descuento || editable) && (
+      {!!ahorro && (
+        <>
+          <div className="total-original">
+            <span>Subtotal original</span>
+            <span data-testid="subtotal-original">{pesos(subtotalOriginal + (m?.flete ?? 0))}</span>
+          </div>
+          <div className="total-ahorro">
+            <span>Descuentos especiales</span>
+            <span data-testid="ahorro-items">−{pesos(ahorro)}</span>
+          </div>
+        </>
+      )}
+      {(!!m?.descuento || !!ahorro || editable) && (
         <div>
           <span>Subtotal</span>
           <span>{pesos((m?.subtotal ?? 0) + (m?.flete ?? 0))}</span>

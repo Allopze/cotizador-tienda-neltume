@@ -10,7 +10,7 @@ import {
   unitarioFlete,
   type Cotizacion,
 } from '@/negocio/estado';
-import { descripcionLinea, pesos } from '@/negocio/precios';
+import { conDescuentoItem, descripcionLinea, pesos, precioConDescuento } from '@/negocio/precios';
 import { metros } from '@/catalogo/resolver';
 import { leerPesos } from '@/negocio/cifras';
 import { esStarken } from '@/negocio/starken';
@@ -42,6 +42,7 @@ import {
   vencida,
 } from './formato';
 import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
+import { DescuentoLinea, textoDescuentoLinea } from './descuento-item';
 import { esPersonalizado } from '@/negocio/personalizados';
 import { ReferenciasItem } from './referencias-item';
 import { MenuAcciones } from './menu-acciones';
@@ -625,6 +626,9 @@ export function CotizacionPanel({
                           {!editable && linea && !personalizado && textoMargenLinea(actual, linea) && (
                             <small className="margen-manual">{textoMargenLinea(actual, linea)}</small>
                           )}
+                          {!editable && linea && textoDescuentoLinea(linea) && (
+                            <small className="descuento-item-texto">{textoDescuentoLinea(linea)}</small>
+                          )}
                           {((linea && !personalizado) || s.modeloOriginal || s.fuente) && (
                             <details className="item-provenance">
                               <summary>Ver referencia y origen del pedido</summary>
@@ -721,7 +725,15 @@ export function CotizacionPanel({
                                   ? ''
                                   : String(s.precioUnitario)
                               }
-                              mostrar={pesos(linea.precioUnitario)}
+                              mostrar={
+                                conDescuentoItem(linea) ? (
+                                  <s className="precio-original" title="Precio original">
+                                    {pesos(linea.precioUnitario)}
+                                  </s>
+                                ) : (
+                                  pesos(linea.precioUnitario)
+                                )
+                              }
                               editable={editable}
                               discreto
                               guardando={guardando === `item.${i}.precioUnitario`}
@@ -749,8 +761,18 @@ export function CotizacionPanel({
                           ) : (
                             '—'
                           )}
+                          {linea && conDescuentoItem(linea) && (
+                            <span className="precio-descuento" title="Precio con descuento especial">
+                              {pesos(precioConDescuento(linea))}
+                            </span>
+                          )}
                         </td>
                         <td className="celda-monto celda-total" data-etiqueta="Total neto">
+                          {linea && conDescuentoItem(linea) && (
+                            <s className="precio-original" title="Total original">
+                              {pesos(linea.cantidad * linea.precioUnitario)}
+                            </s>
+                          )}
                           {linea ? pesos(linea.total) : '—'}
                         </td>
                         {conQuitar && (
@@ -800,7 +822,9 @@ export function CotizacionPanel({
                                     ? faltan.length
                                       ? `Falta: ${textoFaltan(faltan)}`
                                       : pendiente.pregunta
-                                    : 'Modelo, madera, medidas y condiciones'}
+                                    : linea && conDescuentoItem(linea)
+                                      ? `Modelo, madera, medidas y condiciones · ${textoDescuentoLinea(linea)}`
+                                      : 'Modelo, madera, medidas, condiciones y descuento'}
                                 </span>
                               </summary>
                               <div
@@ -1033,6 +1057,16 @@ export function CotizacionPanel({
                                   />
                                   {linea && !personalizado && (
                                     <MargenLinea
+                                      actual={actual}
+                                      linea={linea}
+                                      indice={i}
+                                      editable={editable}
+                                      editar={acciones.editar}
+                                    />
+                                  )}
+                                  {linea && (
+                                    <DescuentoLinea
+                                      key={`${actual.actualizada}-descuento-${i}`}
                                       actual={actual}
                                       linea={linea}
                                       indice={i}

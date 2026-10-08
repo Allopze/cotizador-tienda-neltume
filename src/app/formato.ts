@@ -3,7 +3,19 @@ import { ajusteMedida, medidaReferencia, metrosTexto } from '@/catalogo/escalone
 import { etiquetaDescuento } from '@/negocio/descuento-cantidad';
 import type { Cotizacion, ResumenCotizacion } from '@/negocio/estado';
 import { cantidadFlete, descripcionFlete, unitarioFlete } from '@/negocio/estado';
-import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type Linea } from '@/negocio/precios';
+import {
+  ahorroLinea,
+  conDescuentoItem,
+  descripcionLinea,
+  pesos,
+  porcentaje,
+  porcentajeIva,
+  precioConDescuento,
+  REGLAS,
+  resumenDescuentosItems,
+  textoDescuentoItem,
+  type Linea,
+} from '@/negocio/precios';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '@/negocio/medidas';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
@@ -225,10 +237,12 @@ export function enterEnvia(e: KeyboardEvent<HTMLTextAreaElement>) {
 /** Resumen en texto plano para pegar en un correo o WhatsApp. */
 export function resumenTexto(q: Cotizacion) {
   const c = q.cliente;
-  const lineas = q.montos.lineas.map(
-    (l) =>
-      `• ${l.cantidad} × ${nombreProducto(descripcionLinea(l))} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
+  const lineas = q.montos.lineas.map((l) =>
+    conDescuentoItem(l) && l.descuentoItem
+      ? `• ${l.cantidad} × ${nombreProducto(descripcionLinea(l))} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u, descuento especial ${textoDescuentoItem(l.descuentoItem)} → ${pesos(precioConDescuento(l))} c/u = ${pesos(l.total)} (ahorro ${pesos(ahorroLinea(l))})`
+      : `• ${l.cantidad} × ${nombreProducto(descripcionLinea(l))} (${l.producto.codigo}): ${pesos(l.precioUnitario)} c/u = ${pesos(l.total)}`,
   );
+  const { ahorro, subtotalOriginal } = resumenDescuentosItems(q.montos);
   if (q.montos.flete)
     lineas.push(
       `• ${cantidadFlete(q)} × ${descripcionFlete(q)}: ${pesos(unitarioFlete(q))} c/u = ${pesos(q.montos.flete)}`,
@@ -249,9 +263,17 @@ export function resumenTexto(q: Cotizacion) {
       ? [`(${plural(q.incompletos.length, 'ítem pendiente', 'ítems pendientes')} sin valorizar)`]
       : []),
     '',
+    ...(ahorro
+      ? [
+          `Subtotal original: ${pesos(subtotalOriginal + q.montos.flete)}`,
+          `Ahorro por descuentos especiales: −${pesos(ahorro)}`,
+        ]
+      : []),
+    ...(q.montos.descuento || ahorro
+      ? [`Subtotal: ${pesos(q.montos.subtotal + q.montos.flete)}`]
+      : []),
     ...(q.montos.descuento
       ? [
-          `Subtotal: ${pesos(q.montos.subtotal + q.montos.flete)}`,
           `${etiquetaDescuento(q)} ${pct(q.montos.descuentoPorcentaje)}${q.montos.flete ? ' sobre productos' : ''}: −${pesos(q.montos.descuento)}`,
         ]
       : []),

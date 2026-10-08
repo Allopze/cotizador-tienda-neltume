@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
-import type { Familia, Producto, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
+import type { DescuentoItem, Familia, Producto, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
 import type {
   Cotizacion,
@@ -141,6 +141,9 @@ type FilaLinea = {
   tipo_medida: 'hoja' | 'vano' | 'no_especificado' | null;
   observaciones: string | null;
   descripcion_documento: string | null;
+  descuento_tipo: DescuentoItem['tipo'] | null;
+  descuento_valor: number | null;
+  descuento_unitario: number | null;
 };
 
 type FilaPago = Pago & { cotizacion_id: string };
@@ -233,6 +236,12 @@ const lineaDesdeFila = (l: FilaLinea): Linea => ({
   ...(l.precio_unitario_personalizado !== null
     ? { precioUnitarioPersonalizado: l.precio_unitario_personalizado }
     : {}),
+  ...(l.descuento_tipo && l.descuento_valor !== null
+    ? {
+        descuentoItem: { tipo: l.descuento_tipo, valor: l.descuento_valor },
+        descuentoUnitario: l.descuento_unitario ?? 0,
+      }
+    : {}),
   margenPersonalizado: !!l.margen_personalizado,
 });
 
@@ -275,8 +284,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     if (!filas.length) return [];
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
-    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente FROM solicitudes $FILTRO
+    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null; descuento_tipo: DescuentoItem['tipo'] | null; descuento_valor: number | null }>(`
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
     const referencias = hijos<ReferenciaItem & { cotizacion_id: string; item_orden: number }>(`
       SELECT cotizacion_id, item_orden, archivo, nombre, tipo, tamano, fecha FROM referencias_item $FILTRO
@@ -327,6 +336,9 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
             fuente: fila.fuente ?? null,
             ...(fila.familia_personalizada ? { personalizado: { familia: fila.familia_personalizada } } : {}),
             ...(referenciasPorItem.has(orden) ? { referencias: referenciasPorItem.get(orden) } : {}),
+            ...(fila.descuento_tipo && fila.descuento_valor !== null
+              ? { descuento: { tipo: fila.descuento_tipo, valor: fila.descuento_valor } }
+              : {}),
           };
           if (fila.precio_unitario !== null) s.precioUnitario = fila.precio_unitario;
           if (s.cantidad === null || cantidadValida(s.cantidad)) return s;
@@ -468,12 +480,14 @@ function insertarLineas(
       cotizacion_id, orden, codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
       largo, precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total,
       indice, ancho_solicitado, alto_solicitado, medida_solicitada, precio_unitario_personalizado,
-      precio_fabrica, margen, margen_personalizado, precio_cliente, tipo_medida, observaciones, descripcion_documento
+      precio_fabrica, margen, margen_personalizado, precio_cliente, tipo_medida, observaciones, descripcion_documento,
+      descuento_tipo, descuento_valor, descuento_unitario
     ) VALUES (
       @cotizacion_id, @orden, @codigo, @modelo, @familia, @tipo, @madera, @medida,
       @ancho_min, @ancho_max, @alto_min, @alto_max, @largo, @precio_neto, @descripcion, @fila_origen,
       @cantidad, @precio_unitario, @total, @indice, @ancho_solicitado, @alto_solicitado, @medida_solicitada,
-      @precio_unitario_personalizado, @precio_fabrica, @margen, @margen_personalizado, @precio_cliente, @tipo_medida, @observaciones, @descripcion_documento
+      @precio_unitario_personalizado, @precio_fabrica, @margen, @margen_personalizado, @precio_cliente, @tipo_medida, @observaciones, @descripcion_documento,
+      @descuento_tipo, @descuento_valor, @descuento_unitario
     )
   `);
   montos.lineas.forEach((l, orden) =>
@@ -509,6 +523,9 @@ function insertarLineas(
       tipo_medida: l.tipoMedida ?? null,
       observaciones: l.observaciones ?? null,
       descripcion_documento: l.descripcionDocumento ?? null,
+      descuento_tipo: l.descuentoItem?.tipo ?? null,
+      descuento_valor: l.descuentoItem?.valor ?? null,
+      descuento_unitario: l.descuentoItem ? (l.descuentoUnitario ?? 0) : null,
     }),
   );
 }
@@ -681,8 +698,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente)
+    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor)
+    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor)
   `);
   const insReferencia = db.prepare(`
     INSERT INTO referencias_item (cotizacion_id, item_orden, orden, archivo, nombre, tipo, tamano, fecha)
@@ -708,6 +725,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       modelo_original: s.modeloOriginal ?? null,
       coincidencia_modelo: s.coincidenciaModelo ?? null,
       fuente: s.fuente ?? null,
+      descuento_tipo: s.descuento?.tipo ?? null,
+      descuento_valor: s.descuento?.valor ?? null,
     }),
   );
   q.solicitudes.forEach((s, i) =>

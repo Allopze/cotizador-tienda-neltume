@@ -312,6 +312,45 @@
 .item-editables .margen-linea > button {
   grid-column: 1 / -1;
 }
+/* Descuento especial: valor y tipo lado a lado, con el resumen de precios debajo (mismo ritmo que el margen). */
+.item-editables > .descuento-linea {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+}
+.descuento-linea-campos {
+  display: grid;
+  grid-template-columns: minmax(140px, 220px) minmax(160px, 240px);
+  gap: 8px 18px;
+}
+/* Más específico que `.item-select-field > span` (bloque y texto de etiqueta): el sufijo va junto al campo. */
+.item-editables .descuento-linea .descuento-linea-entrada {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--fs-md);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+.item-editables .descuento-linea-entrada input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+}
+.descuento-linea > button {
+  justify-self: start;
+}
+.descuento-linea-resumen {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+}
+.descuento-linea-resumen.activo b {
+  color: var(--warm-text);
+}
 .item-editor .aviso-medida {
   margin: 0;
   padding: 12px 14px;
@@ -388,6 +427,12 @@
   .item-editables .margen-linea > small,
   .item-editables .margen-linea > button {
     grid-column: auto;
+  }
+  .item-editables > .descuento-linea {
+    grid-column: auto;
+  }
+  .descuento-linea-campos {
+    grid-template-columns: minmax(0, 1fr);
   }
   .table-wrap .item-editor-row {
     display: block;

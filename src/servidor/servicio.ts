@@ -64,6 +64,7 @@ import {
 } from '../negocio/estado';
 import {
   cotizar,
+  descuentoItemValido,
   descuentoValido,
   fleteValido,
   MARGENES_INICIALES,
@@ -71,6 +72,7 @@ import {
   montosVacios,
   pesos,
   REGLAS,
+  textoDescuentoItem,
   type ItemPrecio,
   type Montos,
 } from '../negocio/precios';
@@ -146,7 +148,7 @@ export type Accion =
       cantidades?: { indice: number; cantidad: number }[];
       items?: {
         indice: number;
-        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias'>>;
+        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento'>>;
       }[];
       /** Fija el descuento (%) a mano: deja de seguir al descuento por cantidad. */
       descuento?: number;
@@ -350,6 +352,8 @@ function aplicarDespacho(base: Despacho | null | undefined, cambios: Partial<Des
   return { despacho, cambiados };
 }
 /** Margen (fracción) como porcentaje legible: 0,42 → «42 %»; sin el ruido binario de 0,07 × 100. */
+/** Descuento especial de un ítem para comparar versiones: «porcentaje:15», «monto:5000» o vacío. */
+const claveDescuento = (s: SolicitudItem) => (s.descuento ? `${s.descuento.tipo}:${s.descuento.valor}` : '');
 const margenTexto = (m: number) => porcentajeTexto(margenAPorcentaje(m));
 const ESTANDAR_CATEGORIA = 'estándar de categoría';
 
@@ -447,6 +451,7 @@ export class Servicio {
           tipoMedida: s.tipoMedida ?? null,
           observaciones: s.observaciones ?? null,
           descripcionDocumento: s.descripcion ?? r.producto.descripcion,
+          descuento: s.descuento ?? null,
         });
         continue;
       }
@@ -482,6 +487,7 @@ export class Servicio {
           tipoMedida: s.tipoMedida ?? null,
           observaciones: s.observaciones ?? null,
           descripcionDocumento: s.descripcion ?? null,
+          descuento: s.descuento ?? null,
         });
       } else q.incompletos.push({ indice, rechazo: res.rechazo, pregunta: pregunta(res.rechazo, s.modelo) });
     }
@@ -564,6 +570,7 @@ export class Servicio {
         s.observaciones ?? '',
         s.cantidad ?? '',
         s.precioUnitario ?? '',
+        claveDescuento(s),
       ].join('|');
     const r = resolverItem(this.catalogo, s);
     if (r.ok)
@@ -578,6 +585,7 @@ export class Servicio {
         s.observaciones ?? '',
         s.margen ?? '',
         s.precioUnitario ?? '',
+        claveDescuento(s),
       ].join('|');
     return [
       normalizar(s.modelo ?? ''),
@@ -591,6 +599,7 @@ export class Servicio {
       s.margen ?? '',
       s.cantidad ?? '',
       s.precioUnitario ?? '',
+      claveDescuento(s),
     ].join('|');
   }
 
@@ -1122,6 +1131,18 @@ export class Servicio {
           siguiente.margen = valor === null ? null : redondearMargen(valor);
           if (valor !== null) siguiente.precioUnitario = null;
         }
+        if (cambios.descuento !== undefined) {
+          const valor = cambios.descuento;
+          // Un descuento de 0 es no tener descuento: se quita, igual que con null.
+          if (!valor || valor.valor === 0) delete siguiente.descuento;
+          else if (!descuentoItemValido(valor))
+            throw new ErrorUsuario(
+              valor.tipo === 'porcentaje'
+                ? 'El descuento del ítem debe ser un porcentaje entre 0 % y 100 %, con hasta dos decimales.'
+                : 'El descuento del ítem debe ser un monto entero en pesos, desde $0.',
+            );
+          else siguiente.descuento = { tipo: valor.tipo, valor: valor.tipo === 'porcentaje' ? aCentesimas(valor.valor) : valor.valor };
+        }
         const anterior = solicitudes[cambio.indice];
         const descartes = descartarDelProducto(anterior, siguiente, {
           antes: this.producto(anterior, siguiente),
@@ -1283,6 +1304,11 @@ export class Servicio {
           extras.push(textoReferencias(cambio.indice, anterior.referencias, solicitudes[cambio.indice].referencias));
         if (cambio.cambios.precioUnitario !== undefined && cambio.cambios.precioUnitario !== anterior.precioUnitario)
           extras.push(`Precio cliente de ${this.describir(anterior)} actualizado${cambio.cambios.precioUnitario === null ? ' según margen aplicado' : ` a ${pesos(cambio.cambios.precioUnitario)}`}`);
+        const descuentoItem = solicitudes[cambio.indice].descuento ?? null;
+        if (cambio.cambios.descuento !== undefined && claveDescuento(anterior) !== claveDescuento(solicitudes[cambio.indice]))
+          extras.push(
+            `Descuento especial de ${this.describir(anterior)}: ${anterior.descuento ? textoDescuentoItem(anterior.descuento) : 'sin descuento'} → ${descuentoItem ? textoDescuentoItem(descuentoItem) : 'sin descuento'}`,
+          );
       }
       destino.descuento = descuentoNuevo;
       destino.descuentoManual = descuentoManual;
@@ -1293,6 +1319,12 @@ export class Servicio {
       destino.observaciones = observaciones;
       destino.despacho = despacho;
       const todos = [...avisos, ...this.recalcular(destino)];
+      // Un monto fijo nunca supera el precio unitario: tampoco si lo que bajó fue el precio (margen o precio a mano).
+      for (const l of destino.montos.lineas)
+        if (l.descuentoItem?.tipo === 'monto' && l.descuentoItem.valor > l.precioUnitario)
+          throw new ErrorUsuario(
+            `El descuento del ítem ${(l.indice ?? 0) + 1} (${pesos(l.descuentoItem.valor)} por unidad) supera su precio unitario (${pesos(l.precioUnitario)}). Ajusta o quita el descuento.`,
+          );
       extras.unshift(...cambioDescuento(descuentoAntes, destino));
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);

@@ -54,6 +54,16 @@ export interface SolicitudItem {
   personalizado?: { familia: Familia } | null;
   /** Imágenes o documentos que entregó el cliente para este ítem; nunca pasan al catálogo. */
   referencias?: ReferenciaItem[];
+  /** Descuento especial solo de este ítem; ausente (o null) mantiene su precio. Nunca toca el catálogo. */
+  descuento?: DescuentoItem | null;
+}
+/**
+ * Descuento especial de un ítem, sobre su precio unitario: `porcentaje` (0–100, dos decimales) o `monto`
+ * fijo en pesos enteros por unidad, nunca mayor que ese precio.
+ */
+export interface DescuentoItem {
+  tipo: 'porcentaje' | 'monto';
+  valor: number;
 }
 /** Archivo de referencia de un ítem. El archivo se guarda por su contenido: varias cotizaciones pueden compartirlo. */
 export interface ReferenciaItem {

@@ -129,6 +129,41 @@ describe('Plantillas', () => {
     expect(html).not.toContain('Flete por despacho</td>');
   });
 
+  it('el descuento especial de un ítem muestra precio original, descuento, precio final y el ahorro en el resumen', async () => {
+    await aislarBaseDatos();
+    const otra = { ...puerta, codigo: 'MOL-R-3-A', madera: 'RAULI', descripcion: 'MOLCO RAULI 0,80 A 0,85 MT X 2 MT' };
+    const montos = cotizar(
+      [
+        { producto: puerta, cantidad: 2, descuento: { tipo: 'porcentaje', valor: 15 } },
+        { producto: otra, cantidad: 1 },
+      ],
+      undefined,
+      { descuento: 10 },
+    );
+    const html = await plantilla(cotizacion(), {
+      tipo: 'cotizacion', numero: 325, montos, fecha: '2026-09-28T12:00:00.000Z',
+    });
+    const [conDescuento, sinDescuento] = html.split('<tr><td>').slice(1).map(textoVisible);
+    // Unitario $125.000 → −$18.750 → $106.250; la línea de 2 pasa de $250.000 a $212.500.
+    expect(conDescuento).toMatch(/\$125\.000\s+\$106\.250/);
+    expect(conDescuento).toMatch(/\$250\.000\s+\$212\.500/);
+    expect(conDescuento).toContain('Descuento especial 15 %: −$18.750 c/u · Ahorro $37.500');
+    expect(html).toContain('<s class="original">$125.000</s>');
+    // La otra línea sigue a su precio, sin tachar ni rótulos de descuento.
+    expect(sinDescuento).not.toMatch(/Descuento especial/);
+    expect(veces(html, '<s class="original">')).toBe(2);
+    const totales = textoVisible(html.split('<div class="totales">')[1]);
+    expect(totales).toMatch(/SUBTOTAL ORIGINAL\s+\$375\.000/);
+    expect(totales).toMatch(/AHORRO DESC\. ESPECIALES\s+−\$37\.500/);
+    expect(totales).toMatch(/SUBTOTAL\s+\$337\.500/);
+    expect(totales).toMatch(/DESCUENTO 10 %\s+−\$33\.750/);
+    // Sin descuentos especiales, el resumen queda como siempre.
+    const sin = await plantilla(cotizacion(), {
+      tipo: 'cotizacion', numero: 325, montos: cotizar([{ producto: puerta, cantidad: 1 }]), fecha: '2026-09-28T12:00:00.000Z',
+    });
+    expect(sin).not.toMatch(/SUBTOTAL ORIGINAL|AHORRO|class="original"/);
+  });
+
   it('el PDF mantiene el orden de las líneas que recibió la cotización', async () => {
     await aislarBaseDatos();
     const montos = cotizar([

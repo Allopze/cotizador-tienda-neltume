@@ -62,12 +62,15 @@ export function detectarTipoMedida(texto: string | null | undefined): Exclude<Ti
 
 export interface Descartes {
   precio: boolean;
+  /** Descuento especial en monto fijo: sus pesos eran sobre el precio del producto anterior. */
+  descuento?: boolean;
 }
 
 /**
- * La descripción de documento es una personalización que debe prevalecer aunque cambie el producto. El precio
- * unitario manual sí pertenece a la referencia anterior: se quita al cambiar modelo o madera, salvo que el
- * mismo cambio traiga un precio nuevo. Devuelve lo descartado, o null.
+ * La descripción de documento es una personalización que debe prevalecer aunque cambie el producto, igual que un
+ * descuento en porcentaje. El precio unitario manual y el descuento en monto fijo sí pertenecen a la referencia
+ * anterior: se quitan al cambiar modelo o madera, salvo que el mismo cambio traiga uno nuevo. Devuelve lo
+ * descartado, o null.
  */
 export function descartarDelProducto(
   antes: SolicitudItem,
@@ -77,16 +80,30 @@ export function descartarDelProducto(
   // Un producto personalizado no tiene precio de catálogo: su precio escrito se conserva siempre.
   if (antes.personalizado || despues.personalizado) return null;
   if (!cambioDeProducto(producto.antes, producto.despues)) return null;
-  const descartes = { precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario };
-  if (!descartes.precio) return null;
+  const descartes: Descartes = {
+    precio: !!antes.precioUnitario && despues.precioUnitario === antes.precioUnitario,
+    ...(antes.descuento?.tipo === 'monto' && mismoDescuento(antes.descuento, despues.descuento)
+      ? { descuento: true }
+      : {}),
+  };
+  if (!descartes.precio && !descartes.descuento) return null;
   if (descartes.precio) despues.precioUnitario = null;
+  if (descartes.descuento) delete despues.descuento;
   return descartes;
 }
 
-export const avisoProductoCambiado = (numero: number, { precio }: Descartes) =>
-  precio
-    ? `El ítem ${numero} cambió de modelo o madera: se descartó su precio unitario manual; se usa el precio de catálogo.`
+const mismoDescuento = (a: SolicitudItem['descuento'], b: SolicitudItem['descuento']) =>
+  (a?.tipo ?? null) === (b?.tipo ?? null) && (a?.valor ?? null) === (b?.valor ?? null);
+
+export const avisoProductoCambiado = (numero: number, { precio, descuento }: Descartes) => {
+  const descartado = [
+    precio && 'su precio unitario manual; se usa el precio de catálogo',
+    descuento && 'su descuento especial en monto fijo',
+  ].filter(Boolean);
+  return descartado.length
+    ? `El ítem ${numero} cambió de modelo o madera: se descartó ${descartado.join(', y ')}.`
     : `El ítem ${numero} cambió de modelo o madera.`;
+};
 
 /**
  * Devuelve los ítems que propone la IA con las ediciones manuales del ítem anterior que corresponde. La IA no ve
@@ -162,7 +179,9 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       descripcion: nuevo.descripcion ?? previo.descripcion ?? null,
       observaciones: nuevo.observaciones ?? previo.observaciones ?? null,
       fuente: nuevo.fuente ?? previo.fuente ?? null,
-      // La IA no ve las referencias del cliente ni sabe qué ítem es personalizado: los conserva el mismo ítem.
+      // La IA no ve las referencias del cliente, el descuento especial ni sabe qué ítem es personalizado: los
+      // conserva el mismo ítem.
+      ...(previo.descuento ? { descuento: previo.descuento } : {}),
       // Un personalizado sigue siéndolo mientras no pase a nombrar un modelo del catálogo.
       ...(previo.referencias?.length ? { referencias: previo.referencias } : {}),
       ...(previo.personalizado && identidades.despues.modelo === ''

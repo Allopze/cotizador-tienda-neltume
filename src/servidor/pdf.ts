@@ -6,7 +6,19 @@ import { etiquetaDescuento } from '../negocio/descuento-cantidad';
 import type { Cotizacion, Despacho } from '../negocio/estado';
 import { CODIGO_FLETE, cantidadFlete, descripcionFlete, unitarioFlete } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
-import { descripcionLinea, pesos, porcentaje, porcentajeIva, REGLAS, type ReglasComerciales } from '../negocio/precios';
+import {
+  ahorroLinea,
+  conDescuentoItem,
+  descripcionLinea,
+  pesos,
+  porcentaje,
+  porcentajeIva,
+  precioConDescuento,
+  REGLAS,
+  resumenDescuentosItems,
+  textoDescuentoItem,
+  type ReglasComerciales,
+} from '../negocio/precios';
 import { fechaChilena } from '../negocio/vigencia';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
@@ -132,7 +144,15 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const fila = (etiqueta: string, valor: string, clase = '') =>
     `<p${clase ? ` class="${clase}"` : ''}><span>${etiqueta}</span><b>${valor}</b></p>`;
   // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
+  // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
+  const { ahorro, subtotalOriginal } = resumenDescuentosItems(montos);
   const totales = [
+    ...(ahorro
+      ? [
+          fila('SUBTOTAL ORIGINAL', pesos(subtotalOriginal + montos.flete), 'original'),
+          fila('AHORRO DESC. ESPECIALES', `−${pesos(ahorro)}`, 'ahorro'),
+        ]
+      : []),
     fila('SUBTOTAL', pesos(montos.subtotal + montos.flete)),
     ...(montos.descuento
       ? [
@@ -200,20 +220,23 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
       nota && referenciaFabrica(l),
       l.observaciones && `Observación: ${l.observaciones}`,
     ];
-    return `${esc(descripcionLegible(descripcionLinea(l)))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}`;
+    return `${esc(descripcionLegible(descripcionLinea(l)))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}${conDescuentoItem(l) && l.descuentoItem ? `<br><small class="descuento-item">Descuento especial ${esc(textoDescuentoItem(l.descuentoItem))}: −${pesos(l.descuentoUnitario!)} c/u · Ahorro ${pesos(ahorroLinea(l))}</small>` : ''}`;
   };
+  // Con descuento especial, el precio original queda tachado sobre el rebajado (unitario y total de la línea).
+  const conOriginal = (l: Linea, original: number, final: number) =>
+    conDescuentoItem(l) ? `<s class="original">${pesos(original)}</s><br><b>${pesos(final)}</b>` : pesos(final);
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
     @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}
     header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-bottom:2px solid #324536;padding-bottom:20px}header img{display:block;height:120px;width:auto}header>div:last-child{text-align:right}h1{font:700 20px Arial,sans-serif;letter-spacing:.03em;margin:4px 0 12px;color:#1c241e}header p{margin:4px 0 0}.empresa{font-size:10px;line-height:1.5;margin-top:10px;color:#3d443d}
     section{margin:22px 0;display:grid;grid-template-columns:1fr 1fr;gap:0 25px}section div div{min-height:15px;margin-bottom:11px}h2{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#324536;margin:0 0 10px;padding-bottom:5px;border-bottom:1px solid #deded6}
     table{width:100%;border-collapse:collapse;font-size:10px}thead{display:table-header-group}th{text-align:left;border-top:1px solid #324536;border-bottom:1px solid #324536;padding:10px 5px;font-size:9px}td{padding:11px 5px;border-bottom:1px solid #deded6;vertical-align:baseline}td small{font-size:9px;color:#4a524a}tr{break-inside:avoid}.num{text-align:right;white-space:nowrap}.codigo{white-space:nowrap;font-size:9px}.check{width:34px;text-align:center}.check i{display:inline-block;width:11px;height:11px;border:1px solid #324536;vertical-align:-2px}
-    .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}
+    .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}.totales .original b{font-weight:400}.totales .ahorro,.descuento-item{color:#8a5a37}s.original{color:#6b716b;font-size:9px}
     footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6}.bloque{break-inside:avoid;margin-bottom:18px}.bloque p{margin:2px 0}.firmas{display:flex;gap:28px;margin-top:34px}.firma{flex:1;font-size:9px;color:#4a524a}.firma span{display:block;border-top:1px solid #242a24;margin-bottom:4px}.linea{display:flex;gap:8px;align-items:baseline;margin-bottom:12px}.linea span{flex:1;border-bottom:1px solid #9a9f98;height:12px}.observaciones{border:1px solid #9a9f98;min-height:64px;padding:6px 8px}.contacto{color:#4a524a}
     .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}
     </style></head><body>${anulacion}<header><div><img alt="Neltume" src="data:image/svg+xml;base64,${logo.toString('base64')}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
     <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
     <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
-    ${montos.lineas.map((l, i) => `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${pesos(l.precioUnitario)}</td><td class="num">${pesos(l.total)}</td>${nota ? '<td class="check"><i></i></td>' : ''}</tr>`).join('')}${montos.flete ? `<tr><td>${montos.lineas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
+    ${montos.lineas.map((l, i) => `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="num">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>${nota ? '<td class="check"><i></i></td>' : ''}</tr>`).join('')}${montos.flete ? `<tr><td>${montos.lineas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
     <div class="totales">${totales}</div>
     <footer>${cierre}<p class="contacto">Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
 }
