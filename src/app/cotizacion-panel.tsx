@@ -43,7 +43,7 @@ import {
 } from './formato';
 import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
 import { DescuentoLinea, textoDescuentoLinea } from './descuento-item';
-import { esPersonalizado } from '@/negocio/personalizados';
+import { esPersonalizado, familiaEspecial, SIN_CATALOGO } from '@/negocio/personalizados';
 import { ReferenciasItem } from './referencias-item';
 import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales } from './panel-totales';
@@ -365,6 +365,8 @@ export function CotizacionPanel({
   const admiteCambios = !!actual && esEditable(actual) && puedeModificar;
   const editable = admiteCambios && !ocupado;
   const conItems = !!actual?.montos.lineas.length;
+  // El flete no depende de que los productos ya tengan precio: con todos pendientes sigue en la cotización.
+  const conProductos = !!actual?.solicitudes.length;
   const medidasPendientes = indicesMedidaSinTipo(actual);
   const listo = conItems && !actual.incompletos.length && !medidasPendientes.length;
   const estado = actual.estado;
@@ -428,7 +430,7 @@ export function CotizacionPanel({
       <button type="button" className="button secondary small" disabled={ocupado} onClick={agregarProducto}>
         + Agregar producto
       </button>
-      {conItems && !conFlete && (
+      {conProductos && !conFlete && (
         <button
           type="button"
           className="button secondary small"
@@ -667,6 +669,46 @@ export function CotizacionPanel({
                               {sabido && <>Entendido: {sabido}. </>}
                               {faltan.length ? `Falta: ${textoFaltan(faltan)}.` : null}
                             </small>
+                          )}
+                          {pendiente && editable && s.modelo && SIN_CATALOGO.has(pendiente.rechazo.tipo) && (
+                            // Lo que no existe en el catálogo se cotiza como especial con el precio que se indique.
+                            <div className="cotizar-especial">
+                              <CampoEditable
+                                key={`${actual.actualizada}-${i}-especial`}
+                                etiqueta={`Precio neto para cotizar como especial: ${descripcion}`}
+                                etiquetaOculta
+                                discreto
+                                vacio="Cotizar como especial"
+                                valor=""
+                                editable={editable}
+                                guardando={guardando === `item.${i}.especial`}
+                                tipo="text"
+                                modoEntrada="numeric"
+                                sufijo="$"
+                                validar={(v) => {
+                                  const n = leerPesos(v);
+                                  return Number.isSafeInteger(n) && n > 0 && n <= 100_000_000
+                                    ? null
+                                    : 'Escribe el precio unitario neto en pesos, entre $1 y $100.000.000.';
+                                }}
+                                guardar={(v) =>
+                                  acciones.editar(
+                                    {
+                                      items: [
+                                        {
+                                          indice: i,
+                                          cambios: {
+                                            personalizado: { familia: familiaEspecial(pendiente.rechazo) },
+                                            precioUnitario: leerPesos(v),
+                                          },
+                                        },
+                                      ],
+                                    },
+                                    `item.${i}.especial`,
+                                  )
+                                }
+                              />
+                            </div>
                           )}
                           {medidaSinTipo && (
                             <div className="measure-choice" role="group" aria-label={`Medida del ítem ${i + 1}`}>
@@ -1083,7 +1125,7 @@ export function CotizacionPanel({
                     </Fragment>
                   );
                 })}
-                {conItems && conFlete && (
+                {conProductos && conFlete && (
                   <FilaFlete
                     actual={actual}
                     editable={editable}

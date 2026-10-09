@@ -7,8 +7,16 @@ import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { fleteDelChat } from '../asistente/flete';
 import { salidaSchema } from '../asistente/esquemas';
 import { contextoSeguro, type LLM } from '../asistente/llm';
-import { anclarCifras, anclarFrases, anclarNombres, nombresDichos, type ResolverNombre } from '../asistente/anclaje';
-import { pareceUnPedido, pedidosSinRegistrar } from '../asistente/cobertura';
+import {
+  anclarCifras,
+  anclarFrases,
+  anclarNombres,
+  fraseDelMensaje,
+  nombresDichos,
+  type ResolverNombre,
+} from '../asistente/anclaje';
+import { MONTO_BAJO, montoEscrito } from '../asistente/montos';
+import { pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
 import { respuestaDirecta } from '../asistente/respuesta-directa';
 import { mapaCatalogo } from '../catalogo/mapa';
 import {
@@ -29,7 +37,12 @@ import {
 } from '../catalogo/resolver';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type Familia, type ReferenciaItem, type SolicitudItem } from '../catalogo/tipos';
-import { mismasReferencias, productoPersonalizado } from '../negocio/personalizados';
+import {
+  familiaEspecial,
+  mismasReferencias,
+  productoPersonalizado,
+  SIN_CATALOGO,
+} from '../negocio/personalizados';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import { indicesMedidaSinTipo } from '../negocio/medidas';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
@@ -148,7 +161,7 @@ export type Accion =
       cantidades?: { indice: number; cantidad: number }[];
       items?: {
         indice: number;
-        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento'>>;
+        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento' | 'personalizado'>>;
       }[];
       /** Fija el descuento (%) a mano: deja de seguir al descuento por cantidad. */
       descuento?: number;
@@ -233,6 +246,8 @@ type Preparado<T> =
 type PreciosCambiados = { listo: null; cambiados: { avisos: string[]; total: number; actualizada: string } };
 
 const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
+const AYUDA_ESPECIAL =
+  'Si es un pedido especial, escribe su precio (por ejemplo «la de 1,90 a $450.000 + IVA») o usa «Cotizar como especial» en el detalle.';
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
 const TEXTO_MONETARIO =
   /\$\s*\d|\d[\d.,]*\s*(?:CLP|USD|pesos|%)|\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i;
@@ -1082,6 +1097,19 @@ export class Servicio {
         indicesEditados.add(cambio.indice);
         const cambios = cambio.cambios;
         const siguiente = { ...solicitudes[cambio.indice] };
+        if (cambios.personalizado !== undefined) {
+          // «Cotizar como especial»: lo que no existe en el catálogo se cotiza con el precio que se indique.
+          const familias = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'];
+          if (cambios.personalizado && !familias.includes(cambios.personalizado.familia))
+            throw new ErrorUsuario('La familia del pedido especial no es válida.');
+          siguiente.personalizado = cambios.personalizado ? { familia: cambios.personalizado.familia } : null;
+          if (siguiente.personalizado) {
+            siguiente.margen = null;
+            if (!siguiente.modelo) throw new ErrorUsuario('El pedido especial necesita un nombre.');
+            if (!(cambios.precioUnitario ?? siguiente.precioUnitario))
+              throw new ErrorUsuario('Indica el precio unitario del pedido especial.');
+          }
+        }
         if (siguiente.personalizado) {
           // Fuera de catálogo el precio es el dato de origen: no hay precio de catálogo al que volver.
           if (cambios.precioUnitario === null)
@@ -1890,15 +1918,20 @@ export class Servicio {
     base: Cotizacion,
     modo: 'cotizacion_nueva' | 'modificacion_anterior',
     resolver: Record<'modelo' | 'madera', ResolverNombre>,
-  ): string | null {
+  ): string | { correccion: string; mensaje: string } | null {
     const parsed = salidaSchema.safeParse(salida);
     if (!parsed.success) return null;
     const res = parsed.data;
     if (res.name === 'modificar_cotizacion') {
       const faltan = this.pedidosOmitidos(res.input, mensaje, base, resolver);
-      return faltan.length
-        ? `Tu respuesta anterior no registró estos pedidos del mensaje: ${faltan.map((f) => `«${f}»`).join(', ')}. Responde de nuevo con modificar_cotizacion e incluye en agregar todos los ítems del mensaje (también los que ya habías registrado), cada uno con su propia fuente.`
-        : null;
+      if (!faltan.length) return null;
+      const correccion = `Tu respuesta anterior no registró estos pedidos del mensaje: ${faltan.map((f) => `«${f}»`).join(', ')}. Responde de nuevo con modificar_cotizacion e incluye en agregar todos los ítems del mensaje (también los que ya habías registrado), cada uno con su propia fuente.`;
+      // Con un flete en el mensaje, el modelo a veces registra solo el flete y ningún producto, y repite el error
+      // al corregirlo: el reintento va sin la línea del flete, que ya quedó registrado y se conserva.
+      const acotado = res.input.flete && !res.input.agregar?.length ? sinLineasDeFlete(mensaje) : mensaje;
+      return acotado !== mensaje && acotado.trim()
+        ? { correccion: `El flete ya quedó registrado; ahora faltan los productos. ${correccion}`, mensaje: acotado }
+        : correccion;
     }
     if (res.name === 'responder' && modo === 'cotizacion_nueva' && pareceUnPedido(mensaje, resolver)) {
       const enBorrador = new Set(base.solicitudes.flatMap((s) => (s.modelo ? [normalizar(s.modelo)] : [])));
@@ -1907,6 +1940,101 @@ export class Servicio {
         return 'El mensaje pide productos: regístralos con modificar_cotizacion y deja en null lo que no se dijo; el sistema pregunta lo que falta con botones. No uses responder para pedir datos de un ítem.';
     }
     return null;
+  }
+
+  /**
+   * Precio que la persona escribió para un ítem en el chat. Debe estar en la frase del propio ítem (o en la
+   * conversación, si su frase no se ubica): así no toma el de otro producto ni el del flete. Se guarda neto.
+   * Un producto del catálogo pasa a ese precio y se avisa cuál era el de catálogo; uno que no existe (modelo,
+   * madera o medida) pasa a ser un pedido especial con ese precio. Sin `textos` (doble de prueba) el monto no
+   * se ancla.
+   */
+  private preciosEscritos(items: SolicitudItem[], mensaje: string, textos: string[] | null, q: Cotizacion) {
+    const avisos: string[] = [];
+    const reglas = q.reglas ?? REGLAS;
+    const resultado = items.map((original, i): SolicitudItem => {
+      const { precio, ...item } = original;
+      if (!precio?.valor) return item;
+      const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+      // Al editar, la frase del ítem es «pedido original · cambio»: el precio está en la última parte. Vale la
+      // línea completa del mensaje que la contiene, por si la IA cortó la frase antes del precio.
+      const frase = item.fuente?.split(' · ').at(-1) ?? null;
+      const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
+      const leido = montoEscrito(precio.valor, textos && lineas.length ? lineas : textos);
+      if (!leido.ok) {
+        avisos.push(
+          leido.ambiguo
+            ? `No apliqué el precio del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «a $450.000 + IVA».`
+            : `No apliqué el precio del ${etiqueta}: no aparece escrito en su línea del pedido.`,
+        );
+        return item;
+      }
+      const neto = Math.round(precio.iva === 'incluido' ? leido.valor / (1 + reglas.iva) : leido.valor);
+      if (!Number.isSafeInteger(neto) || neto <= 0 || neto > 100_000_000) {
+        avisos.push(`No apliqué el precio del ${etiqueta}: debe ser un monto entre $1 y $100.000.000.`);
+        return item;
+      }
+      if (precio.iva === null)
+        avisos.push(
+          `Tomé ${pesos(neto)} como precio neto (sin IVA) del ${etiqueta}. Si lo incluía, escribe «con IVA incluido».`,
+        );
+      if (neto < MONTO_BAJO)
+        avisos.push(`El precio del ${etiqueta} quedó en ${pesos(neto)}: revisa si le faltan ceros.`);
+      const conPrecio: SolicitudItem = { ...item, precioUnitario: neto, margen: null };
+      if (item.personalizado) return conPrecio;
+      const r = resolverItem(this.catalogo, conPrecio);
+      if (r.ok) {
+        // Como un precio escrito en el detalle: entre −50 % y 500 % sobre el costo de fábrica.
+        const margen = neto / r.producto.precioNeto - 1;
+        if (margen < -0.5 || margen > 5) {
+          avisos.push(
+            `No apliqué el precio del ${etiqueta}: ${pesos(neto)} queda fuera del margen permitido sobre el costo de fábrica (−50 % a 500 %). Revísalo o escríbelo en el detalle.`,
+          );
+          return item;
+        }
+        const catalogo = cotizar(
+          [
+            {
+              producto: r.producto,
+              cantidad: 1,
+              anchoSolicitado: r.anchoSolicitado,
+              altoSolicitado: r.altoSolicitado,
+              medidaSolicitada: r.medidaSolicitada,
+            },
+          ],
+          reglas,
+          { margenCotizacion: q.margenCotizacion ?? null },
+        ).lineas[0].precioUnitario;
+        if (catalogo !== neto)
+          avisos.push(
+            `Usé el precio que indicaste para el ${etiqueta}: ${pesos(neto)} neto c/u; el de catálogo es ${pesos(catalogo)}.`,
+          );
+        return conPrecio;
+      }
+      // Si faltan datos (madera, cantidad), el precio queda en el ítem hasta saber si existe en el catálogo.
+      if (!SIN_CATALOGO.has(r.rechazo.tipo) || !item.modelo) return conPrecio;
+      const familia = this.familiaDe(item.modelo) ?? familiaEspecial(r.rechazo);
+      const especial: SolicitudItem = {
+        ...conPrecio,
+        modelo:
+          r.rechazo.tipo === 'modelo_desconocido'
+            ? item.modelo
+            : nombreCanonicoModelo(modeloDelCatalogo(this.catalogo, item.modelo).modelo),
+        madera: item.madera ? (maderaDelCatalogo(this.catalogo, item.madera) ?? item.madera) : null,
+        personalizado: { familia },
+      };
+      const medidas = [especial.ancho, especial.alto]
+        .filter((n): n is number => n !== null)
+        .map((n) => metrosTexto(metros(n) ?? n));
+      const nombre = [especial.modelo, especial.madera, medidas.length ? `${medidas.join(' × ')} m` : '']
+        .filter(Boolean)
+        .join(' ');
+      avisos.push(
+        `«${nombre}» no está en el catálogo: lo cotizo como pedido especial a ${pesos(neto)} neto c/u, como lo indicaste.`,
+      );
+      return especial;
+    });
+    return { items: resultado, avisos };
   }
 
   /**
@@ -2206,6 +2334,17 @@ export class Servicio {
             );
         }
       }
+      const conPrecios = this.preciosEscritos(
+        propuesta.items,
+        accion.mensaje,
+        this.llm.verificarCifras && !directa ? textosIA : null,
+        q,
+      );
+      propuesta = {
+        ...propuesta,
+        items: conPrecios.items,
+        avisos: [...propuesta.avisos, ...conPrecios.avisos],
+      };
       const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items, accion.mensaje);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
       const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];
@@ -2255,7 +2394,17 @@ export class Servicio {
           ...(extrasFlete.length
             ? [`Flete: ${cantidadFlete(destino)} × ${descripcionFlete(destino)}, ${pesos(unitarioFlete(destino))} neto c/u.`]
             : []),
-          destino.incompletos.length ? destino.incompletos.map((i) => i.pregunta).join('\n\n') : exito,
+          destino.incompletos.length
+            ? [
+                ...destino.incompletos.map((i) => i.pregunta),
+                // Lo que no existe en el catálogo se cotiza igual, con el precio que indique la persona.
+                ...(destino.incompletos.some(
+                  (i) => SIN_CATALOGO.has(i.rechazo.tipo) && !destino.solicitudes[i.indice]?.personalizado,
+                )
+                  ? [AYUDA_ESPECIAL]
+                  : []),
+              ].join('\n\n')
+            : exito,
         ].join('\n\n'),
       );
       u.guardar(destino);

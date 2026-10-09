@@ -56,6 +56,17 @@ export interface SolicitudItem {
   referencias?: ReferenciaItem[];
   /** Descuento especial solo de este ítem; ausente (o null) mantiene su precio. Nunca toca el catálogo. */
   descuento?: DescuentoItem | null;
+  /**
+   * Solo en tránsito desde el chat: el precio que la persona escribió para el ítem, tal como lo propuso la IA.
+   * El servidor lo ancla al texto y lo convierte en `precioUnitario` (o en un pedido especial); nunca se guarda.
+   * null es no haberlo escrito: un precio se quita en el detalle, no con un null que la IA pudo poner de más.
+   */
+  precio?: PrecioEscrito | null;
+}
+/** Precio de una unidad escrito en el chat, como lo escribió la persona; `iva` dice si lo incluía. */
+export interface PrecioEscrito {
+  valor: number | null;
+  iva: 'neto' | 'incluido' | null;
 }
 /**
  * Descuento especial de un ítem, sobre su precio unitario: `porcentaje` (0–100, dos decimales) o `monto`

@@ -1,5 +1,16 @@
 import { z } from 'zod';
 const texto = z.string().max(300).nullable();
+/**
+ * Precio de una unidad que la persona escribió para un producto («a $450.000 + IVA»). Igual que el flete, el
+ * servidor solo lo acepta si está escrito en la conversación; lo que no está en el catálogo pasa a ser un pedido
+ * especial con ese precio.
+ */
+const precioSchema = z
+  .object({
+    valor: z.number().nullable(),
+    iva: z.enum(['neto', 'incluido']).nullable(),
+  })
+  .strict();
 export const solicitudSchema = z
   .object({
     modelo: texto,
@@ -14,6 +25,7 @@ export const solicitudSchema = z
     cantidad: z.number().nullable(),
     /** Frase exacta del mensaje que describe el ítem; el servidor la muestra junto al ítem. */
     fuente: texto.optional(),
+    precio: precioSchema.nullable().optional(),
   })
   .strict();
 export const clienteSchema = z
@@ -43,6 +55,7 @@ const solicitudCambioSchema = z
     descripcion: texto.optional(),
     observaciones: z.string().max(1000).nullable().optional(),
     fuente: texto.optional(),
+    precio: precioSchema.nullable().optional(),
   })
   .strict();
 const clienteCambioSchema = z

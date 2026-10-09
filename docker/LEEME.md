@@ -14,6 +14,13 @@ Docker Compose en el servidor. Al final borra las imágenes viejas del cotizador
 `NELTUME_PORT=3010`; si no pasaste `--url`, se detiene hasta que completes `BETTER_AUTH_URL` y
 `NELTUME_HOSTS` en ese archivo. Después, cada `npm run deploy` actualiza y reinicia la app.
 
+### Verificación antes de subir
+
+Antes de empaquetar, `npm run deploy` (y `deploy:zip`) corre los tipos, el lint, `npm test` (Vitest y
+Playwright) y `npm run evaluar:regresion`, que evalúa la IA con el modelo de Ajustes, cada caso tres
+veces (unos centavos de dólar y algunos minutos). Si algo falla, no se sube nada.
+`npm run deploy -- --sin-ia` omite solo la evaluación de la IA, por ejemplo si el proveedor no responde.
+
 ### Guard de recursos
 
 Antes de tocar nada, el despliegue toma un lock (un solo despliegue a la vez) y se cancela si

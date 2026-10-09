@@ -1,8 +1,21 @@
-import { metros } from '../catalogo/resolver';
+import { metros, type Rechazo } from '../catalogo/resolver';
 import type { Familia, Producto, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
 
 /** Código con que un producto fuera de catálogo aparece en el detalle y en los documentos. */
 export const CODIGO_PERSONALIZADO = 'ESPECIAL';
+
+/**
+ * Rechazos que dicen que lo pedido no existe en el catálogo (modelo, madera o medida), no que falten datos:
+ * el ítem se puede cotizar como pedido especial con el precio que indique la persona.
+ */
+export const SIN_CATALOGO = new Set<Rechazo['tipo']>([
+  'modelo_desconocido',
+  'madera_desconocida',
+  'madera_no_disponible',
+  'medida_no_disponible',
+]);
+/** Familia con que se cotiza como especial un ítem rechazado: la de su modelo, si se conoce; si no, puerta. */
+export const familiaEspecial = (r: Rechazo): Familia => ('familia' in r ? r.familia : undefined) ?? 'PUERTA';
 
 /** Formatos admitidos como referencia del cliente y la extensión con que se guardan. */
 export const TIPOS_REFERENCIA: Record<ReferenciaItem['tipo'], string> = {

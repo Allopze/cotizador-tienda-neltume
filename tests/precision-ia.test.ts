@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { anclarCifras, anclarNombres, cifrasDelTexto } from '../src/asistente/anclaje';
 import { HERRAMIENTAS_COTIZACION, herramientas } from '../src/asistente/llm';
-import { casosSchema, puntuar, resumen } from '../src/asistente/evaluacion';
+import { CAMPOS_ITEM, casosSchema, puntuar, resumen } from '../src/asistente/evaluacion';
 import { contextoSeguro, problemaSalida, SYSTEM } from '../src/asistente/llm';
 import { mapaCatalogo } from '../src/catalogo/mapa';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
@@ -419,7 +419,7 @@ describe('evaluación', () => {
     expect(conError.diferencias.map((d) => d.campo)).toEqual(
       expect.arrayContaining(['madera', 'cliente.comuna']),
     );
-    expect(conError.total).toBe(7 * 2 + 1);
+    expect(conError.total).toBe(CAMPOS_ITEM.length * 2 + 1);
     expect(resumen([perfecto, conError])).toMatchObject({ perfectos: 1, casos: 2 });
   });
 });

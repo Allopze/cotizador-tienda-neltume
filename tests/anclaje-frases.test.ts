@@ -4,6 +4,7 @@ import {
   anclarNombres,
   cantidadesDichas,
   nombresDichos,
+  palabrasDesconocidas,
   parMedidaPuerta,
 } from '../src/asistente/anclaje';
 import { normalizar, normalizarMedida, resolverNombres } from '../src/catalogo/resolver';
@@ -76,9 +77,11 @@ describe('anclaje por frase de cada ítem', () => {
       mensaje,
       resolver,
     );
-    // La frase nombra una sola madera: se usa esa.
+    // La frase nombra una sola madera: se usa esa, y se avisa para que la corrección no pase en silencio.
     expect(items.map((i) => i.madera)).toEqual(['PINO OREGON', 'RAULI']);
-    expect(avisos).toEqual([]);
+    expect(avisos).toEqual([
+      'Revisa el ítem 1 (FUTRONO): el asistente leyó la madera «RAULI», pero tu pedido dice «PINO OREGON»; usé «PINO OREGON».',
+    ]);
   });
 
   it('deja pendiente una madera desconocida en vez de copiar la de otro ítem', () => {
@@ -112,9 +115,11 @@ describe('anclaje por frase de cada ítem', () => {
       mensaje,
       resolver,
     );
-    // La frase dice «5 unidades»: se corrige en vez de preguntar.
+    // La frase dice «5 unidades»: se corrige en vez de preguntar, y se avisa.
     expect(items.map((i) => i.cantidad)).toEqual([5, 1]);
-    expect(avisos).toEqual([]);
+    expect(avisos).toEqual([
+      'Revisa el ítem 1 (LANCO): el asistente leyó la cantidad 1, pero tu pedido dice 5; usé 5.',
+    ]);
     // Si la frase no dice una cantidad, la tomada de otro ítem queda pendiente.
     const sinCantidad = anclarFrases(
       [
@@ -182,6 +187,29 @@ describe('anclaje por frase de cada ítem', () => {
     expect(madera('1 und huilo huilo enchap. en mara 0.73x2.07 mt (hoja)')).toBe('MARA ENCHAPADA');
     expect(madera('1 und huilo huilo ench mara 0.73x2.07 mt (hoja)')).toBe('MARA ENCHAPADA');
     expect(madera('1 und huilo huilo en mara 0.73x2.07 mt (hoja)')).toBe('MARA');
+  });
+
+  it('avisa la palabra que no reconoce junto al producto y la corrección que hizo con ella', () => {
+    // Sin el alias «encha mara» la frase solo nombra «mara»: la corrección a MARA queda a la vista.
+    const fuente = '1 lanco encha en mara 0.73x2.07';
+    const { items, avisos } = anclarFrases(
+      [item({ modelo: 'LANCO', madera: 'MARA ENCHAPADA', ancho: 0.73, alto: 2.07, cantidad: 1, fuente })],
+      [],
+      fuente,
+      resolver,
+    );
+    expect(items[0].madera).toBe('MARA');
+    expect(avisos).toEqual([
+      'No reconocí «encha» en el ítem 1 (LANCO): revisa que el producto sea el que se pidió.',
+      'Revisa el ítem 1 (LANCO): el asistente leyó la madera «MARA ENCHAPADA», pero tu pedido dice «MARA»; usé «MARA».',
+    ]);
+    expect(palabrasDesconocidas('2 molco tablero en lenga natural 80x200', resolver)).toEqual([
+      'tablero',
+      'natural',
+    ]);
+    // Lo que va antes del modelo, los conectores y las unidades no cuentan.
+    expect(palabrasDesconocidas('cotizar 3 lanco en pino oregon por favor', resolver)).toEqual([]);
+    expect(palabrasDesconocidas('1 und lanco en mara de 0.73x2.07 mt (hoja)', resolver)).toEqual([]);
   });
 
   it('usa la sección escrita en la frase si la IA propuso otra', () => {

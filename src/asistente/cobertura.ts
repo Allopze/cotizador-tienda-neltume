@@ -98,8 +98,22 @@ export function pedidosSinRegistrar(
         .replace(/^(?:[\s\-•*·]+|(?:y|e|tambi[eé]n|adem[aá]s)\s+)+/i, '')
         .replace(/(?:[\s,.;:]+|\s+(?:para|de|en|a|con|y))+$/i, ''),
     )
-    .filter((t) => t && !(conFlete && MONTO_FLETE.test(sinTildes(t))) && pidaProducto(t, resolver));
+    // Un trozo con medidas y precio («1 Huilo 1,90x2,20 a $450.000») es un producto, no la línea del flete.
+    .filter(
+      (t) =>
+        t && !(conFlete && MONTO_FLETE.test(sinTildes(t)) && !tieneMedidas(t)) && pidaProducto(t, resolver),
+    );
 }
+
+/**
+ * El mensaje sin las líneas del flete (con un monto o el IVA y sin medidas de producto). Si la IA registró
+ * solo el flete y ningún producto, el reintento se hace con esto: así no vuelve a quedarse solo con el flete.
+ */
+export const sinLineasDeFlete = (mensaje: string) =>
+  mensaje
+    .split('\n')
+    .filter((l) => !(MONTO_FLETE.test(sinTildes(l)) && !tieneMedidas(l)))
+    .join('\n');
 
 /**
  * ¿El mensaje pide productos? Nombra un modelo y trae una cifra, y no es una pregunta sin medidas. A diferencia de un

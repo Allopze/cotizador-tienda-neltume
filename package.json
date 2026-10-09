@@ -16,7 +16,7 @@
     "respaldar": "tsx scripts/respaldar.ts",
     "feriados": "tsx scripts/feriados.ts",
     "evaluar:ia": "tsx --env-file-if-exists=.env.local scripts/evaluar-ia.ts",
-    "evaluar:regresion": "tsx --env-file-if-exists=.env.local scripts/evaluar-ia.ts --min 0.95",
+    "evaluar:regresion": "tsx --env-file-if-exists=.env.local scripts/evaluar-ia.ts --min 0.95 --min-perfectos 0.95 --repeticiones 3",
     "paridad:excel": "tsx scripts/paridad-excel.ts",
     "paridad:excel-ia": "tsx --env-file-if-exists=.env.local scripts/paridad-excel-ia.ts",
     "test": "vitest run && npm run test:e2e",

@@ -234,6 +234,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
                     .strict()
                     .nullable()
                     .optional(),
+                  // «Cotizar como especial»: sale del catálogo con su precio; null lo devuelve.
+                  personalizado: z.object({ familia: familiaSchema }).strict().nullable().optional(),
                 })
                 .strict(),
             })
