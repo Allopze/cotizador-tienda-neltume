@@ -55,7 +55,7 @@ export interface CambiosEdicion {
   cantidades?: { indice: number; cantidad: number }[];
   items?: {
     indice: number;
-    cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento'>>;
+        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento' | 'personalizado'>>;
   }[];
   /** Fija el descuento a mano: deja de seguir al descuento por cantidad. */
   descuento?: number;

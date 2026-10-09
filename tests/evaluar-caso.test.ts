@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { ErrorIA } from '../src/asistente/errores';
 import type { CasoEvaluacion } from '../src/asistente/evaluacion';
 import { CASOS_PRUEBA } from '../src/asistente/prueba-modelo';
-import { casosSchema } from '../src/asistente/evaluacion';
+import { CAMPOS_ITEM, casosSchema } from '../src/asistente/evaluacion';
 import type { Catalogo } from '../src/catalogo/tipos';
 import { correrCaso } from '../src/servidor/evaluar-caso';
 
@@ -63,7 +63,7 @@ describe('correr un caso de evaluación', () => {
       { interpretar: vi.fn().mockResolvedValue(salida), verificarCifras: true },
       catalogo,
     );
-    expect(r).toMatchObject({ aciertos: 7, total: 7, diferencias: [] });
+    expect(r).toMatchObject({ aciertos: CAMPOS_ITEM.length, total: CAMPOS_ITEM.length, diferencias: [] });
     expect(r.error).toBeUndefined();
     expect(r.ms).toBeGreaterThanOrEqual(0);
   });

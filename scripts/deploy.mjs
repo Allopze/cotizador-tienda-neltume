@@ -16,6 +16,7 @@ async function principal() {
       dir: { type: 'string' },
       port: { type: 'string', default: '3000' },
       forzar: { type: 'boolean' },
+      'sin-ia': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -24,13 +25,16 @@ async function principal() {
       'Uso: npm run deploy -- [--url https://cotizador.example.cl]\n' +
         '     npm run deploy:zip -- [--url https://cotizador.example.cl] [--port 3000]\n' +
         'Con --ssh <host> --dir <ruta> sube la entrega por SSH y la levanta con Docker Compose;\n' +
-        'sin --ssh genera un ZIP en deploy/. --forzar omite el chequeo de recursos del servidor.',
+        'sin --ssh genera un ZIP en deploy/. --forzar omite el chequeo de recursos del servidor.\n' +
+        'Antes de empaquetar corre tipos, lint, pruebas y la evaluación de la IA; si algo falla, no se despliega.\n' +
+        '--sin-ia omite solo la evaluación de la IA (por ejemplo, si el proveedor no responde).',
     );
     return;
   }
   if (Boolean(values.ssh) !== Boolean(values.dir)) throw new Error('--ssh y --dir van juntos.');
   if (values.dir && !values.dir.startsWith('/')) throw new Error('--dir debe ser una ruta absoluta.');
   if (!/^\d{1,5}$/.test(values.port)) throw new Error('--port debe ser un número de puerto.');
+  await verificar({ sinIa: values['sin-ia'] });
 
   let origen = '';
   let host = '';
@@ -112,6 +116,40 @@ async function principal() {
   if (!origen) console.log('En el servidor, completa BETTER_AUTH_URL y NELTUME_HOSTS en .env.');
   console.log('Descomprime el ZIP y ejecuta: docker compose up -d');
   console.log('Instrucciones de dominio, primera cuenta y actualizaciones: docker/LEEME.md');
+}
+
+/**
+ * Nada llega al servidor sin pasar las pruebas: unos tests rotos estuvieron días sin que nadie lo notara, y no
+ * hay CI. La evaluación de la IA corre cada caso varias veces (cuesta unos centavos de dólar).
+ */
+async function verificar({ sinIa }) {
+  const pasos = [
+    ['Tipos', 'npx', ['tsc', '--noEmit']],
+    ['Lint', 'npm', ['run', 'lint']],
+    ['Pruebas unitarias y de interfaz', 'npm', ['test']],
+    ...(sinIa ? [] : [['Evaluación de la IA', 'npm', ['run', 'evaluar:regresion']]]),
+  ];
+  for (const [nombre, comando, argumentos] of pasos) {
+    console.log(`\n▶ ${nombre}…`);
+    const codigo = await new Promise((resolver, rechazar) => {
+      const proceso = spawn(comando, argumentos, {
+        cwd: raiz,
+        stdio: 'inherit',
+        shell: process.platform === 'win32',
+      });
+      proceso.on('error', rechazar);
+      proceso.on('close', resolver);
+    });
+    if (codigo !== 0)
+      throw new Error(
+        `${nombre}: falló. No se despliega; corrige el problema y vuelve a intentarlo.` +
+          (nombre === 'Evaluación de la IA'
+            ? ' Si el proveedor de IA no respondía, repite más tarde o usa --sin-ia.'
+            : ''),
+      );
+  }
+  if (sinIa) console.warn('\nSe omitió la evaluación de la IA (--sin-ia).');
+  console.log('\nVerificación completa.');
 }
 
 // Corre en el servidor: recibe el ZIP por stdin, sincroniza el código conservando el .env

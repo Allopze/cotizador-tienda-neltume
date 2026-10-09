@@ -5,9 +5,13 @@
 //   npm run evaluar:ia -- --modelos a,b          compara modelos
 //   npm run evaluar:ia -- --caso voz-coscos      un caso
 //   npm run evaluar:ia -- --min 0.95             sale con error bajo esa precisión
+//   npm run evaluar:ia -- --repeticiones 3       corre cada caso 3 veces: perfecto solo si las 3 lo son
+//   npm run evaluar:ia -- --min-perfectos 0.95   sale con error si menos del 95 % de los casos es perfecto
 //
 // Usa la clave y el catálogo de la base configurada (NELTUME_DATA_DIR). Cada caso corre en una base temporal:
 // no crea cotizaciones en la base real. Llama al proveedor de IA: tiene un costo (pequeño) por ejecución.
+// La IA no responde siempre igual («No entendí» salía 1 de cada 4 veces con un pedido real): con repeticiones,
+// un caso que falla a veces no pasa por perfecto.
 import { readFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { CommandCodeLLM } from '../src/asistente/llm';
@@ -21,7 +25,9 @@ const { values } = parseArgs({
     modelos: { type: 'string' },
     caso: { type: 'string', multiple: true },
     min: { type: 'string' },
+    'min-perfectos': { type: 'string' },
     paralelo: { type: 'string', default: '3' },
+    repeticiones: { type: 'string', default: '1' },
     casos: { type: 'string', default: 'evals/cotizacion.json' },
   },
 });
@@ -37,6 +43,7 @@ const modelos = values.modelos
   .map((m) => m.trim())
   .filter(Boolean) ?? [leerAjustesIA().commandcode.modelo];
 const catalogo = await cargarCatalogo();
+const repeticiones = Math.max(1, Math.floor(Number(values.repeticiones)) || 1);
 
 const correr = (caso: CasoEvaluacion, modelo: string) =>
   correrCaso(caso, new CommandCodeLLM(modelo, clave), catalogo);
@@ -57,23 +64,47 @@ async function enParalelo<T, R>(lista: T[], limite: number, f: (x: T) => Promise
 }
 
 const mostrar = (v: unknown) => (v === null || v === undefined ? '∅' : JSON.stringify(v));
-let peor = 1;
+let peor = 1,
+  peoresPerfectos = 1;
 for (const modelo of modelos) {
-  console.log(`\n== ${modelo} (${casos.length} casos) ==`);
+  console.log(`\n== ${modelo} (${casos.length} casos${repeticiones > 1 ? ` × ${repeticiones}` : ''}) ==`);
   const inicio = Date.now();
-  const resultados = await enParalelo(casos, Number(values.paralelo) || 1, (c) => correr(c, modelo));
-  for (const [i, r] of resultados.entries()) {
-    const ok = !r.diferencias.length && !r.error;
-    console.log(`${ok ? '✓' : '✗'} ${r.id} — ${r.aciertos}/${r.total}  ${casos[i].descripcion}`);
-    if (r.error) console.log(`    error: ${r.error.mensaje}`);
+  const corridas = casos.flatMap((c) => Array.from({ length: repeticiones }, () => c));
+  const resultados = await enParalelo(corridas, Number(values.paralelo) || 1, (c) => correr(c, modelo));
+  let perfectos = 0;
+  for (const [i, caso] of casos.entries()) {
+    const delCaso = resultados.slice(i * repeticiones, (i + 1) * repeticiones);
+    const buenas = delCaso.filter((r) => !r.diferencias.length && !r.error).length;
+    if (buenas === delCaso.length) perfectos++;
+    const { aciertos, total } = delCaso.reduce(
+      (s, r) => ({ aciertos: s.aciertos + r.aciertos, total: s.total + r.total }),
+      {
+        aciertos: 0,
+        total: 0,
+      },
+    );
+    const consistencia = repeticiones > 1 ? ` · ${buenas}/${repeticiones} corridas perfectas` : '';
+    console.log(
+      `${buenas === delCaso.length ? '✓' : '✗'} ${caso.id} — ${aciertos}/${total}${consistencia}  ${caso.descripcion}`,
+    );
+    // Basta el detalle de la primera corrida que falló.
+    const r = delCaso.find((x) => x.diferencias.length || x.error);
+    if (r?.error) console.log(`    error: ${r.error.mensaje}`);
     else
-      for (const d of r.diferencias)
+      for (const d of r?.diferencias ?? [])
         console.log(
           `    ${d.item === null ? '' : `ítem ${d.item} `}${d.campo}: esperado ${mostrar(d.esperado)}, obtenido ${mostrar(d.obtenido)}`,
         );
   }
-  const { precision, perfectos } = resumen(resultados);
+  const { precision } = resumen(resultados);
   peor = Math.min(peor, precision);
+  // Un error del proveedor (caída, límite, plazo) no es una mala interpretación: se dice aparte.
+  const conError = resultados.filter((r) => r.error).length;
+  if (conError)
+    console.log(
+      `⚠ ${conError} de ${resultados.length} corridas no obtuvieron respuesta de la IA (proveedor caído, límite o plazo).`,
+    );
+  peoresPerfectos = Math.min(peoresPerfectos, perfectos / casos.length);
   console.log(
     `→ precisión por campo ${(precision * 100).toFixed(1)} % · casos perfectos ${perfectos}/${casos.length} · ${((Date.now() - inicio) / 1000).toFixed(0)} s`,
   );
@@ -81,6 +112,12 @@ for (const modelo of modelos) {
 if (values.min && peor < Number(values.min)) {
   console.error(
     `\nPrecisión ${(peor * 100).toFixed(1)} % bajo el mínimo ${(Number(values.min) * 100).toFixed(1)} %.`,
+  );
+  process.exit(1);
+}
+if (values['min-perfectos'] && peoresPerfectos < Number(values['min-perfectos'])) {
+  console.error(
+    `\nCasos perfectos ${(peoresPerfectos * 100).toFixed(1)} % bajo el mínimo ${(Number(values['min-perfectos']) * 100).toFixed(1)} %.`,
   );
   process.exit(1);
 }

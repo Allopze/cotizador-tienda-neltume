@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { montosAmbiguos, montosDelTexto } from '../src/asistente/flete';
+import { montosAmbiguos, montosDelTexto } from '../src/asistente/montos';
 import { problemaSalida, contextoSeguro } from '../src/asistente/llm';
 import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipos';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
@@ -205,6 +205,21 @@ describe('flete desde el chat', () => {
     });
     expect(r.cotizacion.flete).toBe(350);
     expect(r.avisos).toEqual([expect.stringMatching(/El flete quedó en \$350: revisa si le faltan ceros/)]);
+  });
+
+  it('si la IA registra solo el flete, el reintento va sin su línea para que registre los productos', async () => {
+    const { servicio, llm } = await setup();
+    const mensaje =
+      'COTIZAR JUAN SOTO\nDEPACHO A RIÑIHUE con un valor de $350.000 + iva\n3 Molco oregón 80x200';
+    const soloFlete = flete({ descripcion: 'Despacho a Riñihue', cantidad: 1, valor: 350000, iva: 'neto' });
+    llm.interpretar.mockResolvedValueOnce(soloFlete);
+    await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(llm.interpretar.mock.calls[0][1].revisar(soloFlete)).toEqual({
+      correccion: expect.stringMatching(
+        /^El flete ya quedó registrado; ahora faltan los productos\. .*«3 Molco oregón 80x200»/,
+      ),
+      mensaje: 'COTIZAR JUAN SOTO\n3 Molco oregón 80x200',
+    });
   });
 
   it('la línea del flete no se revisa como un pedido sin registrar', async () => {

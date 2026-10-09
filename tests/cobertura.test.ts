@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pareceUnPedido, pedidosSinRegistrar } from '../src/asistente/cobertura';
+import { pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../src/asistente/cobertura';
 import { normalizar } from '../src/catalogo/resolver';
 
 const MODELOS = ['MARCO', 'MOLCO', 'TOLEDO', 'PANGUIPULLI', 'COZ COZ'];
@@ -90,6 +90,13 @@ describe('pedidos sin registrar', () => {
         resolver,
       ),
     ).toEqual([]);
+  });
+  it('quita del mensaje la línea del flete, no la de un producto con precio', () => {
+    expect(
+      sinLineasDeFlete(
+        'COTIZAR JUAN SOTO\nDEPACHO A PANGUIPULLI con un valor de $350.00 + iva\n2 Molco lenga 80x200\n1 Toledo 1,90x2,20 a $450.000',
+      ),
+    ).toBe('COTIZAR JUAN SOTO\n2 Molco lenga 80x200\n1 Toledo 1,90x2,20 a $450.000');
   });
   it('no revisa si una frase no aparece en el mensaje', () => {
     expect(pedidosSinRegistrar(mensaje, ['ocho marcos 2x4 oregón'], [], resolver)).toBeNull();

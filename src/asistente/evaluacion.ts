@@ -15,6 +15,8 @@ const itemEsperado = z
     medida: z.string().nullable(),
     cantidad: z.number().int().nullable(),
     tipoMedida: z.enum(['hoja', 'vano']).nullable().optional(),
+    /** Precio neto escrito por la persona; ausente es que no escribió ninguno (y la IA no debe inventarlo). */
+    precioUnitario: z.number().int().nullable().optional(),
   })
   .strict();
 export const casoSchema = z
@@ -45,7 +47,16 @@ export const casoSchema = z
 export const casosSchema = z.array(casoSchema).min(1);
 export type CasoEvaluacion = z.infer<typeof casoSchema>;
 
-export const CAMPOS_ITEM = ['modelo', 'madera', 'ancho', 'alto', 'medida', 'cantidad', 'tipoMedida'] as const;
+export const CAMPOS_ITEM = [
+  'modelo',
+  'madera',
+  'ancho',
+  'alto',
+  'medida',
+  'cantidad',
+  'tipoMedida',
+  'precioUnitario',
+] as const;
 type CampoItem = (typeof CAMPOS_ITEM)[number];
 
 function igual(campo: CampoItem, esperado: unknown, obtenido: unknown) {
@@ -57,7 +68,7 @@ function igual(campo: CampoItem, esperado: unknown, obtenido: unknown) {
     return a !== null && b !== null && Math.abs(a - b) < 5e-4;
   }
   if (campo === 'medida') return normalizarMedida(String(esperado)) === normalizarMedida(String(obtenido));
-  if (campo === 'cantidad') return Number(esperado) === Number(obtenido);
+  if (campo === 'cantidad' || campo === 'precioUnitario') return Number(esperado) === Number(obtenido);
   return normalizar(String(esperado)) === normalizar(String(obtenido));
 }
 

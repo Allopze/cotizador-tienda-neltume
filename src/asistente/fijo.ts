@@ -57,6 +57,16 @@ export class LLMFijo implements LLM {
           cliente: { ...clienteVacio(), nombre: 'Juan Pérez' },
         },
       };
+    else if (/\bespecial\b/i.test(c.mensaje))
+      // Una medida que no está en el catálogo: la IA real la registra igual y el servidor la deja pendiente.
+      return {
+        name: 'modificar_cotizacion',
+        input: {
+          agregar: [
+            { ...inicial, ancho: 1.9, alto: 2.2, cantidad: 1, tipoMedida: 'hoja', fuente: c.mensaje },
+          ],
+        },
+      };
     else if (/\bPillo\b/i.test(c.mensaje))
       // Como la IA real: un nombre dudoso se conserva tal cual; el servidor decide si pide confirmarlo.
       return {

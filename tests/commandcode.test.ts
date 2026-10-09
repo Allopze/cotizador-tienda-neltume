@@ -461,6 +461,38 @@ describe('Reintento con corrección', () => {
     expect(primero.correccion).toBeUndefined();
     expect(segundo.correccion).toMatch(/índice 3 no existe/);
   });
+  it('con un mensaje acotado, reintenta solo los productos y conserva el flete de la primera respuesta', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    const flete = { descripcion: 'Despacho a Riñihue', cantidad: 1, valor: 350000, iva: 'neto' };
+    const soloFlete = {
+      ...llamada,
+      name: 'modificar_cotizacion',
+      input: { flete, cliente: { nombre: 'Verónica' } },
+    };
+    const molco = {
+      modelo: 'MOLCO',
+      madera: 'LENGA',
+      ancho: 0.8,
+      alto: 2,
+      medida: null,
+      cantidad: 2,
+      tipoMedida: null,
+      fuente: '2 Molco lenga 80x200',
+    };
+    const productos = { ...llamada, name: 'modificar_cotizacion', input: { agregar: [molco] } };
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(respuesta([soloFlete]))
+      .mockResolvedValueOnce(respuesta([productos]));
+    vi.stubGlobal('fetch', fetchMock);
+    const revisar = vi.fn(() => ({ correccion: 'Faltan los productos.', mensaje: '2 Molco lenga 80x200' }));
+    expect(await new CommandCodeLLM().interpretar(contexto, { revisar })).toEqual({
+      name: 'modificar_cotizacion',
+      input: { agregar: [molco], flete, cliente: { nombre: 'Verónica' } },
+    });
+    const segundo = JSON.parse(JSON.parse(String(fetchMock.mock.calls[1][1]?.body)).messages[0].content);
+    expect(segundo).toMatchObject({ mensaje: '2 Molco lenga 80x200', correccion: 'Faltan los productos.' });
+  });
   it('si el reintento falla, devuelve la primera respuesta en vez de un error', async () => {
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
     vi.stubGlobal(

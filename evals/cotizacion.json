@@ -1048,5 +1048,85 @@
         "nombre": "VERONICA HENNICKE"
       }
     }
+  },
+  {
+    "id": "especial-con-precio",
+    "descripcion": "Medida fuera de catálogo con su precio en el mismo mensaje: se registra igual, con el precio escrito",
+    "mensajes": [
+      "1 huilo huilo enchapada en mara de 1,90 x 2,20 a $450.000 + iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 1.9,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1,
+          "precioUnitario": 450000
+        }
+      ]
+    }
+  },
+  {
+    "id": "especial-precio-despues",
+    "descripcion": "El precio de un pedido especial llega en otro mensaje («la de 1,90 a 450 mil»)",
+    "mensajes": [
+      "1 huilo huilo enchapada en mara de 1,90 x 2,20",
+      "la de 1,90 cotízala en 450 mil más iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 1.9,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1,
+          "precioUnitario": 450000
+        }
+      ]
+    }
+  },
+  {
+    "id": "precio-catalogo-no-es-cantidad",
+    "descripcion": "Precio escrito para un producto del catálogo: se respeta y no se confunde con la cantidad",
+    "mensajes": [
+      "2 molco lenga de 80x200 a $400.000 + iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "precioUnitario": 400000
+        }
+      ]
+    }
+  },
+  {
+    "id": "pedir-precio-no-es-escribirlo",
+    "descripcion": "«Cuánto sale» pide un precio: la IA no inventa uno",
+    "mensajes": [
+      "cuánto sale una huilo huilo en lenga de 80 x 210"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2.1,
+          "medida": null,
+          "cantidad": 1
+        }
+      ]
+    }
   }
 ]

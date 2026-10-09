@@ -63,11 +63,18 @@ export const PALABRAS_NUMERO = new Set([...Object.keys(UNIDADES), ...Object.keys
 export const sinTildes = (s: string) => s.toLocaleLowerCase('es-CL').normalize('NFD').replace(/[̀-ͯ]/g, '');
 
 /**
+ * Montos en pesos («$450.000», «450 mil», «2 lucas»), en un texto ya sin tildes: el precio de un producto va
+ * en su misma frase, pero nunca es su cantidad ni una medida. Lo quitado deja un separador.
+ */
+const MONTOS_EN_PESOS = /\$\s*\d[\d.,]*|(?<![\d.,])\d[\d.,]*\s*(?:millon(?:es)?|mil|lucas?|k)(?![a-zñ])/g;
+export const sinMontos = (t: string) => t.replace(MONTOS_EN_PESOS, ' ; ');
+
+/**
  * Cifras que aparecen en el texto, en dígitos («80», «2,10», «10.000») y, con `palabras`, también escritas
  * («tres», «media docena»). Las palabras solo respaldan cantidades: nadie dicta un ancho como «ochenta».
  */
 export function cifrasDelTexto(texto: string, palabras = true): number[] {
-  const t = sinTildes(texto);
+  const t = sinMontos(sinTildes(texto));
   const cifras: number[] = [];
   for (const [token] of t.matchAll(/\d+(?:[.,]\d+)*/g)) {
     // «10.000» es diez mil; «2.10» y «2,10» son decimales.
@@ -211,6 +218,46 @@ export function nombresDichos(texto: string, resolver: ResolverNombre, otro?: Re
   return { resueltos, literales: palabras.map((p, i) => (usada[i] ? '' : p)) };
 }
 
+/** Palabras que acompañan a un nombre sin cambiar el producto: conectores, unidades y lo que dice la medida. */
+const ACOMPANAN = new Set([
+  'PARA', 'CADA', 'TIPO', 'COLOR', 'HOJA', 'HOJAS', 'VANO', 'VANOS', 'UNID', 'UNIDS', 'UNDS', 'MEDIDA',
+  'MEDIDAS', 'METRO', 'METROS', 'CENTIMETROS', 'MILIMETROS', 'PULGADA', 'PULGADAS', 'MADERA', 'MADERAS',
+  'PUERTA', 'PUERTAS', 'IGUAL', 'IGUALES', 'OTRA', 'OTRAS', 'OTRO', 'OTROS', 'MISMA', 'MISMAS', 'MISMO',
+  'MISMOS', 'LARGO', 'TAMBIEN',
+]);
+
+/**
+ * Palabras de la frase de un ítem que el catálogo no conoce y pueden cambiar el producto: las que van entre
+ * el modelo y la madera («huilo huilo encha en mara») o justo después de la madera («lenga natural»). Se
+ * avisan para que la persona revise la línea; también muestran qué alias falta configurar.
+ */
+export function palabrasDesconocidas(frase: string, resolver: Record<CampoNombre, ResolverNombre>): string[] {
+  const palabras = sinTildes(frase)
+    .toUpperCase()
+    .split(/[^A-Z0-9]+/)
+    .filter(Boolean);
+  // `literales` deja vacía cada palabra que forma parte de un nombre resuelto.
+  const esModelo = nombresDichos(frase, resolver.modelo, resolver.madera).literales.map((p) => !p);
+  const esMadera = nombresDichos(frase, resolver.madera, resolver.modelo).literales.map((p) => !p);
+  const desconocida = (p: string | undefined): p is string =>
+    !!p &&
+    /^[A-Z]{4,}$/.test(p) &&
+    !NO_CALIFICAN.has(p) &&
+    !ACOMPANAN.has(p) &&
+    !singulares([p]).some((s) => !!resolver.modelo(s) || !!resolver.madera(s));
+  const halladas = new Set<string>();
+  let finModelo = -1;
+  for (let i = 0; i < palabras.length; i++) {
+    if (esModelo[i]) finModelo = i;
+    if (!esMadera[i]) continue;
+    if (finModelo >= 0) for (const p of palabras.slice(finModelo + 1, i)) if (desconocida(p)) halladas.add(p);
+    finModelo = -1;
+    while (esMadera[i + 1]) i++;
+    if (desconocida(palabras[i + 1])) halladas.add(palabras[i + 1]);
+  }
+  return [...halladas].map((p) => p.toLowerCase());
+}
+
 /**
  * Si el texto nombra `propuesto` escrito de otra forma («huillo», «wilo wilo»): alguna secuencia de palabras
  * enteras del texto la resuelve el catálogo, con sus mismas reglas, a ese nombre. Así el anclaje nunca acepta
@@ -279,8 +326,13 @@ export function anclarNombres(
   return { items: anclados, avisos };
 }
 
+const metrosAviso = (v: number) => `${String(metros(v) ?? v).replace('.', ',')} m`;
+
 /** Texto comparable: sin tildes, en minúsculas y con un solo espacio entre palabras. */
 const plano = (s: string) => sinTildes(s).replace(/[^a-z0-9ñ.,x×*]+/g, ' ').trim();
+/** ¿La frase está tal cual en el mensaje, sin contar tildes, mayúsculas ni puntuación? */
+export const fraseDelMensaje = (frase: string, mensaje: string) =>
+  !!plano(frase) && plano(mensaje).includes(plano(frase));
 
 /** Sección de un accesorio escrita en el texto («2x5», «6 x 4,5», «30x70»); no las medidas de una puerta («80x210»). */
 export const SECCION = /(?<![\d.,])\d{1,2}\s*[x×*]\s*\d{1,2}(?:[.,]\d)?(?![\d.,]*\d)/g;
@@ -301,7 +353,7 @@ const separado = (s: string) => sinTildes(s).replace(/(\d)([a-z"”])/g, '$1 $2'
  */
 export function cantidadesDichas(frase: string): number[] {
   // Lo quitado deja un separador: «alto 2,5 m 11 marcos» no debe dejar «alto 11» pegado.
-  const t = separado(frase)
+  const t = sinMontos(separado(frase))
     .replace(PAR_MEDIDAS, ' ; ')
     .replace(new RegExp(String.raw`${NUM}\s*${UNIDAD_MEDIDA}`, 'g'), ' ; ')
     .replace(new RegExp(String.raw`\b(?:de|alto|ancho|largo|medida|mide|miden)\s+${NUM}`, 'g'), ' ; ');
@@ -451,6 +503,12 @@ export function anclarFrases(
     if (!frase) return item;
     let resultado = item;
     const etiquetaItem = `el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+    // Lo que la frase dice sin ambigüedad corrige a la IA, pero a la vista: un cambio de producto, cantidad o
+    // medida no pasa en silencio.
+    const corregido = (campo: string, propuesto: string, usado: string) =>
+      avisos.push(
+        `Revisa ${etiquetaItem}: el asistente leyó ${campo} ${propuesto}, pero tu pedido dice ${usado}; usé ${usado}.`,
+      );
     const modelosFrase = nombresDichos(frase, resolver.modelo, resolver.madera).resueltos;
     // Lo que el ítem puede tomar de otro: continúa un ítem anterior, lo copia o es el marco de esas puertas.
     const continua = !modelosFrase.size || /\b(otr[oa]s?|igual(es)?|mism[oa]s?)\b/.test(frase);
@@ -468,13 +526,19 @@ export function anclarFrases(
       if (propuesto && !modelosFrase.has(normalizar(propuesto))) {
         const unico = modelosFrase.size === 1 ? [...modelosFrase.values()][0] : null;
         resultado = { ...resultado, modelo: unico };
-        if (!unico)
+        if (unico) corregido('el modelo', `«${item.modelo}»`, `«${unico}»`);
+        else
           avisos.push(
             `El asistente interpretó el modelo de ${etiquetaItem} como «${item.modelo}», pero tu pedido nombra otro: quedó pendiente para que lo indiques.`,
           );
       }
     }
     const maderasFrase = nombresDichos(frase, resolver.madera, resolver.modelo).resueltos;
+    const desconocidas = palabrasDesconocidas(frase, resolver);
+    if (desconocidas.length)
+      avisos.push(
+        `No reconocí ${desconocidas.map((p) => `«${p}»`).join(', ')} en ${etiquetaItem}: revisa que el producto sea el que se pidió.`,
+      );
     if (!item.madera && maderasFrase.size === 1)
       // La IA dejó vacía la madera que la frase dice («marco oregon de 5 pulgadas…»).
       resultado = { ...resultado, madera: [...maderasFrase.values()][0] };
@@ -484,7 +548,8 @@ export function anclarFrases(
         if (!propuesta || !maderasFrase.has(normalizar(propuesta))) {
           const unica = maderasFrase.size === 1 ? [...maderasFrase.values()][0] : null;
           resultado = { ...resultado, madera: unica };
-          if (!unica)
+          if (unica) corregido('la madera', `«${item.madera}»`, `«${unica}»`);
+          else
             avisos.push(
               `El asistente interpretó la madera de ${etiquetaItem} como «${item.madera}», pero tu pedido nombra otra: quedó pendiente para que la indiques.`,
             );
@@ -514,7 +579,10 @@ export function anclarFrases(
     if (!esPuerta && resultado.ancho == null && secciones.length === 1) {
       const propia = resultado.medida ? normalizarMedida(resultado.medida) : null;
       const conocidaMedida = previos.some((p) => p.medida && normalizarMedida(p.medida) === propia);
-      if (propia !== secciones[0] && !conocidaMedida && (propia || !par)) resultado = { ...resultado, medida: secciones[0] };
+      if (propia !== secciones[0] && !conocidaMedida && (propia || !par)) {
+        resultado = { ...resultado, medida: secciones[0] };
+        if (propia) corregido('la sección', `«${item.medida}»`, `«${secciones[0]}»`);
+      }
     }
 
     const cantidad = item.cantidad;
@@ -546,9 +614,10 @@ export function anclarFrases(
       dichas.length === 1 &&
       dichas[0] !== cantidad &&
       (cantidad == null || invalida || ajena || !conocida('cantidad', cantidad))
-    )
+    ) {
       resultado = { ...resultado, cantidad: dichas[0] };
-    else if (ajena) {
+      if (cantidad != null && !invalida) corregido('la cantidad', String(cantidad), String(dichas[0]));
+    } else if (ajena) {
       resultado = { ...resultado, cantidad: null };
       avisos.push(
         `El asistente propuso la cantidad ${cantidad} para ${etiquetaItem}, pero esa cifra corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,
@@ -581,8 +650,10 @@ export function anclarFrases(
         const v = resultado[campo];
         if (v == null || conocida(campo, v)) continue;
         if (metros(v) !== null && respaldo(campo, v, frase)) continue;
-        if (par) resultado = { ...resultado, [campo]: par[campo] };
-        else if (deOtroItem(campo, v)) {
+        if (par) {
+          resultado = { ...resultado, [campo]: par[campo] };
+          corregido(campo === 'ancho' ? 'el ancho' : 'el alto', metrosAviso(v), metrosAviso(par[campo]));
+        } else if (deOtroItem(campo, v)) {
           resultado = { ...resultado, [campo]: null };
           avisos.push(
             `El asistente propuso ${campo === 'ancho' ? 'el ancho' : 'el alto'} ${String(metros(v) ?? v).replace('.', ',')} m para ${etiquetaItem}, pero esa medida corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,

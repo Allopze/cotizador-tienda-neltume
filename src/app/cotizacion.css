@@ -1242,6 +1242,11 @@ td small {
   font-size: var(--fs-xs);
   line-height: 1.4;
 }
+/* «Cotizar como especial» en un pendiente que no existe en el catálogo: se lee como acción, no como dato. */
+.cotizar-especial {
+  margin-top: 6px;
+  font-size: var(--fs-xs);
+}
 .item-editor .pendientes-preguntas {
   margin: 0 0 12px;
   padding: 10px 12px;
