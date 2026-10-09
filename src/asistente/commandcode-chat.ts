@@ -57,9 +57,44 @@ export async function interpretarChat(
   const calls = choice.message.tool_calls;
   // Algunos backends compatibles informan 'stop' aun con una llamada forzada; 'length' sigue siendo truncado.
   if (!['tool_calls', 'stop'].includes(choice.finish_reason ?? '') || calls?.length !== 1) return null;
+  const name = calls[0].function.name;
   try {
-    return { name: calls[0].function.name, input: JSON.parse(calls[0].function.arguments) };
+    const input = JSON.parse(calls[0].function.arguments);
+    return { name, input: desenvolver(input, tools.find((t) => t.name === name)?.input_schema) };
   } catch {
     return null;
   }
+}
+
+/** ¿La propiedad del esquema JSON admite un objeto o una lista? */
+function admiteEstructura(propiedad: unknown): boolean {
+  if (!propiedad || typeof propiedad !== 'object') return false;
+  const { type, anyOf } = propiedad as { type?: unknown; anyOf?: unknown };
+  const tipos = Array.isArray(type) ? type : [type];
+  return (
+    tipos.includes('object') ||
+    tipos.includes('array') ||
+    (Array.isArray(anyOf) && anyOf.some(admiteEstructura))
+  );
+}
+
+/**
+ * Algunos modelos (Qwen) devuelven un objeto anidado como texto JSON («"flete": "{\"valor\": 350000}"») y la
+ * respuesta entera quedaba inutilizable. Se desenvuelven solo las propiedades que el esquema de la
+ * herramienta declara como objeto o lista: un texto que solo parece JSON sigue siendo texto.
+ */
+function desenvolver(input: unknown, esquema: Record<string, unknown> | undefined) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return input;
+  const propiedades = (esquema?.properties ?? {}) as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(input).map(([clave, valor]) => {
+      if (typeof valor !== 'string' || !admiteEstructura(propiedades[clave])) return [clave, valor];
+      try {
+        const anidado: unknown = JSON.parse(valor);
+        return [clave, anidado !== null && typeof anidado === 'object' ? anidado : valor];
+      } catch {
+        return [clave, valor];
+      }
+    }),
+  );
 }

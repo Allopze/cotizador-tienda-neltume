@@ -74,6 +74,23 @@ describe('pedidos sin registrar', () => {
       ),
     ).toEqual(['1 puerta TOLEDO Raulí 1.15 m por 2,3 m']);
   });
+  it('la línea de un flete registrado no es un pedido aunque el destino se llame como un modelo', () => {
+    // Como en un pedido real («DEPACHO A RIÑIHUE»): mal escrito y con un destino que también es un modelo.
+    const mensaje =
+      'COTIZAR JUAN SOTO\nDEPACHO A PANGUIPULLI con un valor de $350.000 + iva\n2 Molco lenga 80x200';
+    const revisar = (conFlete: boolean) =>
+      pedidosSinRegistrar(mensaje, ['2 Molco lenga 80x200'], ['JUAN SOTO'], resolver, { conFlete });
+    expect(revisar(false)).toEqual(['DEPACHO A PANGUIPULLI con un valor de $350.000 + iva']);
+    expect(revisar(true)).toEqual([]);
+    expect(
+      pedidosSinRegistrar(
+        '2 Molco lenga 80x200\nflete a Panguipulli 350 mil',
+        ['2 Molco lenga 80x200'],
+        [],
+        resolver,
+      ),
+    ).toEqual([]);
+  });
   it('no revisa si una frase no aparece en el mensaje', () => {
     expect(pedidosSinRegistrar(mensaje, ['ocho marcos 2x4 oregón'], [], resolver)).toBeNull();
   });

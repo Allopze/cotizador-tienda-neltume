@@ -98,7 +98,7 @@ En una cotización anterior, borrador es la cotización objetivo y sus ítems so
 Un flete, despacho o transporte con valor no es un producto: nunca lo pongas en agregar; regístralo en flete.
 - descripcion: texto breve con el destino, por ejemplo «Flete por despacho a Chillán».
 - cantidad: «un flete» es 1; null si no la dice.
-- valor: el monto de una unidad tal como está escrito, sin calcular ni sumar o restar IVA: «$380.000», «380 mil» y «380 lucas» son 380000.
+- valor: el monto de una unidad tal como está escrito, sin calcular ni sumar o restar IVA: «$380.000», «380 mil» y «380 lucas» son 380000. En pesos no hay centavos: «$350.00» es 350000.
 - iva: «+ IVA», «más IVA» o «neto» es "neto"; «IVA incluido» o «con IVA» es "incluido"; null si no lo dice.
 Para cambiar solo una parte de un flete que ya existe, deja en null lo demás. «Saca el flete» es flete null. El destino del flete no es la comuna del cliente: no lo copies a cliente salvo que el mensaje lo diga.
 

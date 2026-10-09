@@ -304,6 +304,22 @@ describe('maderas de la planilla en la configuración', () => {
     ]);
   });
 
+  it('una configuración guardada recibe los alias nuevos de la base, sin quitarle uno a otra madera', () => {
+    const aliasEnchapada = (maderas: typeof CONFIGURACION_CATALOGO_BASE.maderas) =>
+      validarConfiguracionCatalogo({ maderas }).maderas.find((m) => m.nombre === 'MARA ENCHAPADA')!.alias;
+    // Guardada antes de «encha mara».
+    const guardada = CONFIGURACION_CATALOGO_BASE.maderas.map((m) =>
+      m.nombre === 'MARA ENCHAPADA' ? { ...m, alias: ['ENCHAPADA', 'ENCHAPE EN MARA'] } : m,
+    );
+    expect(aliasEnchapada(guardada)).toEqual(
+      expect.arrayContaining(['ENCHAPADA', 'ENCHA MARA', 'ENCHA EN MARA']),
+    );
+    // Si otra madera ya usa «encha mara», se queda con ella y la carga no falla.
+    const ajena = [...guardada, { nombre: 'MARA ESPECIAL', codigo: 'ME', alias: ['ENCHA MARA'] }];
+    expect(aliasEnchapada(ajena)).not.toContain('ENCHA MARA');
+    expect(aliasEnchapada(ajena)).toContain('ENCHA EN MARA');
+  });
+
   it('un alias o código de la configuración que choca con ellas es un error de importación explícito', async () => {
     const choque = validarConfiguracionCatalogo({
       maderas: [

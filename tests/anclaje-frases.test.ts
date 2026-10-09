@@ -6,7 +6,7 @@ import {
   nombresDichos,
   parMedidaPuerta,
 } from '../src/asistente/anclaje';
-import { normalizar, normalizarMedida } from '../src/catalogo/resolver';
+import { normalizar, normalizarMedida, resolverNombres } from '../src/catalogo/resolver';
 import type { SolicitudItem } from '../src/catalogo/tipos';
 
 // Casos reales de la prueba de paridad con Excel (npm run paridad:excel-ia), donde la IA mezcló datos entre ítems.
@@ -151,6 +151,37 @@ describe('anclaje por frase de cada ítem', () => {
       resolver,
     );
     expect(items[0].madera).toBe('MARA');
+  });
+
+  it('«encha en mara» es MARA ENCHAPADA: no la cambia por la Mara sólida', () => {
+    // Alias de la configuración base, como los recibe la aplicación.
+    const configurado = resolverNombres({
+      fuente: 'test',
+      sha256: 'test',
+      fecha: '2026-01-01',
+      productos: [],
+    });
+    const madera = (fuente: string) =>
+      anclarFrases(
+        [
+          item({
+            modelo: 'HUILO HUILO',
+            madera: 'MARA ENCHAPADA',
+            ancho: 0.73,
+            alto: 2.07,
+            cantidad: 1,
+            fuente,
+          }),
+        ],
+        [],
+        fuente,
+        configurado,
+      ).items[0].madera;
+    expect(madera('1 und huilo huilo encha en mara 0.73x2.07 mt (hoja)')).toBe('MARA ENCHAPADA');
+    expect(madera('1 und huilo huilo encha mara 0.73x2.07 mt (hoja)')).toBe('MARA ENCHAPADA');
+    expect(madera('1 und huilo huilo enchap. en mara 0.73x2.07 mt (hoja)')).toBe('MARA ENCHAPADA');
+    expect(madera('1 und huilo huilo ench mara 0.73x2.07 mt (hoja)')).toBe('MARA ENCHAPADA');
+    expect(madera('1 und huilo huilo en mara 0.73x2.07 mt (hoja)')).toBe('MARA');
   });
 
   it('usa la sección escrita en la frase si la IA propuso otra', () => {

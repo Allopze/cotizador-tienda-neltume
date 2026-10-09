@@ -96,10 +96,15 @@ export const aliasMaderasCatalogo = (catalogo: CatalogoConsultable) =>
 export const aliasModelosCatalogo = (catalogo: CatalogoConsultable) =>
   'productos' in catalogo ? CONFIGURACION_CATALOGO_BASE.aliasModelos : (catalogo.aliasModelos?.() ?? {});
 /**
+ * Una puerta algo más angosta o baja que la menor del catálogo se cotiza con esa (la hoja se rebaja): 0,69
+ * usa la de 0,70. Desde 5 cm menos, un escalón entero, no hay precio.
+ */
+const REBAJE_PUERTA = 0.05;
+/**
  * Cada medida distinta de los candidatos es un escalón. Se usa el que contiene la medida pedida; en el
  * hueco entre dos, el siguiente hacia arriba. Sobre el mayor no hay precio: no se extrapola. Bajo el menor
  * tampoco, salvo el largo de un marco: un marco para una puerta de 2,27 m se cotiza con el set más corto
- * (2,5 m), porque el marco se corta en obra.
+ * (2,5 m), porque el marco se corta en obra; y una puerta a menos de REBAJE_PUERTA de su menor medida.
  * Un kit y una pieza lineal son productos distintos: el siguiente escalón nunca salta de uno a otro.
  * Ancho y alto se resuelven en orden: si el ancho elegido no tiene ese alto, no se prueba otro ancho.
  * Cada madera (y, en accesorios, cada sección) tiene sus propios escalones: si todavía falta elegirla, cada
@@ -124,7 +129,11 @@ function porEscalon(ps: Producto[], valor: number, campo: 'ancho' | 'alto') {
     if (dentro.length) return dentro;
     const candidatos = grupo.filter(esCandidato);
     const rango = rangoDe(candidatos);
-    const subeAlMenor = campo === 'alto' && candidatos.every(({ p }) => p.familia === 'MARCO');
+    const subeAlMenor =
+      (campo === 'alto' && candidatos.every(({ p }) => p.familia === 'MARCO')) ||
+      (!!rango &&
+        valor > rango.min - REBAJE_PUERTA + 1e-9 &&
+        candidatos.every(({ p }) => p.familia === 'PUERTA'));
     if (!rango || (valor < rango.min && !subeAlMenor) || valor > rango.max) return [];
     const siguiente = Math.min(...candidatos.map(({ e }) => e.min).filter((min) => min > valor));
     return candidatos.filter(({ e }) => Math.abs(e.min - siguiente) < 1e-9);
