@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { cantidadesDichas, cifrasDelTexto } from '../src/asistente/anclaje';
 import type { Catalogo, Producto } from '../src/catalogo/tipos';
+import { familiaEspecial } from '../src/negocio/personalizados';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
 
@@ -253,6 +254,128 @@ describe('pedidos especiales desde el chat', () => {
       precioUnitario: 450000,
       producto: { codigo: 'ESPECIAL' },
     });
+  });
+});
+
+describe('pedidos especiales en la nota de pedido', () => {
+  it('van a su costo de fábrica si se conoce; sin él no suman, y nunca van con el precio de venta', async () => {
+    const { servicio, llm } = await setup();
+    const mensaje = '2 Molco lenga 80x200 para Ana Soto';
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: {
+        agregar: [
+          item('2 Molco lenga 80x200', {
+            modelo: 'MOLCO',
+            madera: 'LENGA',
+            ancho: 0.8,
+            alto: 2,
+            cantidad: 2,
+            tipoMedida: 'hoja',
+          }),
+        ],
+        cliente: { nombre: 'Ana Soto' },
+      },
+    });
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje })).cotizacion;
+    const especial = (nombre: string) => ({
+      nombre,
+      familia: 'PUERTA' as const,
+      madera: 'Roble',
+      cantidad: 1,
+      precioUnitario: 450000,
+      ancho: 1.9,
+      alto: 2.2,
+      tipoMedida: 'hoja' as const,
+    });
+    for (const nombre of ['Puerta doble', 'Puerta japonesa'])
+      q = (
+        await servicio.ejecutar({
+          tipo: 'agregar_personalizado',
+          id: q.id,
+          actualizada: q.actualizada,
+          item: especial(nombre),
+        })
+      ).cotizacion;
+    await expect(
+      servicio.ejecutar({
+        tipo: 'editar',
+        id: q.id,
+        actualizada: q.actualizada,
+        items: [{ indice: 0, cambios: { costoFabrica: 50000 } }],
+      }),
+    ).rejects.toThrow(/Solo un pedido especial lleva costo de fábrica/);
+    q = (
+      await servicio.ejecutar({
+        tipo: 'editar',
+        id: q.id,
+        actualizada: q.actualizada,
+        items: [{ indice: 1, cambios: { costoFabrica: 300000 } }],
+      })
+    ).cotizacion;
+    expect(q.solicitudes[1].costoFabrica).toBe(300000);
+    q = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (
+      await servicio.ejecutar({
+        tipo: 'pago',
+        id: q.id,
+        actualizada: q.actualizada,
+        monto: Math.ceil(q.montos.total * 0.5),
+        fecha: '2026-10-09',
+      })
+    ).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
+    // La Molco a costo de fábrica, la especial con costo a ese costo, y la otra fuera (va «Por definir» en el PDF).
+    expect(q.nota!.montos.lineas.map((l) => [l.indice, l.precioUnitario, l.total])).toEqual([
+      [0, 100000, 200000],
+      [1, 300000, 300000],
+    ]);
+    expect(q.nota!.montos.subtotal).toBe(500000);
+  });
+});
+
+describe('familia y precio a mano', () => {
+  it('la familia de un especial sale del catálogo, del nombre o de su forma: solo una puerta cuenta como puerta', () => {
+    const desconocido = { tipo: 'modelo_desconocido' as const, valor: 'x', disponibles: [] };
+    const sinMedida = {
+      tipo: 'medida_no_disponible' as const,
+      familia: 'MARCO' as const,
+      campo: 'alto' as const,
+      valor: 3,
+      disponibles: [],
+    };
+    expect(familiaEspecial(sinMedida)).toBe('MARCO');
+    expect(familiaEspecial(desconocido, { modelo: 'Marco de raulí', ancho: null, medida: '2x4' })).toBe(
+      'MARCO',
+    );
+    expect(familiaEspecial(desconocido, { modelo: 'Guardapolvo curvo', ancho: null, medida: null })).toBe(
+      'MOLDURA',
+    );
+    expect(familiaEspecial(desconocido, { modelo: 'Tablón', ancho: null, medida: '6x2' })).toBe('MOLDURA');
+    expect(familiaEspecial(desconocido, { modelo: 'Puerta japonesa', ancho: 0.8, medida: null })).toBe(
+      'PUERTA',
+    );
+  });
+
+  it('un precio a mano fuera del margen permitido explica el rango en vez de un error genérico', async () => {
+    const { servicio, llm } = await setup();
+    const mensaje = '2 Molco lenga 80x200';
+    llm.interpretar.mockResolvedValueOnce(
+      agregar(item(mensaje, { modelo: 'MOLCO', madera: 'LENGA', ancho: 0.8, alto: 2, cantidad: 2 })),
+    );
+    const q = (await servicio.ejecutar({ tipo: 'chat', mensaje })).cotizacion;
+    const editar = (precioUnitario: number) =>
+      servicio.ejecutar({
+        tipo: 'editar',
+        id: q.id,
+        actualizada: q.actualizada,
+        items: [{ indice: 0, cambios: { precioUnitario } }],
+      });
+    await expect(editar(40000)).rejects.toThrow(
+      /\$40\.000 del ítem 1 queda fuera del margen permitido.*entre \$50\.000 y \$600\.000/,
+    );
+    expect((await editar(90000)).cotizacion.montos.lineas[0].precioUnitario).toBe(90000);
   });
 });
 

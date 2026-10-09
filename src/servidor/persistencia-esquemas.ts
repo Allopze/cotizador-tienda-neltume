@@ -51,6 +51,7 @@ const solicitudSchema = z.object({
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: z.string().max(300).nullable().optional(),
   personalizado: z.object({ familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']) }).nullable().optional(),
+  costoFabrica: z.number().int().positive().max(100_000_000).nullable().optional(),
   referencias: z
     .array(
       z.object({

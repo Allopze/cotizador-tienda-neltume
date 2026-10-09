@@ -126,6 +126,8 @@ describe('Plantillas', () => {
     expect(html).toMatch(/SUBTOTAL<\/span><b>\$265\.000/);
     expect(html).toContain('SOBRE PRODUCTOS');
     expect(html).not.toContain('Flete por despacho</td>');
+    // El flete ya está en el detalle: no se pide consultar el valor del despacho.
+    expect(html).not.toContain('Consultar valor despacho');
   });
 
   it('el descuento especial de un ítem muestra precio original, descuento, precio final y el ahorro en el resumen', async () => {
@@ -322,6 +324,36 @@ describe('Plantillas', () => {
     expect(texto).not.toContain('Referencia de catálogo');
   });
 
+  it('en la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar, y no suma', async () => {
+    await aislarBaseDatos();
+    const q = cotizacion();
+    const { producto: especial } = productoPersonalizado(
+      { modelo: 'Puerta japonesa', madera: 'Roble', ancho: 1.9, alto: 2.2, medida: null, cantidad: 1, precioUnitario: 450000 },
+      'PUERTA',
+    ) as Extract<ReturnType<typeof productoPersonalizado>, { ok: true }>;
+    q.solicitudes = [
+      {
+        modelo: 'Puerta japonesa', madera: 'Roble', ancho: 1.9, alto: 2.2, medida: null, cantidad: 1,
+        precioUnitario: 450000, personalizado: { familia: 'PUERTA' },
+      },
+      { modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 2 },
+    ];
+    q.montos = cotizar([
+      { producto: especial, cantidad: 1, indice: 0, anchoSolicitado: 1.9, altoSolicitado: 2.2 },
+      { producto: puerta, cantidad: 2, indice: 1 },
+    ]);
+    // La nota valoriza solo la Molco, a costo de fábrica.
+    const montos = cotizar([{ producto: puerta, cantidad: 2, indice: 1 }], { ajuste: 0, iva: 0.19 });
+    const html = await plantilla(q, { tipo: 'nota', numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' });
+    const [primera, segunda] = html.split('<tr><td>').slice(1).map(textoVisible);
+    expect(primera).toMatch(/Puerta japonesa[\s\S]*Por definir\s+Por definir/i);
+    expect(segunda).toContain('Molco');
+    const texto = textoVisible(html);
+    expect(texto).toContain('Las líneas «Por definir» son pedidos especiales sin costo de fábrica');
+    expect(texto).not.toContain('$450.000');
+    expect(texto).toMatch(/TOTAL\s+\$238\.000/);
+  });
+
   it('las descripciones en mayúsculas se muestran legibles y las escuadrías llevan unidad', () => {
     expect(descripcionLegible('HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2,1 MT')).toBe(
       'Huilo Huilo Pino Oregon 0,80 a 0,85 m × 2,1 m',
@@ -342,6 +374,8 @@ describe('Plantillas', () => {
     const doc = { tipo: 'cotizacion' as const, numero: 330, montos, fecha: '2026-09-28T12:00:00.000Z' };
     const html = await plantilla(cotizacion(), doc);
     expect(html).toContain('<p>50 % anticipo</p>');
+    // Sin flete, el despacho se consulta aparte.
+    expect(html).toContain('Consultar valor despacho.');
     expect(html).not.toContain('Plazo de entrega');
     expect(html).toContain('Aceptación del cliente');
     const anulada = await plantilla(cotizacion(), {

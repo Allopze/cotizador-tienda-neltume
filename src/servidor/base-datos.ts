@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 20;
+export const VERSION_ESQUEMA = 21;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -393,6 +393,16 @@ function crearEsquema(db: Database.Database) {
             ALTER TABLE ${tabla} ADD COLUMN descuento_unitario INTEGER CHECK (descuento_unitario >= 0);
           `);
       db.exec('PRAGMA user_version = 20;');
+    }).immediate();
+  if (version < 21)
+    db.transaction(() => {
+      // v21: costo de fábrica de un pedido especial (la nota de pedido lo usa). Lo existente queda sin él.
+      const tieneColumna = (db.pragma('table_info(solicitudes)') as { name: string }[]).some(
+        (columna) => columna.name === 'costo_fabrica',
+      );
+      if (!tieneColumna)
+        db.exec('ALTER TABLE solicitudes ADD COLUMN costo_fabrica INTEGER CHECK (costo_fabrica > 0);');
+      db.exec('PRAGMA user_version = 21;');
     }).immediate();
 }
 

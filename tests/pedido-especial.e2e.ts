@@ -29,5 +29,17 @@ test('un pedido fuera de catálogo queda pendiente y se cotiza como especial con
   await expect(panel.locator('tr[id^="producto-"]').first().locator('.celda-total')).toContainText(
     '$450.000',
   );
+  // El costo de fábrica (opcional) es lo que usará la nota de pedido; sin él, la línea va «Por definir».
+  await panel.locator('.item-details > summary').first().click();
+  const costo = panel.getByRole('button', { name: /editar costo de fábrica/i });
+  await expect(costo).toContainText('Por definir');
+  await costo.click();
+  await panel.getByLabel('Costo de fábrica (nota de pedido)').fill('300.000');
+  await panel.getByLabel('Costo de fábrica (nota de pedido)').press('Enter');
+  await expect(panel.getByRole('button', { name: /editar costo de fábrica/i })).toContainText('$300.000');
+  // El precio al cliente no cambia.
+  await expect(panel.locator('tr[id^="producto-"]').first().locator('.celda-total')).toContainText(
+    '$450.000',
+  );
   await page.screenshot({ path: 'test-results/pedido-especial.png', fullPage: true });
 });

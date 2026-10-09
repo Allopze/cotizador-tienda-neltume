@@ -212,6 +212,60 @@ describe('anclaje por frase de cada ítem', () => {
     expect(palabrasDesconocidas('1 und lanco en mara de 0.73x2.07 mt (hoja)', resolver)).toEqual([]);
   });
 
+  it('conserva la palabra del lugar del modelo si la IA la cambió por otro modelo, y quita la sección inventada', () => {
+    // Caso real: «3 Pillo oregón 80×210» leído como una pilastra 6x1, sin ancho.
+    const fuente = '3 Pillo oregón 80×210';
+    const { items, avisos } = anclarFrases(
+      [
+        item({
+          modelo: 'GUARDAPOLVO',
+          madera: 'PINO OREGON',
+          ancho: null,
+          alto: 2.1,
+          medida: '6X1',
+          cantidad: 3,
+          fuente,
+        }),
+      ],
+      [],
+      fuente,
+      resolver,
+    );
+    expect(items[0]).toMatchObject({ modelo: 'Pillo', medida: null, ancho: 0.8, alto: 2.1, cantidad: 3 });
+    expect(avisos).toEqual([
+      'Revisa el ítem 1 (GUARDAPOLVO): el asistente leyó el modelo «GUARDAPOLVO», pero tu pedido dice «Pillo»; usé «Pillo».',
+      'El asistente propuso la sección 6X1 para el ítem 1 (GUARDAPOLVO), pero no aparece en tu pedido: quedó pendiente para que la confirmes.',
+    ]);
+    // «de 4» y «6 pulgadas» siguen respaldando la escuadría 2x4 y 2x6.
+    const marcos = anclarFrases(
+      [
+        item({
+          modelo: 'MARCO',
+          madera: 'PINO OREGON',
+          alto: 2,
+          medida: '2X4',
+          cantidad: 8,
+          fuente: '8 marcos de 4 en oregón de 2',
+        }),
+        item({
+          modelo: 'MARCO',
+          madera: 'PINO OREGON',
+          alto: 2,
+          medida: '2X6',
+          cantidad: 6,
+          fuente: '6 marcos oregón de 6 pulgadas de 2',
+        }),
+      ],
+      [],
+      '8 marcos de 4 en oregón de 2; 6 marcos oregón de 6 pulgadas de 2',
+      resolver,
+      [],
+      (m) => (m === 'MARCO' ? 'MARCO' : null),
+    );
+    expect(marcos.items.map((i) => i.medida)).toEqual(['2X4', '2X6']);
+    expect(marcos.avisos).toEqual([]);
+  });
+
   it('usa la sección escrita en la frase si la IA propuso otra', () => {
     const { items } = anclarFrases(
       [
