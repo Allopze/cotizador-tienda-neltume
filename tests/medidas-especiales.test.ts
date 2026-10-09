@@ -105,6 +105,12 @@ describe('medidas especiales por escalones del catálogo', () => {
       expect(puerta(modelo, ancho, alto)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_no_disponible', campo } });
   });
 
+  it('una puerta a menos de 5 cm de su menor medida se cotiza con ella: la hoja se rebaja', () => {
+    expect(elegido(puerta('Huilo Huilo', 0.69, 2.1))).toEqual(['HUIL-M-2-B', 'siguiente', 'exacto']);
+    expect(elegido(puerta('Huilo Huilo', 0.72, 1.97))).toEqual(['HUIL-M-2-A', 'rango', 'siguiente']);
+    expect(elegido(puerta('Calafquén', 0.66, 2.1))).toEqual(['CALA-M-1-1', 'siguiente', 'rango']);
+  });
+
   it('los largos de accesorios suben al siguiente escalón sin saltar de kit a pieza; la escuadría es exacta', () => {
     const accesorio = (modelo: string, medida: string, alto: number) =>
       resolverItem(catalogo, { modelo, madera: 'Mara', medida, alto, cantidad: 1 });

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { montosDelTexto } from '../src/asistente/flete';
+import { montosAmbiguos, montosDelTexto } from '../src/asistente/flete';
 import { problemaSalida, contextoSeguro } from '../src/asistente/llm';
 import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipos';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
@@ -92,6 +92,20 @@ describe('montos del texto', () => {
   it('con multiplicador no respalda la cifra sola', () => {
     expect(montosDelTexto('380 mil')).not.toContain(380);
   });
+  it('en pesos no hay centavos: «$350.00» es $350.000, nunca $350', () => {
+    const texto = '1 Huilo Huilo de 0.74x2.08 mt, despacho con un valor de $350.00 + iva';
+    expect(montosDelTexto(texto)).toContain(350000);
+    expect(montosDelTexto(texto)).not.toContain(350);
+    expect(montosDelTexto('$1.200.00')).toEqual([1200000]);
+    expect(montosAmbiguos(texto)).toEqual([]);
+  });
+  it('«$350.50» no respalda ningún monto y se cita como dudoso, pero no las medidas', () => {
+    const texto = '1 Huilo Huilo de 0.74x2.08 mt, despacho $350.50 + iva';
+    expect(montosDelTexto(texto)).not.toContain(350);
+    expect(montosDelTexto(texto)).not.toContain(350500);
+    expect(montosAmbiguos(texto)).toEqual(['$350.50']);
+    expect(montosAmbiguos('$380.000 + iva y 1,2 millones')).toEqual([]);
+  });
 });
 
 describe('flete desde el chat', () => {
@@ -152,6 +166,74 @@ describe('flete desde el chat', () => {
     });
     expect(r.cotizacion.flete).toBe(0);
     expect(r.avisos).toEqual([expect.stringMatching(/su valor no aparece escrito/)]);
+  });
+
+  it.each([350, 350000])('«$350.00» leído por la IA como %i queda en $350.000', async (valor) => {
+    const { servicio, llm, q } = await conPedido();
+    llm.interpretar.mockResolvedValueOnce(flete({ descripcion: 'Despacho a Riñihue', valor, iva: 'neto' }));
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      id: q.id,
+      actualizada: q.actualizada,
+      mensaje: 'DEPACHO A RIÑIHUE con un valor de $350.00 + iva',
+    });
+    expect(r.cotizacion.flete).toBe(350000);
+    expect(r.avisos ?? []).toEqual([]);
+  });
+
+  it('no aplica un monto dudoso («$350.50») y pide escribirlo completo', async () => {
+    const { servicio, llm, q } = await conPedido();
+    llm.interpretar.mockResolvedValueOnce(flete({ valor: 350500, iva: 'neto' }));
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      id: q.id,
+      actualizada: q.actualizada,
+      mensaje: 'despacho a Riñihue $350.50 + iva',
+    });
+    expect(r.cotizacion.flete).toBe(0);
+    expect(r.avisos).toEqual([expect.stringMatching(/«\$350\.50» no es un monto claro en pesos/)]);
+  });
+
+  it('un flete bajo $1.000 se aplica, pero avisa que pueden faltarle ceros', async () => {
+    const { servicio, llm, q } = await conPedido();
+    llm.interpretar.mockResolvedValueOnce(flete({ valor: 350, iva: 'neto' }));
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      id: q.id,
+      actualizada: q.actualizada,
+      mensaje: 'despacho a Riñihue $350 + iva',
+    });
+    expect(r.cotizacion.flete).toBe(350);
+    expect(r.avisos).toEqual([expect.stringMatching(/El flete quedó en \$350: revisa si le faltan ceros/)]);
+  });
+
+  it('la línea del flete no se revisa como un pedido sin registrar', async () => {
+    const { servicio, llm } = await setup();
+    // El destino se llama como un modelo del catálogo, igual que Riñihue.
+    const mensaje = '3 Molco oregón 80x200\nDEPACHO A MOLCO con un valor de $350.000 + iva';
+    const salida = {
+      name: 'modificar_cotizacion',
+      input: {
+        agregar: [
+          {
+            modelo: 'MOLCO',
+            madera: 'PINO OREGON',
+            ancho: 0.8,
+            alto: 2,
+            medida: null,
+            cantidad: 3,
+            tipoMedida: null,
+            fuente: '3 Molco oregón 80x200',
+          },
+        ],
+        flete: { descripcion: 'Despacho a Molco', cantidad: 1, valor: 350000, iva: 'neto' },
+      },
+    };
+    llm.interpretar.mockResolvedValueOnce(salida);
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(llm.interpretar.mock.calls[0][1].revisar(salida)).toBeNull();
+    expect(r.cotizacion.flete).toBe(350000);
+    expect(r.avisos ?? []).toEqual([]);
   });
 
   it('cambia la descripción de un flete existente sin tocar su valor, y luego lo quita', async () => {

@@ -10,7 +10,9 @@ type Resolver = Record<'modelo' | 'madera', ResolverNombre>;
 
 /** Palabras que hacen de un trozo un dato del cliente, del despacho o una edición, no un producto. */
 const NO_ES_PEDIDO =
-  /\b(para|calle|pasaje|avenida|av|direccion|comuna|rut|fono|telefono|celular|proyecto|obra|cliente|sr|sra|senor|senora|despacho|despachar|entrega|region|nro|saca|quita|elimina|borra|cambia|sin)\b/;
+  /\b(para|calle|pasaje|avenida|av|direccion|comuna|rut|fono|telefono|celular|proyecto|obra|cliente|sr|sra|senor|senora|despacho|despachar|entrega|flete|fletes|envio|transporte|region|nro|saca|quita|elimina|borra|cambia|sin)\b/;
+/** Monto o IVA: con un flete registrado, el trozo es su línea («depacho a Riñihue $350.000 + iva»). */
+const MONTO_FLETE = /\$|\biva\b/;
 
 const escapar = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -47,13 +49,15 @@ function pidaProducto(texto: string, resolver: Resolver) {
  * Trozos del mensaje, tal como los escribió la persona, que piden productos y no están en la frase de ningún
  * ítem. `frases` son las de los ítems nuevos: si alguna no aparece en el mensaje (la IA la parafraseó), no se
  * puede revisar y devuelve null. `otros` (frases de ítems anteriores, datos del cliente) se descuentan si
- * aparecen y se ignoran si no.
+ * aparecen y se ignoran si no. Con `conFlete` (la respuesta registró un flete), un trozo con un monto es esa
+ * línea aunque nombre un modelo: el destino puede llamarse como uno («Riñihue»).
  */
 export function pedidosSinRegistrar(
   mensaje: string,
   frases: string[],
   otros: string[],
   resolver: Resolver,
+  { conFlete = false }: { conFlete?: boolean } = {},
 ): string[] | null {
   const original = mensaje.normalize('NFC');
   const texto = sinTildes(original);
@@ -94,7 +98,7 @@ export function pedidosSinRegistrar(
         .replace(/^(?:[\s\-•*·]+|(?:y|e|tambi[eé]n|adem[aá]s)\s+)+/i, '')
         .replace(/(?:[\s,.;:]+|\s+(?:para|de|en|a|con|y))+$/i, ''),
     )
-    .filter((t) => t && pidaProducto(t, resolver));
+    .filter((t) => t && !(conFlete && MONTO_FLETE.test(sinTildes(t))) && pidaProducto(t, resolver));
 }
 
 /**

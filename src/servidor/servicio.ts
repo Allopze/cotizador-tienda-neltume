@@ -1929,7 +1929,7 @@ export class Servicio {
       ...base.solicitudes.map((s) => s.fuente ?? ''),
       ...Object.values(cliente).filter((v): v is string => typeof v === 'string'),
     ];
-    const faltan = pedidosSinRegistrar(mensaje, frases, otros, resolver) ?? [];
+    const faltan = pedidosSinRegistrar(mensaje, frases, otros, resolver, { conFlete: !!cambios.flete }) ?? [];
     // «… con su marco 2x5» suele quedar dentro de la frase de la puerta: si no hay ningún marco, falta.
     const conMarco = /\bcon\s+(?:sus?\s+)?marcos?\b[^,.;\n]*/i.exec(mensaje);
     const hayMarco = [...(cambios.agregar ?? []), ...base.solicitudes].some(

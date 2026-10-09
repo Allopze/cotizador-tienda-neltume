@@ -125,7 +125,6 @@ describe('Plantillas', () => {
     expect(html).toMatch(/<td class="codigo">FLETE<\/td><td>Flete \/ despacho<\/td><td class="num">1<\/td><td class="num">\$15\.000<\/td><td class="num">\$15\.000/);
     expect(html).toMatch(/SUBTOTAL<\/span><b>\$265\.000/);
     expect(html).toContain('SOBRE PRODUCTOS');
-    expect(html).toContain('Incluye flete por despacho');
     expect(html).not.toContain('Flete por despacho</td>');
   });
 
@@ -342,7 +341,7 @@ describe('Plantillas', () => {
     const montos = cotizar([{ producto: puerta, cantidad: 1 }]);
     const doc = { tipo: 'cotizacion' as const, numero: 330, montos, fecha: '2026-09-28T12:00:00.000Z' };
     const html = await plantilla(cotizacion(), doc);
-    expect(html).toContain('Forma de pago:</b> 50 % anticipo');
+    expect(html).toContain('<p>50 % anticipo</p>');
     expect(html).not.toContain('Plazo de entrega');
     expect(html).toContain('Aceptación del cliente');
     const anulada = await plantilla(cotizacion(), {

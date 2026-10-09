@@ -86,9 +86,11 @@ describe('maderas compatibles con las medidas pedidas', () => {
 
   it.each([
     [82, ['LENGA']],
-    [87, ['LENGA']],
+    // A menos de 5 cm de la menor medida de una madera, la hoja se rebaja: 87 sirve en Mara (desde 90).
+    [87, ['LENGA', 'MARA']],
     [90, ['LENGA', 'MARA']],
-    [79, []],
+    [79, ['LENGA']],
+    [75, []],
     [96, []],
   ])('filtra puertas por ancho %s usando los escalones de cada madera', (ancho, disponibles) => {
     expect(resolverItem(puertas, item({ modelo: 'Molco', ancho }))).toMatchObject({

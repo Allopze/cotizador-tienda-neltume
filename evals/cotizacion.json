@@ -926,5 +926,127 @@
         }
       ]
     }
+  },
+  {
+    "id": "enchapadas-flete-riñihue",
+    "descripcion": "Pedido real: «encha en mara» es enchapada, y la línea de despacho a Riñihue (que también es un modelo) no es un ítem",
+    "mensajes": [
+      "COTIZAR  VERONICA HENNICKE\nDEPACHO A RIÑIHUE con un valor de $350.00 + iva \n3 unid de Huilo Huilo enchapada en mara  de 0.74x2.08 mt (hoja)\n1 und huilo huilo enchape en mara de 0.73x2.075\n1 und huilo huilo enchape mara de 0.735x2.085 mt (hoja)\n1 und huilo huilo encha en mara 0.73x2.07 mt (hoja)\n1 und huilo huilo encha en mara de 0.69x2.08 mt (hoja)\n2 und huilo huilo enchape en mara de 0.69x2.075\n1 und huilo huilo enchape en mara de 0.78x2.08 mt (hoja)\n1 und huilo huilo enchape en mara de 0.735x2.08 mt (hoja)\n1 und huilo huilo enchape en mara de 0.835x2.075 mt (hoja)\n1 und huilo huilo enchape en mara de 0.70x2.075 mt (hoja)\n1 und huilo huilo enchape en mara de 0.74x2.08 mt (hoja) \n1 und huilo huilo enchape en mara de 1.90x2.20 mt (hoja)"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.74,
+          "alto": 2.08,
+          "medida": null,
+          "cantidad": 3,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.73,
+          "alto": 2.075,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": null
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.735,
+          "alto": 2.085,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.73,
+          "alto": 2.07,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.69,
+          "alto": 2.08,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.69,
+          "alto": 2.075,
+          "medida": null,
+          "cantidad": 2,
+          "tipoMedida": null
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.78,
+          "alto": 2.08,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.735,
+          "alto": 2.08,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.835,
+          "alto": 2.075,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.7,
+          "alto": 2.075,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 0.74,
+          "alto": 2.08,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        },
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 1.9,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1,
+          "tipoMedida": "hoja"
+        }
+      ],
+      "cliente": {
+        "nombre": "VERONICA HENNICKE"
+      }
+    }
   }
 ]

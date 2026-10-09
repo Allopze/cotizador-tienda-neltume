@@ -328,6 +328,37 @@ describe('Modelos Chat Completions de CommandCode', () => {
     expect(body.tools[0].function.name).toBe('modificar_cotizacion');
     expect(JSON.parse(body.messages[1].content)).toEqual(contexto);
   });
+  it('desenvuelve un objeto que el modelo mandó como texto JSON, pero no un texto que solo lo parece', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'Qwen/Qwen3.7-Flash');
+    const llamar = (name: string, input: Record<string, unknown>) =>
+      Response.json({
+        choices: [
+          {
+            finish_reason: 'tool_calls',
+            message: {
+              tool_calls: [{ type: 'function', function: { name, arguments: JSON.stringify(input) } }],
+            },
+          },
+        ],
+      });
+    const flete = { descripcion: 'Despacho a Riñihue', cantidad: 1, valor: 350000, iva: 'neto' };
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(llamar('modificar_cotizacion', { flete: JSON.stringify(flete) }))
+        .mockResolvedValueOnce(llamar('responder', { texto: '[1, 2]' })),
+    );
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: 'modificar_cotizacion',
+      input: { flete },
+    });
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: 'responder',
+      input: { texto: '[1, 2]' },
+    });
+  });
   it('reintenta con tool_choice «auto» si el modelo no acepta «required»', async () => {
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
     vi.stubEnv('CMD_MODEL', 'meta/muse-spark-1.3-contributor');

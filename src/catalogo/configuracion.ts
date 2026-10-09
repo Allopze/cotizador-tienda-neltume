@@ -90,6 +90,13 @@ export const MADERAS_ENCHAPADAS: MaderaConfigurada[] = [
       'ENCHAPADO EN MARA',
       'ENCHAPE MARA',
       'ENCHAPE EN MARA',
+      'ENCHAPADO MARA',
+      'ENCHAP MARA',
+      'ENCHAP EN MARA',
+      'ENCHA MARA',
+      'ENCHA EN MARA',
+      'ENCH MARA',
+      'ENCH EN MARA',
     ],
   },
   { nombre: 'PINO FINGER', codigo: 'PF', alias: ['FINGER', 'FINGER JOINT', 'PINO FINGER DESNUDO', 'FINGER DESNUDO'] },
@@ -155,6 +162,22 @@ function fusionarAlias(base: Record<string, string[]>, extra: Record<string, str
   return fusion;
 }
 
+/**
+ * Suma a cada madera configurada los alias que la base conoce para ella, como los alias de modelo: una
+ * configuración guardada antes de un alias nuevo («encha mara») lo recibe sin editarla. No suma uno que,
+ * escrito parecido, ya nombra una madera.
+ */
+function conAliasBase(maderas: MaderaConfigurada[]): MaderaConfigurada[] {
+  const usados = new Set(maderas.flatMap((m) => [m.nombre, ...m.alias].map(claveTolerante)));
+  return maderas.map((madera) => {
+    const base = CONFIGURACION_CATALOGO_BASE.maderas.find(
+      (b) => normalizarCatalogo(b.nombre) === normalizarCatalogo(madera.nombre),
+    );
+    const nuevos = (base?.alias ?? []).filter((alias) => !usados.has(claveTolerante(alias)));
+    return nuevos.length ? { ...madera, alias: [...madera.alias, ...nuevos] } : madera;
+  });
+}
+
 export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatalogo {
   const entrada = configuracionParcialSchema.parse(valor);
   const aliasPosiblesModelos = fusionarAlias(CONFIGURACION_CATALOGO_BASE.aliasPosiblesModelos, entrada.aliasPosiblesModelos);
@@ -171,7 +194,9 @@ export function validarConfiguracionCatalogo(valor: unknown): ConfiguracionCatal
     }),
   );
   const configuracion: ConfiguracionCatalogo = {
-    maderas: entrada.maderas ?? structuredClone(CONFIGURACION_CATALOGO_BASE.maderas),
+    maderas: entrada.maderas
+      ? conAliasBase(entrada.maderas)
+      : structuredClone(CONFIGURACION_CATALOGO_BASE.maderas),
     familiasPorModelo: {
       ...CONFIGURACION_CATALOGO_BASE.familiasPorModelo,
       ...entrada.familiasPorModelo,
