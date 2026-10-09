@@ -328,6 +328,36 @@ export function anclarNombres(
 
 const metrosAviso = (v: number) => `${String(metros(v) ?? v).replace('.', ',')} m`;
 
+/**
+ * ¿El texto dice la sección? Escrita tal cual («6x1», «30x70») o, en la escuadría 2xN, por su N («de 4»,
+ * «4 pulgadas»). Un formato que no se sabe leer no se juzga.
+ */
+function medidaRespaldada(medida: string, texto: string) {
+  const m = normalizarMedida(medida);
+  if ([...texto.matchAll(SECCION)].some((s) => normalizarMedida(s[0]) === m)) return true;
+  const numeros = m.split('X').map((n) => Number(n.replace(',', '.')));
+  if (!numeros.length || numeros.some((n) => !Number.isFinite(n))) return true;
+  const cifras = cifrasDelTexto(texto, false);
+  return (/^2X/.test(m) ? numeros.slice(1) : numeros).every((n) => cifras.includes(n));
+}
+
+/**
+ * La palabra que ocupa el lugar del modelo, justo después de la cantidad («3 Pillo oregón 80x210» → «Pillo»), si
+ * el catálogo no la conoce; null si no hay una.
+ */
+function palabraDelModelo(frase: string, resolver: Record<CampoNombre, ResolverNombre>) {
+  const palabras = sinTildes(frase)
+    .split(/[^a-zñ0-9]+/)
+    .filter(Boolean);
+  const inicio = palabras.findIndex((p) => /^\d+$/.test(p) || p in UNIDADES);
+  const p = inicio >= 0 ? palabras[inicio + 1] : undefined;
+  if (!p || !/^[a-zñ]{3,}$/.test(p) || PALABRAS_NUMERO.has(p)) return null;
+  const mayusculas = p.toUpperCase();
+  if (NO_CALIFICAN.has(mayusculas) || ACOMPANAN.has(mayusculas) || /^UN(D|DS|ID|IDS)$/.test(mayusculas)) return null;
+  if (singulares([mayusculas]).some((s) => !!resolver.modelo(s) || !!resolver.madera(s))) return null;
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
+
 /** Texto comparable: sin tildes, en minúsculas y con un solo espacio entre palabras. */
 const plano = (s: string) => sinTildes(s).replace(/[^a-z0-9ñ.,x×*]+/g, ' ').trim();
 /** ¿La frase está tal cual en el mensaje, sin contar tildes, mayúsculas ni puntuación? */
@@ -529,8 +559,23 @@ export function anclarFrases(
         if (unico) corregido('el modelo', `«${item.modelo}»`, `«${unico}»`);
         else
           avisos.push(
-            `El asistente interpretó el modelo de ${etiquetaItem} como «${item.modelo}», pero tu pedido nombra otro: quedó pendiente para que lo indiques.`,
+            `El asistente interpretó el modelo del ${etiquetaItem.slice(3)} como «${item.modelo}», pero tu pedido nombra otro: quedó pendiente para que lo indiques.`,
           );
+      }
+    }
+    // La IA cambió la palabra del lugar del modelo («3 Pillo oregón…») por un modelo del catálogo que la frase no
+    // nombra (PILASTRA): se conserva lo escrito, y el sistema pregunta si es el modelo que se le parece.
+    if (
+      resultado.modelo &&
+      !modelosFrase.size &&
+      !conocida('modelo', resultado.modelo) &&
+      resolver.modelo(resultado.modelo) &&
+      !dichoComo(frase, resolver.modelo, resolver.madera)(resultado.modelo)
+    ) {
+      const escrito = palabraDelModelo(frase, resolver);
+      if (escrito) {
+        corregido('el modelo', `«${resultado.modelo}»`, `«${escrito}»`);
+        resultado = { ...resultado, modelo: escrito };
       }
     }
     const maderasFrase = nombresDichos(frase, resolver.madera, resolver.modelo).resueltos;
@@ -551,7 +596,7 @@ export function anclarFrases(
           if (unica) corregido('la madera', `«${item.madera}»`, `«${unica}»`);
           else
             avisos.push(
-              `El asistente interpretó la madera de ${etiquetaItem} como «${item.madera}», pero tu pedido nombra otra: quedó pendiente para que la indiques.`,
+              `El asistente interpretó la madera del ${etiquetaItem.slice(3)} como «${item.madera}», pero tu pedido nombra otra: quedó pendiente para que la indiques.`,
             );
         }
       } else if (
@@ -561,21 +606,35 @@ export function anclarFrases(
       ) {
         resultado = { ...resultado, madera: null };
         avisos.push(
-          `El asistente interpretó la madera de ${etiquetaItem} como «${item.madera}», pero ese nombre corresponde a otro ítem del pedido: quedó pendiente para que la indiques.`,
+          `El asistente interpretó la madera del ${etiquetaItem.slice(3)} como «${item.madera}», pero ese nombre corresponde a otro ítem del pedido: quedó pendiente para que la indiques.`,
         );
       }
     }
-    const familiaItem = resultado.modelo ? familia(resultado.modelo) : null;
-    const esPuerta = familiaItem ? familiaItem === 'PUERTA' : resultado.medida == null;
-    const par = parMedidaPuerta(frase);
-    // La sección escrita en la frase («marco 2x5 pino», «de 8 pulgadas») gana a otra que proponga la IA (30x70
-    // de los finger) y completa la que dejó vacía.
     const secciones = [
       ...new Set([
         ...[...frase.matchAll(SECCION)].map((m) => normalizarMedida(m[0])),
         ...[...frase.matchAll(PULGADAS)].map((m) => `2X${m[1]}`),
       ]),
     ];
+    // Una sección que la conversación no dice (la IA leyó «Pillo» como una pilastra 6x1) no se cotiza: queda
+    // pendiente, y el ítem vuelve a leerse como puerta si sus medidas son las de una.
+    const medidaPropuesta = resultado.medida;
+    if (
+      medidaPropuesta &&
+      secciones.length !== 1 &&
+      !previos.some((p) => p.medida && normalizarMedida(p.medida) === normalizarMedida(medidaPropuesta)) &&
+      ![texto, antes].some((t) => t && medidaRespaldada(medidaPropuesta, t))
+    ) {
+      resultado = { ...resultado, medida: null };
+      avisos.push(
+        `El asistente propuso la sección ${medidaPropuesta} para ${etiquetaItem}, pero no aparece en tu pedido: quedó pendiente para que la confirmes.`,
+      );
+    }
+    const familiaItem = resultado.modelo ? familia(resultado.modelo) : null;
+    const esPuerta = familiaItem ? familiaItem === 'PUERTA' : resultado.medida == null;
+    const par = parMedidaPuerta(frase);
+    // La sección escrita en la frase («marco 2x5 pino», «de 8 pulgadas») gana a otra que proponga la IA (30x70
+    // de los finger) y completa la que dejó vacía.
     if (!esPuerta && resultado.ancho == null && secciones.length === 1) {
       const propia = resultado.medida ? normalizarMedida(resultado.medida) : null;
       const conocidaMedida = previos.some((p) => p.medida && normalizarMedida(p.medida) === propia);
@@ -696,7 +755,7 @@ export function anclarFrases(
       ) {
         resultado = { ...resultado, alto: null };
         avisos.push(
-          `El asistente usó la cantidad ${resultado.cantidad} también como alto o largo de ${etiquetaItem}: quedó pendiente para que lo confirmes.`,
+          `El asistente usó la cantidad ${resultado.cantidad} también como alto o largo del ${etiquetaItem.slice(3)}: quedó pendiente para que lo confirmes.`,
         );
       }
     }

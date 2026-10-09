@@ -116,6 +116,18 @@ export const sinLineasDeFlete = (mensaje: string) =>
     .join('\n');
 
 /**
+ * El mensaje con las líneas del flete al final: leído antes que los productos («Cotizar…\nDespacho a X $…\n3 …»),
+ * la IA a veces registraba solo el flete. Las líneas no cambian, así que cada frase sigue siendo del mensaje.
+ */
+export function fleteAlFinal(mensaje: string) {
+  const lineas = mensaje.split('\n');
+  const esFlete = (l: string) => MONTO_FLETE.test(sinTildes(l)) && !tieneMedidas(l);
+  const flete = lineas.filter(esFlete);
+  if (!flete.length || flete.length === lineas.length) return mensaje;
+  return [...lineas.filter((l) => !esFlete(l)), ...flete].join('\n');
+}
+
+/**
  * ¿El mensaje pide productos? Nombra un modelo y trae una cifra, y no es una pregunta sin medidas. A diferencia de un
  * trozo suelto, un mensaje completo puede traer además el cliente («… para Juan Pérez»).
  */

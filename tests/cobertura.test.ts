@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../src/asistente/cobertura';
+import {
+  fleteAlFinal,
+  pareceUnPedido,
+  pedidosSinRegistrar,
+  sinLineasDeFlete,
+} from '../src/asistente/cobertura';
 import { normalizar } from '../src/catalogo/resolver';
 
 const MODELOS = ['MARCO', 'MOLCO', 'TOLEDO', 'PANGUIPULLI', 'COZ COZ'];
@@ -97,6 +102,16 @@ describe('pedidos sin registrar', () => {
         'COTIZAR JUAN SOTO\nDEPACHO A PANGUIPULLI con un valor de $350.00 + iva\n2 Molco lenga 80x200\n1 Toledo 1,90x2,20 a $450.000',
       ),
     ).toBe('COTIZAR JUAN SOTO\n2 Molco lenga 80x200\n1 Toledo 1,90x2,20 a $450.000');
+  });
+  it('la IA recibe la línea del flete al final, sin cambiar ninguna línea', () => {
+    expect(
+      fleteAlFinal('COTIZAR JUAN SOTO\nDEPACHO A PANGUIPULLI $350.000 + iva\n2 Molco lenga 80x200'),
+    ).toBe('COTIZAR JUAN SOTO\n2 Molco lenga 80x200\nDEPACHO A PANGUIPULLI $350.000 + iva');
+    // Sin flete, o solo con el flete, el mensaje queda igual.
+    expect(fleteAlFinal('2 Molco lenga 80x200\n1 Toledo 1,90x2,20 a $450.000')).toBe(
+      '2 Molco lenga 80x200\n1 Toledo 1,90x2,20 a $450.000',
+    );
+    expect(fleteAlFinal('flete a Chillán $380.000 + IVA')).toBe('flete a Chillán $380.000 + IVA');
   });
   it('no revisa si una frase no aparece en el mensaje', () => {
     expect(pedidosSinRegistrar(mensaje, ['ocho marcos 2x4 oregón'], [], resolver)).toBeNull();

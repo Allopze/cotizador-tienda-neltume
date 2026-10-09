@@ -16,7 +16,7 @@ import {
   type ResolverNombre,
 } from '../asistente/anclaje';
 import { MONTO_BAJO, montoEscrito } from '../asistente/montos';
-import { pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
+import { fleteAlFinal, pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
 import { respuestaDirecta } from '../asistente/respuesta-directa';
 import { mapaCatalogo } from '../catalogo/mapa';
 import {
@@ -161,7 +161,7 @@ export type Accion =
       cantidades?: { indice: number; cantidad: number }[];
       items?: {
         indice: number;
-        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento' | 'personalizado'>>;
+        cambios: Partial<Pick<SolicitudItem, 'modelo' | 'madera' | 'ancho' | 'alto' | 'medida' | 'precioUnitario' | 'margen' | 'tipoMedida' | 'descripcion' | 'observaciones' | 'referencias' | 'descuento' | 'personalizado' | 'costoFabrica'>>;
       }[];
       /** Fija el descuento (%) a mano: deja de seguir al descuento por cantidad. */
       descuento?: number;
@@ -585,6 +585,7 @@ export class Servicio {
         s.observaciones ?? '',
         s.cantidad ?? '',
         s.precioUnitario ?? '',
+        s.costoFabrica ?? '',
         claveDescuento(s),
       ].join('|');
     const r = resolverItem(this.catalogo, s);
@@ -1110,6 +1111,16 @@ export class Servicio {
               throw new ErrorUsuario('Indica el precio unitario del pedido especial.');
           }
         }
+        if (cambios.costoFabrica !== undefined) {
+          const valor = cambios.costoFabrica;
+          if (!siguiente.personalizado)
+            throw new ErrorUsuario('Solo un pedido especial lleva costo de fábrica: el del catálogo sale de la planilla.');
+          if (valor !== null && (!Number.isSafeInteger(valor) || valor <= 0 || valor > 100_000_000))
+            throw new ErrorUsuario('El costo de fábrica debe ser un entero entre $1 y $100.000.000.');
+          siguiente.costoFabrica = valor;
+        }
+        // Un ítem que vuelve al catálogo deja de tener costo escrito: el suyo sale de la planilla.
+        if (!siguiente.personalizado) delete siguiente.costoFabrica;
         if (siguiente.personalizado) {
           // Fuera de catálogo el precio es el dato de origen: no hay precio de catálogo al que volver.
           if (cambios.precioUnitario === null)
@@ -1177,6 +1188,16 @@ export class Servicio {
           despues: this.producto(siguiente, anterior),
         });
         if (descartes) avisosItems.push(avisoProductoCambiado(cambio.indice + 1, descartes));
+        // Un precio escrito para un producto del catálogo debe quedar entre −50 % y 500 % sobre su costo de
+        // fábrica: fuera de eso el cálculo no lo acepta y la persona solo vería un error genérico.
+        if (siguiente.precioUnitario && !siguiente.personalizado) {
+          const r = resolverItem(this.catalogo, siguiente);
+          const costo = r.ok ? r.producto.precioNeto : null;
+          if (costo && (siguiente.precioUnitario < costo * 0.5 || siguiente.precioUnitario > costo * 6))
+            throw new ErrorUsuario(
+              `El precio unitario ${pesos(siguiente.precioUnitario)} del ítem ${cambio.indice + 1} queda fuera del margen permitido sobre el costo de fábrica (−50 % a 500 %): debe estar entre ${pesos(Math.ceil(costo * 0.5))} y ${pesos(Math.floor(costo * 6))}.`,
+            );
+        }
         solicitudes[cambio.indice] = siguiente;
       }
       const { cliente, avisos: avisosCliente } = accion.cliente
@@ -1793,8 +1814,15 @@ export class Servicio {
       this.verificarSerieNoAprobada(q, u);
       // La nota usa los precios guardados sin ajuste, sin descuento ni flete, y a precio de fábrica:
       // ni el margen especial de la cotización ni el de las líneas (no se pasan) intervienen.
-      const montos = cotizar(
-        q.montos.lineas.map((l) => ({
+      // Un pedido especial va a su costo de fábrica si se conoce; sin él, la nota lo imprime «Por definir» y no
+      // lo suma (fábrica lo valoriza). Nunca va con el precio de venta al cliente.
+      const lineas = q.montos.lineas.flatMap((l) => {
+        const s = l.indice != null ? q.solicitudes[l.indice] : undefined;
+        if (!s?.personalizado) return [l];
+        return s.costoFabrica ? [{ ...l, producto: { ...l.producto, precioNeto: s.costoFabrica } }] : [];
+      });
+      const montos = !lineas.length ? montosVacios() : cotizar(
+        lineas.map((l) => ({
           producto: l.producto,
           cantidad: l.cantidad,
           indice: l.indice,
@@ -2013,7 +2041,7 @@ export class Servicio {
       }
       // Si faltan datos (madera, cantidad), el precio queda en el ítem hasta saber si existe en el catálogo.
       if (!SIN_CATALOGO.has(r.rechazo.tipo) || !item.modelo) return conPrecio;
-      const familia = this.familiaDe(item.modelo) ?? familiaEspecial(r.rechazo);
+      const familia = this.familiaDe(item.modelo) ?? familiaEspecial(r.rechazo, item);
       const especial: SolicitudItem = {
         ...conPrecio,
         modelo:
@@ -2180,7 +2208,7 @@ export class Servicio {
       try {
         salida = await this.llm.interpretar(
           contextoSeguro(
-            accion.mensaje,
+            fleteAlFinal(accion.mensaje),
             base.solicitudes,
             base.cliente,
             modelosCatalogo(this.catalogo),

@@ -284,8 +284,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     if (!filas.length) return [];
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
-    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null; descuento_tipo: DescuentoItem['tipo'] | null; descuento_valor: number | null }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor FROM solicitudes $FILTRO
+    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null; costo_fabrica: number | null; descuento_tipo: DescuentoItem['tipo'] | null; descuento_valor: number | null }>(`
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, costo_fabrica, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
     const referencias = hijos<ReferenciaItem & { cotizacion_id: string; item_orden: number }>(`
       SELECT cotizacion_id, item_orden, archivo, nombre, tipo, tamano, fecha FROM referencias_item $FILTRO
@@ -335,6 +335,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
             coincidenciaModelo: fila.coincidenciaModelo,
             fuente: fila.fuente ?? null,
             ...(fila.familia_personalizada ? { personalizado: { familia: fila.familia_personalizada } } : {}),
+            ...(fila.familia_personalizada && fila.costo_fabrica !== null ? { costoFabrica: fila.costo_fabrica } : {}),
             ...(referenciasPorItem.has(orden) ? { referencias: referenciasPorItem.get(orden) } : {}),
             ...(fila.descuento_tipo && fila.descuento_valor !== null
               ? { descuento: { tipo: fila.descuento_tipo, valor: fila.descuento_valor } }
@@ -698,8 +699,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor)
+    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, costo_fabrica, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor)
+    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @costo_fabrica, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor)
   `);
   const insReferencia = db.prepare(`
     INSERT INTO referencias_item (cotizacion_id, item_orden, orden, archivo, nombre, tipo, tamano, fecha)
@@ -720,6 +721,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       tipo_medida: s.tipoMedida ?? null,
       medida_por_defecto: s.medidaPorDefecto ? 1 : 0,
       familia_personalizada: s.personalizado?.familia ?? null,
+      costo_fabrica: s.personalizado ? (s.costoFabrica ?? null) : null,
       descripcion: s.descripcion ?? null,
       observaciones: s.observaciones ?? null,
       modelo_original: s.modeloOriginal ?? null,

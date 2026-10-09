@@ -52,6 +52,11 @@ export interface SolicitudItem {
    * neto al cliente. Ausente (o null) en los ítems de catálogo.
    */
   personalizado?: { familia: Familia } | null;
+  /**
+   * Costo de fábrica de un pedido especial, si se conoce: la nota de pedido lo usa. Sin él, la línea va «Por
+   * definir» en la nota y no suma a su total. Los productos del catálogo usan el costo de la planilla.
+   */
+  costoFabrica?: number | null;
   /** Imágenes o documentos que entregó el cliente para este ítem; nunca pasan al catálogo. */
   referencias?: ReferenciaItem[];
   /** Descuento especial solo de este ítem; ausente (o null) mantiene su precio. Nunca toca el catálogo. */

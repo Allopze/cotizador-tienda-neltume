@@ -192,7 +192,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     'No se considera: Instalación, pintura, barniz, protecciones metálicas, vidrios ni estructura para correderas.',
     'No se consideran elementos no indicados en la cotización.',
     'Valores puestos en fábrica.',
-    'Consultar valor despacho.',
+    // Con el flete en el detalle, «consultar el despacho» contradiría el documento.
+    ...(montos.flete ? [] : ['Consultar valor despacho.']),
     ...(empresa.plazoEntrega ? [`<b>Plazo de entrega:</b> ${esc(empresa.plazoEntrega)}`] : []),
     ...(empresa.condicionesPago ? [esc(empresa.condicionesPago)] : []),
   ];
@@ -225,6 +226,25 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   // Con descuento especial, el precio original queda tachado sobre el rebajado (unitario y total de la línea).
   const conOriginal = (l: Linea, original: number, final: number) =>
     conDescuentoItem(l) ? `<s class="original">${pesos(original)}</s><br><b>${pesos(final)}</b>` : pesos(final);
+  // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma.
+  const porDefinir = nota
+    ? q.montos.lineas.filter(
+        (l) =>
+          l.indice != null &&
+          !!q.solicitudes[l.indice]?.personalizado &&
+          !montos.lineas.some((m) => m.indice === l.indice),
+      )
+    : [];
+  const filas = [
+    ...montos.lineas.map((l) => ({ l, definida: true })),
+    ...porDefinir.map((l) => ({ l, definida: false })),
+  ].sort((a, b) => (a.l.indice ?? 0) - (b.l.indice ?? 0));
+  const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) =>
+    `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td>${
+      definida
+        ? `<td class="num">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="num">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
+        : '<td class="num">Por definir</td><td class="num">Por definir</td>'
+    }${nota ? '<td class="check"><i></i></td>' : ''}</tr>`;
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
     @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}
     header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-bottom:2px solid #324536;padding-bottom:20px}header img{display:block;height:120px;width:auto}header>div:last-child{text-align:right}h1{font:700 20px Arial,sans-serif;letter-spacing:.03em;margin:4px 0 12px;color:#1c241e}header p{margin:4px 0 0}.empresa{font-size:10px;line-height:1.5;margin-top:10px;color:#3d443d}
@@ -232,12 +252,12 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
     table{width:100%;border-collapse:collapse;font-size:10px}thead{display:table-header-group}th{text-align:left;border-top:1px solid #324536;border-bottom:1px solid #324536;padding:10px 5px;font-size:9px}td{padding:11px 5px;border-bottom:1px solid #deded6;vertical-align:baseline}td small{font-size:9px;color:#4a524a}tr{break-inside:avoid}.num{text-align:right;white-space:nowrap}.codigo{white-space:nowrap;font-size:9px}.check{width:34px;text-align:center}.check i{display:inline-block;width:11px;height:11px;border:1px solid #324536;vertical-align:-2px}
     .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}.totales .original b{font-weight:400}.totales .ahorro,.descuento-item{color:#8a5a37}s.original{color:#6b716b;font-size:9px}
     footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6}.bloque{break-inside:avoid;margin-bottom:18px}.bloque p{margin:2px 0}.firmas{display:flex;gap:28px;margin-top:34px}.firma{flex:1;font-size:9px;color:#4a524a}.firma span{display:block;border-top:1px solid #242a24;margin-bottom:4px}.linea{display:flex;gap:8px;align-items:baseline;margin-bottom:12px}.linea span{flex:1;border-bottom:1px solid #9a9f98;height:12px}.observaciones{border:1px solid #9a9f98;min-height:64px;padding:6px 8px}.contacto{color:#4a524a}
-    .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}
+    .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}.por-definir{font-size:9px;color:#4a524a;text-align:right;margin:-12px 0 20px}
     </style></head><body>${anulacion}<header><div><img alt="Neltume" src="data:image/svg+xml;base64,${logo.toString('base64')}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
     <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
     <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
-    ${montos.lineas.map((l, i) => `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td><td class="num">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="num">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>${nota ? '<td class="check"><i></i></td>' : ''}</tr>`).join('')}${montos.flete ? `<tr><td>${montos.lineas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
-    <div class="totales">${totales}</div>
+    ${filas.map(filaProducto).join('')}${montos.flete ? `<tr><td>${filas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
+    <div class="totales">${totales}</div>${porDefinir.length ? '<p class="por-definir">Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.</p>' : ''}
     <footer>${cierre}<p class="contacto">Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
 }
 

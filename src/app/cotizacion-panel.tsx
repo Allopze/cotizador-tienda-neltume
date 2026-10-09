@@ -698,7 +698,7 @@ export function CotizacionPanel({
                                         {
                                           indice: i,
                                           cambios: {
-                                            personalizado: { familia: familiaEspecial(pendiente.rechazo) },
+                                            personalizado: { familia: familiaEspecial(pendiente.rechazo, s) },
                                             precioUnitario: leerPesos(v),
                                           },
                                         },
@@ -1097,6 +1097,34 @@ export function CotizacionPanel({
                                       )
                                     }
                                   />
+                                  {personalizado && (
+                                    // Lo usa la nota de pedido; sin él, la línea va «Por definir» y fábrica la valoriza.
+                                    <CampoEditable
+                                      className="item-campo"
+                                      etiqueta="Costo de fábrica (nota de pedido)"
+                                      valor={s.costoFabrica ? String(s.costoFabrica) : ''}
+                                      mostrar={s.costoFabrica ? pesos(s.costoFabrica) : undefined}
+                                      vacio="Por definir"
+                                      editable={editable}
+                                      discreto
+                                      tipo="text"
+                                      modoEntrada="numeric"
+                                      sufijo="$"
+                                      guardando={guardando === `item.${i}.costoFabrica`}
+                                      validar={(v) => {
+                                        const n = v ? leerPesos(v) : 0;
+                                        return !v || (Number.isSafeInteger(n) && n > 0 && n <= 100_000_000)
+                                          ? null
+                                          : 'El costo de fábrica debe ser un monto entero en pesos, entre $1 y $100.000.000.';
+                                      }}
+                                      guardar={(v) =>
+                                        acciones.editar(
+                                          { items: [{ indice: i, cambios: { costoFabrica: v ? leerPesos(v) : null } }] },
+                                          `item.${i}.costoFabrica`,
+                                        )
+                                      }
+                                    />
+                                  )}
                                   {linea && !personalizado && (
                                     <MargenLinea
                                       actual={actual}
