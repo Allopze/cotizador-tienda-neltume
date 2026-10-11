@@ -19,6 +19,8 @@ Docker Compose en el servidor. Al final borra las imágenes viejas del cotizador
 Antes de empaquetar, `npm run deploy` (y `deploy:zip`) corre los tipos, el lint, `npm test` (Vitest y
 Playwright) y `npm run evaluar:regresion`, que evalúa la IA con el modelo de Ajustes, cada caso tres
 veces (unos centavos de dólar y algunos minutos). Si algo falla, no se sube nada.
+El modelo es el de Ajustes **de la base local**: debe ser el mismo que el de producción para que la
+evaluación pruebe lo que se va a usar.
 `npm run deploy -- --sin-ia` omite solo la evaluación de la IA, por ejemplo si el proveedor no responde.
 
 ### Guard de recursos

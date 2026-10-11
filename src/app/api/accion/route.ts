@@ -1,6 +1,6 @@
 import { ErrorIA } from '@/asistente/errores';
 import { z } from 'zod';
-import { Servicio } from '@/servidor/servicio';
+import { Servicio, type DiagnosticoTurno } from '@/servidor/servicio';
 import { Almacen, type FiltrosListado } from '@/servidor/almacen';
 import { csvCotizaciones, MAX_EXPORTACION } from '@/servidor/exportar';
 import { fechaLocal } from '@/negocio/vigencia';
@@ -409,8 +409,16 @@ export async function POST(req: Request) {
       llm = new LLMFijo();
     } else llm = crearLLM();
     const { nombre, email } = sesion.usuario;
+    const inicio = Date.now();
+    // Cada mensaje del chat deja en el registro del servidor solo conteos y tiempo, nunca el texto: sirve para
+    // observar el asistente en uso (cuántos avisos y de qué tipo).
+    const registrarTurno = (d: DiagnosticoTurno) => {
+      const avisos: Record<string, number> = {};
+      for (const a of d.avisos) avisos[a.categoria] = (avisos[a.categoria] ?? 0) + 1;
+      console.info('[asistente]', JSON.stringify({ herramienta: d.herramienta, avisos, ms: Date.now() - inicio }));
+    };
     return Response.json(
-      await new Servicio(catalogo, llm, new Almacen(), { nombre, email }).ejecutar(parsed.data),
+      await new Servicio(catalogo, llm, new Almacen(), { nombre, email }, registrarTurno).ejecutar(parsed.data),
       {
         headers: sinCache,
       },

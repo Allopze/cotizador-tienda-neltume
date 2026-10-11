@@ -25,7 +25,8 @@ import { obtenerCatalogoCommandCode } from '../src/servidor/modelos-commandcode'
 const { values } = parseArgs({
   options: {
     modelos: { type: 'string' },
-    anclaje: { type: 'string', default: 'corregir' },
+    /** Sin indicar, el modo predeterminado del cliente de IA (el que usa la aplicación). */
+    anclaje: { type: 'string' },
     caso: { type: 'string', multiple: true },
     min: { type: 'string' },
     'min-perfectos': { type: 'string' },
@@ -45,7 +46,7 @@ const modelos = values.modelos
   ?.split(',')
   .map((m) => m.trim())
   .filter(Boolean) ?? [leerAjustesIA().commandcode.modelo];
-const modos = values.anclaje!.split(',').map((m) => m.trim());
+const modos = (values.anclaje ?? new CommandCodeLLM().anclaje).split(',').map((m) => m.trim());
 for (const m of modos)
   if (m !== 'corregir' && m !== 'avisar') throw new Error(`--anclaje: «${m}» no es corregir ni avisar.`);
 const catalogo = await cargarCatalogo();

@@ -71,7 +71,7 @@ export interface LLM {
    * medida nueva que no aparezca en la conversación. Los dobles de prueba no la declaran.
    */
   readonly verificarCifras?: boolean;
-  /** Sin indicar, 'corregir'. */
+  /** Sin indicar (dobles de prueba), 'corregir'; el cliente real usa 'avisar' salvo que se pida otro. */
   readonly anclaje?: ModoAnclaje;
 }
 export interface ContextoAltaProducto {
@@ -349,7 +349,7 @@ export class CommandCodeLLM implements LLM {
     private readonly apiKey?: string,
     private readonly opciones: { respaldo?: string | null; anclaje?: ModoAnclaje } = {},
   ) {
-    this.anclaje = opciones.anclaje ?? 'corregir';
+    this.anclaje = opciones.anclaje ?? 'avisar';
   }
 
   /**

@@ -49,6 +49,8 @@ export async function POST(req: Request) {
     let compatible = false;
     const espia: LLM = {
       verificarCifras: true,
+      // «Probar modelo» debe leer igual que el chat: con el mismo modo de anclaje.
+      anclaje: real.anclaje,
       interpretar: async (contexto, opciones) => {
         const salida = await real.interpretar(contexto, opciones);
         if (salidaSchema.safeParse(salida).success) compatible = true;
