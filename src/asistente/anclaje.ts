@@ -773,3 +773,63 @@ export function anclarFrases(
   }
   return { items: anclados, avisos };
 }
+
+const CAMPOS_FRASE = [
+  ['modelo', 'el modelo'],
+  ['madera', 'la madera'],
+  ['cantidad', 'la cantidad'],
+  ['ancho', 'el ancho'],
+  ['alto', 'el alto o largo'],
+  ['medida', 'la sección'],
+] as const;
+type CampoFrase = (typeof CAMPOS_FRASE)[number][0];
+
+function mismoValor(campo: CampoFrase, a: string | number, b: string | number) {
+  if (campo === 'modelo' || campo === 'madera') return normalizar(String(a)) === normalizar(String(b));
+  if (campo === 'medida') return normalizarMedida(String(a)) === normalizarMedida(String(b));
+  if (campo === 'cantidad') return a === b;
+  const ma = metros(Number(a)),
+    mb = metros(Number(b));
+  return ma !== null && mb !== null && Math.abs(ma - mb) < 5e-4;
+}
+
+const valorAviso = (campo: CampoFrase, v: string | number) =>
+  campo === 'ancho' || campo === 'alto' ? metrosAviso(Number(v)) : campo === 'cantidad' ? String(v) : `«${v}»`;
+
+/**
+ * Modo «avisar»: la lectura por frase (`anclarFrases`) no reemplaza la de la IA. Cada campo en que difieren se
+ * avisa para que la persona revise esa línea, y también las palabras de la frase que el catálogo no conoce.
+ */
+export function avisosDeFrases(
+  ia: SolicitudItem[],
+  porFrase: SolicitudItem[],
+  mensaje: string,
+  resolver: Record<CampoNombre, ResolverNombre>,
+): string[] {
+  const avisos: string[] = [];
+  ia.forEach((item, i) => {
+    const leido = porFrase[i];
+    if (!leido) return;
+    const etiquetaItem = `el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+    for (const [campo, nombre] of CAMPOS_FRASE) {
+      const a = item[campo] ?? null,
+        b = leido[campo] ?? null;
+      if (a === null && b === null) continue;
+      if (a !== null && b !== null && mismoValor(campo, a, b)) continue;
+      avisos.push(
+        a === null
+          ? `Revisa ${etiquetaItem}: el asistente no registró ${nombre}, pero tu pedido parece decir ${valorAviso(campo, b!)}.`
+          : b === null
+            ? `Revisa ${etiquetaItem}: el asistente leyó ${nombre} ${valorAviso(campo, a)}, pero no aparece en la frase de ese producto.`
+            : `Revisa ${etiquetaItem}: el asistente leyó ${nombre} ${valorAviso(campo, a)}, pero tu pedido parece decir ${valorAviso(campo, b)}.`,
+      );
+    }
+    if (!item.fuente || !fraseDelMensaje(item.fuente, mensaje)) return;
+    const desconocidas = palabrasDesconocidas(item.fuente, resolver);
+    if (desconocidas.length)
+      avisos.push(
+        `No reconocí ${desconocidas.map((p) => `«${p}»`).join(', ')} en ${etiquetaItem}: revisa que el producto sea el que se pidió.`,
+      );
+  });
+  return avisos;
+}

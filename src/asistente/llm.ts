@@ -54,6 +54,15 @@ export interface OpcionesInterpretar {
    */
   revisar?: (salida: unknown) => string | { correccion: string; mensaje: string } | null;
 }
+/**
+ * Qué hace el servidor con su propia lectura del pedido, frase por frase (`anclarFrases`), y con sus atajos
+ * (respuesta directa sin IA, flete al final del mensaje, reintento por productos omitidos):
+ * - 'corregir': su lectura reemplaza la de la IA cuando difieren, y los atajos están activos.
+ * - 'avisar': la lectura de la IA se conserva y cada diferencia solo se avisa; sin atajos. Pensado para un modelo
+ *   capaz, que no necesita que el servidor le enmiende la lectura.
+ * En ambos modos una cifra, un nombre o un monto que no está escrito en la conversación se anula.
+ */
+export type ModoAnclaje = 'corregir' | 'avisar';
 export interface LLM {
   interpretar(contexto: ContextoLLM, opciones?: OpcionesInterpretar): Promise<unknown>;
   interpretarProducto?(contexto: ContextoAltaProducto): Promise<unknown>;
@@ -62,6 +71,8 @@ export interface LLM {
    * medida nueva que no aparezca en la conversación. Los dobles de prueba no la declaran.
    */
   readonly verificarCifras?: boolean;
+  /** Sin indicar, 'corregir'. */
+  readonly anclaje?: ModoAnclaje;
 }
 export interface ContextoAltaProducto {
   mensaje: string;
@@ -328,6 +339,7 @@ interface Consulta {
 
 export class CommandCodeLLM implements LLM {
   readonly verificarCifras = true;
+  readonly anclaje: ModoAnclaje;
   /**
    * Sin modelo explícito se usa CMD_MODEL; la pantalla de configuración lo entrega desde SQLite. El modelo de
    * respaldo responde cuando el principal falla (límite, caída, plazo agotado, modelo retirado o sin acceso).
@@ -335,8 +347,10 @@ export class CommandCodeLLM implements LLM {
   constructor(
     private readonly modelo?: string,
     private readonly apiKey?: string,
-    private readonly opciones: { respaldo?: string | null } = {},
-  ) {}
+    private readonly opciones: { respaldo?: string | null; anclaje?: ModoAnclaje } = {},
+  ) {
+    this.anclaje = opciones.anclaje ?? 'corregir';
+  }
 
   /**
    * Una respuesta inutilizable, o que la revisión del servidor objeta, se reintenta una vez diciéndole al

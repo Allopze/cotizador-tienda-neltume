@@ -11,6 +11,7 @@ import {
   anclarCifras,
   anclarFrases,
   anclarNombres,
+  avisosDeFrases,
   fraseDelMensaje,
   nombresDichos,
   type ResolverNombre,
@@ -2197,10 +2198,12 @@ export class Servicio {
     // Sin borrador, el contexto de la conversación es el intercambio previo que no se guardó.
     const historialIA = nuevo ? (accion.contexto ?? []) : base.historial;
     const resolver = resolverNombres(this.catalogo);
+    // En modo «avisar» la lectura de la IA no se enmienda: sin atajos, sin reordenar el mensaje ni reintentos.
+    const corrige = (this.llm.anclaje ?? 'corregir') === 'corregir';
     // Un dato suelto que responde la pregunta pendiente («lenga», «son 3») se aplica sin consultar a la IA,
     // igual que los botones. Los dobles de prueba (sin verificarCifras) siempre pasan por la IA.
     const directa =
-      this.llm.verificarCifras && previo?.estado === 'borrador' && modo === 'cotizacion_nueva'
+      this.llm.verificarCifras && corrige && previo?.estado === 'borrador' && modo === 'cotizacion_nueva'
         ? respuestaDirecta(base, accion.mensaje, resolver)
         : null;
     let salida: unknown = directa;
@@ -2208,7 +2211,7 @@ export class Servicio {
       try {
         salida = await this.llm.interpretar(
           contextoSeguro(
-            fleteAlFinal(accion.mensaje),
+            corrige ? fleteAlFinal(accion.mensaje) : accion.mensaje,
             base.solicitudes,
             base.cliente,
             modelosCatalogo(this.catalogo),
@@ -2224,7 +2227,7 @@ export class Servicio {
               catalogo: mapaCatalogo(this.catalogo),
             },
           ),
-          this.llm.verificarCifras
+          this.llm.verificarCifras && corrige
             ? { revisar: (s) => this.revisarSalida(s, accion.mensaje, base, modo, resolver) }
             : {},
         );
@@ -2340,9 +2343,15 @@ export class Servicio {
       if (this.llm.verificarCifras && !directa) {
         // Primero cada ítem contra su propia frase, para que no tome la madera o la cantidad de otro.
         const anteriores = historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto);
-        const porFrase = anclarFrases(propuesta.items, q.solicitudes, accion.mensaje, resolver, anteriores, (m) =>
+        const leidoPorFrase = anclarFrases(propuesta.items, q.solicitudes, accion.mensaje, resolver, anteriores, (m) =>
           this.familiaDe(resolver.modelo(m) ?? m),
         );
+        const porFrase = corrige
+          ? leidoPorFrase
+          : {
+              items: propuesta.items,
+              avisos: avisosDeFrases(propuesta.items, leidoPorFrase.items, accion.mensaje, resolver),
+            };
         const anclado = anclarCifras(porFrase.items, q.solicitudes, textosIA);
         const nombres = anclarNombres(anclado.items, q.solicitudes, textosIA, {
           modelo: aliasModelosCatalogo(this.catalogo),

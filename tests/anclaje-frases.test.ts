@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   anclarFrases,
   anclarNombres,
+  avisosDeFrases,
   cantidadesDichas,
   nombresDichos,
   palabrasDesconocidas,
@@ -857,5 +858,29 @@ describe('lo que la frase dice completa o corrige a la IA (casos de la semilla 3
       anclar([{ modelo: 'MOLCO', madera: 'LENGA', ancho: 0.9, alto: 2.1, fuente: sinCantidad }], sinCantidad)
         .items[0].cantidad,
     ).toBeNull();
+  });
+});
+
+describe('modo «avisar»: diferencias con la frase sin corregir', () => {
+  it('avisa cada campo en que la frase dice otra cosa, lo que falta y las palabras desconocidas', () => {
+    const fuente = '1 lanco encha en mara 0.73x2.07';
+    const ia = [item({ modelo: 'LANCO', madera: 'MARA ENCHAPADA', ancho: 0.73, alto: 2.07, cantidad: 1, fuente })];
+    const porFrase = anclarFrases(ia, [], fuente, resolver).items;
+    expect(avisosDeFrases(ia, porFrase, fuente, resolver)).toEqual([
+      'Revisa el ítem 1 (LANCO): el asistente leyó la madera «MARA ENCHAPADA», pero tu pedido parece decir «MARA».',
+      'No reconocí «encha» en el ítem 1 (LANCO): revisa que el producto sea el que se pidió.',
+    ]);
+    const sinAncho = [item({ modelo: 'MOLCO', ancho: null, alto: 2, cantidad: 2, fuente: '2 molco de 80 x 200' })];
+    expect(
+      avisosDeFrases(sinAncho, [{ ...sinAncho[0], ancho: 0.8 }], '2 molco de 80 x 200', resolver),
+    ).toEqual(['Revisa el ítem 1 (MOLCO): el asistente no registró el ancho, pero tu pedido parece decir 0,8 m.']);
+    expect(
+      avisosDeFrases(sinAncho, [{ ...sinAncho[0], alto: null }], '2 molco de 80 x 200', resolver),
+    ).toEqual(['Revisa el ítem 1 (MOLCO): el asistente leyó el alto o largo 2 m, pero no aparece en la frase de ese producto.']);
+  });
+
+  it('sin diferencias no avisa nada, aunque la medida venga en otra unidad', () => {
+    const ia = [item({ modelo: 'MOLCO', madera: 'LENGA', ancho: 0.8, alto: 2, cantidad: 3, fuente: '3 molco lenga 80x200' })];
+    expect(avisosDeFrases(ia, [{ ...ia[0], ancho: 80, madera: 'lenga' }], '3 molco lenga 80x200', resolver)).toEqual([]);
   });
 });

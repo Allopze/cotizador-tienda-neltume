@@ -390,6 +390,71 @@ describe('servicio: el marco de «con su marco»', () => {
   });
 });
 
+describe('servicio: anclaje en modo «avisar»', () => {
+  async function setupAvisar() {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-precision-'));
+    dirs.push(dir);
+    const llm = { interpretar: vi.fn(), verificarCifras: true, anclaje: 'avisar' as const };
+    return { llm, servicio: new Servicio(catalogo, llm, new Almacen(dir)) };
+  }
+  const mensaje = '3 Molco oregón 80x200 y 2 Molco lenga 80x200';
+  const leida = {
+    name: 'modificar_cotizacion',
+    input: {
+      agregar: [
+        { ...item({ cantidad: 2 }), fuente: '3 Molco oregón 80x200' },
+        { ...item({ madera: 'LENGA', cantidad: 2 }), fuente: '2 Molco lenga 80x200' },
+      ],
+    },
+  };
+
+  it('conserva la lectura de la IA y avisa en qué difiere de la frase, sin pedirle corregir', async () => {
+    const { servicio, llm } = await setupAvisar();
+    llm.interpretar.mockResolvedValueOnce(leida);
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(r.cotizacion.solicitudes.map((s) => s.cantidad)).toEqual([2, 2]);
+    expect(r.avisos).toEqual([
+      'Revisa el ítem 1 (MOLCO): el asistente leyó la cantidad 2, pero tu pedido parece decir 3.',
+    ]);
+    expect(llm.interpretar.mock.calls[0][1]).toEqual({});
+  });
+
+  it('en modo «corregir» la misma lectura se corrige con la frase', async () => {
+    const { servicio, llm } = await setup();
+    llm.interpretar.mockResolvedValueOnce(leida);
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(r.cotizacion.solicitudes.map((s) => s.cantidad)).toEqual([3, 2]);
+  });
+
+  it('sin atajos: la respuesta a una pregunta pendiente y el mensaje con flete van tal cual a la IA', async () => {
+    const { servicio, llm } = await setupAvisar();
+    const conFlete = 'Despacho a Chillán $380.000 + iva\n3 Molco 80x200';
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: { agregar: [{ ...item({ madera: null }), fuente: '3 Molco 80x200' }] },
+    });
+    const q = (await servicio.ejecutar({ tipo: 'chat', mensaje: conFlete })).cotizacion;
+    expect(llm.interpretar.mock.calls[0][0].mensaje).toBe(conFlete);
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: { items: [{ indice: 0, cambios: { madera: 'LENGA', fuente: 'en lenga' } }] },
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje: 'en lenga' });
+    expect(llm.interpretar).toHaveBeenCalledTimes(2);
+    expect(r.cotizacion.solicitudes[0].madera).toBe('LENGA');
+  });
+
+  it('una cifra que nadie escribió se anula igual que en «corregir»', async () => {
+    const { servicio, llm } = await setupAvisar();
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: { agregar: [item({ cantidad: 1, alto: 2 })] },
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Molco oregón de 80 por 200' });
+    expect(r.cotizacion.solicitudes[0]).toMatchObject({ cantidad: null, ancho: 0.8, alto: 2 });
+  });
+});
+
 describe('evaluación', () => {
   it('los casos del repositorio son válidos', async () => {
     const casos = casosSchema.parse(JSON.parse(await readFile('evals/cotizacion.json', 'utf8')));
