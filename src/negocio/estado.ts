@@ -1,6 +1,7 @@
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
 import type { Montos, ReglasComerciales } from './precios';
+import { ANTICIPO_MINIMO, ANTICIPO_TEXTO } from './limites';
 export interface Mensaje {
   rol: 'usuario' | 'asistente';
   texto: string;
@@ -55,7 +56,7 @@ export type EstadoOperativo =
   | 'completada';
 export const etiquetaOperativo: Record<EstadoOperativo, string> = {
   sin_pedido: 'Sin nota de pedido',
-  anticipo_pagado: '50 % pagado',
+  anticipo_pagado: `${ANTICIPO_TEXTO} pagado`,
   pedido_generado: 'Nota de pedido generada',
   en_produccion: 'En producción',
   produccion_terminada: 'Producción terminada',
@@ -164,7 +165,7 @@ export interface Cotizacion {
   facturacion?: Facturacion;
 }
 /** Anticipo que habilita la nota de pedido y la producción: la mitad del total, redondeada hacia arriba. */
-export const anticipoMinimo = (total: number) => Math.ceil(total * 0.5);
+export const anticipoMinimo = (total: number) => Math.ceil(total * ANTICIPO_MINIMO);
 /** «Otro» solo indica que falta el nombre: no identifica a quien lleva el pedido. */
 export const sinTransportista = (transporte: string | null | undefined) =>
   !transporte?.trim() || transporte.trim().toLowerCase() === 'otro';

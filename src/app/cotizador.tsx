@@ -12,6 +12,7 @@ import {
 } from '@/negocio/estado';
 import type { SolicitudItem } from '@/catalogo/tipos';
 import { pesos } from '@/negocio/precios';
+import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
 import { Encabezado } from './encabezado';
@@ -842,7 +843,7 @@ export function Cotizador({
         fecha: fechaLarga(pago.fecha),
         ...(frenaProduccion
           ? {
-              aviso: `La nota de pedido ya está generada y quedarían ${pesos(restante)} pagados, menos del 50 % (${pesos(minimo)}): la producción no podrá ${q.estadoOperativo === 'pedido_generado' ? 'iniciarse' : 'terminarse'} hasta volver a registrar el anticipo.`,
+              aviso: `La nota de pedido ya está generada y quedarían ${pesos(restante)} pagados, menos del ${ANTICIPO_TEXTO} (${pesos(minimo)}): la producción no podrá ${q.estadoOperativo === 'pedido_generado' ? 'iniciarse' : 'terminarse'} hasta volver a registrar el anticipo.`,
             }
           : {}),
       });

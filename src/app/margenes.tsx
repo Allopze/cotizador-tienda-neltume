@@ -9,6 +9,7 @@ import {
 } from '@/negocio/cifras';
 import { margenProducto, origenMargen, porcentaje, REGLAS, type Linea, type OrigenMargen } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
+import { MARGEN_MAX, MARGEN_MIN } from '@/negocio/limites';
 import type { CambiosEdicion } from './contrato';
 
 type Editar = (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
@@ -89,8 +90,8 @@ export function MargenLinea({
           ref={entrada}
           key={`${actual.actualizada}-${indice}-margen`}
           type="number"
-          min={-50}
-          max={500}
+          min={MARGEN_MIN * 100}
+          max={MARGEN_MAX * 100}
           step="0.01"
           defaultValue={guardado}
           disabled={!editable}

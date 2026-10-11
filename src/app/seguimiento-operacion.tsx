@@ -10,6 +10,7 @@ import {
   type Cotizacion,
 } from '@/negocio/estado';
 import { leerPesos } from '@/negocio/cifras';
+import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import { pesos, porcentaje } from '@/negocio/precios';
 import { fechaLocal } from '@/negocio/vigencia';
 import { fechaLarga } from './formato';
@@ -97,7 +98,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
     if (!aprobada) return null;
     if (!actual.nota || actual.nota.anulada)
       return pagado < pagoMinimoNP
-        ? { titulo: 'Registrar anticipo', detalle: `La nota de pedido se habilita al registrar ${pesos(pagoMinimoNP)} (50 %).`, etiqueta: 'Ir a pagos', accion: irAPago }
+        ? { titulo: 'Registrar anticipo', detalle: `La nota de pedido se habilita al registrar ${pesos(pagoMinimoNP)} (${ANTICIPO_TEXTO}).`, etiqueta: 'Ir a pagos', accion: irAPago }
         : { titulo: 'Generar nota de pedido', detalle: 'El anticipo está registrado. Prepara el documento para fábrica.', etiqueta: 'Generar nota de pedido', accion: () => void flujo({ tipo: 'generar_nota' }) };
     if (pagado < pagoMinimoNP)
       return { titulo: 'Completar anticipo', detalle: `La producción requiere al menos ${pesos(pagoMinimoNP)} pagado.`, etiqueta: 'Ir a pagos', accion: irAPago };

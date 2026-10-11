@@ -3,6 +3,7 @@ import { useCallback, useEffect, useId, useRef, useState, type FormEvent, type R
 import Image from 'next/image';
 import { aCentesimas, conDosDecimales, leerPorcentaje, margenAPorcentaje, porcentajeAMargen } from '@/negocio/cifras';
 import { MAX_TRAMOS, problemaTramos, type ProblemaTramos } from '@/negocio/descuento-cantidad';
+import { MARGEN_MAX } from '@/negocio/limites';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { AccionesGuardar, SinPermiso, useAvisarCambios, useBorrador } from './borrador';
@@ -323,7 +324,7 @@ const tramosNumericos = (p: PreciosTexto) =>
 function erroresPrecios(p: PreciosTexto) {
   const errores: Record<string, string> = {};
   for (const [clave] of ETIQUETAS_MARGEN) {
-    const e = errorPorcentaje(p.margenes[clave] ?? '', 500);
+    const e = errorPorcentaje(p.margenes[clave] ?? '', MARGEN_MAX * 100);
     if (e) errores[`margen-${clave}`] = e;
   }
   const iva = errorPorcentaje(p.iva, 100);

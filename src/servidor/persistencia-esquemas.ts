@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { descuentoEsManual, MAX_DESDE_PUERTAS } from '../negocio/descuento-cantidad';
 import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
+import { MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
 
 const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
 /**
@@ -42,7 +43,7 @@ const solicitudSchema = z.object({
   medida: z.string().nullable(),
   cantidad: z.number().int().min(1).max(10000).nullable(),
   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
-  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
   medidaPorDefecto: z.boolean().optional(),
   descripcion: z.string().max(300).nullable().optional(),
@@ -91,7 +92,7 @@ const montosSchema = z.object({
       cantidad: z.number().int().min(1).max(10000),
       precioUnitario: z.number().int(),
       precioFabrica: z.number().finite().nonnegative().optional(),
-      margen: z.number().finite().min(-0.5).max(5).optional(),
+      margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).optional(),
       precioCliente: z.number().int().optional(),
       margenPersonalizado: z.boolean().optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
@@ -188,7 +189,7 @@ export const cotizacionSchema = z.looseObject({
   fleteDescripcion: z.string().max(300).nullable().optional(),
   fleteCantidad: z.number().int().min(1).max(10000).optional(),
   /** Margen especial de toda la cotización (fracción); ausente o null usa el de cada categoría. */
-  margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  margenCotizacion: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
   observaciones: z.string().nullable().optional(),
   despacho: z
     .object({
@@ -206,19 +207,19 @@ export const cotizacionSchema = z.looseObject({
       descuentoMaximo: z.number().min(0).max(100),
       descuentosPorCantidad: tramosDescuentoSchema.optional(),
       margenes: z.object({
-        puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
-        puertas_solidas_oregon: z.number().finite().min(0).max(5),
+        puertas_solidas_mara_lenga: z.number().finite().min(0).max(MARGEN_MAX),
+        puertas_solidas_oregon: z.number().finite().min(0).max(MARGEN_MAX),
         // Categorías posteriores a la primera versión: las cotizaciones congeladas antes no las traen.
-        puertas_solidas_rauli: z.number().finite().min(0).max(5).optional(),
-        puertas_prepintadas: z.number().finite().min(0).max(5),
-        puertas_enchapadas_mara: z.number().finite().min(0).max(5),
-        marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
-        marcos_finger_enchapados: z.number().finite().min(0).max(5),
+        puertas_solidas_rauli: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        puertas_prepintadas: z.number().finite().min(0).max(MARGEN_MAX),
+        puertas_enchapadas_mara: z.number().finite().min(0).max(MARGEN_MAX),
+        marcos_finger_sin_enchape: z.number().finite().min(0).max(MARGEN_MAX),
+        marcos_finger_enchapados: z.number().finite().min(0).max(MARGEN_MAX),
         // Categorías incorporadas después; las cotizaciones antiguas siguen usando su «otros» congelado.
-        marcos_solidos_oregon: z.number().finite().min(0).max(5).optional(),
-        marcos_solidos_lenga: z.number().finite().min(0).max(5).optional(),
-        accesorios_madera_solida: z.number().finite().min(0).max(5).optional(),
-        otros: z.number().finite().min(0).max(5),
+        marcos_solidos_oregon: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        marcos_solidos_lenga: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        accesorios_madera_solida: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        otros: z.number().finite().min(0).max(MARGEN_MAX),
       }).strict().optional(),
     })
     .optional(),

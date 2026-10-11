@@ -1,6 +1,7 @@
 import type { DescuentoItem, Producto } from '../catalogo/tipos';
 import { describirProducto } from '../catalogo/escalones';
 import { conDosDecimales } from './cifras';
+import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, MARGEN_MIN } from './limites';
 /**
  * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
  * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × (unitario − descuento del ítem).
@@ -191,7 +192,8 @@ export function descuentoPorUnidad(precioUnitario: number, d: DescuentoItem | nu
 }
 export const fleteValido = (f: number) => Number.isSafeInteger(f) && f >= 0 && f <= 100_000_000;
 /** Margen manual (de una línea o de la cotización), como fracción: −50 %…500 % con hasta dos decimales. */
-export const margenValido = (m: number) => Number.isFinite(m) && m >= -0.5 && m <= 5 && conDosDecimales(m * 100);
+export const margenValido = (m: number) =>
+  Number.isFinite(m) && m >= MARGEN_MIN && m <= MARGEN_MAX && conDosDecimales(m * 100);
 export function cotizar(
   items: ItemPrecio[],
   reglas: Pick<ReglasComerciales, 'ajuste' | 'iva'> &
@@ -199,7 +201,7 @@ export function cotizar(
   extras: Extras = {},
 ): Montos {
   if (!items.length) throw new ErrorPrecio('sin_items');
-  if (!Number.isFinite(reglas.ajuste) || reglas.ajuste < -0.5 || reglas.ajuste > 1)
+  if (!Number.isFinite(reglas.ajuste) || reglas.ajuste < AJUSTE_MIN || reglas.ajuste > AJUSTE_MAX)
     throw new ErrorPrecio('ajuste_invalido');
   if (!Number.isFinite(reglas.iva) || reglas.iva < 0 || reglas.iva > 1) throw new ErrorPrecio('iva_invalido');
   const descuentoPorcentaje = extras.descuento ?? 0,
@@ -226,11 +228,11 @@ export function cotizar(
         precioUnitarioPersonalizado > 100_000_000)
     )
       throw new ErrorPrecio('precio_invalido');
-    if (!Number.isFinite(margenCalculado) || margenCalculado < -0.5 || margenCalculado > 5 || (margenManual !== null && !margenValido(margenManual)))
+    if (!Number.isFinite(margenCalculado) || margenCalculado < MARGEN_MIN || margenCalculado > MARGEN_MAX || (margenManual !== null && !margenValido(margenManual)))
       throw new ErrorPrecio('margen_invalido');
     const precioUnitario = precioUnitarioPersonalizado ?? Math.round(producto.precioNeto * (1 + margenCalculado));
     const margen = precioUnitarioPersonalizado === null ? margenCalculado : precioUnitario / producto.precioNeto - 1;
-    if (margen < -0.5 || margen > 5) throw new ErrorPrecio('margen_invalido');
+    if (margen < MARGEN_MIN || margen > MARGEN_MAX) throw new ErrorPrecio('margen_invalido');
     const descuentoItem = item.descuento ?? null;
     if (descuentoItem && !descuentoItemValido(descuentoItem)) throw new ErrorPrecio('descuento_invalido');
     const descuentoUnitario = descuentoPorUnidad(precioUnitario, descuentoItem);

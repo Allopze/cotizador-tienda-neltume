@@ -4,6 +4,7 @@ import { Servicio } from '@/servidor/servicio';
 import { Almacen, type FiltrosListado } from '@/servidor/almacen';
 import { csvCotizaciones, MAX_EXPORTACION } from '@/servidor/exportar';
 import { fechaLocal } from '@/negocio/vigencia';
+import { MARGEN_MAX, MARGEN_MIN } from '@/negocio/limites';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { leerJson } from '@/servidor/cuerpo';
@@ -75,7 +76,7 @@ const solicitudRestaurarSchema = z.object({
   medida: z.string().max(300).nullable(),
   cantidad: z.number().int().min(1).max(10000).nullable(),
   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
-  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
   descripcion: texto(300),
   observaciones: texto(1000),
@@ -223,7 +224,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
                   alto: z.number().finite().nullable().optional(),
                   medida: texto(300),
                   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
-                  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+                  margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
                   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
                   descripcion: texto(300),
                   observaciones: texto(1000),
@@ -256,7 +257,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
         .strict()
         .nullable()
         .optional(),
-      margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
+      margenCotizacion: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
       observaciones: z.string().max(2000).nullable().optional(),
       despacho: despachoSchema.nullable().optional(),
       tarifaStarken: tarifaStarkenSchema.optional(),

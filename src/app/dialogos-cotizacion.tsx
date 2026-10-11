@@ -3,6 +3,7 @@ import { useCallback, useRef, useState, type FormEvent, type RefObject } from 'r
 import { Dialogo } from './dialogo';
 import type { Despacho } from './contrato';
 import { fechaLarga, numeroCotizacion } from './formato';
+import { ANTICIPO_TEXTO } from '@/negocio/limites';
 
 // Diálogos con formulario que devuelven una promesa, como useConfirmacion.
 
@@ -69,7 +70,7 @@ function FormAprobacion({
     <form onSubmit={enviar}>
       <div className="dialogo-mensaje">
         <p>Se registrará la aprobación del cliente y la cotización quedará bloqueada para edición.</p>
-        <p>La nota de pedido se habilitará cuando registres al menos 50 % de pago.</p>
+        <p>La nota de pedido se habilitará cuando registres al menos {ANTICIPO_TEXTO} de pago.</p>
         {datos.vencida && (
           <p className="dialogo-advertencia">
             Esta cotización venció{datos.vence ? ` el ${fechaLarga(datos.vence)}` : ''}. Apruébala solo si el

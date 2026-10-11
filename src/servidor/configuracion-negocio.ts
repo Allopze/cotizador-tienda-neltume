@@ -2,6 +2,7 @@ import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-cantidad';
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
+import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX } from '../negocio/limites';
 import { abrirBaseDatos } from './base-datos';
 import { tramoDescuentoSchema } from './persistencia-esquemas';
 import type { DatosEmpresa } from './empresa';
@@ -39,7 +40,7 @@ export const configuracionNegocioSchema = z
       .strict(),
     reglas: z
       .object({
-        ajuste: z.number().finite().min(-0.5).max(1),
+        ajuste: z.number().finite().min(AJUSTE_MIN).max(AJUSTE_MAX),
         iva: z.number().finite().min(0).max(1),
         vigenciaDiasHabiles: z.number().int().min(0).max(365),
         descuentoMaximo: z.number().finite().min(0).max(100),
@@ -52,18 +53,18 @@ export const configuracionNegocioSchema = z
           .default([])
           .transform(ordenarTramos),
         margenes: z.object({
-          puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
-          puertas_solidas_oregon: z.number().finite().min(0).max(5),
+          puertas_solidas_mara_lenga: z.number().finite().min(0).max(MARGEN_MAX),
+          puertas_solidas_oregon: z.number().finite().min(0).max(MARGEN_MAX),
           // Categorías posteriores a la primera versión: un ajuste guardado sin ellas recibe su valor inicial.
-          puertas_solidas_rauli: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.puertas_solidas_rauli),
-          puertas_prepintadas: z.number().finite().min(0).max(5),
-          puertas_enchapadas_mara: z.number().finite().min(0).max(5),
-          marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
-          marcos_finger_enchapados: z.number().finite().min(0).max(5),
-          marcos_solidos_oregon: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.marcos_solidos_oregon),
-          marcos_solidos_lenga: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.marcos_solidos_lenga),
-          accesorios_madera_solida: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.accesorios_madera_solida),
-          otros: z.number().finite().min(0).max(5),
+          puertas_solidas_rauli: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.puertas_solidas_rauli),
+          puertas_prepintadas: z.number().finite().min(0).max(MARGEN_MAX),
+          puertas_enchapadas_mara: z.number().finite().min(0).max(MARGEN_MAX),
+          marcos_finger_sin_enchape: z.number().finite().min(0).max(MARGEN_MAX),
+          marcos_finger_enchapados: z.number().finite().min(0).max(MARGEN_MAX),
+          marcos_solidos_oregon: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.marcos_solidos_oregon),
+          marcos_solidos_lenga: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.marcos_solidos_lenga),
+          accesorios_madera_solida: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.accesorios_madera_solida),
+          otros: z.number().finite().min(0).max(MARGEN_MAX),
         }).strict(),
       })
       .strict()

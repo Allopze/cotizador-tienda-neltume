@@ -46,6 +46,7 @@ import {
   SIN_CATALOGO,
 } from '../negocio/personalizados';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
+import { ANTICIPO_TEXTO, MARGEN_MAX, MARGEN_MIN, RANGO_MARGEN } from '../negocio/limites';
 import { indicesMedidaSinTipo } from '../negocio/medidas';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
 import { contarPuertas, descuentoAutomatico, descuentoEsManual, textoPuertas } from '../negocio/descuento-cantidad';
@@ -1182,7 +1183,7 @@ export class Servicio {
         if (cambios.margen !== undefined) {
           const valor = cambios.margen;
           if (valor !== null && !margenValido(valor))
-            throw new ErrorUsuario('El margen debe ser un porcentaje entre -50 % y 500 %, con hasta dos decimales.');
+            throw new ErrorUsuario(`El margen debe ser un porcentaje entre ${MARGEN_MIN * 100} % y ${MARGEN_MAX * 100} %, con hasta dos decimales.`);
           // Guardado sin el error binario de un porcentaje dividido por 100 (0,07 llega como 0,07000000000000001).
           siguiente.margen = valor === null ? null : redondearMargen(valor);
           if (valor !== null) siguiente.precioUnitario = null;
@@ -1210,9 +1211,9 @@ export class Servicio {
         if (siguiente.precioUnitario && !siguiente.personalizado) {
           const r = resolverItem(this.catalogo, siguiente);
           const costo = r.ok ? r.producto.precioNeto : null;
-          if (costo && (siguiente.precioUnitario < costo * 0.5 || siguiente.precioUnitario > costo * 6))
+          if (costo && (siguiente.precioUnitario < costo * (1 + MARGEN_MIN) || siguiente.precioUnitario > costo * (1 + MARGEN_MAX)))
             throw new ErrorUsuario(
-              `El precio unitario ${pesos(siguiente.precioUnitario)} del ítem ${cambio.indice + 1} queda fuera del margen permitido sobre el costo de fábrica (−50 % a 500 %): debe estar entre ${pesos(Math.ceil(costo * 0.5))} y ${pesos(Math.floor(costo * 6))}.`,
+              `El precio unitario ${pesos(siguiente.precioUnitario)} del ítem ${cambio.indice + 1} queda fuera del margen permitido sobre el costo de fábrica (${RANGO_MARGEN}): debe estar entre ${pesos(Math.ceil(costo * (1 + MARGEN_MIN)))} y ${pesos(Math.floor(costo * (1 + MARGEN_MAX)))}.`,
             );
         }
         solicitudes[cambio.indice] = siguiente;
@@ -1263,7 +1264,7 @@ export class Servicio {
       const margenPedido = accion.margenCotizacion === undefined ? margenAntes : accion.margenCotizacion;
       if (margenPedido !== null && !margenValido(margenPedido))
         throw new ErrorUsuario(
-          'El margen especial de la cotización debe ser un porcentaje entre -50 % y 500 %, con hasta dos decimales.',
+          `El margen especial de la cotización debe ser un porcentaje entre ${MARGEN_MIN * 100} % y ${MARGEN_MAX * 100} %, con hasta dos decimales.`,
         );
       const margenCotizacion = margenPedido === null ? null : redondearMargen(margenPedido);
       const extra = avisos.length ? { avisos } : {};
@@ -1727,7 +1728,7 @@ export class Servicio {
       // Anular un pago después de la nota puede dejar el pedido bajo el anticipo: la producción lo exige de nuevo.
       if ((paso === 'iniciar_produccion' || paso === 'produccion_terminada') && pagado < anticipoMinimo(q.montos.total))
         throw new ErrorConflicto(
-          `La producción se habilita con al menos 50 % pagado (${pesos(anticipoMinimo(q.montos.total))}); hay ${pesos(pagado)} registrados.`,
+          `La producción se habilita con al menos ${ANTICIPO_TEXTO} pagado (${pesos(anticipoMinimo(q.montos.total))}); hay ${pesos(pagado)} registrados.`,
           'estado_invalido',
         );
       const anterior = q.estadoOperativo!;
@@ -1827,7 +1828,7 @@ export class Servicio {
       this.verificarVersion(q, accion.actualizada);
       const pagado = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0);
       if (pagado < anticipoMinimo(q.montos.total))
-        throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos 50 % (${pesos(anticipoMinimo(q.montos.total))}).`, 'estado_invalido');
+        throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos ${ANTICIPO_TEXTO} (${pesos(anticipoMinimo(q.montos.total))}).`, 'estado_invalido');
       this.verificarSerieNoAprobada(q, u);
       // La nota usa los precios guardados sin ajuste, sin descuento ni flete, y a precio de fábrica:
       // ni el margen especial de la cotización ni el de las líneas (no se pasan) intervienen.
@@ -2042,9 +2043,9 @@ export class Servicio {
       if (r.ok) {
         // Como un precio escrito en el detalle: entre −50 % y 500 % sobre el costo de fábrica.
         const margen = neto / r.producto.precioNeto - 1;
-        if (margen < -0.5 || margen > 5) {
+        if (margen < MARGEN_MIN || margen > MARGEN_MAX) {
           avisos.push(
-            `No apliqué el precio del ${etiqueta}: ${pesos(neto)} queda fuera del margen permitido sobre el costo de fábrica (−50 % a 500 %). Revísalo o escríbelo en el detalle.`,
+            `No apliqué el precio del ${etiqueta}: ${pesos(neto)} queda fuera del margen permitido sobre el costo de fábrica (${RANGO_MARGEN}). Revísalo o escríbelo en el detalle.`,
           );
           return item;
         }
@@ -2319,7 +2320,7 @@ export class Servicio {
             `La cotización N° ${aprobada.numero} de la misma serie ya fue aprobada; no se puede aprobar la N° ${numero}.`,
           );
         const vencida = estaVencida(objetivo.vence);
-        const texto = `¿Confirmas que el cliente aprobó la cotización N° ${numero}? Se registrará la aprobación; la nota de pedido estará disponible al registrar al menos 50 % de pago.${vencida ? ` Atención: venció el ${fechaChilena(objetivo.vence!)}.` : ''}`;
+        const texto = `¿Confirmas que el cliente aprobó la cotización N° ${numero}? Se registrará la aprobación; la nota de pedido estará disponible al registrar al menos ${ANTICIPO_TEXTO} de pago.${vencida ? ` Atención: venció el ${fechaChilena(objetivo.vence!)}.` : ''}`;
         const resultado = responder(texto);
         return {
           ...resultado,
