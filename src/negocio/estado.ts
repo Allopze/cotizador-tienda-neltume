@@ -5,6 +5,14 @@ export interface Mensaje {
   rol: 'usuario' | 'asistente';
   texto: string;
 }
+/** Turnos previos al borrador que viajan como contexto del siguiente mensaje. */
+const MAX_CHARLA = 12;
+/**
+ * Mientras no hay borrador, cada intercambio (sin pedido todavía) se suma a la charla que acompaña al mensaje
+ * siguiente. La usan la pantalla y las evaluaciones, para que la IA vea lo mismo en ambas.
+ */
+export const sumarCharla = (charla: Mensaje[], historial: Mensaje[]) =>
+  [...charla, ...historial.slice(-2)].slice(-MAX_CHARLA);
 /**
  * borrador → emitida → aprobada. Una emitida pasa a «reemplazada» cuando se emite su revisión o se
  * aprueba otra de la misma serie; «anulada» es definitiva. Solo el borrador se edita directamente.

@@ -5,6 +5,7 @@ import {
   anticipoMinimo,
   esEditable,
   etiquetaEstado,
+  sumarCharla,
   type Cotizacion,
   type Despacho,
   type Mensaje,
@@ -462,7 +463,7 @@ export function Cotizador({
     if (d.efimera) {
       // Sin pedido todavía: se muestra el intercambio, pero no se abre un borrador vacío.
       setActual(null);
-      setCharla((c) => [...c, ...q.historial.slice(-2)].slice(-12));
+      setCharla((c) => sumarCharla(c, q.historial));
       if (d.avisos?.length) avisar('info', d.avisos.join(' '));
       const ultimo = q.historial.at(-1);
       if (opciones.anunciar && ultimo?.rol === 'asistente') setAnuncio(ultimo.texto);

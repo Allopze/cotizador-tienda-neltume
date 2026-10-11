@@ -779,7 +779,7 @@ const CAMPOS_FRASE = [
   ['madera', 'la madera'],
   ['cantidad', 'la cantidad'],
   ['ancho', 'el ancho'],
-  ['alto', 'el alto o largo'],
+  ['alto', 'el alto'],
   ['medida', 'la sección'],
 ] as const;
 type CampoFrase = (typeof CAMPOS_FRASE)[number][0];
@@ -796,40 +796,54 @@ function mismoValor(campo: CampoFrase, a: string | number, b: string | number) {
 const valorAviso = (campo: CampoFrase, v: string | number) =>
   campo === 'ancho' || campo === 'alto' ? metrosAviso(Number(v)) : campo === 'cantidad' ? String(v) : `«${v}»`;
 
+const etiquetaDe = (item: SolicitudItem, i: number) => `el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+const y = (partes: string[]) =>
+  partes.length > 1 ? `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}` : (partes[0] ?? '');
+
 /**
- * Modo «avisar»: la lectura por frase (`anclarFrases`) no reemplaza la de la IA. Cada campo en que difieren se
- * avisa para que la persona revise esa línea, y también las palabras de la frase que el catálogo no conoce.
+ * Modo «avisar»: la lectura por frase (`anclarFrases`) no reemplaza la de la IA. Un solo aviso por ítem junta
+ * los campos en que difieren, en palabras de quien cotiza: qué anoté y qué parece decir su mensaje.
  */
-export function avisosDeFrases(
-  ia: SolicitudItem[],
-  porFrase: SolicitudItem[],
-  mensaje: string,
-  resolver: Record<CampoNombre, ResolverNombre>,
-): string[] {
+export function avisosDeCampos(ia: SolicitudItem[], porFrase: SolicitudItem[]): string[] {
   const avisos: string[] = [];
   ia.forEach((item, i) => {
     const leido = porFrase[i];
     if (!leido) return;
-    const etiquetaItem = `el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+    const distintos: [string, string][] = [],
+      faltan: string[] = [],
+      sobran: string[] = [];
     for (const [campo, nombre] of CAMPOS_FRASE) {
       const a = item[campo] ?? null,
         b = leido[campo] ?? null;
       if (a === null && b === null) continue;
       if (a !== null && b !== null && mismoValor(campo, a, b)) continue;
-      avisos.push(
-        a === null
-          ? `Revisa ${etiquetaItem}: el asistente no registró ${nombre}, pero tu pedido parece decir ${valorAviso(campo, b!)}.`
-          : b === null
-            ? `Revisa ${etiquetaItem}: el asistente leyó ${nombre} ${valorAviso(campo, a)}, pero no aparece en la frase de ese producto.`
-            : `Revisa ${etiquetaItem}: el asistente leyó ${nombre} ${valorAviso(campo, a)}, pero tu pedido parece decir ${valorAviso(campo, b)}.`,
-      );
+      if (a === null) faltan.push(`${nombre} ${valorAviso(campo, b!)}`);
+      else if (b === null) sobran.push(`${nombre} ${valorAviso(campo, a)}`);
+      else distintos.push([`${nombre} ${valorAviso(campo, a)}`, valorAviso(campo, b)]);
     }
-    if (!item.fuente || !fraseDelMensaje(item.fuente, mensaje)) return;
-    const desconocidas = palabrasDesconocidas(item.fuente, resolver);
-    if (desconocidas.length)
-      avisos.push(
-        `No reconocí ${desconocidas.map((p) => `«${p}»`).join(', ')} en ${etiquetaItem}: revisa que el producto sea el que se pidió.`,
-      );
+    const partes = [
+      ...(distintos.length
+        ? [`anoté ${y(distintos.map(([a]) => a))}, pero tu mensaje parece decir ${y(distintos.map(([, b]) => b))}`]
+        : []),
+      ...(faltan.length ? [`tu mensaje parece decir ${y(faltan)} y no lo anoté`] : []),
+      ...(sobran.length ? [`anoté ${y(sobran)}, pero no lo encuentro en tu mensaje`] : []),
+    ];
+    if (partes.length) avisos.push(`Revisa ${etiquetaDe(item, i)}: ${partes.join('; ')}.`);
   });
   return avisos;
+}
+
+/** Palabras junto a un producto que el catálogo no conoce («encha», «barnizada»): pueden cambiar lo que se pidió. */
+export function avisosDePalabras(
+  items: SolicitudItem[],
+  mensaje: string,
+  resolver: Record<CampoNombre, ResolverNombre>,
+): string[] {
+  return items.flatMap((item, i) => {
+    if (!item.fuente || !fraseDelMensaje(item.fuente, mensaje)) return [];
+    const desconocidas = palabrasDesconocidas(item.fuente, resolver);
+    return desconocidas.length
+      ? [`No reconocí ${desconocidas.map((p) => `«${p}»`).join(', ')} en ${etiquetaDe(item, i)}: revisa que el producto sea el que se pidió.`]
+      : [];
+  });
 }

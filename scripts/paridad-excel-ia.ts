@@ -14,7 +14,8 @@
 // dato que no se dio o pierde un ítem sin preguntar. Leves: pregunta algo que ya estaba en el pedido.
 //
 //   npm run paridad:excel-ia -- [--casos 200] [--semilla 1] [--paralelo 4] [--escenario marco,vago_sin_madera]
-//                               [--modelo id] [--ids 3,7] [--planilla ruta.xlsx] [--solo-mensajes]
+//                               [--modelo id] [--anclaje corregir|avisar] [--ids 3,7] [--planilla ruta.xlsx]
+//                               [--solo-mensajes]
 //
 // Solo macOS con Excel. Llama al proveedor de IA (costo pequeño por mensaje). No crea cotizaciones en la base real.
 import { createHash, randomUUID } from 'node:crypto';
@@ -22,18 +23,18 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { CommandCodeLLM } from '../src/asistente/llm';
+import { CommandCodeLLM, type ModoAnclaje } from '../src/asistente/llm';
 import { leerConfiguracionCatalogo } from '../src/catalogo/configuracion-archivo';
 import { importarPlanilla } from '../src/catalogo/planilla';
 import { nombreCanonicoModelo } from '../src/catalogo/configuracion';
 import type { Producto } from '../src/catalogo/tipos';
-import type { Cotizacion, Mensaje } from '../src/negocio/estado';
+import { sumarCharla, type Cotizacion, type Mensaje } from '../src/negocio/estado';
 import { margenProducto, type Montos } from '../src/negocio/precios';
 import { leerAjustesIA, leerClaveCommandCode } from '../src/servidor/ajustes-ia';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { cargarCatalogo } from '../src/servidor/catalogo';
 import { guardarConfiguracionNegocio, leerConfiguracionNegocio } from '../src/servidor/configuracion-negocio';
-import { Servicio } from '../src/servidor/servicio';
+import { Servicio, type DiagnosticoTurno } from '../src/servidor/servicio';
 import { ErrorIA } from '../src/asistente/errores';
 import { obtenerCatalogoCommandCode } from '../src/servidor/modelos-commandcode';
 import { entradasPlanilla, recalcularEnExcel, type ResultadoExcel } from './lib/excel-cotizacion';
@@ -45,6 +46,8 @@ const { values } = parseArgs({
     paralelo: { type: 'string', default: '4' },
     escenario: { type: 'string' },
     modelo: { type: 'string' },
+    /** Modo del anclaje por frase; sin indicar, el predeterminado del cliente de IA. */
+    anclaje: { type: 'string' },
     ids: { type: 'string' },
     planilla: { type: 'string' },
     'solo-mensajes': { type: 'boolean', default: false },
@@ -438,6 +441,9 @@ if (values['solo-excel']) {
 const clave = leerClaveCommandCode();
 if (!clave) throw new Error('Falta la clave de CommandCode (Ajustes o CMD_API_KEY; corre con --env-file=.env.local).');
 const modeloIA = values.modelo ?? leerAjustesIA().commandcode.modelo;
+if (values.anclaje && values.anclaje !== 'corregir' && values.anclaje !== 'avisar')
+  throw new Error(`--anclaje: «${values.anclaje}» no es corregir ni avisar.`);
+const anclaje = (values.anclaje as ModoAnclaje | undefined) ?? new CommandCodeLLM(modeloIA, clave).anclaje;
 const catalogoVivo = await cargarCatalogo();
 interface Plataforma {
   cotizacion: Cotizacion | null;
@@ -446,6 +452,8 @@ interface Plataforma {
   tiempos: number[];
   /** Veces que el proveedor respondió «límite» o «no disponible» y se reintentó tras esperar. */
   reintentos: number;
+  /** Avisos que mostró el chat en toda la conversación, con su origen. */
+  avisos: DiagnosticoTurno['avisos'];
   error?: string;
 }
 async function enPlataforma(caso: Caso): Promise<Plataforma> {
@@ -454,10 +462,13 @@ async function enPlataforma(caso: Caso): Promise<Plataforma> {
   const respuestas: string[] = [];
   const tiempos: number[] = [];
   let reintentos = 0;
+  const avisos: DiagnosticoTurno['avisos'] = [];
   let q: Cotizacion | null = null;
   try {
     guardarConfiguracionNegocio(negocio, almacen.baseDatos());
-    const servicio = new Servicio(catalogoVivo, new CommandCodeLLM(modeloIA, clave), almacen);
+    const servicio = new Servicio(catalogoVivo, new CommandCodeLLM(modeloIA, clave, { anclaje }), almacen, null, (d) =>
+      avisos.push(...d.avisos),
+    );
     // Mientras no hay borrador, el intercambio previo viaja como contexto, igual que en la interfaz.
     let charla: Mensaje[] = [];
     for (const mensaje of caso.mensajes) {
@@ -483,12 +494,12 @@ async function enPlataforma(caso: Caso): Promise<Plataforma> {
         }
       }
       respuestas.push(r.cotizacion.historial.at(-1)?.texto ?? '');
-      if (r.efimera) charla = r.cotizacion.historial;
+      if (r.efimera) charla = sumarCharla(charla, r.cotizacion.historial);
       else q = r.cotizacion;
     }
-    return { cotizacion: q, respuestas, tiempos, reintentos };
+    return { cotizacion: q, respuestas, tiempos, reintentos, avisos };
   } catch (e) {
-    return { cotizacion: q, respuestas, tiempos, reintentos, error: e instanceof Error ? e.message : String(e) };
+    return { cotizacion: q, respuestas, tiempos, reintentos, avisos, error: e instanceof Error ? e.message : String(e) };
   } finally {
     cerrarAlmacen(join(dir, 'cotizador.sqlite'));
     await rm(dir, { recursive: true, force: true });
@@ -509,7 +520,7 @@ async function enParalelo<T, R>(lista: T[], limite: number, f: (x: T) => Promise
   );
   return out;
 }
-console.log(`${casos.length} conversaciones con ${modeloIA} (semilla ${values.semilla}).`);
+console.log(`${casos.length} conversaciones con ${modeloIA}, anclaje ${anclaje} (semilla ${values.semilla}).`);
 const inicio = Date.now();
 const plataforma = await enParalelo(casos, Number(values.paralelo) || 1, enPlataforma, (n) => {
   if (n % 10 === 0 || n === casos.length)
@@ -543,10 +554,14 @@ interface Detalle {
   plataforma: { codigo: string; cantidad: number; unitario: number; total: number }[];
   pendientes: string[];
   respuestas: string[];
+  /** Avisos que piden revisar el pedido (sin los informativos). */
+  avisos: string[];
   montosApp: Pick<Montos, 'subtotal' | 'descuento' | 'neto' | 'iva' | 'total'> | null;
   excel: { subtotal: number; iva: number; total: number } | null;
   resultado: 'ok' | 'leve' | 'grave';
 }
+/** Avisos que piden revisar el pedido; los `otros` (flete neto, precio de catálogo…) solo informan. */
+const revision = (p: Plataforma) => p.avisos.filter((a) => a.categoria !== 'otros');
 const hallazgos: Hallazgo[] = [];
 const detalles: Detalle[] = [];
 const stats = { comparados: 0, netoAPesos: 0, totalAPesos: 0, maxDifTotal: 0 };
@@ -622,6 +637,7 @@ function comparar(caso: Caso, app: Plataforma, ex: ResultadoExcel | undefined) {
     plataforma: lineas.map((l) => ({ codigo: l.producto.codigo, cantidad: l.cantidad, unitario: l.precioUnitario, total: l.total })),
     pendientes: pendientes.map((p) => p.pregunta),
     respuestas: app.respuestas,
+    avisos: revision(app).map((a) => `[${a.categoria}] ${a.texto}`),
     montosApp: m ? { subtotal: m.subtotal, descuento: m.descuento, neto: m.neto, iva: m.iva, total: m.total } : null,
     excel: ex ? { subtotal: ex.subtotal, iva: ex.iva, total: ex.total } : null,
     resultado: propios.some((x) => GRAVES.includes(x.tipo)) ? 'grave' : propios.some((x) => x.tipo === 'pregunto_lo_que_ya_estaba') ? 'leve' : 'ok',
@@ -630,6 +646,18 @@ function comparar(caso: Caso, app: Plataforma, ex: ResultadoExcel | undefined) {
 casos.forEach((c, i) => comparar(c, plataforma[i], excelDe.get(c.id)));
 
 // ---------- Reporte ----------
+// Avisos que piden revisar el pedido: en una conversación correcta son falsas alarmas; en una grave, el error
+// quedó a la vista. Una grave sin aviso es silenciosa.
+const correctasConAviso = detalles.filter((d) => d.resultado === 'ok' && d.avisos.length);
+const gravesD = detalles.filter((d) => d.resultado === 'grave');
+const gravesSilenciosos = gravesD.filter((d) => !d.avisos.length).length;
+const conCategoria = (c: string) => plataforma.filter((p) => p.avisos.some((a) => a.categoria === c)).length;
+const falsasPorCategoria = Object.fromEntries(
+  ['campo', 'palabra', 'cifras', 'nombres', 'noRegistre', 'responder'].map((c) => [
+    c,
+    correctasConAviso.filter((d) => d.avisos.some((a) => a.startsWith(`[${c}]`))).length,
+  ]),
+);
 const pct = (n: number, d: number) => `${((100 * n) / Math.max(d, 1)).toFixed(1)} %`;
 const porEscenario = new Map<string, Detalle[]>();
 for (const d of detalles) porEscenario.set(d.escenario, [...(porEscenario.get(d.escenario) ?? []), d]);
@@ -658,10 +686,11 @@ const lineaTiempo = `- Tiempo: ${tiempoPlataforma.toFixed(0)} s en total (${valu
 const reporte = [
   '# Paridad de punta a punta: plataforma (IA + cálculo) ↔ Excel',
   '',
-  `Modelo ${modeloIA} · semilla ${values.semilla} · ${new Date().toISOString()}`,
+  `Modelo ${modeloIA} · anclaje ${anclaje} · semilla ${values.semilla} · ${new Date().toISOString()}`,
   `Reglas de Ajustes: márgenes ${JSON.stringify(reglas.margenes)} · tramos de descuento ${reglas.descuentosPorCantidad?.length ?? 0}`,
   '',
   `- Conversaciones: ${casos.length} · correctas ${cuenta(detalles, 'ok')} (${pct(cuenta(detalles, 'ok'), casos.length)}) · leves ${cuenta(detalles, 'leve')} · graves ${cuenta(detalles, 'grave')}`,
+  `- Avisos: falsas alarmas en ${correctasConAviso.length} de ${cuenta(detalles, 'ok')} correctas (${pct(correctasConAviso.length, cuenta(detalles, 'ok'))}) · graves avisadas ${gravesD.length - gravesSilenciosos}/${gravesD.length} · «No registré» en ${conCategoria('noRegistre')} y «respondió en vez de registrar» en ${conCategoria('responder')} conversaciones`,
   lineaConsumo,
   lineaTiempo,
   `- Montos comparados con Excel: ${stats.comparados} · neto igual al peso ${pct(stats.netoAPesos, stats.comparados)} · total igual al peso ${pct(stats.totalAPesos, stats.comparados)} · diferencia máxima de total ${stats.maxDifTotal.toFixed(2)} (redondeo del unitario)`,
@@ -688,12 +717,13 @@ const reporte = [
       `- Esperado: ${d.esperado.join(', ')}`,
       `- Plataforma: ${d.plataforma.map((e) => `${e.cantidad} × ${e.codigo}`).join(', ') || '(ninguno)'}${d.pendientes.length ? ` · pendientes: ${d.pendientes.join(' | ')}` : ''}`,
       ...hallazgos.filter((x) => x.caso === d.caso).map((x) => `- ${x.tipo}: ${x.detalle}`),
+      ...d.avisos.map((a) => `- aviso ${a}`),
       `- Respuesta: ${(d.respuestas.at(-1) ?? '').replace(/\n+/g, ' ').slice(0, 300)}`,
       '',
     ]),
 ].join('\n');
 await mkdir(salida, { recursive: true });
-const sufijo = `${modeloIA.replace(/[^\w.-]+/g, '_')}-s${values.semilla}${values.ids ? '-ids' : ''}`;
+const sufijo = `${modeloIA.replace(/[^\w.-]+/g, '_')}-${anclaje}-s${values.semilla}${values.ids ? '-ids' : ''}`;
 await writeFile(join(salida, `reporte-ia-${sufijo}.md`), reporte);
 await writeFile(join(salida, `casos-ia-${sufijo}.json`), JSON.stringify(detalles, null, 2));
 // Resumen por modelo, para comparar corridas.
@@ -702,6 +732,7 @@ await writeFile(
   JSON.stringify(
     {
       modelo: modeloIA,
+      anclaje,
       semilla: values.semilla,
       conversaciones: casos.length,
       correctas: cuenta(detalles, 'ok'),
@@ -718,6 +749,12 @@ await writeFile(
       msMaximo: tiempos.at(-1) ?? 0,
       reintentos: plataforma.reduce((s, p) => s + p.reintentos, 0),
       costoUSD: costo,
+      falsasAlarmas: correctasConAviso.length,
+      falsasPorCategoria,
+      gravesAvisados: gravesD.length - gravesSilenciosos,
+      gravesSilenciosos,
+      conversacionesNoRegistre: conCategoria('noRegistre'),
+      conversacionesResponder: conCategoria('responder'),
     },
     null,
     2,

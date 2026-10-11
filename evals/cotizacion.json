@@ -1044,6 +1044,10 @@
           "tipoMedida": "hoja"
         }
       ],
+      "flete": {
+        "unitario": 350000,
+        "cantidad": 1
+      },
       "cliente": {
         "nombre": "VERONICA HENNICKE"
       }
@@ -1127,6 +1131,55 @@
           "cantidad": 1
         }
       ]
+    }
+  },
+  {
+    "id": "flete-antes-de-productos",
+    "descripcion": "La línea del despacho con su valor va antes de los productos: se registran los productos y el flete",
+    "mensajes": [
+      "Cotizar para Juan Soto\nDespacho a Chillán $380.000 + iva\n3 molco lenga de 80x200"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        }
+      ],
+      "flete": {
+        "unitario": 380000,
+        "cantidad": 1
+      },
+      "cliente": {
+        "nombre": "Juan Soto"
+      }
+    }
+  },
+  {
+    "id": "flete-iva-incluido",
+    "descripcion": "Flete con IVA incluido: se guarda neto",
+    "mensajes": [
+      "2 molco lenga de 80x200 y un flete a Temuco de $119.000 con iva incluido"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "flete": {
+        "unitario": 100000,
+        "cantidad": 1
+      }
     }
   }
 ]

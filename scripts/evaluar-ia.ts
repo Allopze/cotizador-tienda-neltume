@@ -19,7 +19,7 @@ import { CommandCodeLLM, type ModoAnclaje } from '../src/asistente/llm';
 import { casosSchema, resumen, type CasoEvaluacion } from '../src/asistente/evaluacion';
 import { leerAjustesIA, leerClaveCommandCode } from '../src/servidor/ajustes-ia';
 import { cargarCatalogo } from '../src/servidor/catalogo';
-import { correrCaso } from '../src/servidor/evaluar-caso';
+import { correrCaso, type ResultadoEjecucion } from '../src/servidor/evaluar-caso';
 import { obtenerCatalogoCommandCode } from '../src/servidor/modelos-commandcode';
 
 const { values } = parseArgs({
@@ -92,6 +92,8 @@ async function enParalelo<T, R>(lista: T[], limite: number, f: (x: T) => Promise
 }
 
 const mostrar = (v: unknown) => (v === null || v === undefined ? '∅' : JSON.stringify(v));
+/** Avisos que piden revisar el pedido; los `otros` (flete neto, precio de catálogo…) solo informan. */
+const revision = (r: ResultadoEjecucion) => r.avisos.filter((a) => a.categoria !== 'otros');
 let peor = 1,
   peoresPerfectos = 1;
 for (const modelo of modelos)
@@ -129,6 +131,7 @@ for (const modelo of modelos)
           console.log(
             `    ${d.item === null ? '' : `ítem ${d.item} `}${d.campo}: esperado ${mostrar(d.esperado)}, obtenido ${mostrar(d.obtenido)}`,
           );
+      for (const a of r ? revision(r) : []) console.log(`    aviso [${a.categoria}]: ${a.texto}`);
     }
     const { precision } = resumen(resultados);
     peor = Math.min(peor, precision);
@@ -152,6 +155,23 @@ for (const modelo of modelos)
     console.log(
       `  ${consumo.llamadas} llamadas · ${consumo.entrada.toLocaleString('es-CL')} + ${consumo.salida.toLocaleString('es-CL')} tokens · ${costo === null ? 'tarifa no disponible' : `≈ US$ ${costo.toFixed(3)} sin caché`} · conversación promedio ${(ms.reduce((s, x) => s + x, 0) / ms.length / 1000).toFixed(1)} s, p90 ${(p90 / 1000).toFixed(1)} s`,
     );
+    // Avisos que piden revisar el pedido (no los informativos): en una corrida perfecta son falsas alarmas; en una
+    // con errores, el error quedó a la vista. Un error sin aviso es silencioso: el que más cuesta.
+    const respondidas = resultados.filter((r) => !r.error);
+    const perfectas = respondidas.filter((r) => !r.diferencias.length);
+    const falsas = perfectas.filter((r) => revision(r).length);
+    const conErrores = respondidas.filter((r) => r.diferencias.length);
+    const silenciosas = conErrores.filter((r) => !revision(r).length);
+    const porCategoria = new Map<string, number>();
+    for (const a of falsas.flatMap(revision))
+      porCategoria.set(a.categoria, (porCategoria.get(a.categoria) ?? 0) + 1);
+    console.log(
+      `  avisos: falsas alarmas en ${falsas.length}/${perfectas.length} corridas perfectas${porCategoria.size ? ` (${[...porCategoria].map(([c, n]) => `${c} ${n}`).join(', ')})` : ''} · errores avisados ${conErrores.length - silenciosas.length}/${conErrores.length} · silenciosos ${silenciosas.length}`,
+    );
+    for (const texto of [
+      ...new Set(falsas.flatMap(revision).map((a) => `[${a.categoria}] ${a.texto}`)),
+    ].slice(0, 15))
+      console.log(`    falsa alarma ${texto}`);
   }
 if (values.min && peor < Number(values.min)) {
   console.error(

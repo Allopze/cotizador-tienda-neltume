@@ -19,6 +19,10 @@ const itemEsperado = z
     precioUnitario: z.number().int().nullable().optional(),
   })
   .strict();
+/** Línea de flete: valor neto de una unidad y unidades. */
+const fleteEsperado = z
+  .object({ unitario: z.number().int().positive(), cantidad: z.number().int().positive() })
+  .strict();
 export const casoSchema = z
   .object({
     id: z.string().min(1),
@@ -28,6 +32,8 @@ export const casoSchema = z
     esperado: z
       .object({
         items: z.array(itemEsperado),
+        /** Ausente es que no se pidió flete (y la IA no debe inventarlo). */
+        flete: fleteEsperado.optional(),
         cliente: z
           .object({
             nombre: z.string().nullable().optional(),
@@ -87,11 +93,16 @@ export interface ResultadoCaso {
 
 /**
  * Compara el pedido obtenido con el esperado. Los ítems se comparan en orden; un ítem que sobra o falta
- * cuenta todos sus campos como errores. Del cliente solo se miden los campos que el caso declara.
+ * cuenta todos sus campos como errores. Del cliente solo se miden los campos que el caso declara. El flete se
+ * mide si se entrega el obtenido: el esperado cuenta su valor y su cantidad, y uno que no se pidió es un error.
  */
 export function puntuar(
   caso: CasoEvaluacion,
-  obtenido: { items: SolicitudItem[]; cliente: Cliente },
+  obtenido: {
+    items: SolicitudItem[];
+    cliente: Cliente;
+    flete?: { unitario: number; cantidad: number } | null;
+  },
 ): ResultadoCaso {
   const diferencias: Diferencia[] = [];
   let aciertos = 0,
@@ -121,6 +132,27 @@ export function puntuar(
       (esperado ?? null) === null ? !valor : !!valor && normalizar(valor) === normalizar(String(esperado));
     if (ok) aciertos++;
     else diferencias.push({ item: null, campo: `cliente.${campo}`, esperado, obtenido: valor });
+  }
+  if (obtenido.flete !== undefined) {
+    const e = caso.esperado.flete ?? null,
+      o = obtenido.flete;
+    if (!e) {
+      if (o) {
+        total++;
+        diferencias.push({ item: null, campo: 'flete', esperado: '(sin flete)', obtenido: o });
+      }
+    } else
+      for (const campo of ['unitario', 'cantidad'] as const) {
+        total++;
+        if (o?.[campo] === e[campo]) aciertos++;
+        else
+          diferencias.push({
+            item: null,
+            campo: `flete.${campo}`,
+            esperado: e[campo],
+            obtenido: o ? o[campo] : '(falta)',
+          });
+      }
   }
   return { id: caso.id, aciertos, total, diferencias };
 }

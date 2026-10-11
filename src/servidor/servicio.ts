@@ -11,7 +11,8 @@ import {
   anclarCifras,
   anclarFrases,
   anclarNombres,
-  avisosDeFrases,
+  avisosDeCampos,
+  avisosDePalabras,
   fraseDelMensaje,
   nombresDichos,
   type ResolverNombre,
@@ -239,6 +240,17 @@ export interface UsuarioServicio {
   nombre: string;
   email: string;
 }
+/**
+ * De dónde sale un aviso del chat: la lectura por frase (`campo`, `palabra`), una cifra o un nombre que no está
+ * escrito (`cifras`, `nombres`), un pedido sin registrar (`noRegistre`, `responder`) u otro (flete, precios…).
+ */
+export type CategoriaAviso = 'campo' | 'palabra' | 'cifras' | 'nombres' | 'noRegistre' | 'responder' | 'otros';
+/** Lo que pasó en un mensaje del chat, para medir: qué herramienta usó la IA y qué avisó el servidor. */
+export interface DiagnosticoTurno {
+  /** Herramienta de la IA; 'directa' si no se consultó; null si la respuesta no se pudo usar. */
+  herramienta: string | null;
+  avisos: { categoria: CategoriaAviso; texto: string }[];
+}
 
 /** Resultado de la primera fase de emitir/aprobar: ya estaba hecho o número reservado. */
 type Preparado<T> =
@@ -247,6 +259,8 @@ type Preparado<T> =
 type PreciosCambiados = { listo: null; cambiados: { avisos: string[]; total: number; actualizada: string } };
 
 const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
+const PEDIDO_SIN_REGISTRAR =
+  'No agregué productos y tu mensaje parece un pedido. Escríbelo de nuevo con modelo, madera, medidas y cantidad.';
 const AYUDA_ESPECIAL =
   'Si es un pedido especial, escribe su precio (por ejemplo «la de 1,90 a $450.000 + IVA») o usa «Cotizar como especial» en el detalle.';
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
@@ -380,6 +394,8 @@ export class Servicio {
     private llm: LLM,
     private almacen = new Almacen(),
     usuario: UsuarioServicio | null = null,
+    /** Recibe cada mensaje del chat ya guardado; no cambia lo que se responde. */
+    private diagnostico?: (d: DiagnosticoTurno) => void,
   ) {
     this.autor = usuario ? usuario.nombre || usuario.email : null;
   }
@@ -1962,13 +1978,24 @@ export class Servicio {
         ? { correccion: `El flete ya quedó registrado; ahora faltan los productos. ${correccion}`, mensaje: acotado }
         : correccion;
     }
-    if (res.name === 'responder' && modo === 'cotizacion_nueva' && pareceUnPedido(mensaje, resolver)) {
-      const enBorrador = new Set(base.solicitudes.flatMap((s) => (s.modelo ? [normalizar(s.modelo)] : [])));
-      const nombrados = [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()];
-      if (nombrados.some((m) => !enBorrador.has(m)))
-        return 'El mensaje pide productos: regístralos con modificar_cotizacion y deja en null lo que no se dijo; el sistema pregunta lo que falta con botones. No uses responder para pedir datos de un ítem.';
-    }
+    if (res.name === 'responder' && this.pedidoSinRegistrar(mensaje, base, modo, resolver))
+      return 'El mensaje pide productos: regístralos con modificar_cotizacion y deja en null lo que no se dijo; el sistema pregunta lo que falta con botones. No uses responder para pedir datos de un ítem.';
     return null;
+  }
+
+  /**
+   * ¿El mensaje pide productos que el borrador aún no tiene? Sirve para saber si una respuesta sin cambios
+   * (`responder`) dejó un pedido sin registrar.
+   */
+  private pedidoSinRegistrar(
+    mensaje: string,
+    base: Cotizacion,
+    modo: 'cotizacion_nueva' | 'modificacion_anterior',
+    resolver: Record<'modelo' | 'madera', ResolverNombre>,
+  ) {
+    if (modo !== 'cotizacion_nueva' || !pareceUnPedido(mensaje, resolver)) return false;
+    const enBorrador = new Set(base.solicitudes.flatMap((s) => (s.modelo ? [normalizar(s.modelo)] : [])));
+    return [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()].some((m) => !enBorrador.has(m));
   }
 
   /**
@@ -2235,7 +2262,14 @@ export class Servicio {
         if (error instanceof ErrorIA) throw error;
         throw errorProveedor();
       }
-    return this.almacen.transaccion((u): Resultado => {
+    // Para el diagnóstico: la herramienta que usó la IA y de dónde salió cada aviso (sin marca, `otros`).
+    let herramienta: string | null = directa ? 'directa' : null;
+    const categorias = new Map<string, CategoriaAviso>();
+    const marcar = (categoria: CategoriaAviso, avisos: string[]) => {
+      for (const texto of avisos) categorias.set(texto, categoria);
+      return avisos;
+    };
+    const resultado = await this.almacen.transaccion((u): Resultado => {
       let q: Cotizacion;
       if (nuevo) {
         // Se guarda recién si el mensaje trae un pedido o datos del cliente (ver `efimera`).
@@ -2259,6 +2293,7 @@ export class Servicio {
       const parsed = salidaSchema.safeParse(salida);
       if (!parsed.success) return responder(NO_ENTENDI);
       const res = parsed.data;
+      if (!directa) herramienta = res.name;
       if (res.name === 'aprobar_cotizacion') {
         const numero = res.input.numero;
         const objetivo = u.porNumero(numero);
@@ -2320,13 +2355,20 @@ export class Servicio {
         const aplicado = this.aplicarModificacion(q, res.input);
         if (!aplicado) return responder(NO_ENTENDI);
         propuesta = aplicado;
-      } else
+      } else {
+        // Sin el reintento de «corregir», un pedido respondido con texto no puede pasar en silencio.
+        const sinRegistrar =
+          this.llm.verificarCifras && !corrige && this.pedidoSinRegistrar(accion.mensaje, base, modo, resolver)
+            ? marcar('responder', [PEDIDO_SIN_REGISTRAR])
+            : [];
         // No deja pasar montos inventados ni texto monetario desde el modelo.
         return responder(
           TEXTO_MONETARIO.test(res.input.texto)
             ? 'Puedo ayudarte con modelos, maderas, medidas, cantidades y datos del cliente. Los montos se muestran en la cotización.'
             : res.input.texto,
+          sinRegistrar.length ? { avisos: sinRegistrar } : {},
         );
+      }
       // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
       const textosIA = [accion.mensaje, ...historialIA.map((m) => m.texto)];
       const { linea: flete, avisos: avisosFlete } = fleteDelChat(
@@ -2347,10 +2389,16 @@ export class Servicio {
           this.familiaDe(resolver.modelo(m) ?? m),
         );
         const porFrase = corrige
-          ? leidoPorFrase
+          ? {
+              ...leidoPorFrase,
+              avisos: leidoPorFrase.avisos.map((a) => marcar(a.startsWith('No reconocí') ? 'palabra' : 'campo', [a])[0]),
+            }
           : {
               items: propuesta.items,
-              avisos: avisosDeFrases(propuesta.items, leidoPorFrase.items, accion.mensaje, resolver),
+              avisos: [
+                ...marcar('campo', avisosDeCampos(propuesta.items, leidoPorFrase.items)),
+                ...marcar('palabra', avisosDePalabras(propuesta.items, accion.mensaje, resolver)),
+              ],
             };
         const anclado = anclarCifras(porFrase.items, q.solicitudes, textosIA);
         const nombres = anclarNombres(anclado.items, q.solicitudes, textosIA, {
@@ -2360,14 +2408,21 @@ export class Servicio {
         propuesta = {
           ...propuesta,
           items: nombres.items,
-          avisos: [...propuesta.avisos, ...porFrase.avisos, ...anclado.avisos, ...nombres.avisos],
+          avisos: [
+            ...propuesta.avisos,
+            ...porFrase.avisos,
+            ...marcar('cifras', anclado.avisos),
+            ...marcar('nombres', nombres.avisos),
+          ],
         };
         // Lo que la IA no registró ni tras la corrección se avisa: la cotización no debe verse completa.
         if (res.name === 'modificar_cotizacion') {
           const faltan = this.pedidosOmitidos(res.input, accion.mensaje, base, resolver);
           if (faltan.length)
             propuesta.avisos.push(
-              `No registré: ${faltan.map((f) => `«${f}»`).join(', ')}. Revisa si falta y escríbelo de nuevo.`,
+              ...marcar('noRegistre', [
+                `No registré: ${faltan.map((f) => `«${f}»`).join(', ')}. Revisa si falta y escríbelo de nuevo.`,
+              ]),
             );
         }
       }
@@ -2451,6 +2506,11 @@ export class Servicio {
       else u.registrarEvento(destino.id, 'modificada', this.autor, detalle);
       return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
     });
+    this.diagnostico?.({
+      herramienta,
+      avisos: (resultado.avisos ?? []).map((texto) => ({ categoria: categorias.get(texto) ?? 'otros', texto })),
+    });
+    return resultado;
   }
 
   private errorProcesado(id: string) {

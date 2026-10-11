@@ -414,7 +414,7 @@ describe('servicio: anclaje en modo «avisar»', () => {
     const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
     expect(r.cotizacion.solicitudes.map((s) => s.cantidad)).toEqual([2, 2]);
     expect(r.avisos).toEqual([
-      'Revisa el ítem 1 (MOLCO): el asistente leyó la cantidad 2, pero tu pedido parece decir 3.',
+      'Revisa el ítem 1 (MOLCO): anoté la cantidad 2, pero tu mensaje parece decir 3.',
     ]);
     expect(llm.interpretar.mock.calls[0][1]).toEqual({});
   });
@@ -442,6 +442,17 @@ describe('servicio: anclaje en modo «avisar»', () => {
     const r = await servicio.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje: 'en lenga' });
     expect(llm.interpretar).toHaveBeenCalledTimes(2);
     expect(r.cotizacion.solicitudes[0].madera).toBe('LENGA');
+  });
+
+  it('si la IA responde con texto a un pedido, avisa que no agregó productos', async () => {
+    const { servicio, llm } = await setupAvisar();
+    llm.interpretar.mockResolvedValueOnce({ name: 'responder', input: { texto: '¿En qué madera las quieres?' } });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje: '3 Molco de 80 por 200' });
+    expect(r.avisos).toEqual([expect.stringMatching(/^No agregué productos y tu mensaje parece un pedido/)]);
+    // Una pregunta sin productos no es un pedido.
+    llm.interpretar.mockResolvedValueOnce({ name: 'responder', input: { texto: 'Hay en lenga y oregón.' } });
+    const pregunta = await servicio.ejecutar({ tipo: 'chat', mensaje: '¿en qué maderas viene la Molco?' });
+    expect(pregunta.avisos).toBeUndefined();
   });
 
   it('una cifra que nadie escribió se anula igual que en «corregir»', async () => {
