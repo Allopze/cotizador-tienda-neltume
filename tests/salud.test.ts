@@ -43,7 +43,7 @@ describe('/api/salud', () => {
     try {
       expect((await consultar()).status).toBe(503);
     } finally {
-      db.pragma('user_version = 22');
+      db.pragma('user_version = 23');
     }
   });
 
@@ -65,7 +65,7 @@ describe('/api/salud', () => {
     expect(Object.keys(datos.comprobaciones).sort()).toEqual(
       ['autenticacion', 'base', 'chromium', 'disco', 'feriados', 'ia', 'respaldo'].sort(),
     );
-    expect(datos.comprobaciones.base).toMatchObject({ estado: 'ok', versionEsquema: 22 });
+    expect(datos.comprobaciones.base).toMatchObject({ estado: 'ok', versionEsquema: 23 });
     expect(datos.comprobaciones.disco.libresMb).toBeGreaterThan(0);
     expect(datos.comprobaciones.ia).toMatchObject({ estado: 'aviso', fuente: 'ninguna' });
     expect(datos.comprobaciones.respaldo.estado).toBe('aviso');

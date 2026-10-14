@@ -9,7 +9,7 @@ import {
 } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion } from '../negocio/estado';
-import { MARGEN_MAX, MARGEN_MIN, RANGO_MARGEN } from '../negocio/limites';
+import { bajoElCosto, precioEnRango, RANGO_MARGEN } from '../negocio/limites';
 import { productoPersonalizado } from '../negocio/personalizados';
 import { descuentoItemValido, margenProducto, pesos, REGLAS, type ItemPrecio } from '../negocio/precios';
 
@@ -33,6 +33,11 @@ export interface ItemsVigentes {
   incompletos: Cotizacion['incompletos'];
   /** Ítems que se cotizan con la siguiente medida del catálogo, para avisarlo. */
   siguienteMedida: Extract<Resolucion, { ok: true }>[];
+  /**
+   * Ítems valorizados que se venden bajo su costo de fábrica (ganancia entre −50 % y 0 %): se cotizan, pero se
+   * avisa. Un pedido especial cuenta solo si tiene costo de fábrica escrito.
+   */
+  bajoCosto: { indice: number; nombre: string; precio: number; costo: number }[];
 }
 
 /**
@@ -50,6 +55,7 @@ export function itemsVigentes(
   const validos: ItemVigente[] = [];
   const incompletos: Cotizacion['incompletos'] = [];
   const siguienteMedida: ItemsVigentes['siguienteMedida'] = [];
+  const bajoCosto: ItemsVigentes['bajoCosto'] = [];
   for (const [indice, solicitud] of q.solicitudes.entries()) {
     const s = { ...solicitud };
     solicitudes.push(s);
@@ -123,7 +129,7 @@ export function itemsVigentes(
       item.precioUnitario ??
       Math.round(costo * (1 + (item.margen ?? q.margenCotizacion ?? margenProducto(item.producto, reglas))));
     let problema: string | null = null;
-    if (precio < costo * (1 + MARGEN_MIN) || precio > costo * (1 + MARGEN_MAX))
+    if (!precioEnRango(precio, costo))
       problema = `El precio ${pesos(precio)} queda fuera del rango permitido (${RANGO_MARGEN} sobre el costo ${pesos(costo)}). Corrígelo o quita el ítem.`;
     if (
       item.descuento &&
@@ -137,8 +143,19 @@ export function itemsVigentes(
         pregunta: problema,
       });
       validos.splice(i, 1);
+      continue;
     }
+    // El costo de un pedido especial es el que se escribió para fábrica; sin él no se sabe si hay pérdida.
+    const especial = q.solicitudes[item.indice].personalizado;
+    const costoFabrica = especial ? (q.solicitudes[item.indice].costoFabrica ?? null) : costo;
+    if (costoFabrica !== null && bajoElCosto(precio, costoFabrica))
+      bajoCosto.unshift({
+        indice: item.indice,
+        nombre: especial ? item.producto.modelo : item.producto.codigo,
+        precio,
+        costo: costoFabrica,
+      });
   }
   incompletos.sort((a, b) => a.indice - b.indice);
-  return { solicitudes, validos, incompletos, siguienteMedida };
+  return { solicitudes, validos, incompletos, siguienteMedida, bajoCosto };
 }

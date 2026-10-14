@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { ErrorUsuario } from '../src/servidor/errores';
 import { calcularFlete, type ProductoDespacho } from '../src/negocio/envios';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
@@ -20,6 +21,7 @@ import {
   textoBulto,
   textoTarifa,
   textoTarifaAplicada,
+  totalConIva,
   type CiudadStarken,
   type ParametrosPaquete,
 } from '../src/negocio/starken';
@@ -44,8 +46,11 @@ import {
   crearClienteStarken,
   estadoStarken,
   guardarAjustesStarken,
+  ErrorCatalogoCambio,
   lineasVigentes,
+  MENSAJE_CATALOGO_CAMBIO,
   modoStarkenFijo,
+  respuestaCatalogoCambio,
   respuestaErrorStarken,
 } from '../src/servidor/starken-servicio';
 import { ENTORNO_FIJO, fetchFijo } from '../src/servidor/starken-fijo';
@@ -761,6 +766,38 @@ describe('huella del pedido y vigencia de las tarifas en pantalla', () => {
 });
 
 describe('IVA y neto', () => {
+  it('neto + IVA del cotizador reconstruye el total de Starken al peso siempre que algún neto entero lo permite', () => {
+    // El IVA del cotizador es el de precios.ts (round(neto × iva)); totalConIva debe ser esa misma cuenta.
+    expect(totalConIva(37326)).toBe(37326 + Math.round(37326 * 0.19));
+    const MAX = 200_000;
+    // Todos los totales que alcanza algún neto entero (con margen: el neto de 200.000 es ~168.067).
+    const alcanzables = new Set<number>();
+    for (let n = 0; n <= MAX; n++) alcanzables.add(totalConIva(n));
+    let exactos = 0,
+      aUnPeso = 0;
+    for (let total = 1; total <= MAX; total++) {
+      const neto = netoDesdeIva(total);
+      const diferencia = totalConIva(neto) - total;
+      if (alcanzables.has(total)) {
+        if (diferencia !== 0) throw new Error(`${total}: el neto ${neto} da ${totalConIva(neto)}`);
+        exactos++;
+      } else {
+        // Ningún neto lo alcanza: totalConIva salta de total − 1 a total + 1 y el elegido queda a $1, lo mínimo.
+        if (!alcanzables.has(total - 1) || !alcanzables.has(total + 1) || Math.abs(diferencia) !== 1)
+          throw new Error(`${total}: el neto ${neto} queda a ${diferencia}`);
+        aUnPeso++;
+      }
+      // Es el neto de siempre: las tarifas ya firmadas y los fletes ya guardados siguen calzando.
+      if (neto !== Math.round(total / 1.19)) throw new Error(`${total}: cambió el neto (${neto})`);
+    }
+    expect(exactos).toBe(168_067);
+    expect(aUnPeso).toBe(31_933); // ~16 %: imposibles con neto entero e IVA redondeado al peso.
+    // Ejemplos: $44.420 se reconstruye; $44.421 y $9.999 no tienen neto exacto.
+    expect(totalConIva(netoDesdeIva(44420))).toBe(44420);
+    expect(totalConIva(netoDesdeIva(44421))).toBe(44422);
+    expect(totalConIva(netoDesdeIva(9999))).toBe(10000);
+  });
+
   it('el despacho se guarda neto: el valor con IVA dividido por 1,19 y redondeado a pesos', () => {
     expect(IVA_STARKEN).toBe(0.19);
     expect(netoDesdeIva(119)).toBe(100);
@@ -1064,9 +1101,25 @@ describe('cotizar el despacho de una cotización con Starken', () => {
     expect(q.incompletos).toEqual([]);
     // Desde el último guardado, la planilla dejó la puerta solo en otra madera.
     const sinPino = { ...catalogo(), sha256: 'v2', productos: [{ ...puerta, madera: 'RAULI' }] };
-    await expect(cotizarEnvioStarken(q, sinPino, undefined, configuracion(), starken)).rejects.toThrow(
-      'Completa o quita los ítems pendientes antes de cotizar el despacho.',
+    // La pantalla no ve pendientes en la cotización guardada: el error dice que cambió el catálogo y qué ítem tocó.
+    const error = await cotizarEnvioStarken(q, sinPino, undefined, configuracion(), starken).catch((e) => e);
+    expect(error).toBeInstanceOf(ErrorCatalogoCambio);
+    expect(error.message).toBe(
+      'El catálogo cambió desde que guardaste esta cotización: revisa el pedido antes de cotizar el despacho.',
     );
+    expect(error.message).not.toMatch(/ítems pendientes/);
+    expect(error.items).toEqual([
+      { numero: 1, descripcion: expect.stringMatching(/MOLCO/), motivo: expect.any(String) },
+    ]);
+    expect(error.items[0].motivo.length).toBeGreaterThan(0);
+    // La ruta lo entrega como 409 con código propio y los ítems en el detalle (lo que lee cotizar-starken.tsx).
+    const respuesta = respuestaCatalogoCambio(error);
+    expect(respuesta.status).toBe(409);
+    expect(await respuesta.json()).toEqual({
+      error: MENSAJE_CATALOGO_CAMBIO,
+      codigo: 'catalogo_cambio',
+      detalle: { items: error.items },
+    });
     expect(espia).not.toHaveBeenCalled();
   });
 });
@@ -1108,9 +1161,18 @@ describe('el bulto de Starken y el cálculo de la cotización usan la misma regl
       expect(recalculada.montos.lineas.map((l) => l.indice)).toEqual([0, 1, 2].filter((i) => i !== fuera));
       expect(lineas).toHaveLength(2);
       expect(huellaBulto(lineas)).toBe(huellaBulto(recalculada.montos.lineas));
-      await expect(cotizarEnvioStarken(q, cambiado, undefined, e.configuracion(), e.starken)).rejects.toThrow(
-        'Completa o quita los ítems pendientes antes de cotizar el despacho.',
-      );
+      const error = await cotizarEnvioStarken(q, cambiado, undefined, e.configuracion(), e.starken).catch((x) => x);
+      if (q.incompletos.length) {
+        // Guardada con un pendiente a la vista: la pantalla ya lo muestra y se pide completarlo.
+        expect(error).toBeInstanceOf(ErrorUsuario);
+        expect(error.message).toBe('Completa o quita los ítems pendientes antes de cotizar el despacho.');
+      } else {
+        // Guardada sin pendientes: se avisa el cambio de catálogo con el ítem que quedó fuera y por qué.
+        expect(error).toBeInstanceOf(ErrorCatalogoCambio);
+        expect(error.message).toBe(MENSAJE_CATALOGO_CAMBIO);
+        expect(error.items.map((i: { numero: number }) => i.numero)).toEqual([fuera + 1]);
+        expect(error.items[0].motivo).toBe(recalculada.incompletos[0].pregunta);
+      }
       q = recalculada;
     }
   });

@@ -115,7 +115,7 @@ describe('Sin Chromium no se gastan números', () => {
     const t = await setup();
     await t.emitidaSinPdf();
     await t.ir({ tipo: 'aprobar' });
-    await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total), fecha: '2026-10-13' });
+    await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total) });
     const antes = t.almacen.correlativos();
     await expect(t.intentar({ tipo: 'generar_nota' })).rejects.toMatchObject(sinChromium(t.chromium));
     await expect(t.intentar({ tipo: 'generar_nota' })).rejects.toMatchObject(sinChromium(t.chromium));

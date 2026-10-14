@@ -4,6 +4,7 @@ import { Dialogo } from './dialogo';
 import type { Despacho } from './contrato';
 import { fechaLarga, numeroCotizacion } from './formato';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
+import { pesos } from '@/negocio/precios';
 
 // Diálogos con formulario que devuelven una promesa, como useConfirmacion.
 
@@ -268,11 +269,12 @@ export function useAnulacion() {
   const [pendiente, setPendiente] = useState<{
     numero: number | null;
     aprobada: boolean;
+    pagado: number;
     resolver: (r: { motivo: string } | null) => void;
   } | null>(null);
   const pedir = useCallback(
-    (numero: number | null, aprobada: boolean) =>
-      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ numero, aprobada, resolver })),
+    (numero: number | null, aprobada: boolean, pagado = 0) =>
+      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ numero, aprobada, pagado, resolver })),
     [],
   );
   const cancelar = useRef<HTMLButtonElement>(null);
@@ -290,17 +292,20 @@ export function useAnulacion() {
       focoInicial={cancelar}
       alerta
     >
-      {pendiente && <FormAnulacion aprobada={pendiente.aprobada} responder={cerrar} cancelar={cancelar} />}
+      {pendiente && <FormAnulacion aprobada={pendiente.aprobada} pagado={pendiente.pagado} responder={cerrar} cancelar={cancelar} />}
     </Dialogo>
   );
   return [pedir, elemento] as const;
 }
 function FormAnulacion({
   aprobada,
+  pagado,
   responder,
   cancelar,
 }: {
   aprobada: boolean;
+  /** Pagos registrados: anular no los devuelve, y se advierte. */
+  pagado: number;
   responder: (r: { motivo: string } | null) => void;
   cancelar: RefObject<HTMLButtonElement | null>;
 }) {
@@ -319,6 +324,12 @@ function FormAnulacion({
           válida y no podrá aprobarse ni editarse; su número no se reutiliza.
         </p>
         {aprobada && <p>La nota de pedido de fábrica asociada también quedará marcada como anulada.</p>}
+        {pagado > 0 && (
+          <p className="dialogo-advertencia">
+            <strong>Tiene {pesos(pagado)} pagado; anular no lo devuelve.</strong> La devolución se gestiona aparte y
+            el monto queda anotado en la actividad.
+          </p>
+        )}
         <p>Si necesitas cambiarla, puedes duplicarla antes o después de anular.</p>
       </div>
       <div className="dialogo-campos">

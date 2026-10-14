@@ -514,7 +514,7 @@ describe('PDF fuera del bloqueo del almacén', () => {
     };
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
-    await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total), fecha: '2026-09-30' });
+    await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total) });
     await t.ir({ tipo: 'generar_nota' });
     const archivo = join(t.dir, 'pdf', t.actual().pdf!);
     await rm(archivo);

@@ -2,6 +2,7 @@ import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
 import type { Montos, ReglasComerciales } from './precios';
 import { ANTICIPO_MINIMO, ANTICIPO_TEXTO } from './limites';
+import { fechaLocal } from './vigencia';
 export interface Mensaje {
   rol: 'usuario' | 'asistente';
   texto: string;
@@ -48,18 +49,23 @@ export type EstadoOperativo =
   | 'anticipo_pagado'
   | 'pedido_generado'
   | 'en_produccion'
-  | 'produccion_terminada'
   | 'saldo_pendiente'
   | 'pagada'
   | 'lista_despacho'
   | 'despachada'
   | 'completada';
+/**
+ * Estado operativo tal como se guardó. «produccion_terminada» nunca se asignó (el paso «Producción terminada»
+ * deja el pedido en «saldo_pendiente» o «pagada») y ya no existe: un dato antiguo que lo traiga se lee como
+ * «en_produccion», el paso del que salía. Lo demás pasa igual (lo valida quien lo lee).
+ */
+export const leerEstadoOperativo = <T,>(valor: T): T | 'en_produccion' =>
+  valor === 'produccion_terminada' ? 'en_produccion' : valor;
 export const etiquetaOperativo: Record<EstadoOperativo, string> = {
   sin_pedido: 'Sin nota de pedido',
   anticipo_pagado: `${ANTICIPO_TEXTO} pagado`,
   pedido_generado: 'Nota de pedido generada',
   en_produccion: 'En producción',
-  produccion_terminada: 'Producción terminada',
   saldo_pendiente: 'Saldo pendiente',
   pagada: '100 % pagado',
   lista_despacho: 'Lista para despacho',
@@ -149,6 +155,11 @@ export interface Cotizacion {
   creadaPor: string | null;
   emitidaPor: string | null;
   aprobadaPor: string | null;
+  /**
+   * Instante en que el cliente la aprobó (ISO). Ausente antes de v23 o si se quitó la aprobación: entonces vale
+   * la fecha del último evento «aprobada».
+   */
+  fechaAprobacion?: string | null;
   anuladaPor: string | null;
   fechaAnulacion: string | null;
   motivoAnulacion: string | null;
@@ -192,6 +203,32 @@ type FaseOperativa = Pick<Cotizacion, 'estado' | 'estadoOperativo'>;
 /** Un pago se anula mientras la operación no llegue a «Lista para despacho» (ahí el saldo ya está pagado). */
 export const pagoAnulable = (q: FaseOperativa) =>
   q.estado === 'aprobada' && !['lista_despacho', 'despachada', 'completada'].includes(q.estadoOperativo ?? '');
+/** Suma de los pagos registrados. */
+export const totalPagado = (q: Pick<Cotizacion, 'pagos'>) => (q.pagos ?? []).reduce((s, p) => s + p.monto, 0);
+/**
+ * ¿Se puede anular? Solo una emitida o una aprobada que no se despachó, completó ni facturó. Con `ok` trae lo
+ * pagado (para advertirlo: anular no devuelve pagos); sin `ok`, el motivo que se muestra en vez del botón.
+ * El servidor aplica esta misma regla.
+ */
+export function puedeAnular(
+  q: Pick<Cotizacion, 'estado' | 'numero' | 'estadoOperativo' | 'facturacion' | 'pagos' | 'reemplazadaPor'>,
+): { ok: true; pagado: number } | { ok: false; motivo: string } {
+  if (q.estado === 'anulada') return { ok: false, motivo: `La cotización N° ${q.numero} ya está anulada.` };
+  if (q.estado === 'borrador') return { ok: false, motivo: 'Un borrador no se anula: elimínalo.' };
+  if (q.estado === 'reemplazada')
+    return { ok: false, motivo: `La cotización N° ${q.numero} fue reemplazada y ya no está vigente.` };
+  if (q.estadoOperativo === 'despachada' || q.estadoOperativo === 'completada' || q.facturacion?.estado === 'facturada')
+    return { ok: false, motivo: 'No se puede anular una cotización despachada, completada o facturada.' };
+  return { ok: true, pagado: totalPagado(q) };
+}
+/**
+ * Días (YYYY-MM-DD, hora de Chile) que admite la fecha de un pago o de una factura: desde el día de la aprobación
+ * (`aprobacion`, ISO; null si no se conoce) hasta hoy. Sirve de `min`/`max` del campo y el servidor lo exige.
+ */
+export const rangoFechaOperacion = (aprobacion: string | null | undefined, ahora: Date = new Date()) => ({
+  min: aprobacion ? fechaLocal(aprobacion) : null,
+  max: fechaLocal(ahora),
+});
 /** Con la cotización aprobada, los datos de despacho se editan hasta registrar el despacho. */
 export const despachoEditable = (q: FaseOperativa) =>
   q.estado === 'aprobada' && !['despachada', 'completada'].includes(q.estadoOperativo ?? '');

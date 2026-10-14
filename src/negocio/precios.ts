@@ -1,7 +1,7 @@
 import type { DescuentoItem, Producto } from '../catalogo/tipos';
 import { describirProducto } from '../catalogo/escalones';
 import { conDosDecimales } from './cifras';
-import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, MARGEN_MIN } from './limites';
+import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, MARGEN_MIN, precioEnRango } from './limites';
 /**
  * Reglas comerciales. Redondeo (siempre a pesos enteros, Math.round):
  * 1. precio unitario = round(precioNeto × (1 + ajuste)); total de línea = cantidad × (unitario − descuento del ítem).
@@ -232,7 +232,9 @@ export function cotizar(
       throw new ErrorPrecio('margen_invalido');
     const precioUnitario = precioUnitarioPersonalizado ?? Math.round(producto.precioNeto * (1 + margenCalculado));
     const margen = precioUnitarioPersonalizado === null ? margenCalculado : precioUnitario / producto.precioNeto - 1;
-    if (margen < MARGEN_MIN || margen > MARGEN_MAX) throw new ErrorPrecio('margen_invalido');
+    // El margen calculado ya se validó arriba; un precio escrito debe caer en el rango que deja ese margen.
+    if (precioUnitarioPersonalizado !== null && !precioEnRango(precioUnitarioPersonalizado, producto.precioNeto))
+      throw new ErrorPrecio('margen_invalido');
     const descuentoItem = item.descuento ?? null;
     if (descuentoItem && !descuentoItemValido(descuentoItem)) throw new ErrorPrecio('descuento_invalido');
     const descuentoUnitario = descuentoPorUnidad(precioUnitario, descuentoItem);

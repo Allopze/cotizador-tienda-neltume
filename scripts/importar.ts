@@ -2,8 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { importarPlanilla } from '../src/catalogo/planilla';
 import { ETIQUETA_ORIGEN } from '../src/catalogo/origenes';
 import { leerConfiguracionCatalogo } from '../src/catalogo/configuracion-archivo';
-import { abrirBaseDatos } from '../src/servidor/base-datos';
-import { guardarCatalogo } from '../src/servidor/repositorio-catalogo';
+import { Almacen } from '../src/servidor/almacen';
 const argumentos = process.argv.slice(2);
 // --forzar acepta una planilla con muchos menos productos que el catálogo actual.
 const forzar = argumentos.includes('--forzar');
@@ -18,7 +17,9 @@ try {
   const reporte = r.origen === 'principal' ? 'data/reporte-importacion.md' : `data/reporte-importacion-${r.origen}.md`;
   await mkdir('data', { recursive: true });
   await mkdir('public', { recursive: true });
-  guardarCatalogo(abrirBaseDatos(), r.catalogo, r.configuracion, { forzar });
+  // Con el bloqueo del almacén, como la importación desde la aplicación: no cambia el catálogo en medio de una
+  // emisión que esté corriendo en el servidor.
+  await new Almacen().guardarCatalogo(r.catalogo, r.configuracion, { forzar });
   await writeFile(reporte, r.reporte);
   if (r.logo) await writeFile('public/logo-neltume.svg', r.logo);
   console.log(

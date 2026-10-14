@@ -6,6 +6,7 @@ import {
   anticipoMinimo,
   esEditable,
   etiquetaEstado,
+  puedeAnular,
   sumarCharla,
   type Cotizacion,
   type Despacho,
@@ -452,6 +453,17 @@ export function Cotizador({
     if (codigo === 'revision_abierta' && e instanceof ErrorSolicitud && typeof e.detalle?.id === 'string') {
       avisar('info', `${mensajeDe(e)} Se abrió la revisión en curso.`, { clave: 'operacion' });
       abrirPorId(e.detalle.id).catch((x) => fallo(x, null));
+      return;
+    }
+    // Otra emisión de esta misma cotización (otra pestaña o un doble toque) o una operación que tiene el almacén:
+    // no es una falla. Se informa y se ofrece actualizar cuando termine, sin recargar a media emisión.
+    if (codigo === 'ocupado') {
+      avisar('info', mensajeDe(e), {
+        clave: 'operacion',
+        ...(q
+          ? { accion: { etiqueta: 'Actualizar', fn: () => void recargarActual(q.id, true).catch((x) => fallo(x, null)) } }
+          : {}),
+      });
       return;
     }
     if (codigo === 'version_obsoleta') {
@@ -988,7 +1000,13 @@ export function Cotizador({
     async anular() {
       const q = actual;
       if (!q || ocupado) return;
-      const datos = await pedirAnulacion(q.numero, q.estado === 'aprobada');
+      // La misma regla que aplica el servidor: no se pide el motivo de algo que igual se rechazaría.
+      const anulable = puedeAnular(q);
+      if (!anulable.ok) {
+        avisar('error', anulable.motivo, { clave: 'operacion' });
+        return;
+      }
+      const datos = await pedirAnulacion(q.numero, q.estado === 'aprobada', anulable.pagado);
       if (!datos) return;
       if (
         await ejecutar(

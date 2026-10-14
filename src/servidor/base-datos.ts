@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 22;
+export const VERSION_ESQUEMA = 23;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -420,6 +420,25 @@ function crearEsquema(db: Database.Database) {
       `);
       recalcularBusqueda(db);
       db.exec('PRAGMA user_version = 22;');
+    }).immediate();
+  if (version < 23)
+    db.transaction(() => {
+      // v23: fecha de aprobación (límite inferior de pagos y facturas), tomada del último evento «aprobada» para lo
+      // ya aprobado, y la marca «en emisión» que impide generar dos veces el mismo PDF. Se puede repetir sin efecto.
+      const columnas = (db.pragma('table_info(cotizaciones)') as { name: string }[]).map((c) => c.name);
+      if (!columnas.includes('fecha_aprobacion')) db.exec('ALTER TABLE cotizaciones ADD COLUMN fecha_aprobacion TEXT;');
+      db.exec(`
+        UPDATE cotizaciones SET fecha_aprobacion = (
+          SELECT e.fecha FROM eventos e WHERE e.cotizacion_id = cotizaciones.id AND e.tipo = 'aprobada' ORDER BY e.id DESC LIMIT 1
+        ) WHERE fecha_aprobacion IS NULL AND estado IN ('aprobada', 'anulada');
+        CREATE TABLE IF NOT EXISTS emisiones_en_curso (
+          cotizacion_id TEXT PRIMARY KEY REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          documento TEXT NOT NULL,
+          ficha TEXT NOT NULL,
+          vence TEXT NOT NULL
+        );
+        PRAGMA user_version = 23;
+      `);
     }).immediate();
 }
 

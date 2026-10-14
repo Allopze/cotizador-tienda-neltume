@@ -3,6 +3,7 @@ import { descuentoEsManual, MAX_DESDE_PUERTAS } from '../negocio/descuento-canti
 import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
 import { MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
+import { leerEstadoOperativo } from '../negocio/estado';
 
 const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
 /**
@@ -196,6 +197,9 @@ export const cotizacionSchema = z.looseObject({
       direccion: z.string().nullable(),
       transporte: z.string().nullable(),
       entregaComprometida: z.string().nullable(),
+      // Opcionales: un despacho guardado antes de tenerlos no los trae. Sin declararlos, la papelera los perdía.
+      destino: z.string().nullable().optional(),
+      valor: z.number().int().nonnegative().nullable().optional(),
     })
     .nullable()
     .optional(),
@@ -226,6 +230,7 @@ export const cotizacionSchema = z.looseObject({
   creadaPor: z.string().nullable(),
   emitidaPor: z.string().nullable(),
   aprobadaPor: z.string().nullable(),
+  fechaAprobacion: z.string().nullable().optional(),
   anuladaPor: z.string().nullable(),
   fechaAnulacion: z.string().nullable(),
   motivoAnulacion: z.string().nullable(),
@@ -241,13 +246,20 @@ export const cotizacionSchema = z.looseObject({
         direccion: z.string().nullable(),
         transporte: z.string().nullable(),
         entregaComprometida: z.string().nullable().optional(),
+        destino: z.string().nullable().optional(),
+        valor: z.number().int().nonnegative().nullable().optional(),
       }),
       observaciones: z.string().nullable().optional(),
       anulada: z.boolean(),
     })
     .nullable(),
   estadoComercial: z.enum(['pendiente', 'enviada', 'seguimiento', 'aprobada', 'rechazada', 'vendida']).optional(),
-  estadoOperativo: z.enum(['sin_pedido', 'anticipo_pagado', 'pedido_generado', 'en_produccion', 'produccion_terminada', 'saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada']).optional(),
+  // «produccion_terminada» nunca se asignó como estado (el paso deja «saldo_pendiente» o «pagada»); un dato que
+  // lo traiga se lee como «en_produccion».
+  estadoOperativo: z.preprocess(
+    leerEstadoOperativo,
+    z.enum(['sin_pedido', 'anticipo_pagado', 'pedido_generado', 'en_produccion', 'saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada']).optional(),
+  ),
   pagos: z.array(z.object({
     id: z.string(), fecha: z.string(), monto: z.number().int().positive(), observacion: z.string().nullable(), usuario: z.string().nullable(),
   })).optional(),

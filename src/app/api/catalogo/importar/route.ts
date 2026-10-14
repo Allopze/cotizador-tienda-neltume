@@ -5,7 +5,8 @@ import { ErrorImportacion } from '@/catalogo/importar';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { abrirBaseDatos } from '@/servidor/base-datos';
 import { analizarPlanilla } from '@/servidor/importacion-catalogo';
-import { guardarCatalogo, RepositorioCatalogoSqlite } from '@/servidor/repositorio-catalogo';
+import { Almacen, ErrorOcupado } from '@/servidor/almacen';
+import { ErrorCatalogoCambiado, RepositorioCatalogoSqlite } from '@/servidor/repositorio-catalogo';
 import { registrarError } from '@/servidor/errores';
 
 export const runtime = 'nodejs';
@@ -80,11 +81,15 @@ export async function POST(req: Request) {
     if (accion === 'previsualizar') return Response.json(vista, { headers: sinCache });
 
     // La versión es la de todo el catálogo: otra importación, un alta o una edición obligan a analizar de nuevo.
-    if (texto(form.get('versionCatalogo')) !== (vista.versionCatalogo ?? '') || texto(form.get('sha256')) !== vista.sha256 || texto(form.get('baseSha256')) !== (vista.baseSha256 ?? ''))
-      return Response.json({ error: 'El archivo o el catálogo cambiaron después de la vista previa. Vuelve a analizar el Excel.', codigo: 'vista_previa_obsoleta' }, { status: 409, headers: sinCache });
+    // Se compara aquí (aviso temprano) y otra vez al guardar, dentro de la transacción: dos confirmaciones de la
+    // misma vista previa no guardan dos veces.
+    const versionVista = texto(form.get('versionCatalogo'));
+    if (versionVista !== (vista.versionCatalogo ?? '') || texto(form.get('sha256')) !== vista.sha256 || texto(form.get('baseSha256')) !== (vista.baseSha256 ?? ''))
+      throw new ErrorCatalogoCambiado();
     const forzar = texto(form.get('forzar')) === 'true';
     // Reemplaza solo los productos de esta planilla; los de la otra y los agregados a mano quedan como estaban.
-    guardarCatalogo(db, importado.catalogo, importado.configuracion, { forzar });
+    // Con el bloqueo del almacén: no cambia el catálogo en medio de una emisión u otra escritura.
+    await new Almacen().guardarCatalogo(importado.catalogo, importado.configuracion, { forzar, versionEsperada: versionVista });
     // Para ofrecer «Volver a la planilla anterior»: qué volvería y la versión que debe seguir vigente para hacerlo.
     const despues = new RepositorioCatalogoSqlite(db);
     return Response.json(
@@ -100,6 +105,11 @@ export async function POST(req: Request) {
       { headers: sinCache },
     );
   } catch (error) {
+    if (error instanceof ErrorCatalogoCambiado)
+      return Response.json({ error: error.message, codigo: 'vista_previa_obsoleta' }, { status: 409, headers: sinCache });
+    // Otra operación tiene el bloqueo del almacén más de lo que se espera: «inténtalo de nuevo».
+    if (error instanceof ErrorOcupado)
+      return Response.json({ error: error.message, codigo: error.codigo }, { status: error.status, headers: sinCache });
     if (error instanceof ErrorImportacion)
       return Response.json({ error: error.message, codigo: 'excel_invalido' }, { status: 400, headers: sinCache });
     if (error instanceof Error && /Si la reducción es intencional|repite un código o producto agregado|de otra planilla ya importada/i.test(error.message))

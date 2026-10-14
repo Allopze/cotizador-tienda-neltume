@@ -6,6 +6,7 @@ import {
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
+  rangoFechaOperacion,
   sinTransportista,
   type Cotizacion,
   type EstadoOperativo,
@@ -13,7 +14,7 @@ import {
 import { leerPesos } from '@/negocio/cifras';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import { pesos, porcentaje } from '@/negocio/precios';
-import { fechaLocal } from '@/negocio/vigencia';
+import { fechaChilena, fechaLocal } from '@/negocio/vigencia';
 import { useConfirmacion } from './dialogo';
 import { useRetroceso } from './dialogos-cotizacion';
 import { fechaLarga, numeroCotizacion } from './formato';
@@ -26,7 +27,6 @@ const ANTERIOR: Partial<Record<EstadoOperativo, EstadoOperativo>> = {
   lista_despacho: 'pagada',
   pagada: 'en_produccion',
   saldo_pendiente: 'en_produccion',
-  produccion_terminada: 'en_produccion',
   en_produccion: 'pedido_generado',
 };
 
@@ -65,6 +65,19 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   const aprobada = estado === 'aprobada';
   const puedeAnularPago = pagoAnulable(actual);
   const faltaTransportista = sinTransportista(actual.despacho?.transporte);
+  // Pagos y facturas: desde el día de la aprobación hasta hoy (hora de Chile), como lo exige el servidor.
+  const rangoFecha = rangoFechaOperacion(actual.fechaAprobacion);
+  /** Mensaje del navegador en español (y con la fecha límite) cuando la fecha queda fuera del rango. */
+  const explicarFecha = (campo: HTMLInputElement, de: string) =>
+    campo.setCustomValidity(
+      campo.validity.rangeUnderflow && rangoFecha.min
+        ? `La fecha ${de} no puede ser anterior a la aprobación (${fechaChilena(rangoFecha.min)}).`
+        : campo.validity.rangeOverflow
+          ? `La fecha ${de} no puede ser posterior a hoy (${fechaChilena(rangoFecha.max)}).`
+          : campo.validity.badInput
+            ? `Completa la fecha ${de}.`
+            : '',
+    );
   async function registrarPago(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     const monto = leerPesos(montoPago);
@@ -163,7 +176,6 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       case 'saldo_pendiente':
         return { titulo: 'Registrar saldo', detalle: `Faltan ${pesos(saldo)} para continuar con el despacho.`, etiqueta: 'Ir a pagos', accion: irAPago };
       case 'pagada':
-      case 'produccion_terminada':
         return pagado >= actual.montos.total
           ? { titulo: 'Preparar despacho', detalle: 'El pedido está pagado. Indica que está listo para despacho.', etiqueta: 'Marcar lista para despacho', accion: () => operar('lista_despacho', '¿Lista para despacho?', 'El pedido queda «Lista para despacho» y desde ahí sus pagos ya no se pueden anular.', 'Marcar lista para despacho') }
           : { titulo: 'Registrar saldo', detalle: `Faltan ${pesos(saldo)} para continuar con el despacho.`, etiqueta: 'Ir a pagos', accion: irAPago };
@@ -251,7 +263,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           // Sin noValidate: una fecha a medio escribir llega vacía y el servidor pondría la de hoy; el navegador la frena.
           <form className="workflow-payment" onSubmit={registrarPago}>
             <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input id="monto-recibido" inputMode="numeric" value={montoPago} onChange={(e) => { setMontoPago(e.target.value); setErrorPago(''); }} aria-invalid={errorPago ? true : undefined} aria-describedby={errorPago ? 'monto-recibido-error' : undefined} onBlur={() => { const n = leerPesos(montoPago); if (Number.isSafeInteger(n) && n > 0) setMontoPago(n.toLocaleString('es-CL')); }} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
-            <label className="ia-field"><span>Fecha del pago</span><input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} disabled={ocupado || saldo <= 0} /></label>
+            <label className="ia-field"><span>Fecha del pago</span><input type="date" value={fechaPago} min={rangoFecha.min ?? undefined} max={rangoFecha.max} onInvalid={(e) => explicarFecha(e.currentTarget, 'del pago')} onChange={(e) => { e.currentTarget.setCustomValidity(''); setFechaPago(e.target.value); }} disabled={ocupado || saldo <= 0} /></label>
             <label className="ia-field"><span>Observación</span><input value={observacionPago} onChange={(e) => setObservacionPago(e.target.value)} maxLength={500} placeholder="Transferencia, anticipo…" disabled={ocupado || saldo <= 0} /></label>
             <button type="submit" className="button secondary" disabled={ocupado || saldo <= 0 || leerPesos(montoPago) <= 0}>Registrar pago</button>
             {errorPago && <small id="monto-recibido-error" className="campo-error" role="alert">{errorPago}</small>}
@@ -305,7 +317,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
                 />
               </div>
               <label className="ia-field"><span>N° o identificador externo</span><input id="facturacion-identificador" value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} maxLength={120} placeholder="Ej. 1234" disabled={ocupado} /></label>
-              <label className="ia-field"><span>Fecha de emisión</span><input type="date" value={fechaFactura} onChange={(e) => setFechaFactura(e.target.value)} disabled={ocupado} /></label>
+              <label className="ia-field"><span>Fecha de emisión</span><input type="date" value={fechaFactura} min={rangoFecha.min ?? undefined} max={rangoFecha.max} onInvalid={(e) => explicarFecha(e.currentTarget, 'de la factura')} onChange={(e) => { e.currentTarget.setCustomValidity(''); setFechaFactura(e.target.value); }} disabled={ocupado} /></label>
               <button type="submit" className="button secondary" disabled={ocupado}>Marcar como facturada</button>
             </form>
           )

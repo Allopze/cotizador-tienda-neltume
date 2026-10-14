@@ -326,7 +326,6 @@ describe('pedidos especiales en la nota de pedido', () => {
         id: q.id,
         actualizada: q.actualizada,
         monto: Math.ceil(q.montos.total * 0.5),
-        fecha: '2026-10-09',
       })
     ).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;

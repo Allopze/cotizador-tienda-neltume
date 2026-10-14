@@ -7,6 +7,7 @@ import {
   despachoEditable,
   esEditable,
   etiquetaEstado,
+  puedeAnular,
   sinTransportista,
   unitarioFlete,
   type Cotizacion,
@@ -416,6 +417,7 @@ export function CotizacionPanel({
   const medidasPendientes = indicesMedidaSinTipo(actual);
   const listo = conItems && !actual.incompletos.length && !medidasPendientes.length;
   const estado = actual.estado;
+  const anulable = puedeAnular(actual);
   const esVencida = vencida(actual);
   const ayudaEmitir = !actual?.solicitudes.length
     ? 'Agrega al menos un producto para generar el PDF.'
@@ -1611,8 +1613,19 @@ export function CotizacionPanel({
               ...(estado === 'borrador' && actual.numero === null
                 ? [{ etiqueta: 'Eliminar borrador', alElegir: acciones.eliminar, peligro: true }]
                 : []),
+              // Una despachada, completada o facturada ya no se anula: la opción queda con el motivo a la vista.
               ...(estado === 'emitida' || estado === 'aprobada'
-                ? [{ etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }]
+                ? [
+                    anulable.ok
+                      ? { etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }
+                      : {
+                          etiqueta: 'Anular',
+                          alElegir: () => {},
+                          peligro: true,
+                          deshabilitada: true,
+                          detalle: anulable.motivo,
+                        },
+                  ]
                 : []),
             ]}
           />

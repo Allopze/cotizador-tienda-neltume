@@ -10,7 +10,9 @@ import { leerConfiguracionStarken } from '@/servidor/starken-configuracion';
 import {
   cotizarEnvioStarken,
   crearClienteStarken,
+  ErrorCatalogoCambio,
   registrarFallaStarken,
+  respuestaCatalogoCambio,
   respuestaErrorStarken,
 } from '@/servidor/starken-servicio';
 
@@ -54,6 +56,7 @@ export async function POST(req: Request) {
     );
     return Response.json(resultado, { headers: sinCache });
   } catch (e) {
+    if (e instanceof ErrorCatalogoCambio) return respuestaCatalogoCambio(e);
     if (e instanceof ErrorStarken) {
       registrarFallaStarken('api/starken/cotizar', e);
       return respuestaErrorStarken(e);

@@ -75,7 +75,7 @@ async function setup() {
   const emitida = async () => ir(await crear(), { tipo: 'emitir' });
   const aprobada = async () => ir(await emitida(), { tipo: 'aprobar' });
   const mitad = (q: Cotizacion) => Math.ceil(q.montos.total / 2);
-  const pagar = (q: Cotizacion, monto: number) => ir(q, { tipo: 'pago', monto, fecha: '2026-10-01' });
+  const pagar = (q: Cotizacion, monto: number) => ir(q, { tipo: 'pago', monto });
   /** Aprobada con el 50 % pagado y la nota de pedido generada. */
   const conNota = async (q?: Cotizacion) => {
     let c = q ?? (await aprobada());

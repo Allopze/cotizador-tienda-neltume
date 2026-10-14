@@ -681,6 +681,18 @@ td small {
 .menu-acciones li button.peligro {
   color: var(--danger);
 }
+.menu-acciones li button.peligro:disabled {
+  color: var(--subtle);
+}
+/* Por qué una opción está deshabilitada: visible, no solo en `title`. */
+.menu-acciones .menu-detalle {
+  display: block;
+  max-width: 260px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  white-space: normal;
+}
 .menu-acciones .separador {
   margin: 6px 0;
   border-top: 1px solid var(--line-soft);

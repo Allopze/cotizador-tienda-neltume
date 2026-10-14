@@ -8,8 +8,30 @@ import { pesos, type MedidasSolicitadas } from './precios';
 
 /** Las tarifas de Starken vienen con IVA (19 %): el despacho de la cotización es neto. */
 export const IVA_STARKEN = 0.19;
-/** Valor neto en pesos enteros de una tarifa con IVA incluido: 44.418 → 37.326. */
-export const netoDesdeIva = (costoTotal: number) => Math.round(Math.round(costoTotal) / (1 + IVA_STARKEN));
+/** Total con IVA de un neto, con la misma regla que el cotizador (precios.ts: IVA = round(neto × iva)). */
+export const totalConIva = (neto: number) => neto + Math.round(neto * IVA_STARKEN);
+/**
+ * Valor neto en pesos enteros de una tarifa con IVA incluido (44.418 → 37.326): el neto cuyo total con IVA, calculado
+ * como lo calcula el cotizador, más se acerca al total de Starken.
+ *
+ * No siempre puede igualarlo al peso: con neto entero e IVA redondeado al peso, `totalConIva` avanza de a 1 o de a 2
+ * (el IVA sube un peso cada ~5,3 pesos de neto), así que hay totales que ningún neto alcanza. Son el 16 % (exactamente
+ * 31.933 de 1 a 200.000, p. ej. $3, $9.999 o $44.421): ahí el neto queda a $1 del total, por arriba o por abajo, y no hay
+ * uno mejor. Los demás se reconstruyen al peso. Entre dos netos igual de cerca gana round(total ÷ 1,19), el de
+ * siempre: una tarifa ya firmada (la firma cubre `costoTotal`, no el neto) y un flete ya guardado siguen calzando.
+ * El total de Starken queda en la tarifa aplicada (`TarifaStarkenAplicada.costoTotal`) y en la actividad.
+ *
+ * Aunque el flete cuadre solo, el IVA de la cotización se calcula sobre el neto total (productos + flete) y se
+ * redondea una vez: el IVA del PDF no se separa en el de los productos y el del despacho.
+ */
+export function netoDesdeIva(costoTotal: number) {
+  const total = Math.round(costoTotal);
+  const base = Math.round(total / (1 + IVA_STARKEN));
+  const distancia = (n: number) => Math.abs(totalConIva(n) - total);
+  let neto = base;
+  for (const n of [base - 1, base + 1]) if (n >= 0 && distancia(n) < distancia(neto)) neto = n;
+  return neto;
+}
 
 /** El transportista de la cotización es Starken (sin distinguir mayúsculas ni espacios). */
 export const esStarken = (transporte: string | null | undefined) =>

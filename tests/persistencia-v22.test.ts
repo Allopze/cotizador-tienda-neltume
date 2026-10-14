@@ -8,7 +8,7 @@ import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '
 import type { ResumenCotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { guardarReferencia } from '../src/servidor/archivos-referencia';
-import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
+import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { textoBusqueda } from '../src/servidor/busqueda';
 import { csvCotizaciones } from '../src/servidor/exportar';
 import { Servicio } from '../src/servidor/servicio';
@@ -74,7 +74,7 @@ const tablas = (db: ReturnType<typeof abrirBaseDatos>) =>
 const TABLAS_V22 = ['documentos_snapshot', 'papelera', 'catalogo_anterior', 'catalogo_ediciones', 'auditoria_cuentas'];
 
 describe('migración v22', () => {
-  it('una base v21 sube a v22 con las columnas y tablas nuevas, y repetir la migración no falla', async () => {
+  it('una base v21 sube a la versión vigente con las columnas y tablas nuevas, y repetir la migración no falla', async () => {
     const t = await setup();
     t.db().exec(`
       ${TABLAS_V22.map((tabla) => `DROP TABLE ${tabla};`).join('\n')}
@@ -84,13 +84,13 @@ describe('migración v22', () => {
     `);
     cerrarBaseDatos(t.rutaDb);
     const migrada = t.db();
-    expect(migrada.pragma('user_version', { simple: true })).toBe(22);
+    expect(migrada.pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
     expect(columnas(migrada, 'notas_pedido')).toEqual(expect.arrayContaining(['despacho_destino', 'despacho_valor']));
     expect(tablas(migrada)).toEqual(expect.arrayContaining(TABLAS_V22));
     // Una base que ya tiene todo lo de v22 (las pruebas de migraciones anteriores bajan user_version) vuelve a subir.
     migrada.pragma('user_version = 21');
     cerrarBaseDatos(t.rutaDb);
-    expect(t.db().pragma('user_version', { simple: true })).toBe(22);
+    expect(t.db().pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
     expect(new Almacen(t.dir).obtener(t.actual().id)?.cliente.nombre).toBe('Ana Soto');
   });
 
@@ -115,7 +115,7 @@ describe('nota de pedido: destino y valor del despacho', () => {
     const t = await setup();
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
-    await t.ir({ tipo: 'pago', monto: Math.ceil(t.actual().montos.total / 2), fecha: '2026-09-30' });
+    await t.ir({ tipo: 'pago', monto: Math.ceil(t.actual().montos.total / 2) });
     await t.ir({ tipo: 'despacho', despacho: { destino: 'Osorno' } });
     const q = await t.ir({ tipo: 'generar_nota' });
     expect(new Almacen(t.dir).obtener(q.id)!.nota!.despacho).toMatchObject({ destino: 'Osorno', valor: q.flete });
@@ -139,7 +139,7 @@ describe('CSV del listado: pagos, operación y facturación', () => {
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
     const anticipo = Math.ceil(t.actual().montos.total / 2);
-    await t.ir({ tipo: 'pago', monto: anticipo, fecha: '2026-09-30' });
+    await t.ir({ tipo: 'pago', monto: anticipo });
     await t.ir({ tipo: 'generar_nota' });
     const q = await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: '1234' });
     const [fila] = t.almacen.listar().cotizaciones;

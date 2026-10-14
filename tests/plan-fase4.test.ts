@@ -75,7 +75,7 @@ async function setup() {
   const ir = async (q: Ref, extra: Record<string, unknown>) => (await sobre(q, extra)).cotizacion;
   const emitida = async () => ir(await crear(), { tipo: 'emitir' });
   const aprobada = async () => ir(await emitida(), { tipo: 'aprobar' });
-  const pagar = (q: Ref, monto: number) => ir(q, { tipo: 'pago', monto, fecha: '2026-10-01' });
+  const pagar = (q: Ref, monto: number) => ir(q, { tipo: 'pago', monto });
   const db = almacen.baseDatos();
   return { dir, almacen, db, servicio, crear, sobre, ir, emitida, aprobada, pagar };
 }

@@ -65,6 +65,25 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   // Una fecha a medio escribir no se envía: con el campo vacío el servidor registraría el pago con la de hoy.
   const fechaPago = flujo.getByLabel('Fecha del pago');
   const hoy = await fechaPago.inputValue();
+  // Aprobada hoy: la fecha del pago va de la aprobación a hoy (hora de Chile). Fuera de ese rango no se envía y
+  // el navegador lo explica en español.
+  await expect(fechaPago).toHaveAttribute('min', hoy);
+  await expect(fechaPago).toHaveAttribute('max', hoy);
+  const [a, m, d] = hoy.split('-');
+  for (const [fecha, explicacion] of [
+    ['2020-01-01', `La fecha del pago no puede ser anterior a la aprobación (${d}-${m}-${a}).`],
+    ['2099-12-31', `La fecha del pago no puede ser posterior a hoy (${d}-${m}-${a}).`],
+  ]) {
+    await fechaPago.fill(fecha);
+    const fueraDeRango = page.waitForRequest(
+      (r) => r.url().endsWith('/api/accion') && r.method() === 'POST' && r.postDataJSON()?.tipo === 'pago',
+      { timeout: 1500 },
+    );
+    await flujo.getByRole('button', { name: 'Registrar pago' }).click();
+    await expect(fueraDeRango).rejects.toThrow();
+    expect(await fechaPago.evaluate((e) => (e as HTMLInputElement).validationMessage)).toBe(explicacion);
+  }
+  await expect(libro).toHaveCount(0);
   await fechaPago.fill('');
   await fechaPago.focus();
   await page.keyboard.type('1');
@@ -124,6 +143,14 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await page.getByRole('alertdialog').getByRole('button', { name: 'Marcar lista para despacho', exact: true }).click();
   await expect(estados).toContainText('Operación: Lista para despacho');
   await expect(flujo.getByRole('button', { name: /^Anular el pago de/ })).toHaveCount(0);
+  // Todavía se puede anular la cotización, pero el diálogo advierte que lo pagado no se devuelve.
+  const masAcciones = panel.getByRole('button', { name: /^Más acciones/ });
+  await masAcciones.click();
+  await panel.locator('.menu-acciones').getByRole('button', { name: 'Anular', exact: true }).click();
+  const dialogoAnular = page.getByRole('alertdialog', { name: /^Anular la cotización/ });
+  await expect(dialogoAnular).toContainText(`Tiene ${pesos(monto)} pagado; anular no lo devuelve.`);
+  await dialogoAnular.getByRole('button', { name: 'Cancelar' }).click();
+  await expect(dialogoAnular).toHaveCount(0);
 
   // Registrar el despacho exige transportista; se elige en «Despacho» y el botón se habilita.
   await expect(flujo.getByRole('button', { name: 'Completar despacho' })).toBeVisible();
@@ -136,6 +163,16 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await page.getByRole('alertdialog').getByRole('button', { name: 'Registrar despacho', exact: true }).click();
   await expect(estados).toContainText('Operación: Despachada');
   await expect(panel.getByRole('combobox', { name: 'Transportista' })).toBeDisabled();
+  // Despachada ya no se anula: la opción sigue en el menú, deshabilitada y con el motivo a la vista.
+  await masAcciones.click();
+  const anularDeshabilitado = panel.locator('.menu-acciones').getByRole('button', { name: /^Anular/ });
+  await expect(anularDeshabilitado).toBeDisabled();
+  await expect(anularDeshabilitado).toContainText('No se puede anular una cotización despachada, completada o facturada.');
+  await page.keyboard.press('Escape');
+  await expect(anularDeshabilitado).toHaveCount(0);
+  // La fecha de la factura tiene el mismo rango que la del pago.
+  await expect(flujo.getByLabel('Fecha de emisión')).toHaveAttribute('min', hoy);
+  await expect(flujo.getByLabel('Fecha de emisión')).toHaveAttribute('max', hoy);
   await expect(panel.getByRole('button', { name: /^Editar destino/ })).toHaveCount(0);
 
   // Facturación: pendiente → facturada con tipo y número → vuelve a pendiente.

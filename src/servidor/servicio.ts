@@ -90,6 +90,8 @@ import {
   etiquetaOperativo,
   unitarioFlete,
   pagoAnulable,
+  puedeAnular,
+  rangoFechaOperacion,
   sinTransportista,
   type Cotizacion,
   type Despacho,
@@ -111,7 +113,7 @@ import {
   textoDescuentoItem,
   type Montos,
 } from '../negocio/precios';
-import { calcularVence, estaVencida, fechaChilena } from '../negocio/vigencia';
+import { calcularVence, estaVencida, fechaChilena, fechaLocal } from '../negocio/vigencia';
 import { Almacen, type Unidad } from './almacen';
 import { sanearReferencias } from './archivos-referencia';
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
@@ -593,6 +595,18 @@ export class Servicio {
       avisos.push(avisoMedidaEspecial(res));
       previas.add(k);
     }
+    // Vender bajo el costo se permite (hasta −50 %), pero se avisa cada vez que ese precio o ese costo es nuevo.
+    for (const b of vigentes.bajoCosto) {
+      const previa = q.montos.lineas.find((l) => l.indice === b.indice);
+      const especial = !!q.solicitudes[b.indice]?.personalizado;
+      if (
+        previa &&
+        previa.precioUnitario === b.precio &&
+        (especial ? previa.producto.modelo === b.nombre : previa.producto.codigo === b.nombre && previa.precioFabrica === b.costo)
+      )
+        continue;
+      avisos.push(`El precio de ${b.nombre} queda bajo el costo de fábrica (${pesos(b.costo)}).`);
+    }
     const validos = vigentes.validos;
     q.incompletos = vigentes.incompletos;
     const reglas = q.reglas ?? REGLAS;
@@ -939,11 +953,11 @@ export class Servicio {
           this.exigirAprobada(q);
           if (accion.tipo === 'desaprobar') {
             if (q.nota || q.pagos?.length || q.facturacion?.estado === 'facturada') throw new ErrorConflicto('Solo puedes quitar la aprobación sin nota, pagos ni factura.', 'estado_invalido');
-            q.estado = 'emitida'; q.estadoComercial = 'enviada'; q.aprobadaPor = null;
+            q.estado = 'emitida'; q.estadoComercial = 'enviada'; q.aprobadaPor = null; delete q.fechaAprobacion;
           } else {
             if (!accion.motivo.trim()) throw new ErrorUsuario('Indica el motivo del retroceso.');
             const atras: Partial<Record<NonNullable<Cotizacion['estadoOperativo']>, NonNullable<Cotizacion['estadoOperativo']>>> = {
-              completada: 'despachada', despachada: 'lista_despacho', lista_despacho: 'pagada', pagada: 'en_produccion', saldo_pendiente: 'en_produccion', produccion_terminada: 'en_produccion', en_produccion: 'pedido_generado',
+              completada: 'despachada', despachada: 'lista_despacho', lista_despacho: 'pagada', pagada: 'en_produccion', saldo_pendiente: 'en_produccion', en_produccion: 'pedido_generado',
             };
             const previo = atras[q.estadoOperativo ?? 'sin_pedido'];
             if (!previo) throw new ErrorConflicto('No hay un paso operativo anterior disponible.', 'estado_invalido');
@@ -1064,21 +1078,11 @@ export class Servicio {
   /** Anula una emitida o aprobada (también al rechazarla el cliente); una ya anulada se devuelve igual. */
   private anularInterna(q: Cotizacion, u: Unidad, motivo: string | null): Resultado {
     if (q.estado === 'anulada') return { cotizacion: q };
-    if (q.estado !== 'emitida' && q.estado !== 'aprobada')
-      throw new ErrorConflicto(
-        q.estado === 'borrador'
-          ? 'Un borrador no se anula: elimínalo.'
-          : `La cotización N° ${q.numero} fue reemplazada y ya no está vigente.`,
-        'estado_invalido',
-      );
-    if (
-      ['despachada', 'completada'].includes(q.estadoOperativo ?? '') ||
-      q.facturacion?.estado === 'facturada'
-    )
-      throw new ErrorConflicto(
-        'No se puede anular una cotización despachada, completada o facturada.',
-        'estado_invalido',
-      );
+    // La misma regla con que la pantalla ofrece (o explica) «Anular».
+    const permiso = puedeAnular(q);
+    if (!permiso.ok) throw new ErrorConflicto(permiso.motivo, 'estado_invalido');
+    // Anular no devuelve lo pagado: queda registrado para resolverlo con el cliente.
+    const pagado = permiso.pagado ? `Pagos registrados: ${pesos(permiso.pagado)} (anular no los devuelve)` : null;
     const fecha = new Date().toISOString();
     q.estado = 'anulada';
     q.estadoComercial = 'rechazada';
@@ -1104,11 +1108,11 @@ export class Servicio {
     }
     q.historial.push({
       rol: 'asistente',
-      texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido N° ${q.nota.numero}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}.`,
+      texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido N° ${q.nota.numero}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}${pagado ? `. ${pagado}` : ''}.`,
     });
     q.actualizada = marca(q.actualizada);
     u.guardar(q);
-    u.registrarEvento(q.id, 'anulada', this.autor, motivo);
+    u.registrarEvento(q.id, 'anulada', this.autor, [motivo, pagado].filter(Boolean).join(' · ') || null);
     return { cotizacion: q, ...(avisos.length ? { avisos } : {}) };
   }
 
@@ -1582,7 +1586,8 @@ export class Servicio {
       extras.unshift(...cambioDescuento(descuentoAntes, destino));
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
-      u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, extras));
+      // Los avisos (siguiente medida, precio bajo el costo…) quedan en la actividad: la pantalla los muestra una vez.
+      u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, [...extras, ...todos.map((a) => `Aviso: ${a}`)]));
       return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
     });
   }
@@ -1593,7 +1598,7 @@ export class Servicio {
    */
   private async emitir(accion: Extract<Accion, { tipo: 'emitir' }>): Promise<Resultado> {
     const preparado = await this.almacen.transaccion(
-      (u): Preparado<{ avisos: string[] }> | PreciosCambiados => {
+      (u): Preparado<{ avisos: string[]; versionCatalogo: string | null }> | PreciosCambiados => {
         const q = this.obtener(u, accion.id);
         if (q.pdf) return { listo: q };
         if (q.estado !== 'borrador') this.exigirEditable(q);
@@ -1632,7 +1637,8 @@ export class Servicio {
           );
           return { listo: null, cambiados: { avisos, total: q.montos.total, actualizada: q.actualizada } };
         }
-        return { listo: null, copia, avisos, version: q.actualizada };
+        // La versión del catálogo con que se calcularon estos montos: una importación posterior no la cambia.
+        return { listo: null, copia, avisos, version: q.actualizada, versionCatalogo: this.versionCatalogo() };
       },
     );
     if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.pdf! };
@@ -1642,7 +1648,7 @@ export class Servicio {
         'precios_cambiaron',
         preparado.cambiados,
       );
-    const { copia, avisos, version } = preparado;
+    const { copia, avisos, version, versionCatalogo } = preparado;
     // Al reservar y al confirmar, lo revisado sigue vigente: nadie emitió ni cambió la cotización.
     const vigente = (u: Unidad) => {
       const q = this.obtener(u, accion.id);
@@ -1656,11 +1662,27 @@ export class Servicio {
     };
     // Chromium se comprueba fuera del bloqueo y antes de reservar: si no arranca, el número no se gasta.
     await prepararPdf();
-    // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número.
-    const numero = await this.almacen.transaccion((u) => {
+    // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número. La marca «en
+    // emisión» se toma en la misma transacción: otra emisión simultánea responde 409 sin gastar un número.
+    const { numero, ficha } = await this.almacen.transaccion((u) => {
       vigente(u);
-      return u.reservarCotizacion(accion.numero);
+      return u.reservarCotizacionEnEmision(accion.id, accion.numero);
     });
+    try {
+      return await this.emitirReservada(numero, copia, avisos, versionCatalogo, vigente);
+    } finally {
+      this.almacen.liberarEmision(accion.id, ficha);
+    }
+  }
+
+  /** Segunda mitad de `emitir`, con el número ya reservado y la marca «en emisión» tomada. */
+  private async emitirReservada(
+    numero: number,
+    copia: Cotizacion,
+    avisos: string[],
+    versionCatalogo: string | null,
+    vigente: (u: Unidad) => Cotizacion,
+  ): Promise<Resultado> {
     // La vigencia cuenta días hábiles: antes se actualizan los feriados decretados (sin bloquear si no hay red).
     await prepararFeriados(this.almacen.baseDatos());
     const reglas = copia.reglas ?? REGLAS;
@@ -1695,7 +1717,7 @@ export class Servicio {
         q.estado = 'emitida';
         q.estadoComercial = 'enviada';
         q.emitidaPor = this.autor;
-        q.versionCatalogo = this.versionCatalogo();
+        q.versionCatalogo = versionCatalogo;
         q.actualizada = marca(q.actualizada);
         // A2: al emitir una revisión, la original deja de ser aprobable.
         if (q.origen != null) {
@@ -1733,8 +1755,7 @@ export class Servicio {
           'Emite la cotización y genera su PDF antes de registrar la aprobación del cliente.',
           'estado_invalido',
         );
-      if (q.estadoComercial === 'rechazada')
-        throw new ErrorConflicto('La cotización fue marcada como rechazada.', 'estado_invalido');
+      // «Rechazada» siempre anula (ver `cambiarEstadoComercial`): la comprueba el caso «anulada» de arriba.
       this.verificarVersion(q, accion.actualizada);
       this.verificarSerieNoAprobada(q, u);
       if (estaVencida(q.vence) && !accion.confirmarVencida)
@@ -1747,6 +1768,7 @@ export class Servicio {
       q.estado = 'aprobada';
       q.estadoComercial = 'aprobada';
       q.aprobadaPor = this.autor;
+      q.fechaAprobacion = new Date().toISOString();
       q.actualizada = marca(q.actualizada);
       u.guardar(q);
       u.registrarEvento(q.id, 'aprobada', this.autor, `Aprobada por cliente · N° ${q.numero}`);
@@ -1780,8 +1802,7 @@ export class Servicio {
       const saldo = q.montos.total - abonado;
       if (accion.monto > saldo)
         throw new ErrorUsuario(`El pago supera el saldo pendiente de ${pesos(saldo)}.`);
-      const fecha = accion.fecha ? fechaElegida(accion.fecha) : new Date().toISOString();
-      if (!fecha) throw new ErrorUsuario('La fecha del pago no es válida.');
+      const fecha = this.fechaOperacion(q, u, accion.fecha, 'del pago');
       const observacion = limpiarTexto(accion.observacion, 500);
       const pago = { id: randomUUID(), fecha, monto: accion.monto, observacion, usuario: this.autor };
       q.pagos = [...(q.pagos ?? []), pago];
@@ -1799,8 +1820,25 @@ export class Servicio {
     const operacion = q.estadoOperativo ?? (q.nota ? 'pedido_generado' : 'sin_pedido');
     if (!q.nota && (operacion === 'sin_pedido' || operacion === 'anticipo_pagado'))
       q.estadoOperativo = pagado >= anticipoMinimo(q.montos.total) ? 'anticipo_pagado' : 'sin_pedido';
-    else if (['produccion_terminada', 'saldo_pendiente', 'pagada'].includes(operacion))
+    else if (operacion === 'saldo_pendiente' || operacion === 'pagada')
       q.estadoOperativo = pagado >= q.montos.total ? 'pagada' : 'saldo_pendiente';
+  }
+
+  /**
+   * Fecha de un pago o de una factura, como mediodía UTC del día elegido (o de hoy, en hora de Chile, si no se
+   * eligió): así no cambia de día al mostrarla. No puede ser posterior a hoy ni anterior a la aprobación.
+   */
+  private fechaOperacion(q: Cotizacion, u: Unidad, elegida: string | null | undefined, de: string) {
+    const fecha = elegida ? fechaElegida(elegida) : `${fechaLocal(new Date())}T12:00:00.000Z`;
+    if (!fecha) throw new ErrorUsuario(`La fecha ${de} no es válida.`);
+    // Una aprobación anterior a v23 no guardó su fecha: vale la de su evento, que se guarda para la próxima vez.
+    q.fechaAprobacion ??= u.fechaEvento(q.id, 'aprobada') ?? undefined;
+    const { min, max } = rangoFechaOperacion(q.fechaAprobacion);
+    const dia = elegida && /^\d{4}-\d{2}-\d{2}$/.test(elegida) ? elegida : fechaLocal(fecha);
+    if (dia > max) throw new ErrorUsuario(`La fecha ${de} no puede ser posterior a hoy (${fechaChilena(max)}).`);
+    if (min && dia < min)
+      throw new ErrorUsuario(`La fecha ${de} no puede ser anterior a la aprobación (${fechaChilena(min)}).`);
+    return fecha;
   }
 
   private async anularPago(accion: Extract<Accion, { tipo: 'anular_pago' }>): Promise<Resultado> {
@@ -1925,7 +1963,7 @@ export class Servicio {
       const esPasoValido =
         (paso === 'iniciar_produccion' && !!q.nota && q.estadoOperativo === 'pedido_generado') ||
         (paso === 'produccion_terminada' && q.estadoOperativo === 'en_produccion') ||
-        (paso === 'lista_despacho' && ['produccion_terminada', 'pagada'].includes(q.estadoOperativo ?? '') && pagado >= q.montos.total) ||
+        (paso === 'lista_despacho' && q.estadoOperativo === 'pagada' && pagado >= q.montos.total) ||
         (paso === 'despachada' && q.estadoOperativo === 'lista_despacho') ||
         (paso === 'completada' && q.estadoOperativo === 'despachada');
       if (!esPasoValido) throw new ErrorConflicto('Esta acción no está disponible para el estado actual.', 'estado_invalido');
@@ -1987,8 +2025,7 @@ export class Servicio {
       if (accion.estado === 'facturada') {
         if (accion.tipoDocumento !== 'factura' && accion.tipoDocumento !== 'boleta')
           throw new ErrorUsuario('Indica si se emitió una factura o una boleta.');
-        const fecha = accion.fecha ? fechaElegida(accion.fecha) : new Date().toISOString();
-        if (!fecha) throw new ErrorUsuario('La fecha de la factura no es válida.');
+        const fecha = this.fechaOperacion(q, u, accion.fecha, 'de la factura');
         facturacion = {
           estado: 'facturada',
           tipo: accion.tipoDocumento,
@@ -2086,10 +2123,24 @@ export class Servicio {
     };
     // Igual que al emitir: Chromium se comprueba fuera del bloqueo y antes de gastar un número de nota.
     await prepararPdf();
-    const numero = await this.almacen.transaccion((u) => {
+    const { numero, ficha } = await this.almacen.transaccion((u) => {
       vigente(u);
-      return u.reservarNota();
+      return u.reservarNotaEnEmision(accion.id);
     });
+    try {
+      return await this.generarNotaReservada(numero, copia, montos, vigente);
+    } finally {
+      this.almacen.liberarEmision(accion.id, ficha);
+    }
+  }
+
+  /** Segunda mitad de `generarNotaPedido`, con el número ya reservado y la marca «en emisión» tomada. */
+  private async generarNotaReservada(
+    numero: number,
+    copia: Cotizacion,
+    montos: Montos,
+    vigente: (u: Unidad) => Cotizacion,
+  ): Promise<Resultado> {
     const despacho: Despacho = copia.despacho ?? {
       direccion: null,
       transporte: null,

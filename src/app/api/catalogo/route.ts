@@ -7,6 +7,7 @@ import { atributosProductoSchema } from '@/asistente/esquemas';
 import { ErrorCatalogo, cargarCatalogo } from '@/servidor/catalogo';
 import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
 import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
+import { Almacen } from '@/servidor/almacen';
 import { ErrorUsuario, registrarError } from '@/servidor/errores';
 import {
   coincideBusquedaCatalogo,
@@ -213,7 +214,8 @@ export async function POST(req: Request) {
     if (peticion.tipo === 'restaurar')
       return Response.json({ producto: catalogo.restaurarProducto(peticion.codigo) }, { headers: sinCache });
     if (peticion.tipo === 'volver_planilla') {
-      const anterior = catalogo.restaurarImportacion(peticion.origen, peticion.versionCatalogo);
+      // Con el bloqueo del almacén, como una importación: no cambia el catálogo en medio de una emisión.
+      const anterior = await new Almacen().restaurarImportacion(peticion.origen, peticion.versionCatalogo);
       return Response.json({ restaurada: anterior, versionCatalogo: catalogo.version }, { headers: sinCache });
     }
     // La clave de la IA se lee solo para el alta asistida: si no se puede leer, el alta manual sigue funcionando.

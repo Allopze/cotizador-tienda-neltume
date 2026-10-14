@@ -8,6 +8,8 @@ export interface OpcionMenu {
   /** Acción destructiva: va al final, separada y en rojo. */
   peligro?: boolean;
   titulo?: string;
+  /** Texto breve bajo la etiqueta, p. ej. por qué la opción está deshabilitada. */
+  detalle?: string;
 }
 
 /**
@@ -60,6 +62,7 @@ export function MenuAcciones({
         }}
       >
         {o.etiqueta}
+        {o.detalle && <small className="menu-detalle">{o.detalle}</small>}
       </button>
     </li>
   );

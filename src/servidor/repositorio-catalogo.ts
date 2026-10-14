@@ -222,16 +222,27 @@ function actualizarMetadata(db: Database.Database, origen: OrigenCatalogo, catal
   ).run(origenes.map((o) => o.fuente).join(' + '), sha256, fecha, cantidad.n);
 }
 
+/** El catálogo cambió entre la vista previa y la confirmación de una importación: hay que analizar de nuevo. */
+export class ErrorCatalogoCambiado extends Error {
+  constructor() {
+    super('El archivo o el catálogo cambiaron después de la vista previa. Vuelve a analizar el Excel.');
+    this.name = 'ErrorCatalogoCambiado';
+  }
+}
+
 /**
  * Guarda los productos de una planilla: reemplaza solo los de su origen (`catalogo.origen`, por defecto la
  * principal) y deja los de otras planillas y los agregados a mano como estaban. El control del 90 % también
- * es por origen. Todo ocurre en una transacción: si algo falla, no cambia nada.
+ * es por origen. Todo ocurre en una transacción: si algo falla, no cambia nada. Con `versionEsperada` (la versión
+ * del catálogo que vio la vista previa; '' si no había) se comprueba dentro de la misma transacción: de dos
+ * confirmaciones de la misma vista previa, solo la primera guarda. Para no cambiar el catálogo en medio de otra
+ * operación, la aplicación lo llama con `Almacen.guardarCatalogo`, que toma el bloqueo del almacén.
  */
 export function guardarCatalogo(
   db: Database.Database,
   catalogo: Catalogo,
   configuracion: ConfiguracionCatalogo = CONFIGURACION_CATALOGO_BASE,
-  { forzar = false }: { forzar?: boolean } = {},
+  { forzar = false, versionEsperada }: { forzar?: boolean; versionEsperada?: string } = {},
 ) {
   if (!catalogo.productos.length) throw new Error('El catálogo no puede estar vacío.');
   const origen = catalogo.origen ?? 'principal';
@@ -246,6 +257,8 @@ export function guardarCatalogo(
     )
   `);
   db.transaction(() => {
+    if (versionEsperada !== undefined && (new RepositorioCatalogoSqlite(db).version ?? '') !== versionEsperada)
+      throw new ErrorCatalogoCambiado();
     const metaAnterior = db.prepare('SELECT fecha FROM catalogo_meta WHERE id = 1').get() as
       { fecha: string } | undefined;
     const fecha = new Date(

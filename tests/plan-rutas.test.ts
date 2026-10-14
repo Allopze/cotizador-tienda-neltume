@@ -157,7 +157,7 @@ describe('1.2 · clave de IA cifrada con otro BETTER_AUTH_SECRET', () => {
       const aprobada = await m.sobre(m.usuario, q, { tipo: 'aprobar' });
       expect(aprobada.status).toBe(200);
       q = aprobada.cuerpo.cotizacion;
-      const pago = await m.sobre(m.usuario, q, { tipo: 'pago', monto: 1000, fecha: '2026-10-01' });
+      const pago = await m.sobre(m.usuario, q, { tipo: 'pago', monto: 1000 });
       expect(pago.status).toBe(200);
       expect(pago.cuerpo.cotizacion.pagos).toHaveLength(1);
 

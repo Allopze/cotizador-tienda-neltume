@@ -137,6 +137,19 @@ describe('importar el catálogo desde la aplicación', () => {
     expect(m.repo().buscarPorCodigo('HUIL-EM-085-240')?.precioNeto).toBe(102019);
     expect((await m.enviar({ accion: 'previsualizar' })).cuerpo.edicionesManuales).toEqual([]);
   });
+
+  it('dos confirmaciones simultáneas de la misma vista previa: una guarda y la otra pide analizar de nuevo', async () => {
+    const m = await montar();
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    const vista = (await m.enviar({ accion: 'previsualizar' })).cuerpo;
+    const fecha = m.repo().metadata!.fecha;
+    const respuestas = await Promise.all([m.confirmar(vista), m.confirmar(vista)]);
+    expect(respuestas.map((r) => r.status).sort()).toEqual([200, 409]);
+    expect(respuestas.find((r) => r.status === 409)!.cuerpo).toMatchObject({ codigo: 'vista_previa_obsoleta' });
+    // Se importó una sola vez: la planilla anterior a la que se vuelve es la primera, no esta misma.
+    expect(m.repo().metadata!.fecha > fecha).toBe(true);
+    expect(m.repo().planillaAnterior('enchapadas')).toMatchObject({ fecha });
+  });
 });
 
 describe('volver a la planilla anterior desde Catálogo → Importar', () => {
@@ -174,6 +187,24 @@ describe('volver a la planilla anterior desde Catálogo → Importar', () => {
     expect((await m.enviar({ accion: 'previsualizar' })).cuerpo.edicionesManuales).toEqual([
       expect.objectContaining({ codigo: 'HUIL-EM-085-240', precioNeto: 110_000 }),
     ]);
+  });
+
+  it('«volver» espera el bloqueo del almacén: no cambia el catálogo en medio de otra escritura', async () => {
+    const m = await montar();
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    m.repo().editarProducto('HUIL-EM-085-240', { precioNeto: 110_000 });
+    const r = await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    expect(m.repo().buscarPorCodigo('HUIL-EM-085-240')?.precioNeto).toBe(102019);
+    const { Almacen } = await import('../src/servidor/almacen');
+    let vuelta: ReturnType<typeof m.catalogo> | undefined;
+    // Mientras otra operación (p. ej. una emisión) tiene el bloqueo, «volver» espera sin tocar el catálogo.
+    await new Almacen().transaccion(async () => {
+      vuelta = m.catalogo({ tipo: 'volver_planilla', origen: 'enchapadas', versionCatalogo: r.cuerpo.versionCatalogo });
+      await new Promise((listo) => setTimeout(listo, 400));
+      expect(m.repo().buscarPorCodigo('HUIL-EM-085-240')?.precioNeto).toBe(102019);
+    });
+    expect(await vuelta).toMatchObject({ status: 200, cuerpo: { restaurada: { productos: 27 } } });
+    expect(m.repo().buscarPorCodigo('HUIL-EM-085-240')?.precioNeto).toBe(110_000);
   });
 });
 

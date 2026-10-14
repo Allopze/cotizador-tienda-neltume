@@ -447,4 +447,54 @@ describe('ciudades y cotización de Starken', () => {
       m.cerrar();
     }
   });
+  it('con el catálogo cambiado desde el guardado, cotizar responde 409 «catalogo_cambio» con los ítems afectados', async () => {
+    const m = await montar();
+    try {
+      const { Servicio } = await import('../src/servidor/servicio');
+      const { Almacen } = await import('../src/servidor/almacen');
+      const { guardarCatalogo } = await import('../src/servidor/repositorio-catalogo');
+      guardarCatalogo(m.db, catalogo());
+      await m.rutas.ajustes.POST(
+        m.peticion('/api/starken', { cookie: m.admin, cuerpo: configuracionCompleta() }),
+      );
+      const llm = {
+        interpretar: vi.fn().mockResolvedValue({
+          name: 'actualizar_cotizacion',
+          input: {
+            items: [
+              { modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.82, alto: 2, medida: null, cantidad: 3 },
+            ],
+            cliente: { ...clienteVacio(), nombre: 'Juan Pérez', comuna: 'Temuco' },
+          },
+        }),
+      };
+      const servicio = new Servicio(catalogo(), llm, new Almacen(), {
+        nombre: 'Paula',
+        email: 'paula@neltume.cl',
+      });
+      const q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza' })).cotizacion;
+      expect(q.incompletos).toEqual([]);
+      // La planilla nueva deja la puerta solo en raulí: la cotización guardada no muestra ningún pendiente.
+      guardarCatalogo(m.db, { ...catalogo(), sha256: 'v2', productos: [{ ...puerta, madera: 'RAULI' }] });
+      const respuesta = await m.rutas.cotizar.POST(
+        m.peticion('/api/starken/cotizar', { cookie: m.usuario, cuerpo: { id: q.id } }),
+      );
+      expect(respuesta.status).toBe(409);
+      expect(respuesta.headers.get('cache-control')).toBe('no-store');
+      const cuerpo = (await respuesta.json()) as {
+        error: string;
+        codigo: string;
+        detalle: { items: { numero: number; descripcion: string; motivo: string }[] };
+      };
+      expect(cuerpo.codigo).toBe('catalogo_cambio');
+      expect(cuerpo.error).toBe(
+        'El catálogo cambió desde que guardaste esta cotización: revisa el pedido antes de cotizar el despacho.',
+      );
+      expect(cuerpo.detalle.items).toEqual([
+        { numero: 1, descripcion: expect.stringMatching(/MOLCO/), motivo: expect.any(String) },
+      ]);
+    } finally {
+      m.cerrar();
+    }
+  });
 });

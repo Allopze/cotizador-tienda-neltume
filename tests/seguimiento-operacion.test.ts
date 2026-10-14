@@ -86,7 +86,7 @@ describe('seguimiento de la operación: caminos de vuelta', () => {
       t.ir((await t.servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza MOLCO' })).cotizacion, { tipo: 'emitir' });
     const aprobada = async () => t.ir(await emitida(), { tipo: 'aprobar' });
     const mitad = (q: Cotizacion) => Math.ceil(q.montos.total / 2);
-    const pagar = (q: Cotizacion, monto: number) => t.ir(q, { tipo: 'pago', monto, fecha: '2026-10-01' });
+    const pagar = (q: Cotizacion, monto: number) => t.ir(q, { tipo: 'pago', monto });
     const operar = (q: Cotizacion, paso: string, extra: Record<string, unknown> = {}) =>
       t.ir(q, { tipo: 'operacion', paso, ...extra });
     const conNota = async () => {
