@@ -45,7 +45,7 @@ export async function documentoAnulado(almacen: Almacen, archivo: string) {
         almacen.baseDatos(),
       );
   try {
-    await generarPdf(almacen.directorio, nombre, html);
+    await generarPdf(almacen.directorio, nombre, html, undefined, { logoDe: almacen.baseDatos() });
   } catch (error) {
     // Otra descarga simultánea pudo generarla primero.
     if (!(await existe(ruta))) throw error;
@@ -73,9 +73,9 @@ export async function regenerarDocumento(almacen: Almacen, q: Cotizacion, tipo: 
     .baseDatos()
     .prepare('SELECT html FROM documentos_snapshot WHERE archivo = ? AND cotizacion_id = ?')
     .get(archivo, q.id) as { html: string } | undefined;
-  const html =
-    snapshot?.html ??
-    (await plantilla(
+  const html = snapshot
+    ? snapshot.html
+    : await plantilla(
       q,
       tipo === 'nota'
         ? {
@@ -96,9 +96,10 @@ export async function regenerarDocumento(almacen: Almacen, q: Cotizacion, tipo: 
             autor: q.emitidaPor,
           },
       almacen.baseDatos(),
-    ));
+    );
   try {
-    await generarPdf(almacen.directorio, archivo, html);
+    // El snapshot guarda el logo como referencia: se imprime con el logo vigente de esta base (ver inyectarLogo).
+    await generarPdf(almacen.directorio, archivo, html, undefined, { logoDe: almacen.baseDatos() });
   } catch (error) {
     // Otra recuperación simultánea pudo escribirlo primero.
     if (await existe(ruta)) return { archivo, regenerado: false, avisos: [] };

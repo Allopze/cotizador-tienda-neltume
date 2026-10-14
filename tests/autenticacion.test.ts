@@ -159,7 +159,23 @@ describe('Autenticación Better Auth', () => {
       headers: { origin: origen, 'content-type': 'application/json' },
       body: JSON.stringify({ email: correo, password: clave }),
     });
-    expect(cuentaDesactivada.status).toBe(403);
+    // Una cuenta desactivada responde exactamente igual que una contraseña incorrecta: no revela que existe.
+    expect(cuentaDesactivada.status).toBe(401);
+    const claveIncorrecta = await solicitudAuth(auth, '/sign-in/email', {
+      method: 'POST',
+      headers: { origin: origen, 'content-type': 'application/json' },
+      body: JSON.stringify({ email: correo, password: 'otra-clave-incorrecta-1' }),
+    });
+    expect(claveIncorrecta.status).toBe(401);
+    const noExiste = await solicitudAuth(auth, '/sign-in/email', {
+      method: 'POST',
+      headers: { origin: origen, 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'nadie@neltume.test', password: clave }),
+    });
+    const cuerpos = [await cuentaDesactivada.json(), await claveIncorrecta.json(), await noExiste.json()];
+    expect(cuerpos[0]).toEqual(cuerpos[1]);
+    expect(cuerpos[0]).toEqual(cuerpos[2]);
+    expect(JSON.stringify(cuerpos[0])).not.toMatch(/ban/i);
     const sesionRevocada = await solicitudAuth(auth, '/get-session', { headers: { cookie: segundaCookie } });
     expect(await sesionRevocada.json()).toBeNull();
   });

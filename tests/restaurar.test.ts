@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -94,6 +94,26 @@ describe('npm run restaurar', () => {
 
     // La base restaurada abre normalmente.
     expect(JSON.parse((abrirBaseDatos().prepare("SELECT valor_json FROM ajustes WHERE clave = 'prueba'").get() as { valor_json: string }).valor_json)).toBe('respaldo');
+  });
+
+  it('el respaldo conserva la fecha de los PDF y referencias (la copia diaria enlaza los que no cambiaron)', async () => {
+    const { datos, entorno } = await preparar();
+    const pdf = join(datos, 'pdf', 'cotizacion-1.pdf');
+    const referencia = join(datos, 'referencias', REFERENCIA);
+    const fecha = new Date('2026-01-02T03:04:05Z');
+    mkdirSync(join(datos, 'pdf'), { recursive: true });
+    mkdirSync(join(datos, 'referencias'), { recursive: true });
+    writeFileSync(pdf, 'pdf');
+    writeFileSync(referencia, 'png');
+    utimesSync(pdf, fecha, fecha);
+    utimesSync(referencia, fecha, fecha);
+    marca('respaldo');
+    cerrarBaseDatos();
+    const r = spawnSync(tsx, ['scripts/respaldar.ts'], { cwd: raiz, env: { ...process.env, ...entorno }, encoding: 'utf8' });
+    expect(r.status, r.stderr).toBe(0);
+    const carpeta = r.stdout.match(/^Respaldo en ([^:]+):/m)![1];
+    expect(statSync(join(carpeta, 'pdf', 'cotizacion-1.pdf')).mtime.toISOString()).toBe(fecha.toISOString());
+    expect(statSync(join(carpeta, 'referencias', REFERENCIA)).mtime.toISOString()).toBe(fecha.toISOString());
   });
 
   it('no toca nada si el servidor tiene la base abierta', async () => {

@@ -242,6 +242,48 @@ describe('3.4 · número de cotización elegido a mano', () => {
   });
 });
 
+describe('#24 y #32 · número manual: último número y tope; 403 con código y sin caché', () => {
+  it('GET ?numeracion=1 da el último número y el tope solo a administración; el 403 es como los demás errores', async () => {
+    const m = await montar();
+    try {
+      const numeracion = async (cookie: string) => {
+        const r = await m.accion.GET(m.peticion('/api/accion?numeracion=1', { cookie }));
+        return { status: r.status, cache: r.headers.get('cache-control'), cuerpo: await r.json() };
+      };
+      // Sin rol admin: 403 con código y sin caché, igual en el GET y en el POST del número manual.
+      expect(await numeracion(m.usuario)).toEqual({
+        status: 403,
+        cache: 'no-store',
+        cuerpo: { error: 'Esta acción requiere una cuenta administradora.', codigo: 'sin_permiso' },
+      });
+      const q = (
+        await m.post(m.usuario, { tipo: 'agregar_producto', codigo: 'MOL-O-3-A', cantidad: 1, tipoMedida: 'hoja' })
+      ).cuerpo.cotizacion;
+      const r = await m.accion.POST(
+        m.peticion('/api/accion', { cookie: m.usuario, cuerpo: { tipo: 'emitir', numero: 400, id: q.id, actualizada: q.actualizada } }),
+      );
+      expect(r.status).toBe(403);
+      expect(r.headers.get('cache-control')).toBe('no-store');
+      expect(await r.json()).toEqual({ error: 'Esta acción requiere una cuenta administradora.', codigo: 'sin_permiso' });
+
+      // Administración: el último usado (322), el siguiente y el tope de +1.000, sin gastar números.
+      expect(await numeracion(m.admin)).toEqual({
+        status: 200,
+        cache: 'no-store',
+        cuerpo: { ultimo: 322, siguiente: 323, tope: 1322 },
+      });
+      expect(m.db.prepare('SELECT siguiente_cotizacion AS n FROM correlativos').get()).toEqual({ n: 323 });
+      // Tras emitir con el tope, el rango avanza desde ahí.
+      expect((await m.sobre(m.admin, q, { tipo: 'emitir', numero: 1322 })).status).toBe(200);
+      expect((await numeracion(m.admin)).cuerpo).toEqual({ ultimo: 1322, siguiente: 1323, tope: 2322 });
+      const invalido = await m.accion.GET(m.peticion('/api/accion?numeracion=si', { cookie: m.admin }));
+      expect(invalido.status).toBe(400);
+    } finally {
+      m.cerrar();
+    }
+  });
+});
+
 describe('#38 · diagnóstico del chat (I5)', () => {
   const chat = (cuerpo: unknown) =>
     Response.json({

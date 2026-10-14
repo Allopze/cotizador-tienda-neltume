@@ -17,7 +17,7 @@ import type {
   ResumenCotizacion,
   TipoEvento,
 } from '../negocio/estado';
-import { cantidadFlete, leerEstadoOperativo, type EstadoOperativo } from '../negocio/estado';
+import { cantidadFlete, etiquetaComercial, etiquetaOperativo, leerEstadoOperativo, type EstadoOperativo } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { descuentoEsManual } from '../negocio/descuento-cantidad';
 import { REGLAS, type ReglasComerciales } from '../negocio/precios';
@@ -67,6 +67,12 @@ export interface FiltrosListado {
   /** YYYY-MM-DD inclusive, sobre la fecha de emisión o, si no hay, la de creación (hora de Chile). */
   desde?: string;
   hasta?: string;
+  /** Seguimiento comercial tal como lo muestra el historial (una anulada cuenta como «rechazada»). */
+  comerciales?: EstadoComercial[];
+  /** Estado operativo tal como lo muestra el historial (sin dato, «sin nota de pedido»). */
+  operativos?: EstadoOperativo[];
+  /** Quien creó la cotización (`creadaPor`), exacto. */
+  vendedora?: string;
   pagina?: number;
   porPagina?: number;
 }
@@ -829,6 +835,24 @@ export function guardarEstadoCompleto(db: Database.Database, estado: Estado) {
   }).immediate();
 }
 
+/** Cuánto puede saltar un número de cotización elegido a mano sobre el último usado o reservado. */
+export const SALTO_MAXIMO_NUMERO = 1000;
+/** Días que un borrador eliminado queda en la papelera antes de que `limpiar-borradores` lo borre (su `--dias`). */
+export const DIAS_PAPELERA = 30;
+
+/**
+ * Último número de cotización usado o reservado (el mayor entre el correlativo y los guardados): un número a mano
+ * debe ser mayor que él y no superarlo en más de `SALTO_MAXIMO_NUMERO`.
+ */
+function numeracionCotizacion(db: Database.Database) {
+  const correlativo = db.prepare('SELECT siguiente_cotizacion FROM correlativos WHERE id = 1').get() as
+    | { siguiente_cotizacion: number }
+    | undefined;
+  if (!correlativo) throw new Error('Faltan los correlativos en la base SQLite.');
+  const maximo = (db.prepare('SELECT COALESCE(MAX(numero), 0) AS n FROM cotizaciones').get() as { n: number }).n;
+  return { siguiente_cotizacion: correlativo.siguiente_cotizacion, ultimo: Math.max(maximo, correlativo.siguiente_cotizacion - 1) };
+}
+
 function correlativos(db: Database.Database) {
   const fila = db
     .prepare('SELECT siguiente_cotizacion, siguiente_nota FROM correlativos WHERE id = 1')
@@ -1023,23 +1047,16 @@ export class Unidad {
   }
 
   private siguienteCotizacion(numeroSolicitado?: number) {
-    const correlativo = this.db
-      .prepare('SELECT siguiente_cotizacion FROM correlativos WHERE id = 1')
-      .get() as { siguiente_cotizacion: number } | undefined;
-    if (!correlativo) throw new Error('Faltan los correlativos en la base SQLite.');
-    const maximo = (
-      this.db.prepare('SELECT COALESCE(MAX(numero), 0) AS n FROM cotizaciones').get() as { n: number }
-    ).n;
-    const ultimo = Math.max(maximo, correlativo.siguiente_cotizacion - 1);
+    const { siguiente_cotizacion, ultimo } = numeracionCotizacion(this.db);
     const numero = numeroSolicitado ?? ultimo + 1;
-    if (!Number.isSafeInteger(numero) || numero <= ultimo || numero > ultimo + 1000)
+    if (!Number.isSafeInteger(numero) || numero <= ultimo || numero > ultimo + SALTO_MAXIMO_NUMERO)
       throw new ErrorConflicto(
-        `El número de cotización debe ser entero y mayor que el último usado (${ultimo}) y no superar ${ultimo + 1000}.`,
+        `El número de cotización debe ser entero y mayor que el último usado (${ultimo}) y no superar ${ultimo + SALTO_MAXIMO_NUMERO}.`,
         'numero_invalido',
       );
     this.db
       .prepare('UPDATE correlativos SET siguiente_cotizacion = ? WHERE id = 1')
-      .run(Math.max(correlativo.siguiente_cotizacion, numero + 1));
+      .run(Math.max(siguiente_cotizacion, numero + 1));
     return numero;
   }
 
@@ -1127,6 +1144,23 @@ export class Almacen {
     return correlativos(this.db);
   }
 
+  /** Para el diálogo de emisión: último número usado y rango de un número elegido a mano. Solo lectura. */
+  numeracion() {
+    const { ultimo } = numeracionCotizacion(this.db);
+    return { ultimo, siguiente: ultimo + 1, tope: ultimo + SALTO_MAXIMO_NUMERO };
+  }
+
+  /** Quienes crearon cotizaciones (`creada_por`), para filtrar el historial por vendedora. */
+  vendedoras(): string[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT DISTINCT creada_por AS nombre FROM cotizaciones WHERE COALESCE(TRIM(creada_por), '') <> '' ORDER BY creada_por COLLATE NOCASE",
+        )
+        .all() as { nombre: string }[]
+    ).map((f) => f.nombre);
+  }
+
   obtener(id: string): Cotizacion | null {
     return cargarUna(this.db, id);
   }
@@ -1187,35 +1221,63 @@ export class Almacen {
    * restaurarlos. Una entrada ilegible no se puede restaurar: se omite.
    */
   papelera(limite = 200): BorradorEnPapelera[] {
+    return this.listarPapelera({ porPagina: limite }).borradores;
+  }
+
+  /**
+   * Página de la papelera de borradores, con búsqueda en el servidor por cliente, comuna, proyecto o producto
+   * (sin tildes ni mayúsculas, todas las palabras). El total cuenta solo las entradas legibles que coinciden: la
+   * papelera se vacía a los `DIAS_PAPELERA` días, así que recorrerla entera es acotado.
+   */
+  listarPapelera(filtros: { q?: string; pagina?: number; porPagina?: number } = {}): {
+    borradores: BorradorEnPapelera[];
+    total: number;
+    pagina: number;
+    porPagina: number;
+  } {
+    const porPagina = Math.min(Math.max(Math.trunc(filtros.porPagina ?? 50), 1), 200);
+    const pagina = Math.max(Math.trunc(filtros.pagina ?? 1), 1);
+    const terminos = normalizarTexto(filtros.q ?? '').split(' ').filter(Boolean).slice(0, 8);
+    const desde = (pagina - 1) * porPagina;
+    const borradores: BorradorEnPapelera[] = [];
+    let total = 0;
     const filas = this.db
-      .prepare(
-        "SELECT contenido, eliminada FROM papelera WHERE tipo = 'borrador' ORDER BY eliminada DESC, id LIMIT ?",
-      )
-      .all(Math.min(Math.max(Math.trunc(limite), 1), 500)) as { contenido: string; eliminada: string }[];
-    return filas.flatMap((f) => {
+      .prepare("SELECT contenido, eliminada FROM papelera WHERE tipo = 'borrador' ORDER BY eliminada DESC, id")
+      .iterate() as Iterable<{ contenido: string; eliminada: string }>;
+    for (const f of filas) {
       let leida;
       try {
         leida = cotizacionSchema.safeParse(JSON.parse(f.contenido));
       } catch {
-        return [];
+        continue;
       }
-      if (!leida.success) return [];
+      if (!leida.success) continue;
       const q = leida.data;
-      return [
-        {
-          id: q.id,
-          actualizada: q.actualizada,
-          eliminada: f.eliminada,
-          creada: q.creada,
-          creadaPor: q.creadaPor,
-          cliente: { nombre: q.cliente.nombre, comuna: q.cliente.comuna, proyecto: q.cliente.proyecto },
-          items: q.solicitudes.length,
-          productos: resumenProductos(q.solicitudes),
-          origen: q.origen ?? null,
-          total: q.montos.total,
-        },
-      ];
-    });
+      const productos = resumenProductos(q.solicitudes);
+      if (terminos.length) {
+        const texto = normalizarTexto(
+          [q.cliente.nombre, q.cliente.comuna, q.cliente.proyecto, q.cliente.rut, q.cliente.telefono, productos]
+            .filter(Boolean)
+            .join(' '),
+        );
+        if (!terminos.every((t) => texto.includes(t))) continue;
+      }
+      total++;
+      if (total <= desde || borradores.length >= porPagina) continue;
+      borradores.push({
+        id: q.id,
+        actualizada: q.actualizada,
+        eliminada: f.eliminada,
+        creada: q.creada,
+        creadaPor: q.creadaPor,
+        cliente: { nombre: q.cliente.nombre, comuna: q.cliente.comuna, proyecto: q.cliente.proyecto },
+        items: q.solicitudes.length,
+        productos,
+        origen: q.origen ?? null,
+        total: q.montos.total,
+      });
+    }
+    return { borradores, total, pagina, porPagina };
   }
 
   /** Entradas de la papelera (borradores y productos manuales) eliminadas hace más de `dias` días. */
@@ -1346,6 +1408,24 @@ export class Almacen {
     if (filtros.hasta) {
       condiciones.push(`${FECHA_REFERENCIA} < ?`);
       params.push(inicioDiaSantiago(sumarDiasCalendario(filtros.hasta, 1)));
+    }
+    const comerciales = (filtros.comerciales ?? []).filter((e) => e in etiquetaComercial);
+    if (comerciales.length) {
+      condiciones.push(
+        `(CASE WHEN c.estado = 'anulada' THEN 'rechazada' ELSE c.estado_comercial END) IN (${comerciales.map(() => '?').join(', ')})`,
+      );
+      params.push(...comerciales);
+    }
+    const operativos = (filtros.operativos ?? []).filter((e) => e in etiquetaOperativo);
+    if (operativos.length) {
+      condiciones.push(
+        `(CASE WHEN c.estado_operativo = 'produccion_terminada' THEN 'en_produccion' ELSE COALESCE(c.estado_operativo, 'sin_pedido') END) IN (${operativos.map(() => '?').join(', ')})`,
+      );
+      params.push(...operativos);
+    }
+    if (filtros.vendedora?.trim()) {
+      condiciones.push('c.creada_por = ?');
+      params.push(filtros.vendedora.trim());
     }
     if (filtros.vencenPronto) {
       condiciones.push("c.estado = 'emitida' AND c.vence >= ? AND c.vence <= ?");

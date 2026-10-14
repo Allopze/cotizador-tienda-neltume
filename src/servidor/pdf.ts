@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import type Database from 'better-sqlite3';
 import { copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { etiquetaDescuento } from '../negocio/descuento-cantidad';
 import type { Cotizacion, Despacho } from '../negocio/estado';
 import { CODIGO_FLETE, cantidadFlete, descripcionFlete, sinTransportista, unitarioFlete } from '../negocio/estado';
@@ -173,9 +173,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     ? `Cotización válida hasta el ${fechaChilena(doc.vence)} (${reglas.vigenciaDiasHabiles} días hábiles).`
     : `Cotización válida por ${reglas.vigenciaDiasHabiles} días hábiles.`;
   const empresa = datosEmpresa(db);
-  const logo = empresa.logoSvg
-    ? Buffer.from(empresa.logoSvg, 'utf8')
-    : await readFile(join(process.cwd(), 'public/logo-neltume.svg'));
+  // El logo va como referencia: el HTML que se guarda como snapshot de cada documento no repite el SVG en base64.
+  const logo = registrarLogo(await logoVigente(db));
   const observaciones = doc.observaciones ?? q.observaciones;
   const datosNeltume = [
     empresa.nombre && `<b>${esc(empresa.nombre)}</b>`,
@@ -256,12 +255,71 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}.totales .original b{font-weight:400}.totales .ahorro,.descuento-item{color:#8a5a37}s.original{color:#6b716b;font-size:9px}
     footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6}.bloque{break-inside:avoid;margin-bottom:18px}.bloque p{margin:2px 0}.firmas{display:flex;gap:28px;margin-top:34px}.firma{flex:1;font-size:9px;color:#4a524a}.firma span{display:block;border-top:1px solid #242a24;margin-bottom:4px}.linea{display:flex;gap:8px;align-items:baseline;margin-bottom:12px}.linea span{flex:1;border-bottom:1px solid #9a9f98;height:12px}.observaciones{border:1px solid #9a9f98;min-height:64px;padding:6px 8px}.contacto{color:#4a524a}
     .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}.por-definir{font-size:9px;color:#4a524a;text-align:right;margin:-12px 0 20px}
-    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="data:image/svg+xml;base64,${logo.toString('base64')}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
+    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="${logo}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
     <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
     <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
     ${filas.map(filaProducto).join('')}${montos.flete ? `<tr><td>${filas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
     <div class="totales">${totales}</div>${porDefinir.length ? '<p class="por-definir">Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.</p>' : ''}
     <footer>${cierre}<p class="contacto">Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
+}
+
+/**
+ * Logo de los documentos. La plantilla escribe `src="neltume-logo:<sha256>"` en lugar del SVG en base64, y el SVG se
+ * inyecta justo antes de imprimir. Así `documentos_snapshot` guarda unos pocos bytes por documento en vez del logo
+ * completo (que con un logo administrable puede pesar cientos de KB por cada PDF emitido).
+ *
+ * Al emitir, la impresión usa exactamente el logo con que se armó la plantilla (lo recuerda este proceso). Al
+ * regenerar un PDF desde su snapshot se usa el logo vigente: el guardado en Ajustes en ese momento o, si no hay, el
+ * publicado (public/logo-neltume.svg). Si el logo no cambió, el documento regenerado es idéntico al emitido.
+ */
+const REFERENCIA_LOGO = /src="neltume-logo:([0-9a-f]{64})"/g;
+const MAX_LOGOS_RECORDADOS = 16;
+const logosRecordados = new Map<string, Buffer>();
+
+/** SVG del logo vigente: el de la configuración del negocio o el publicado. */
+export async function logoVigente(db: Database.Database = abrirBaseDatos()): Promise<Buffer> {
+  const svg = datosEmpresa(db).logoSvg;
+  return svg ? Buffer.from(svg, 'utf8') : readFile(join(process.cwd(), 'public/logo-neltume.svg'));
+}
+
+/** Referencia `neltume-logo:<sha256>` del logo; el contenido queda en memoria para la impresión inmediata. */
+export function referenciaLogo(contenido: Buffer) {
+  return `neltume-logo:${createHash('sha256').update(contenido).digest('hex')}`;
+}
+
+function registrarLogo(contenido: Buffer) {
+  const referencia = referenciaLogo(contenido);
+  const hash = referencia.slice('neltume-logo:'.length);
+  logosRecordados.delete(hash);
+  logosRecordados.set(hash, contenido);
+  while (logosRecordados.size > MAX_LOGOS_RECORDADOS) logosRecordados.delete(logosRecordados.keys().next().value!);
+  return referencia;
+}
+
+/**
+ * Reemplaza las referencias al logo por el SVG en base64. Con `logo`, usa ese (el vigente, al regenerar); sin él, el
+ * recordado de la plantilla y, si este proceso no lo conoce, el vigente de la base activa.
+ */
+export async function inyectarLogo(html: string, logo?: Buffer): Promise<string> {
+  const hashes = new Set([...html.matchAll(REFERENCIA_LOGO)].map((m) => m[1]));
+  if (!hashes.size) return html;
+  const contenidos = new Map<string, Buffer>();
+  for (const hash of hashes) contenidos.set(hash, logo ?? logosRecordados.get(hash) ?? (await logoVigente()));
+  return html.replace(
+    REFERENCIA_LOGO,
+    (_, hash: string) => `src="data:image/svg+xml;base64,${contenidos.get(hash)!.toString('base64')}"`,
+  );
+}
+
+/**
+ * Quita el logo en base64 de un HTML guardado antes de usar referencias (la limpieza compacta los snapshots
+ * antiguos). Devuelve el mismo texto si no hay nada que compactar.
+ */
+export function compactarLogo(html: string) {
+  return html.replace(
+    /<img alt="Neltume" src="data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)">/g,
+    (_, base64: string) => `<img alt="Neltume" src="${referenciaLogo(Buffer.from(base64, 'base64'))}">`,
+  );
 }
 
 // Un solo Chromium reutilizado entre documentos: lanzarlo cuesta más que imprimir. Se cierra tras un
@@ -347,11 +405,18 @@ function programarCierre() {
  * Genera el PDF con un plazo total, fuera del bloqueo del estado. Nunca sobrescribe un documento
  * existente (link falla con EEXIST) y deja el archivo solo legible por el proceso.
  */
-export async function generarPdf(directorio: string, archivo: string, html: string, plazoMs = PLAZO_PDF_MS) {
+export async function generarPdf(
+  directorio: string,
+  archivo: string,
+  html: string,
+  plazoMs = PLAZO_PDF_MS,
+  opciones: { /** Imprime el logo vigente de esta base (al regenerar desde un snapshot). */ logoDe?: Database.Database } = {},
+) {
   const carpeta = join(directorio, 'pdf');
   await mkdir(carpeta, { recursive: true, mode: 0o700 });
   await chmod(carpeta, 0o700);
   const temporal = join(carpeta, `.${randomUUID()}.pdf`);
+  const documento = await inyectarLogo(html, opciones.logoDe && (await logoVigente(opciones.logoDe)));
   let pagina: Page | undefined;
   let vencido = false;
   let temporizador: NodeJS.Timeout | undefined;
@@ -364,7 +429,7 @@ export async function generarPdf(directorio: string, archivo: string, html: stri
     pagina = page;
     page.setDefaultTimeout(plazoMs);
     await page.route('**/*', (route) => route.abort());
-    await page.setContent(html, { waitUntil: 'load', timeout: plazoMs });
+    await page.setContent(documento, { waitUntil: 'load', timeout: plazoMs });
     await page.pdf({
       path: temporal,
       format: 'A4',

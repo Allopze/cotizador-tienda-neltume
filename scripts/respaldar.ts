@@ -42,9 +42,12 @@ async function main() {
   // Solo PDF terminados: los temporales de una emisión en curso empiezan con punto.
   const pdf = join(directorioDatos(), 'pdf');
   let documentos = 0;
+  // Con la fecha original: así la copia a otro disco (respaldo-diario.sh, rsync --link-dest) reconoce los PDF que no
+  // cambiaron y los enlaza en vez de duplicarlos.
   if (await existe(pdf))
     await cp(pdf, join(carpeta, 'pdf'), {
       recursive: true,
+      preserveTimestamps: true,
       filter: (origen) => {
         const nombre = basename(origen);
         if (origen === pdf) return true;
@@ -59,6 +62,7 @@ async function main() {
   if (await existe(referencias))
     await cp(referencias, join(carpeta, 'referencias'), {
       recursive: true,
+      preserveTimestamps: true,
       filter: (origen) => {
         if (origen === referencias) return true;
         if (!ARCHIVO_REFERENCIA.test(basename(origen))) return false;

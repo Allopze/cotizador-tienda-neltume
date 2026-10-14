@@ -17,12 +17,56 @@ const nuevaCuentaSchema = z
 
 const sinCache = { 'Cache-Control': 'no-store' };
 
+// Contraseña de quien hace el cambio: se exige para cambiar el correo o la contraseña de una cuenta.
+const passwordActual = z.string().max(128).optional();
+
 const accionUsuarioSchema = z.discriminatedUnion('accion', [
-  z.object({ accion: z.literal('editar'), id: z.string().min(1), nombre: z.string().trim().min(1).max(120), email: z.string().trim().toLowerCase().email().max(254) }).strict(),
+  z.object({ accion: z.literal('editar'), id: z.string().min(1), nombre: z.string().trim().min(1).max(120), email: z.string().trim().toLowerCase().email().max(254), passwordActual }).strict(),
   z.object({ accion: z.literal('activar'), id: z.string().min(1) }).strict(),
   z.object({ accion: z.literal('desactivar'), id: z.string().min(1) }).strict(),
-  z.object({ accion: z.literal('restablecer-clave'), id: z.string().min(1), password: z.string().min(8).max(128) }).strict(),
+  z.object({ accion: z.literal('restablecer-clave'), id: z.string().min(1), password: z.string().min(8).max(128), passwordActual }).strict(),
 ]);
+
+// Confirmaciones fallidas por cuenta: con una sesión robada no se puede probar contraseñas sin límite.
+const MAX_CONFIRMACIONES_FALLIDAS = 5;
+const VENTANA_CONFIRMACION_MS = 15 * 60 * 1000;
+const confirmacionesFallidas = new Map<string, { cantidad: number; desde: number }>();
+
+type Contexto = Awaited<typeof auth.$context>;
+
+/**
+ * Cambiar el correo o la contraseña de una cuenta permite tomarla: con una sesión ajena abierta en un equipo
+ * compartido bastaría un clic. Por eso se pide la contraseña de quien hace el cambio. Devuelve la respuesta de error
+ * o `null` si la confirmación es correcta.
+ */
+async function rechazoConfirmacion(contexto: Contexto, actorId: string, password: string | undefined) {
+  const ahora = Date.now();
+  const registro = confirmacionesFallidas.get(actorId);
+  if (registro && ahora - registro.desde > VENTANA_CONFIRMACION_MS) confirmacionesFallidas.delete(actorId);
+  if ((confirmacionesFallidas.get(actorId)?.cantidad ?? 0) >= MAX_CONFIRMACIONES_FALLIDAS)
+    return Response.json(
+      { error: 'Demasiados intentos con una contraseña incorrecta. Espera unos minutos.', codigo: 'confirmar_clave' },
+      { status: 429, headers: sinCache },
+    );
+  if (!password)
+    return Response.json(
+      { error: 'Escribe tu contraseña para confirmar el cambio.', codigo: 'confirmar_clave' },
+      { status: 400, headers: sinCache },
+    );
+  const cuenta = await contexto.internalAdapter.findCredentialAccount(actorId);
+  const correcta = !!cuenta?.password && (await contexto.password.verify({ hash: cuenta.password, password }));
+  if (correcta) {
+    confirmacionesFallidas.delete(actorId);
+    return null;
+  }
+  const vigente = confirmacionesFallidas.get(actorId);
+  if (vigente) vigente.cantidad += 1;
+  else confirmacionesFallidas.set(actorId, { cantidad: 1, desde: ahora });
+  return Response.json(
+    { error: 'Tu contraseña no es correcta.', codigo: 'confirmar_clave' },
+    { status: 403, headers: sinCache },
+  );
+}
 
 async function listarUsuarios() {
   const contexto = await auth.$context;
@@ -75,6 +119,14 @@ export async function PATCH(req: Request) {
     const cuenta = objetivo as typeof objetivo & { role?: string | null; banned?: boolean };
     const actor = sesion.usuario.email;
     let descripcionObjetivo = objetivo.email;
+    const cambiaAcceso =
+      parsed.data.accion === 'restablecer-clave' ||
+      (parsed.data.accion === 'editar' && parsed.data.email !== objetivo.email.toLowerCase());
+    if (cambiaAcceso) {
+      const confirmacion = 'passwordActual' in parsed.data ? parsed.data.passwordActual : undefined;
+      const rechazo = await rechazoConfirmacion(contexto, sesion.usuario.id, confirmacion);
+      if (rechazo) return rechazo;
+    }
     if (parsed.data.accion === 'editar') {
       const existente = await contexto.internalAdapter.findUserByEmail(parsed.data.email);
       if (existente && existente.user.id !== objetivo.id)

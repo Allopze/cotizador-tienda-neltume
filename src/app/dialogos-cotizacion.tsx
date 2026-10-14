@@ -1,10 +1,11 @@
 'use client';
-import { useCallback, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Dialogo } from './dialogo';
 import type { Despacho } from './contrato';
 import { fechaLarga, numeroCotizacion } from './formato';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import { pesos } from '@/negocio/precios';
+import { pedirJSON } from './solicitud';
 
 // Diálogos con formulario que devuelven una promesa, como useConfirmacion.
 
@@ -164,6 +165,30 @@ export function useEmision() {
   return [pedir, elemento] as const;
 }
 
+/** Último número de cotización usado o reservado y el rango de un número elegido a mano (`GET ?numeracion=1`). */
+export interface Numeracion {
+  ultimo: number;
+  siguiente: number;
+  tope: number;
+}
+
+/**
+ * Error del número escrito en el diálogo de emisión, o null si sirve. Sin la numeración (no llegó), solo se
+ * revisa que sea un entero positivo: el servidor vuelve a validar el rango al emitir.
+ */
+export function errorNumeroManual(escrito: string, numeracion: Numeracion | null): string | null {
+  if (!escrito) return null;
+  if (!/^\d+$/.test(escrito) || Number(escrito) <= 0) return 'El número debe ser un entero positivo.';
+  if (!numeracion) return null;
+  const n = Number(escrito);
+  const miles = (x: number) => x.toLocaleString('es-CL');
+  if (n <= numeracion.ultimo)
+    return `El N° ${miles(n)} ya se usó o quedó reservado: elige uno desde el ${miles(numeracion.siguiente)}.`;
+  if (n > numeracion.tope)
+    return `El número puede saltar hasta 1.000 sobre el último: elige uno entre el ${miles(numeracion.siguiente)} y el ${miles(numeracion.tope)}.`;
+  return null;
+}
+
 function FormEmision({
   datos,
   responder,
@@ -175,13 +200,24 @@ function FormEmision({
 }) {
   const [numero, setNumero] = useState('');
   const [error, setError] = useState('');
+  // Último número y tope, para mostrarlos y validar antes de enviar. Si no llegan, el servidor valida igual.
+  const [numeracion, setNumeracion] = useState<Numeracion | null>(null);
+  useEffect(() => {
+    if (!datos.numeroManual) return;
+    const control = new AbortController();
+    pedirJSON<Numeracion>('/api/accion?numeracion=1', { signal: control.signal, cache: 'no-store' })
+      .then(setNumeracion)
+      .catch(() => {});
+    return () => control.abort();
+  }, [datos.numeroManual]);
   // «1.250» se lee como 1250: los puntos de miles no hacen inválido el número.
   const escrito = datos.numeroManual ? numero.replace(/[.\s]/g, '') : '';
-  const valido = /^\d+$/.test(escrito) && Number(escrito) > 0;
+  const fueraDeRango = errorNumeroManual(escrito, numeracion);
+  const valido = !!escrito && !fueraDeRango;
   function enviar(e: FormEvent) {
     e.preventDefault();
-    if (escrito && !valido) {
-      setError('El número debe ser un entero positivo.');
+    if (fueraDeRango) {
+      setError(fueraDeRango);
       return;
     }
     responder({ numero: escrito ? Number(escrito) : null });
@@ -215,10 +251,21 @@ function FormEmision({
         ) : null}
         {datos.numeroManual ? (
           <>
-            <p>Si dejas el número vacío se asignará el siguiente número disponible.</p>
             <p>
-              Un número a mano debe ser mayor que el último usado o reservado y no superarlo en más de 1.000.
+              Si dejas el número vacío se asignará el siguiente número disponible
+              {numeracion ? <> (N° {numeracion.siguiente.toLocaleString('es-CL')})</> : null}.
             </p>
+            {numeracion ? (
+              <p id="emision-rango">
+                Último número usado o reservado: <strong>N° {numeracion.ultimo.toLocaleString('es-CL')}</strong>. Un
+                número a mano puede ir del {numeracion.siguiente.toLocaleString('es-CL')} al{' '}
+                {numeracion.tope.toLocaleString('es-CL')}.
+              </p>
+            ) : (
+              <p id="emision-rango">
+                Un número a mano debe ser mayor que el último usado o reservado y no superarlo en más de 1.000.
+              </p>
+            )}
           </>
         ) : (
           <p>Se le asignará el siguiente número disponible.</p>
@@ -246,7 +293,9 @@ function FormEmision({
               autoComplete="off"
               maxLength={13}
               aria-invalid={error ? true : undefined}
-              aria-describedby={error ? 'emision-numero-error' : valido ? 'emision-salto' : undefined}
+              aria-describedby={
+                error ? 'emision-numero-error' : valido ? 'emision-salto emision-rango' : 'emision-rango'
+              }
             />
           </label>
           {error && (

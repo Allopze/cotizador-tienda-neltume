@@ -8,6 +8,9 @@
 # 1. npm run respaldar dentro del contenedor (base, PDF, referencias y configuración; conserva los 30 últimos).
 # 2. npm run limpiar-borradores -- --confirmar (borradores vacíos abandonados, papelera vieja, referencias huérfanas).
 # 3. Copia la carpeta del respaldo recién hecho a <carpeta-en-otro-disco> y deja ahí las N más recientes (30).
+#    La copia usa rsync --link-dest contra la copia anterior: un PDF que no cambió (los emitidos no cambian nunca) se
+#    enlaza en vez de duplicarse, así que 30 copias ocupan poco más que una. Cada carpeta sigue siendo un respaldo
+#    completo: borrar una no afecta a las demás.
 # La carpeta de destino debe quedar FUERA de la instalación: lo que esté dentro se reemplaza al actualizar.
 set -eu
 
@@ -29,6 +32,7 @@ esac
 
 instalacion="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$instalacion/compose.yaml" ] || fallar "no encuentro compose.yaml en $instalacion."
+command -v rsync >/dev/null 2>&1 || fallar 'falta el comando rsync en el servidor.'
 mkdir -p "$destino"
 destino="$(cd "$destino" && pwd)"
 case "$destino/" in
@@ -45,8 +49,23 @@ carpeta="$(printf '%s\n' "$salida" | sed -n 's/^Respaldo en \([^:]*\):.*/\1/p' |
 docker compose exec -T cotizador npm run --silent limpiar-borradores -- --confirmar ||
   informar 'AVISO: la limpieza de borradores falló; el respaldo sí se hizo.'
 
-docker compose cp "cotizador:$carpeta" "$destino/" || fallar "no se pudo copiar $carpeta a $destino."
-informar "Respaldo copiado a $destino/$(basename "$carpeta")."
+nombre="$(basename "$carpeta")"
+# La copia anterior (la más reciente que ya está en el destino) sirve de base para enlazar lo que no cambió.
+anterior="$(ls -1d "$destino"/cotizador-* 2>/dev/null | grep -v "/$nombre\$" | sort | tail -n 1 || true)"
+# Se baja primero a una carpeta temporal del mismo disco: docker compose cp no sabe enlazar.
+entrante="$destino/.entrante-$nombre"
+rm -rf "$entrante"
+trap 'rm -rf "$entrante"' EXIT
+mkdir -p "$entrante"
+docker compose cp "cotizador:$carpeta" "$entrante/" || fallar "no se pudo copiar $carpeta a $destino."
+if [ -n "$anterior" ]; then
+  rsync -a --delete --link-dest="$anterior" "$entrante/$nombre/" "$destino/$nombre/" ||
+    fallar "no se pudo copiar $carpeta a $destino."
+else
+  rsync -a --delete "$entrante/$nombre/" "$destino/$nombre/" || fallar "no se pudo copiar $carpeta a $destino."
+fi
+rm -rf "$entrante"
+informar "Respaldo copiado a $destino/$nombre${anterior:+ (lo que no cambió, enlazado con $(basename "$anterior"))}."
 
 # Conserva en el otro disco solo los N respaldos más recientes (los nombres llevan la fecha y se ordenan solos).
 ls -1d "$destino"/cotizador-* 2>/dev/null | sort -r | tail -n +"$((conservar + 1))" | while IFS= read -r viejo; do

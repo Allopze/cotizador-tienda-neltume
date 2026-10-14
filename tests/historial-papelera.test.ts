@@ -72,7 +72,7 @@ describe('Historial → Papelera', () => {
   it('lista los borradores eliminados con cliente e ítems, y al restaurarlos salen de la papelera', async () => {
     const m = await montar();
     const q = (await m.servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza 2 MOLCO para Ana Soto' })).cotizacion;
-    expect((await m.papelera()).cuerpo).toEqual({ borradores: [] });
+    expect((await m.papelera()).cuerpo).toEqual({ borradores: [], total: 0, pagina: 1, porPagina: 50, plazoDias: 30 });
     await m.servicio.ejecutar({ tipo: 'eliminar', id: q.id, actualizada: q.actualizada });
 
     const r = await m.papelera();

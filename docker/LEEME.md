@@ -12,6 +12,7 @@ Resumen de comandos en el servidor (desde la carpeta de instalación):
 | ---------------------------- | ------------------------------------------------------------------- |
 | Ver el estado                | `docker compose ps` y `docker compose logs --tail=100 cotizador`    |
 | Actualizar con un ZIP nuevo  | `sh scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip`      |
+| Actualizar desde una URL     | `sh scripts/actualizar.sh https://…/neltume-cotizador-<fecha>.zip`  |
 | Volver a la versión anterior | `sh scripts/actualizar.sh --volver`                                 |
 | Respaldar ahora              | `docker compose exec cotizador npm run respaldar`                   |
 | Restaurar un respaldo        | ver [Restaurar](#restaurar)                                         |
@@ -36,10 +37,15 @@ evaluación pruebe lo que se va a usar.
 ## Despliegue directo por SSH
 
 `npm run deploy` sube el código a `chome:/srv/cotizador-neltume` por SSH, respalda los datos si el cotizador
-ya está corriendo, conserva el `.env` del servidor, sincroniza el resto y ejecuta
-`docker compose up -d --build --wait`. La sincronización borra en el servidor lo que ya no existe en la
+ya está corriendo, conserva el `.env` del servidor, guarda la versión anterior en `.version-anterior/` (como
+`scripts/actualizar.sh`: el código y una copia del respaldo recién tomado), sincroniza el resto, construye con
+`docker compose build --pull` (la imagen base trae sus parches de seguridad) y ejecuta
+`docker compose up -d --wait`. La sincronización borra en el servidor lo que ya no existe en la
 entrega, **salvo** `.env`, las carpetas `respaldos*`, `compose.override.yaml`, `cron/` y `.version-anterior/`
-(lo mismo que conserva `scripts/actualizar.sh`). Requiere acceso SSH sin contraseña, y `unzip`, `rsync` y
+(lo mismo que conserva `scripts/actualizar.sh`). Si el build falla, deja los archivos como estaban; si la versión
+nueva no pasa el chequeo de salud, se vuelve con `sh scripts/actualizar.sh --volver` en el servidor. Si el
+cotizador no estaba corriendo no hay respaldo previo, así que se borra `.version-anterior/` (no queda una versión
+vieja a la que volver por error). Requiere acceso SSH sin contraseña, y `unzip`, `rsync` y
 Docker Compose en el servidor. Al final borra las imágenes viejas del cotizador. En el primer despliegue crea
 el `.env` con un secreto nuevo y `NELTUME_PORT=3010`; si no pasaste `--url`, se detiene hasta que completes
 `BETTER_AUTH_URL` y `NELTUME_HOSTS` en ese archivo.
@@ -62,6 +68,13 @@ servicio `http://cotizador:3000` y, en el `.env` del servidor:
 COMPOSE_PROFILES=tunel
 CLOUDFLARE_TUNNEL_TOKEN=<token del túnel>
 ```
+
+El token llega solo al contenedor `tunel`: el del cotizador recibe únicamente las variables de la aplicación
+(ver [Variables de entorno](#variables-de-entorno)). La imagen `cloudflare/cloudflared` tiene una **versión fija**
+en `compose.yaml` (no `latest`), para que el túnel no cambie sin que nadie lo decida. Para actualizarla cada
+pocos meses, o cuando Cloudflare avise que la versión está por dejar de recibir soporte: busca la última etiqueta
+`AAAA.M.P` en <https://hub.docker.com/r/cloudflare/cloudflared/tags>, cámbiala en `compose.yaml` (en el
+repositorio, para que la próxima entrega la lleve) y, en el servidor, aplica con `docker compose up -d tunel`.
 
 ## Generar la entrega como ZIP
 
@@ -109,7 +122,16 @@ completar también los datos de la empresa y Starken. Si trabajas directamente d
 
 Al iniciar, el contenedor **se niega a arrancar** con un mensaje claro en el registro si `BETTER_AUTH_SECRET`
 falta o tiene menos de 32 caracteres, si `BETTER_AUTH_URL` no empieza con `https://` o si `NELTUME_IP_HEADER`
-tiene un valor desconocido. Corrige `.env` y repite `docker compose up -d`.
+tiene un valor desconocido (sin distinguir mayúsculas, como la aplicación). Corrige `.env` y repite
+`docker compose up -d`.
+
+### Variables de entorno
+
+`compose.yaml` no pasa el `.env` completo al cotizador: lista en `environment:` cada variable que usa la
+aplicación (sesiones, IA, datos de la empresa, Starken, catálogo y feriados), con los mismos valores por omisión
+que la aplicación. Así, lo que el `.env` tenga para otros servicios (como `CLOUDFLARE_TUNNEL_TOKEN`) no entra al
+contenedor del cotizador. Si agregas al `.env` una variable que no está en esa lista, el cotizador no la ve:
+las variables nuevas de la aplicación llegan con la entrega, que ya trae el `compose.yaml` actualizado.
 
 ### Proxy HTTPS e IP de cada persona
 
@@ -208,14 +230,27 @@ Copia el ZIP nuevo al servidor y, desde cualquier carpeta:
 sh /opt/neltume-cotizador/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
 ```
 
+Si el ZIP está publicado en una dirección HTTPS (por ejemplo, un enlace de descarga directa), puedes pasar la URL
+en lugar del archivo; el script lo descarga con `curl` a una carpeta temporal y comprueba que sea un ZIP íntegro
+antes de tocar nada:
+
+```sh
+sh /opt/neltume-cotizador/scripts/actualizar.sh https://descargas.tudominio.cl/neltume-cotizador-<fecha>.zip
+```
+
+Solo acepta `https://` (la entrega es código que se instala en el servidor). Una descarga cortada o una página de
+error se rechazan sin cambiar nada.
+
 El script:
 
-1. revisa la entrega en una carpeta temporal;
+1. revisa la entrega en una carpeta temporal (descargándola antes si es una URL);
 2. respalda los datos con `npm run respaldar` dentro del contenedor (si falla, no actualiza nada);
-3. guarda el código actual en `.version-anterior/`;
+3. guarda en `.version-anterior/` el código actual y una **copia de ese respaldo** (`.version-anterior/datos/`),
+   para que `--volver` funcione aunque el respaldo ya haya rotado del volumen (se conservan 30);
 4. copia la versión nueva **sin tocar** `.env`, las carpetas `respaldos*`, `compose.override.yaml`, `cron/`
    ni `.version-anterior/` (el `.env` del ZIP trae otro secreto y se descarta);
-5. construye la imagen; si no se puede, deja los archivos como estaban y sigue corriendo la versión anterior;
+5. construye la imagen con `--pull`, para que la imagen base (Node y Chromium de Debian) traiga sus parches; si no
+   se puede, deja los archivos como estaban y sigue corriendo la versión anterior;
 6. inicia la versión nueva y espera el chequeo de salud (`/api/salud`).
 
 Si la versión nueva no pasa el chequeo, el script lo dice y muestra cómo volver:
@@ -225,8 +260,10 @@ sh /opt/neltume-cotizador/scripts/actualizar.sh --volver
 ```
 
 `--volver` detiene el cotizador, restaura los datos del respaldo tomado justo antes de actualizar (los cambios
-posteriores quedan apartados, no se borran), reinstala el código anterior y lo inicia. Pide escribir `VOLVER`
-para confirmar; desde un script, agrega `--si`.
+posteriores quedan apartados, no se borran), reinstala el código anterior y lo inicia. Si ese respaldo ya no está
+en el volumen, primero lo repone desde `.version-anterior/datos/`. Pide escribir `VOLVER` para confirmar; desde un
+script, agrega `--si`. `npm run deploy` también renueva `.version-anterior/`, así que `--volver` siempre vuelve a lo
+que había antes de la última actualización, se haya hecho con ZIP o por SSH.
 
 **Primera vez con este script:** si la instalación es anterior a `scripts/actualizar.sh`, sácalo del ZIP nuevo
 e indícale la carpeta de instalación:
@@ -248,9 +285,11 @@ y conserva los 30 más recientes. Ese volumen está en el **mismo disco** que lo
 otro disco del servidor, en una carpeta **fuera** de la instalación (lo que esté dentro se reemplaza al
 actualizar).
 
-`scripts/respaldo-diario.sh` hace las tres cosas: respalda, limpia (`npm run limpiar-borradores -- --confirmar`:
-borradores vacíos abandonados, papelera de más de 30 días y referencias del cliente que ninguna cotización usa)
-y copia el respaldo recién hecho a otro disco, donde conserva los 30 más recientes. Prepara la carpeta una vez:
+`scripts/respaldo-diario.sh` hace las tres cosas: respalda, limpia (`npm run limpiar-borradores -- --confirmar`,
+ver abajo) y copia el respaldo recién hecho a otro disco, donde conserva los 30 más recientes. La copia usa
+`rsync --link-dest` contra la copia del día anterior: los PDF que no cambiaron (los emitidos no cambian nunca) se
+enlazan en vez de duplicarse, así que 30 copias ocupan poco más que una. Cada carpeta sigue siendo un respaldo
+completo y se puede borrar sin afectar a las demás. Necesita `rsync` en el servidor. Prepara la carpeta una vez:
 
 ```sh
 sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 700 /mnt/respaldos/neltume
@@ -270,6 +309,25 @@ docker compose exec -T cotizador npm run respaldar
 docker compose exec -T cotizador npm run limpiar-borradores -- --confirmar
 docker compose cp cotizador:/app/respaldos/cotizador-<fecha> /mnt/respaldos/neltume/
 ```
+
+(La copia a mano no enlaza con la anterior: ocupa todo su tamaño.)
+
+`npm run limpiar-borradores` (sin `--confirmar` solo lista; `--dias` cambia el plazo, 30 por omisión) limpia lo que
+crece sin uso:
+
+- borradores vacíos sin actividad en el plazo (van a la papelera) y la papelera de más del plazo;
+- referencias del cliente que ninguna cotización usa;
+- el HTML guardado de los documentos (snapshots) de cotizaciones **anuladas** hace más del plazo o que ya no
+  existen; los de cotizaciones emitidas, aprobadas o reemplazadas no se tocan nunca;
+- las copias «ANULADA» de los PDF con más del plazo (se vuelven a generar si alguien las pide; el PDF original se
+  conserva);
+- los registros de auditoría de cuentas de más de un año;
+- los PDF temporales (`data/pdf/.<uuid>.pdf`) y un `data/.estado.lock` que dejó un proceso cortado;
+- además compacta los snapshots antiguos que guardaban el logo en base64 (ahora guardan una referencia).
+
+El snapshot de cada documento guarda el logo como referencia. Si se regenera un PDF borrado, se imprime con el
+logo **vigente** (el de Ajustes en ese momento o, si no hay, el publicado): mientras el logo no cambie, el PDF es
+idéntico al emitido.
 
 Si prefieres scripts de cron propios, guárdalos en `cron/` dentro de la instalación: las actualizaciones no
 tocan esa carpeta. Revisa el registro (`$HOME/neltume-respaldo.log`) la primera semana, y `/api/salud`
@@ -318,10 +376,14 @@ docker compose logs --tail=100 cotizador
 
 `/api/salud` es el chequeo de salud de Compose. Sin sesión responde solo `{"ok": true}` (200) o
 `{"ok": false}` (503): la base abre con el esquema esperado, la configuración de inicio de sesión es válida,
-quedan más de 256 MB libres en el disco de datos y Chromium está instalado. Con sesión de administradora,
+quedan más de 256 MB libres en el disco de datos y **Chromium arranca y abre una página** (con un plazo de 8 s).
+Lanzar Chromium cuesta un par de segundos, así que un arranque correcto se recuerda 10 minutos y una falla,
+1 minuto: el healthcheck corre cada 30 s pero lanza el navegador como mucho cada 10 minutos. Por eso una versión
+en la que Chromium no arranca no pasa `docker compose up --wait` al actualizar. Con sesión de administradora,
 abriendo `https://cotizador.tudominio.cl/api/salud` en el navegador, muestra además cada comprobación: versión
-del esquema, espacio libre, Chromium, si la clave de IA está configurada y se puede leer, la última
-sincronización de feriados y la fecha del último respaldo. Nunca muestra secretos.
+del esquema, espacio libre, Chromium (y cuándo se comprobó), si la clave de IA está configurada y se puede leer
+(no se llama a la IA, así que no confirma que la clave sea válida ni gasta saldo), si Starken está configurado,
+la última sincronización de feriados y la fecha del último respaldo. Nunca muestra secretos.
 
 Referencias: [servicios de Compose](https://docs.docker.com/reference/compose-file/services/),
 [volúmenes](https://docs.docker.com/reference/compose-file/volumes/) y

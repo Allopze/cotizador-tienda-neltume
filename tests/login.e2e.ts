@@ -49,3 +49,33 @@ test('una sesión vencida devuelve al login', async ({ page }) => {
   await page.reload();
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test('el formulario valida con mensajes propios ligados al campo, sin enviar', async ({ page }) => {
+  await page.goto('/login');
+  const correo = page.getByLabel('Correo electrónico');
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  await expect(correo).toHaveAttribute('aria-invalid', 'true');
+  await expect(correo).toHaveAccessibleDescription('Escribe tu correo electrónico.');
+  await expect(correo).toBeFocused();
+
+  await correo.fill('persona-sin-arroba');
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  await expect(correo).toHaveAccessibleDescription(/debe tener la forma nombre@dominio\.cl/);
+
+  await correo.fill(USUARIO_E2E);
+  await page.getByRole('button', { name: 'Ingresar' }).click();
+  const clave = page.getByLabel('Contraseña');
+  await expect(clave).toHaveAccessibleDescription('Escribe tu contraseña.');
+  await expect(clave).toBeFocused();
+  await expect(correo).not.toHaveAttribute('aria-invalid', 'true');
+  await expect(page).toHaveURL(/\/login$/);
+});
+
+test('el aviso de sesión vencida solo promete el borrador si se llegó desde el cotizador', async ({ page }) => {
+  await page.goto('/login?motivo=sesion&desde=cotizador');
+  await expect(page.locator('.login-aviso')).toHaveText('Tu sesión expiró. Vuelve a ingresar; tu borrador se conservó.');
+  await page.goto('/login?motivo=sesion&desde=historial');
+  await expect(page.locator('.login-aviso')).toHaveText('Tu sesión expiró. Vuelve a ingresar para continuar.');
+  await page.goto('/login?motivo=sesion');
+  await expect(page.locator('.login-aviso')).toHaveText('Tu sesión expiró. Vuelve a ingresar para continuar.');
+});

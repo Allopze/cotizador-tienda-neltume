@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { MAX_BYTES_REFERENCIA } from '../src/negocio/personalizados';
 import { montarInstalacion, ORIGEN } from './sesion-prueba';
@@ -92,11 +94,17 @@ describe('Subida de referencias del cliente', () => {
 });
 
 describe('Logo administrable', () => {
-  it('es público pero se sirve con CSP con sandbox, nosniff y Host validado', async () => {
+  it('exige sesión y se sirve con CSP con sandbox, nosniff y Host validado', async () => {
     const instalacion = await montarInstalacion('logo');
     desmontar = instalacion.desmontar;
+    const { cookie } = await instalacion.cuenta('admin@neltume.test');
     const { GET } = await import('../src/app/api/logo/route');
-    const respuesta = await GET(instalacion.peticion('/api/logo'));
+
+    // Sin sesión no se entrega: la pantalla de inicio de sesión usa /logo-neltume.svg.
+    const anonima = await GET(instalacion.peticion('/api/logo'));
+    expect(anonima.status).toBe(401);
+
+    const respuesta = await GET(instalacion.peticion('/api/logo', { cookie }));
     expect(respuesta.status).toBe(200);
     expect(respuesta.headers.get('content-type')).toMatch(/^image\/svg\+xml/);
     expect(respuesta.headers.get('content-security-policy')).toBe(
@@ -106,8 +114,16 @@ describe('Logo administrable', () => {
     expect(await respuesta.text()).toMatch(/<svg/);
 
     const ajeno = await GET(
-      new Request(`${ORIGEN}/api/logo`, { headers: { host: 'malicioso.example' } }),
+      new Request(`${ORIGEN}/api/logo`, { headers: { host: 'malicioso.example', cookie } }),
     );
     expect(ajeno.status).toBe(403);
+  });
+
+  it('la pantalla de inicio de sesión no depende de /api/logo', () => {
+    for (const archivo of ['src/app/login/login-form.tsx', 'src/app/login/primera-cuenta.tsx']) {
+      const fuente = readFileSync(join(process.cwd(), archivo), 'utf8');
+      expect(fuente).not.toMatch(/api\/logo/);
+      expect(fuente).toMatch(/\/logo-neltume\.svg/);
+    }
   });
 });

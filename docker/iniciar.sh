@@ -21,7 +21,9 @@ if [ "${1:-}" = node ] && [ "${2:-}" = node_modules/next/dist/bin/next ]; then
     https://?*) ;;
     *) fallar "BETTER_AUTH_URL debe ser el origen HTTPS público, por ejemplo https://cotizador.tudominio.cl (ahora: '${BETTER_AUTH_URL:-vacío}')." ;;
   esac
-  case "${NELTUME_IP_HEADER:-cf-connecting-ip}" in
+  # Como la app (cabeceraIpCliente): sin espacios alrededor y sin distinguir mayúsculas; vacía es cf-connecting-ip.
+  cabecera="$(printf '%s' "${NELTUME_IP_HEADER:-}" | tr '[:upper:]' '[:lower:]' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  case "${cabecera:-cf-connecting-ip}" in
     cf-connecting-ip | x-real-ip | x-forwarded-for | ninguna) ;;
     *) fallar "NELTUME_IP_HEADER debe ser cf-connecting-ip, x-real-ip, x-forwarded-for o ninguna (ahora: '${NELTUME_IP_HEADER}')." ;;
   esac

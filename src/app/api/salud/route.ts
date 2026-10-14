@@ -24,14 +24,14 @@ async function esAdministradora(req: Request) {
 
 /**
  * Estado del sistema. Sin sesión responde `{ ok }` con 200 o 503 (lo usa el healthcheck de Docker Compose). Con
- * sesión de administración agrega cada comprobación: base y versión de esquema, espacio libre, Chromium, clave de IA,
- * feriados y último respaldo.
+ * sesión de administración agrega cada comprobación: base y versión de esquema, espacio libre, arranque de Chromium,
+ * clave de IA legible (sin llamar a la IA), Starken, feriados y último respaldo.
  */
 export async function GET(req: Request) {
   const rechazo = rechazoAcceso(req);
   if (rechazo) return rechazo;
   const admin = await esAdministradora(req);
-  const comprobaciones = admin ? comprobacionesCompletas() : comprobacionesBasicas();
+  const comprobaciones = admin ? await comprobacionesCompletas() : await comprobacionesBasicas();
   const ok = todoBien(comprobaciones);
   return Response.json(admin ? { ok, comprobaciones } : { ok }, {
     status: ok ? 200 : 503,

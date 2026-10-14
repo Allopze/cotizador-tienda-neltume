@@ -22,5 +22,12 @@ export default async function LoginPage({
     asegurarCodigoPrimerArranque();
     return <PrimeraCuenta />;
   }
-  return <LoginForm sesionExpirada={(await searchParams).motivo === 'sesion'} />;
+  const parametros = await searchParams;
+  return (
+    <LoginForm
+      sesionExpirada={parametros.motivo === 'sesion'}
+      // La pantalla de origen se valida en el formulario contra la lista de pantallas conocidas.
+      desde={typeof parametros.desde === 'string' ? parametros.desde : null}
+    />
+  );
 }

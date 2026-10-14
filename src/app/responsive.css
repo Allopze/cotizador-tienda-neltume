@@ -305,6 +305,16 @@
     flex: 1 1 0;
     min-width: 0;
   }
+  /* Seguimiento, operación y vendedora: uno por fila, a todo el ancho, sin desbordar en 390 px. */
+  .history-seguimiento {
+    flex-direction: column;
+    width: 100%;
+  }
+  .history-seguimiento select {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
   .history-fechas input {
     width: 100%;
     min-width: 0;

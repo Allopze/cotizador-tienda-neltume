@@ -89,7 +89,9 @@ Un respaldo es una copia de la base (cotizaciones, clientes, cuentas, ajustes), 
 referencias que suben los clientes.
 
 - **Automático:** si se instaló el cron (ver `docker/LEEME.md`, «Respaldo diario y limpieza»), cada noche se
-  hace un respaldo, se limpian borradores vacíos abandonados y archivos sin uso, y se copia a otro disco.
+  hace un respaldo, se limpia lo que ya no se usa (borradores vacíos abandonados, papelera vieja, archivos sin
+  uso, copias «ANULADA» antiguas, auditoría de cuentas de más de un año) y se copia a otro disco. En el otro disco,
+  los PDF que no cambiaron se enlazan con la copia del día anterior en vez de duplicarse.
 - **A mano:**
 
   ```sh
@@ -128,8 +130,16 @@ Quien desarrolla entrega un archivo `neltume-cotizador-<fecha>.zip`. Cópialo al
 sh /opt/neltume-cotizador/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
 ```
 
-El script respalda primero, conserva la configuración (`.env`) y los respaldos, instala la versión nueva y
-espera a que el cotizador responda bien. Si algo falla:
+Si en vez del archivo te envían un enlace de descarga directa que empieza con `https://`, puedes pasar el enlace
+y el script lo descarga solo:
+
+```sh
+sh /opt/neltume-cotizador/scripts/actualizar.sh https://descargas.tudominio.cl/neltume-cotizador-<fecha>.zip
+```
+
+El script respalda primero, conserva la configuración (`.env`) y los respaldos, guarda la versión actual (con una
+copia de ese respaldo) para poder volver, instala la versión nueva y espera a que el cotizador responda bien. Si
+algo falla:
 
 - **No se pudo construir:** el cotizador sigue con la versión anterior, sin cambios. Avisa a quien desarrolla.
 - **La versión nueva no pasó el chequeo:** vuelve a la anterior con
@@ -138,14 +148,18 @@ espera a que el cotizador responda bien. Si algo falla:
   sh /opt/neltume-cotizador/scripts/actualizar.sh --volver
   ```
 
-  y escribe `VOLVER` cuando lo pida. Restaura los datos del respaldo tomado justo antes de actualizar.
+  y escribe `VOLVER` cuando lo pida. Restaura los datos del respaldo tomado justo antes de actualizar (funciona
+  aunque hayan pasado más de 30 días: la actualización guardó su propia copia).
 
 ## 8. Ver el estado
 
 - Con una cuenta administradora, abre `https://cotizador.tudominio.cl/api/salud` en el navegador. Muestra
   `"ok": true` si todo lo esencial funciona y, para cada parte, `"estado"`: `ok`, `aviso` (pide atención, pero
-  se puede seguir trabajando) o `error` (algo esencial falla). Revisa ahí el espacio libre en disco, si la clave
-  de IA funciona, la última sincronización de feriados y la fecha del último respaldo.
+  se puede seguir trabajando) o `error` (algo esencial falla). Revisa ahí el espacio libre en disco, si Chromium
+  (el que genera los PDF) arranca, si la clave de IA está guardada y se puede leer, si Starken está configurado, la
+  última sincronización de feriados y la fecha del último respaldo. De la IA solo se revisa que la clave se pueda
+  leer, sin llamarla: si el asistente no responde aunque aquí diga `ok`, la clave puede estar vencida o sin saldo
+  (guárdala de nuevo en Ajustes → Asistente).
 - En el servidor: `docker compose ps` (debe decir `healthy`) y `docker compose logs --tail=100 cotizador`.
 
 ## 9. Si pasa X, haz Y

@@ -3,14 +3,17 @@
 #
 # Uso (desde cualquier carpeta):
 #   sh /opt/neltume-cotizador/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
+#   sh /opt/neltume-cotizador/scripts/actualizar.sh https://servidor/neltume-cotizador-<fecha>.zip
 #   sh /opt/neltume-cotizador/scripts/actualizar.sh --volver       vuelve a la versión anterior
 # La instalación es la carpeta que contiene este script (scripts/..); otra se indica con --dir <carpeta>.
 #
-# 1. Revisa la entrega en una carpeta temporal.
+# 1. Revisa la entrega en una carpeta temporal (con una URL https://, primero la descarga con curl).
 # 2. Respalda los datos con `npm run respaldar` dentro del contenedor (si falla, no se actualiza).
-# 3. Guarda el código actual en .version-anterior/ para poder volver.
+# 3. Guarda en .version-anterior/ el código actual y una copia de ese respaldo, para poder volver aunque los
+#    respaldos del volumen roten (se conservan 30).
 # 4. Sincroniza el código nuevo sin tocar .env, respaldos*, compose.override.yaml, cron/ ni .version-anterior/.
-# 5. Construye la imagen (si falla, deja los archivos como estaban: sigue corriendo la versión anterior).
+# 5. Construye la imagen con --pull: la imagen base (Node, Chromium) trae sus parches de seguridad. Si falla, deja
+#    los archivos como estaban: sigue corriendo la versión anterior.
 # 6. Inicia la versión nueva y espera el chequeo de salud (/api/salud). Si no pasa, explica cómo volver.
 set -eu
 
@@ -20,7 +23,7 @@ fallar() {
 }
 
 uso() {
-  sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
+  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 zip=''
@@ -42,7 +45,7 @@ while [ $# -gt 0 ]; do
       ;;
     -*) fallar "opción desconocida: $1" ;;
     *)
-      [ -z "$zip" ] || fallar 'indica un solo ZIP.'
+      [ -z "$zip" ] || fallar 'indica un solo ZIP (archivo o URL).'
       zip="$1"
       ;;
   esac
@@ -89,6 +92,7 @@ if [ "$volver" = 1 ]; then
   [ -d "$anterior/codigo" ] && [ -s "$anterior/respaldo" ] ||
     fallar "no hay una versión anterior guardada en $anterior."
   respaldo="$(cat "$anterior/respaldo")"
+  copia="$anterior/datos/$(basename "$respaldo")"
   printf 'Se volverá a la versión anterior:\n'
   printf '  - se detiene el cotizador;\n'
   printf '  - se restauran los datos del respaldo tomado antes de actualizar (%s):\n' "$respaldo"
@@ -101,6 +105,14 @@ if [ "$volver" = 1 ]; then
     [ "$respuesta" = VOLVER ] || fallar 'cancelado; no se cambió nada.'
   fi
   docker compose stop
+  # Si el respaldo ya rotó del volumen, se repone desde la copia guardada en .version-anterior/datos/. Se copia como
+  # root (la carpeta del host puede tener otro dueño y permisos 0700) y queda del usuario node, como los demás.
+  if [ -d "$copia" ]; then
+    docker compose run --rm -T --user root -v "$anterior/datos:/version-anterior:ro" cotizador sh -c \
+      'set -e; [ -d "$1" ] && exit 0; cp -R "/version-anterior/$(basename "$1")" "$1"; chown -R node:node "$1"' \
+      reponer "$respaldo" ||
+      fallar "no se pudo reponer el respaldo $respaldo desde $copia; no se cambió nada. Para seguir con la versión nueva: docker compose up -d"
+  fi
   docker compose run --rm -T cotizador npm run --silent restaurar -- "$respaldo" ||
     fallar 'no se pudieron restaurar los datos; el código no se tocó. Para seguir con la versión nueva: docker compose up -d'
   sincronizar "$anterior/codigo" "$instalacion"
@@ -117,11 +129,23 @@ fi
   uso
   exit 2
 }
-[ -f "$zip" ] || fallar "no existe el ZIP $zip."
 command -v unzip >/dev/null 2>&1 || fallar 'falta el comando unzip en el servidor.'
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+case "$zip" in
+  https://*)
+    command -v curl >/dev/null 2>&1 || fallar 'falta el comando curl en el servidor para descargar la entrega.'
+    printf '▶ Descargando %s…\n' "$zip"
+    curl -fsSL --proto '=https' --max-time 900 -o "$tmp/entrega.zip" "$zip" ||
+      fallar "no se pudo descargar $zip; no se cambió nada."
+    zip="$tmp/entrega.zip"
+    ;;
+  http://* | ftp://*) fallar 'la URL debe empezar con https:// (la entrega es código que se instala en el servidor).' ;;
+  *) [ -f "$zip" ] || fallar "no existe el ZIP $zip." ;;
+esac
+# Un ZIP íntegro: una descarga cortada, una página de error HTML o un archivo cualquiera se rechazan aquí.
+unzip -tq "$zip" >/dev/null 2>&1 || fallar "$zip no es un ZIP válido (¿descarga incompleta?); no se cambió nada."
 unzip -q "$zip" -d "$tmp/codigo" || fallar "no se pudo descomprimir $zip."
 for archivo in compose.yaml Dockerfile package.json docker/iniciar.sh; do
   [ -f "$tmp/codigo/$archivo" ] || fallar "el ZIP no parece una entrega del cotizador (falta $archivo)."
@@ -142,12 +166,18 @@ rm -rf "$anterior"
 mkdir -p "$anterior/codigo"
 sincronizar "$instalacion" "$anterior/codigo"
 printf '%s\n' "$respaldo" >"$anterior/respaldo"
+# Copia del respaldo fuera del volumen: --volver no depende de que siga entre los 30 que se conservan.
+mkdir -p "$anterior/datos"
+if ! docker compose cp "cotizador:$respaldo" "$anterior/datos/"; then
+  rm -rf "$anterior/datos"
+  printf 'Aviso: no se pudo copiar el respaldo a %s; --volver lo usará mientras siga en el volumen.\n' "$anterior" >&2
+fi
 
 printf '▶ Copiando la versión nueva (se conservan .env, respaldos, compose.override.yaml y cron/)…\n'
 sincronizar "$tmp/codigo" "$instalacion"
 
-printf '▶ Construyendo la imagen…\n'
-if ! docker compose build; then
+printf '▶ Construyendo la imagen (con --pull: imagen base al día)…\n'
+if ! docker compose build --pull; then
   sincronizar "$anterior/codigo" "$instalacion"
   fallar 'no se pudo construir la versión nueva. Se dejaron los archivos como estaban y el cotizador sigue con la versión anterior, sin cambios.'
 fi

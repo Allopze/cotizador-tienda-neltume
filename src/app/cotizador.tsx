@@ -54,6 +54,7 @@ import {
   ErrorSolicitud,
   codigoDe,
   alExpirarSesion,
+  urlSesionExpirada,
   documentoDisponible,
   esSilencioso,
   guardarArchivo,
@@ -348,7 +349,7 @@ export function Cotizador({
           clave: 'sesion',
           accion: {
             etiqueta: 'Volver a ingresar',
-            fn: () => window.location.replace('/login?motivo=sesion'),
+            fn: () => window.location.replace(urlSesionExpirada()),
           },
         });
       }),

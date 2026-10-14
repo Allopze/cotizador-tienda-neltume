@@ -18,7 +18,7 @@ import { leerPesos } from '@/negocio/cifras';
 import { esStarken } from '@/negocio/starken';
 import { CampoEditable, type SugerenciaCampo } from './campo-editable';
 import { CotizarStarken } from './cotizar-starken';
-import { PreguntasPendientes } from './preguntas-pendientes';
+import { PreguntasPendientes, RESUMEN_FUERA_DE_REGLA, sinExplicacionRepetida } from './preguntas-pendientes';
 import {
   ETIQUETA_PENDIENTE,
   faltantesItem,
@@ -647,7 +647,10 @@ export function CotizacionPanel({
                     : [];
                   const sabido = pendiente ? entendido(s, familia) : '';
                   // Pendiente por un precio o un descuento fuera de regla: se corrige en la misma celda.
-                  const precioPendiente = !linea && !!pendiente && !!fueraDeRegla(actual, i);
+                  // La explicación se muestra una sola vez, bajo el producto (`pending-resumen`); el resumen del
+                  // detalle y su pregunta solo ofrecen cómo corregirlo.
+                  const explicacionPrecio = pendiente ? fueraDeRegla(actual, i) : null;
+                  const precioPendiente = !linea && !!explicacionPrecio;
                   const descuentoPendiente = precioPendiente ? (s.descuento ?? null) : null;
                   const medidaSinTipo = medidasPendientes.includes(i);
                   // Fuera de catálogo: se titula con su nombre y su precio es el escrito, sin margen ni referencia de catálogo.
@@ -987,7 +990,9 @@ export function CotizacionPanel({
                                   {pendiente
                                     ? faltan.length
                                       ? `Falta: ${textoFaltan(faltan)}`
-                                      : pendiente.pregunta
+                                      : explicacionPrecio
+                                        ? RESUMEN_FUERA_DE_REGLA
+                                        : pendiente.pregunta
                                     : linea && conDescuentoItem(linea)
                                       ? `Modelo, madera, medidas y condiciones · ${textoDescuentoLinea(linea)}`
                                       : 'Modelo, madera, medidas, condiciones y descuento'}
@@ -1000,7 +1005,7 @@ export function CotizacionPanel({
                               >
                                 {preguntasItem.length > 0 && (
                                   <PreguntasPendientes
-                                    preguntas={preguntasItem}
+                                    preguntas={sinExplicacionRepetida(preguntasItem, explicacionPrecio)}
                                     asistente={asistente}
                                     editable={editable}
                                     guardando={guardando}

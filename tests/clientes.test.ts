@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import type { Catalogo, Cliente } from '../src/catalogo/tipos';
 import { digitoVerificador } from '../src/negocio/cliente';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
-import { buscarClientes, MAX_CLIENTES } from '../src/servidor/clientes';
+import { buscarClientes, directorioClientes, MAX_CLIENTES, MAX_COTIZACIONES_CLIENTE } from '../src/servidor/clientes';
 import { Servicio } from '../src/servidor/servicio';
 
 vi.mock('../src/servidor/pdf', () => ({
@@ -126,5 +126,81 @@ describe('clientes de cotizaciones anteriores (autocompletar)', () => {
     });
     expect((await pedir(`q=${'x'.repeat(101)}`)).status).toBe(400);
     expect((await pedir('q=marta&excluir=no-es-uuid')).status).toBe(400);
+  });
+});
+
+describe('directorio de clientes (pantalla Clientes)', () => {
+  it('agrupa por RUT o, sin RUT, por nombre; más reciente primero, con sus cotizaciones y la cuenta total', async () => {
+    const { db, crear } = await base();
+    // Mismo nombre con otro RUT: otro cliente.
+    await crear({ nombre: 'Juan Pérez', rut: rut('9876543') });
+    const a1 = await crear({ nombre: 'Juan Pérez', rut: rut('12345678'), comuna: 'Temuco', proyecto: 'Casa 1' });
+    const b1 = await crear({ nombre: 'Marta Gómez', rut: rut('10111222'), giro: 'Arquitectura' });
+    // El mismo RUT escrito de otra forma (se guarda con formato) es el mismo cliente.
+    const a2 = await crear({ nombre: 'JUAN PEREZ', rut: '12345678-5', telefono: '555', proyecto: 'Casa 2' });
+    // Sin RUT, el mismo nombre (sin tildes ni mayúsculas) es el mismo cliente.
+    const b2 = await crear({ nombre: 'marta gomez' });
+    // Una cotización sin nombre ni RUT no dice de quién es: no entra.
+    await crear({ comuna: 'Osorno' });
+
+    const d = directorioClientes(db);
+    expect(d.total).toBe(3);
+    expect(d.clientes.map((c) => [c.nombre, c.rut, c.cantidad])).toEqual([
+      ['marta gomez', rut('10111222'), 2],
+      ['JUAN PEREZ', rut('12345678'), 2],
+      ['Juan Pérez', rut('9876543'), 1],
+    ]);
+    const juan = d.clientes[1];
+    // Lo más reciente manda y lo anterior completa lo que falta, como en el autocompletar.
+    expect(juan).toMatchObject({ telefono: '555', comuna: 'Temuco' });
+    expect(juan.cotizaciones.map((q) => [q.id, q.proyecto, q.estado])).toEqual([
+      [a2.id, 'Casa 2', 'borrador'],
+      [a1.id, 'Casa 1', 'borrador'],
+    ]);
+    expect(juan.cotizaciones[0].total).toBe(a2.montos.total);
+    expect(d.clientes[0]).toMatchObject({ giro: 'Arquitectura' });
+    expect(d.clientes[0].cotizaciones.map((q) => q.id)).toEqual([b2.id, b1.id]);
+
+    // Búsqueda por nombre o RUT, como el autocompletar; nada con menos de dos letras.
+    expect(directorioClientes(db, { q: 'marta' }).clientes.map((c) => c.nombre)).toEqual(['marta gomez']);
+    expect(directorioClientes(db, { q: '12.345' }).clientes.map((c) => c.rut)).toEqual([rut('12345678')]);
+    expect(directorioClientes(db, { q: 'perez' }).total).toBe(2);
+    expect(directorioClientes(db, { q: 'x' })).toMatchObject({ clientes: [], total: 0 });
+  });
+
+  it('pagina los clientes y muestra las cotizaciones más recientes de cada uno', async () => {
+    const { db, crear } = await base();
+    for (let i = 1; i <= 3; i++) await crear({ nombre: `Cliente ${i}` });
+    for (let i = 0; i < MAX_COTIZACIONES_CLIENTE + 2; i++) await crear({ nombre: 'Frecuente' });
+    const primera = directorioClientes(db, { porPagina: 2 });
+    expect(primera).toMatchObject({ total: 4, pagina: 1, porPagina: 2 });
+    expect(primera.clientes.map((c) => c.nombre)).toEqual(['Frecuente', 'Cliente 3']);
+    expect(primera.clientes[0].cantidad).toBe(MAX_COTIZACIONES_CLIENTE + 2);
+    expect(primera.clientes[0].cotizaciones).toHaveLength(MAX_COTIZACIONES_CLIENTE);
+    expect(directorioClientes(db, { porPagina: 2, pagina: 2 }).clientes.map((c) => c.nombre)).toEqual([
+      'Cliente 2',
+      'Cliente 1',
+    ]);
+  });
+
+  it('GET /api/clientes?directorio=1 exige sesión, pagina y responde sin caché', async () => {
+    const { dir, crear } = await base();
+    await crear({ nombre: 'Marta Gómez', rut: rut('10111222') });
+    vi.stubEnv('NELTUME_DATA_DIR', dir);
+    vi.stubEnv('NELTUME_DB_PATH', join(dir, 'cotizador.sqlite'));
+    const { GET } = await import('../src/app/api/clientes/route');
+    const pedir = (q: string) => GET(new Request(`http://127.0.0.1:3000/api/clientes?${q}`));
+
+    exigirSesion.mockResolvedValue({ ok: false, respuesta: Response.json({ error: 'Debes iniciar sesión.' }, { status: 401 }) });
+    expect((await pedir('directorio=1')).status).toBe(401);
+
+    exigirSesion.mockResolvedValue({ ok: true, usuario: { id: 'u1', email: 'a@b.cl', nombre: 'Ana', rol: 'user' } });
+    const r = await pedir('directorio=1&q=marta');
+    expect(r.status).toBe(200);
+    expect(r.headers.get('Cache-Control')).toBe('no-store');
+    const cuerpo = await r.json();
+    expect(cuerpo).toMatchObject({ total: 1, pagina: 1, clientes: [{ nombre: 'Marta Gómez', cantidad: 1 }] });
+    expect((await pedir('directorio=si')).status).toBe(400);
+    expect((await pedir('directorio=1&pagina=0')).status).toBe(400);
   });
 });

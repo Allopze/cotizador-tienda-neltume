@@ -1,6 +1,7 @@
 'use client';
 import { useState, type FormEvent } from 'react';
 import type { TipoAviso } from '../avisos';
+import { correoValido, useErrorCampo } from '../error-campo';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { EVENTO_CUENTAS } from './usuarios';
 
@@ -17,7 +18,7 @@ export function CrearUsuario({ avisar }: Props) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repetida, setRepetida] = useState('');
-  const [error, setError] = useState('');
+  const errores = useErrorCampo<'nombre' | 'correo' | 'clave' | 'repetida'>('crear-usuario', 'catalog-error');
   const [ocupado, setOcupado] = useState(false);
 
   function limpiar() {
@@ -25,23 +26,21 @@ export function CrearUsuario({ avisar }: Props) {
     setEmail('');
     setPassword('');
     setRepetida('');
-    setError('');
+    errores.limpiar();
   }
 
   async function crear(evento: FormEvent) {
     evento.preventDefault();
     if (ocupado) return;
-    if (password.length < MINIMO || password.length > MAXIMO) {
-      setError(`La contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
-      return;
-    }
-    if (password !== repetida) {
-      setError('La confirmación no coincide con la contraseña.');
-      return;
-    }
+    if (!nombre.trim()) return errores.fallar('nombre', 'Escribe el nombre de la persona.');
+    if (!email.trim()) return errores.fallar('correo', 'Escribe el correo de la cuenta.');
+    if (!correoValido(email)) return errores.fallar('correo', 'Revisa el correo: debe tener la forma nombre@dominio.cl.');
+    if (password.length < MINIMO || password.length > MAXIMO)
+      return errores.fallar('clave', `La contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
+    if (password !== repetida) return errores.fallar('repetida', 'La confirmación no coincide con la contraseña.');
 
     setOcupado(true);
-    setError('');
+    errores.limpiar();
     try {
       const data = await pedirJSON<{ usuario: { email: string; nombre: string; rol: 'admin' } }>(
         '/api/usuarios',
@@ -61,11 +60,9 @@ export function CrearUsuario({ avisar }: Props) {
       );
     } catch (causa) {
       if (esSilencioso(causa)) return;
-      setError(
-        causa instanceof ErrorSolicitud && causa.status === 409
-          ? 'Ya existe una cuenta con ese correo.'
-          : mensajeDe(causa),
-      );
+      if (causa instanceof ErrorSolicitud && causa.status === 409)
+        errores.fallar('correo', 'Ya existe una cuenta con ese correo.');
+      else errores.fallar(null, mensajeDe(causa));
     } finally {
       setOcupado(false);
     }
@@ -88,62 +85,78 @@ export function CrearUsuario({ avisar }: Props) {
           Crear cuenta
         </button>
       ) : (
-        <form className="dialogo-campos usuario-crear-form" onSubmit={crear}>
+        <form className="dialogo-campos usuario-crear-form" onSubmit={crear} noValidate>
           <div className="usuario-form-grid">
-            <label className="ia-field">
-              <span>Nombre</span>
-              <input
-                value={nombre}
-                onChange={(evento) => setNombre(evento.target.value)}
-                autoComplete="name"
-                maxLength={120}
-                required
-                disabled={ocupado}
-              />
-            </label>
-            <label className="ia-field">
-              <span>Correo</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(evento) => setEmail(evento.target.value)}
-                autoComplete="email"
-                maxLength={254}
-                required
-                disabled={ocupado}
-              />
-            </label>
-            <label className="ia-field">
-              <span>Contraseña inicial (mínimo {MINIMO} caracteres)</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(evento) => setPassword(evento.target.value)}
-                autoComplete="new-password"
-                minLength={MINIMO}
-                maxLength={MAXIMO}
-                required
-                disabled={ocupado}
-              />
-            </label>
-            <label className="ia-field">
-              <span>Repite la contraseña inicial</span>
-              <input
-                type="password"
-                value={repetida}
-                onChange={(evento) => setRepetida(evento.target.value)}
-                autoComplete="new-password"
-                maxLength={MAXIMO}
-                required
-                disabled={ocupado}
-              />
-            </label>
+            <div>
+              <label className="ia-field">
+                <span>Nombre</span>
+                <input
+                  ref={errores.ref('nombre')}
+                  {...errores.atributos('nombre')}
+                  value={nombre}
+                  onChange={(evento) => setNombre(evento.target.value)}
+                  autoComplete="name"
+                  maxLength={120}
+                  required
+                  disabled={ocupado}
+                />
+              </label>
+              {errores.mensaje('nombre')}
+            </div>
+            <div>
+              <label className="ia-field">
+                <span>Correo</span>
+                <input
+                  type="email"
+                  ref={errores.ref('correo')}
+                  {...errores.atributos('correo')}
+                  value={email}
+                  onChange={(evento) => setEmail(evento.target.value)}
+                  autoComplete="email"
+                  maxLength={254}
+                  required
+                  disabled={ocupado}
+                />
+              </label>
+              {errores.mensaje('correo')}
+            </div>
+            <div>
+              <label className="ia-field">
+                <span>Contraseña inicial (mínimo {MINIMO} caracteres)</span>
+                <input
+                  type="password"
+                  ref={errores.ref('clave')}
+                  {...errores.atributos('clave')}
+                  value={password}
+                  onChange={(evento) => setPassword(evento.target.value)}
+                  autoComplete="new-password"
+                  minLength={MINIMO}
+                  maxLength={MAXIMO}
+                  required
+                  disabled={ocupado}
+                />
+              </label>
+              {errores.mensaje('clave')}
+            </div>
+            <div>
+              <label className="ia-field">
+                <span>Repite la contraseña inicial</span>
+                <input
+                  type="password"
+                  ref={errores.ref('repetida')}
+                  {...errores.atributos('repetida')}
+                  value={repetida}
+                  onChange={(evento) => setRepetida(evento.target.value)}
+                  autoComplete="new-password"
+                  maxLength={MAXIMO}
+                  required
+                  disabled={ocupado}
+                />
+              </label>
+              {errores.mensaje('repetida')}
+            </div>
           </div>
-          {error && (
-            <p className="catalog-error" role="alert">
-              {error}
-            </p>
-          )}
+          {errores.mensaje(null)}
           <div className="ia-actions">
             <button type="button" className="button secondary" onClick={cancelar} disabled={ocupado}>
               Cancelar

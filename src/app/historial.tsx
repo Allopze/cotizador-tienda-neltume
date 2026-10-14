@@ -5,16 +5,27 @@ import {
   etiquetaComercial,
   etiquetaEstado,
   etiquetaOperativo,
+  type EstadoComercial,
   type EstadoCotizacion,
+  type EstadoOperativo,
   type ResumenCotizacion,
 } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import type { BorradorEnPapelera } from '@/servidor/almacen';
+import { MAX_EXPORTACION, partesExportacion } from '@/servidor/exportar';
 import type { Listado, Resultado } from './contrato';
 import { EncabezadoPagina } from './encabezado-pagina';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SIN_CLIENTE, SIN_NUMERO, estadoPago, fechaCorta, mesAnio, nombreProducto, plural } from './formato';
-import { codigoDe, esSilencioso, guardarArchivo, mensajeDe, pedirArchivo, pedirJSON } from './solicitud';
+import {
+  ErrorSolicitud,
+  codigoDe,
+  esSilencioso,
+  guardarArchivo,
+  mensajeDe,
+  pedirArchivo,
+  pedirJSON,
+} from './solicitud';
 import { Actividad } from './actividad';
 
 /** Un estado, o una vista: las que vencen pronto, las que tienen saldo por cobrar o la papelera de borradores. */
@@ -37,8 +48,14 @@ export interface Filtros {
   estado: Filtro;
   desde: string;
   hasta: string;
+  /** Seguimiento comercial («seguimiento», «rechazada»…); vacío, todos. */
+  comercial?: EstadoComercial | '';
+  /** Estado operativo («en_produccion», «despachada»…); vacío, todos. */
+  operativo?: EstadoOperativo | '';
+  /** Quien creó la cotización; vacío, todas. */
+  vendedora?: string;
 }
-const SIN_FILTROS: Filtros = { q: '', estado: 'todas', desde: '', hasta: '' };
+const SIN_FILTROS: Filtros = { q: '', estado: 'todas', desde: '', hasta: '', comercial: '', operativo: '', vendedora: '' };
 // «N° 323», «nº323», «nro. 323» o «n 323» buscan el número; «Nuñez» queda intacto.
 const limpiarTermino = (s: string) => s.trim().replace(/^(?:n[°º]|nro\.?(?=\s*\d)|n(?=\s*\d))\s*/i, '');
 
@@ -52,7 +69,21 @@ export function parametros(f: Filtros) {
   else if (f.estado !== 'todas' && f.estado !== 'papelera') params.set('estado', f.estado);
   if (f.desde) params.set('desde', f.desde);
   if (f.hasta) params.set('hasta', f.hasta);
+  if (f.comercial) params.set('comercial', f.comercial);
+  if (f.operativo) params.set('operativo', f.operativo);
+  if (f.vendedora) params.set('vendedora', f.vendedora);
   return params;
+}
+
+/** Partes en que se descarga el CSV cuando el listado pasa de `MAX_EXPORTACION` filas (null si cabe en una). */
+export function partesCsv(total: number, porParte = MAX_EXPORTACION) {
+  const partes = partesExportacion(total, porParte);
+  if (partes < 2) return null;
+  return Array.from({ length: partes }, (_, i) => ({
+    parte: i + 1,
+    desde: i * porParte + 1,
+    hasta: Math.min(total, (i + 1) * porParte),
+  }));
 }
 
 /** Listado paginado del servidor con búsqueda diferida; la cotizadora lo recarga tras cada acción. */
@@ -61,7 +92,9 @@ export function useHistorial(alListar: (d: Listado) => void) {
   // mismo largo, y el scroll restaurado cae sobre la misma fila. Montar solo en el cliente (useEsCliente).
   const [filtros, setFiltros] = useState<Filtros>(() => {
     const guardados = { ...SIN_FILTROS, ...leerSesion<Partial<Filtros>>('historial:filtros', {}) };
-    // Un filtro guardado que ya no existe vuelve a «Todas».
+    // Un filtro guardado que ya no existe vuelve a «Todas»; un seguimiento que ya no existe, a todos.
+    if (guardados.comercial && !(guardados.comercial in etiquetaComercial)) guardados.comercial = '';
+    if (guardados.operativo && !(guardados.operativo in etiquetaOperativo)) guardados.operativo = '';
     return FILTROS.some(([f]) => f === guardados.estado) ? guardados : { ...guardados, estado: 'todas' };
   });
   const cargadosPrevios = useRef(leerSesion<number>('historial:cargados', 0));
@@ -153,7 +186,8 @@ export function useHistorial(alListar: (d: Listado) => void) {
 }
 export type EstadoHistorial = ReturnType<typeof useHistorial>;
 
-const hayFiltros = (f: Filtros) => !!(f.q.trim() || f.estado !== 'todas' || f.desde || f.hasta);
+const hayFiltros = (f: Filtros) =>
+  !!(f.q.trim() || f.estado !== 'todas' || f.desde || f.hasta || f.comercial || f.operativo || f.vendedora);
 
 interface Props {
   historial: EstadoHistorial;
@@ -177,20 +211,43 @@ export function Historial({ historial, actualId, duplicar, duplicando }: Props) 
   }
   const filtrado = hayFiltros(filtros);
   const papelera = filtros.estado === 'papelera';
-  const [exportando, setExportando] = useState(false),
-    [errorExportar, setErrorExportar] = useState('');
-  async function exportar() {
-    setExportando(true);
+  const [exportando, setExportando] = useState<number | null>(null),
+    [errorExportar, setErrorExportar] = useState(''),
+    // Listado más largo que un archivo: total y filtros con que se calcularon las partes.
+    [porPartes, setPorPartes] = useState<{ total: number; clave: string } | null>(null);
+  const claveFiltros = parametros(filtros).toString();
+  const partes = porPartes?.clave === claveFiltros ? partesCsv(porPartes.total) : null;
+  const vendedoras = useVendedoras(!papelera);
+  /** Sin `parte`, descarga el listado entero si cabe en un archivo; si no, ofrece las partes (nunca corta). */
+  async function exportar(parte?: number) {
     setErrorExportar('');
+    if (parte === undefined && partesCsv(total)) {
+      setPorPartes({ total, clave: claveFiltros });
+      return;
+    }
+    setExportando(parte ?? 0);
+    const params = parametros(filtros);
+    params.set('formato', 'csv');
+    if (parte !== undefined) params.set('parte', String(parte));
     try {
-      const params = parametros(filtros);
-      params.set('formato', 'csv');
       const { blob, nombre } = await pedirArchivo(`/api/accion?${params}`);
       guardarArchivo(blob, nombre ?? 'cotizaciones.csv');
     } catch (e) {
-      if (!esSilencioso(e)) setErrorExportar(mensajeDe(e));
+      if (esSilencioso(e)) return;
+      // El listado creció desde que se cargó: el servidor dice cuántas hay y en cuántas partes.
+      if (e instanceof ErrorSolicitud && e.status === 409 && parte === undefined) {
+        const detalle = await pedirJSON(`/api/accion?${params}`).then(
+          () => null,
+          (r) => (r instanceof ErrorSolicitud && r.codigo === 'exportacion_por_partes' ? r.detalle : null),
+        );
+        if (typeof detalle?.total === 'number') {
+          setPorPartes({ total: detalle.total, clave: claveFiltros });
+          return;
+        }
+      }
+      setErrorExportar(mensajeDe(e));
     } finally {
-      setExportando(false);
+      setExportando(null);
     }
   }
   return (
@@ -199,15 +256,19 @@ export function Historial({ historial, actualId, duplicar, duplicando }: Props) 
         <span className="heading-meta" aria-live="polite">
           {cargando || papelera ? '' : filtrado ? plural(total, 'resultado') : plural(total, 'registro')}
         </span>
+        {/* Directorio de clientes: los de todas las cotizaciones, con las suyas. */}
+        <Link href="/clientes" scroll={false} className="button secondary">
+          Clientes
+        </Link>
         {!papelera && (
           <button
             type="button"
             className="button secondary"
-            onClick={exportar}
-            disabled={exportando || cargando || !total}
+            onClick={() => void exportar()}
+            disabled={exportando !== null || cargando || !total}
             title="Descarga las cotizaciones del listado, con los filtros aplicados, para abrir en Excel"
           >
-            {exportando ? 'Exportando…' : 'Exportar CSV'}
+            {exportando === 0 ? 'Exportando…' : 'Exportar CSV'}
           </button>
         )}
       </EncabezadoPagina>
@@ -252,6 +313,50 @@ export function Historial({ historial, actualId, duplicar, duplicando }: Props) 
               </label>
             </div>
           )}
+          {!papelera && (
+            <div className="history-seguimiento" role="group" aria-label="Filtrar por seguimiento y vendedora">
+              <label>
+                <span>Seguimiento</span>
+                <select
+                  value={filtros.comercial ?? ''}
+                  onChange={(e) => cambiar({ comercial: e.target.value as EstadoComercial | '' })}
+                >
+                  <option value="">Todos</option>
+                  {(Object.entries(etiquetaComercial) as [EstadoComercial, string][]).map(([valor, etiqueta]) => (
+                    <option key={valor} value={valor}>
+                      {etiqueta}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Operación</span>
+                <select
+                  value={filtros.operativo ?? ''}
+                  onChange={(e) => cambiar({ operativo: e.target.value as EstadoOperativo | '' })}
+                >
+                  <option value="">Todas</option>
+                  {(Object.entries(etiquetaOperativo) as [EstadoOperativo, string][]).map(([valor, etiqueta]) => (
+                    <option key={valor} value={valor}>
+                      {etiqueta}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Vendedora</span>
+                <select value={filtros.vendedora ?? ''} onChange={(e) => cambiar({ vendedora: e.target.value })}>
+                  <option value="">Todas</option>
+                  {/* Una vendedora guardada en el filtro sigue elegible aunque la lista aún no llegue. */}
+                  {[...new Set([...(filtros.vendedora ? [filtros.vendedora] : []), ...vendedoras])].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
           <div className="history-filters" role="group" aria-label="Filtrar por estado">
             {FILTROS.map(([f, etiqueta, ayuda]) => (
               <button
@@ -270,6 +375,33 @@ export function Historial({ historial, actualId, duplicar, duplicando }: Props) 
           <p className="history-empty catalog-error" role="alert">
             {errorExportar}
           </p>
+        )}
+        {partes && !papelera && (
+          <div className="notice history-partes" role="status">
+            <p>
+              Hay {porPartes!.total.toLocaleString('es-CL')} cotizaciones con estos filtros y un archivo CSV admite{' '}
+              {MAX_EXPORTACION.toLocaleString('es-CL')}. Descárgalas en {partes.length} partes, de la más reciente a la
+              más antigua, o acota «Desde» y «Hasta» para un archivo por período.
+            </p>
+            <div className="history-partes-botones">
+              {partes.map((p) => (
+                <button
+                  key={p.parte}
+                  type="button"
+                  className="button secondary small"
+                  onClick={() => void exportar(p.parte)}
+                  disabled={exportando !== null}
+                >
+                  {exportando === p.parte
+                    ? 'Exportando…'
+                    : `Parte ${p.parte}: ${p.desde.toLocaleString('es-CL')} a ${p.hasta.toLocaleString('es-CL')}`}
+                </button>
+              ))}
+              <button type="button" className="link" onClick={() => setPorPartes(null)}>
+                Cerrar
+              </button>
+            </div>
+          </div>
         )}
         {error && !papelera && (
           <p className="history-empty catalog-error" role="alert">
@@ -328,35 +460,91 @@ export function Historial({ historial, actualId, duplicar, duplicando }: Props) 
   );
 }
 
-const plano = (s: string) =>
-  s
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
+/** Borradores por página de la papelera, como el listado. */
+const POR_PAGINA_PAPELERA = 30;
+interface PaginaPapelera {
+  borradores: BorradorEnPapelera[];
+  total: number;
+  pagina: number;
+  /** Días que un borrador eliminado queda en la papelera antes de borrarse para siempre. */
+  plazoDias: number;
+}
 
-/** Borradores eliminados, con «Restaurar»: vuelven al historial tal como estaban. */
+/** Quienes crearon cotizaciones, para el filtro «Vendedora». Si no llega, el filtro queda con «Todas». */
+function useVendedoras(activo: boolean) {
+  const [vendedoras, setVendedoras] = useState<string[]>([]);
+  useEffect(() => {
+    if (!activo) return;
+    const control = new AbortController();
+    pedirJSON<{ vendedoras: string[] }>('/api/accion?vendedoras=1', { signal: control.signal, cache: 'no-store' })
+      .then((d) => setVendedoras(d.vendedoras))
+      .catch(() => {});
+    return () => control.abort();
+  }, [activo]);
+  return vendedoras;
+}
+
+/**
+ * Borradores eliminados, con «Restaurar»: vuelven al historial tal como estaban. Paginada y con búsqueda en el
+ * servidor; dice cuándo se vacía.
+ */
 function Papelera({ q }: { q: string }) {
-  const [borradores, setBorradores] = useState<BorradorEnPapelera[] | null>(null);
+  const [datos, setDatos] = useState<PaginaPapelera | null>(null);
   const [error, setError] = useState('');
   const [releer, setReleer] = useState(0);
+  const [cargandoMas, setCargandoMas] = useState(false);
   const [restaurando, setRestaurando] = useState<string | null>(null);
   const [restaurado, setRestaurado] = useState<{ id: string; cliente: string; avisos: string[] } | null>(null);
+  const termino = limpiarTermino(q);
+  const consulta = (pagina: number) => {
+    const params = new URLSearchParams({ papelera: '1', pagina: String(pagina), porPagina: String(POR_PAGINA_PAPELERA) });
+    if (termino) params.set('q', termino);
+    return `/api/accion?${params}`;
+  };
+  const primera = useRef(true);
 
   useEffect(() => {
     const control = new AbortController();
-    pedirJSON<{ borradores: BorradorEnPapelera[] }>('/api/accion?papelera=1', {
-      signal: control.signal,
-      cache: 'no-store',
-    })
-      .then((d) => {
-        setBorradores(d.borradores);
-        setError('');
-      })
-      .catch((e) => {
-        if (!esSilencioso(e)) setError(mensajeDe(e));
-      });
-    return () => control.abort();
-  }, [releer]);
+    // La primera carga es inmediata; mientras se escribe, se espera como en el listado.
+    const t = setTimeout(
+      () => {
+        pedirJSON<PaginaPapelera>(consulta(1), { signal: control.signal, cache: 'no-store' })
+          .then((d) => {
+            setDatos(d);
+            setError('');
+          })
+          .catch((e) => {
+            if (!esSilencioso(e)) setError(mensajeDe(e));
+          });
+      },
+      primera.current ? 0 : ESPERA_BUSQUEDA,
+    );
+    primera.current = false;
+    return () => {
+      clearTimeout(t);
+      control.abort();
+    };
+    // `consulta` depende solo de `termino`.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [releer, termino]);
+
+  async function cargarMas() {
+    if (!datos || cargandoMas) return;
+    setCargandoMas(true);
+    try {
+      const d = await pedirJSON<PaginaPapelera>(consulta(datos.pagina + 1), { cache: 'no-store' });
+      setDatos((previo) =>
+        previo && {
+          ...d,
+          borradores: [...previo.borradores, ...d.borradores.filter((b) => !previo.borradores.some((p) => p.id === b.id))],
+        },
+      );
+    } catch (e) {
+      if (!esSilencioso(e)) setError(mensajeDe(e));
+    } finally {
+      setCargandoMas(false);
+    }
+  }
 
   async function restaurar(b: BorradorEnPapelera) {
     if (restaurando) return;
@@ -367,7 +555,7 @@ function Papelera({ q }: { q: string }) {
       const r = await pedirJSON<Resultado>('/api/accion', {
         json: { tipo: 'restaurar_borrador', id: b.id, actualizada: b.actualizada },
       });
-      setBorradores((lista) => lista && lista.filter((x) => x.id !== b.id));
+      setDatos((d) => d && { ...d, total: d.total - 1, borradores: d.borradores.filter((x) => x.id !== b.id) });
       setRestaurado({ id: r.cotizacion.id, cliente: b.cliente.nombre || SIN_CLIENTE, avisos: r.avisos ?? [] });
     } catch (e) {
       if (esSilencioso(e)) return;
@@ -380,13 +568,15 @@ function Papelera({ q }: { q: string }) {
     }
   }
 
-  const terminos = plano(limpiarTermino(q)).split(/\s+/).filter(Boolean);
-  const visibles = (borradores ?? []).filter((b) => {
-    const texto = plano([b.cliente.nombre, b.cliente.comuna, b.cliente.proyecto, b.productos].filter(Boolean).join(' '));
-    return terminos.every((t) => texto.includes(t));
-  });
+  const borradores = datos?.borradores ?? [];
   return (
     <>
+      {datos && (
+        <p className="muted history-plazo">
+          Los borradores eliminados se guardan {plural(datos.plazoDias, 'día')} en la papelera; después se borran
+          para siempre y ya no se pueden restaurar.
+        </p>
+      )}
       {restaurado && (
         <p className="notice notice-success" role="status">
           Borrador de {restaurado.cliente} restaurado: volvió al historial.{' '}
@@ -409,19 +599,19 @@ function Papelera({ q }: { q: string }) {
           </button>
         </p>
       )}
-      {borradores === null ? (
+      {datos === null ? (
         !error && <p className="history-empty muted">Cargando la papelera…</p>
-      ) : !visibles.length ? (
+      ) : !borradores.length ? (
         <p className="muted history-empty">
-          {borradores.length
+          {termino
             ? 'Ningún borrador eliminado coincide con la búsqueda.'
             : 'La papelera está vacía. Aquí quedan los borradores que se eliminan, por si hay que restaurarlos.'}
         </p>
       ) : (
         <div className="history-group">
-          <h2>Borradores eliminados · {visibles.length}</h2>
+          <h2>Borradores eliminados · {datos.total}</h2>
           <ul className="history-list">
-            {visibles.map((b) => (
+            {borradores.map((b) => (
               <li key={b.id}>
                 <div className="history-fila">
                   <span className="history-number">
@@ -457,6 +647,13 @@ function Papelera({ q }: { q: string }) {
               </li>
             ))}
           </ul>
+          {borradores.length < datos.total && (
+            <div className="history-mas">
+              <button type="button" className="button secondary" onClick={() => void cargarMas()} disabled={cargandoMas}>
+                {cargandoMas ? 'Cargando…' : `Cargar más (${borradores.length} de ${datos.total})`}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </>

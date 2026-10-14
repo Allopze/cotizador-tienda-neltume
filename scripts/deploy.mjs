@@ -197,9 +197,10 @@ async function verificar({ sinIa }) {
   console.log('\nVerificación completa.');
 }
 
-// Corre en el servidor: recibe el ZIP por stdin, sincroniza el código conservando el .env
-// existente (su secreto debe ser estable) y reconstruye el contenedor.
-const scriptRemoto = `
+// Corre en el servidor: recibe el ZIP por stdin, sincroniza el código conservando el .env existente (su secreto
+// debe ser estable), guarda la versión anterior como scripts/actualizar.sh (para `actualizar.sh --volver`) y
+// reconstruye el contenedor con la imagen base al día (--pull).
+export const scriptRemoto = `
 set -eu
 destino="$1"
 forzar="$2"
@@ -225,16 +226,25 @@ if [ "$forzar" != "1" ]; then
   fi
 fi
 
+# Igual que scripts/actualizar.sh: no se tocan la configuración ni los datos propios del servidor, y se compara por
+# contenido (--checksum): un archivo distinto con el mismo tamaño y la misma hora (la del ZIP) no se saltaría.
+sincronizar() {
+rsync -a --delete --checksum --exclude=/.env '--exclude=/respaldos*' --exclude=/compose.override.yaml --exclude=/cron/ --exclude=/.version-anterior/ "$1/" "$2/"
+}
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/entrega.zip"
 # Respaldo antes de tocar nada, si ya hay una versión corriendo; si falla, no se actualiza.
+respaldo=""
 if [ -f "$destino/compose.yaml" ] && [ -n "$(cd "$destino" && docker compose ps --status running -q cotizador 2>/dev/null)" ]; then
   echo "Respaldando los datos antes de actualizar…"
-  (cd "$destino" && docker compose exec -T cotizador npm run --silent respaldar) || {
+  salida="$(cd "$destino" && docker compose exec -T cotizador npm run --silent respaldar)" || {
     echo "No se pudo respaldar; no se actualizó nada." >&2
     exit 7
   }
+  printf '%s\\n' "$salida"
+  respaldo="$(printf '%s\\n' "$salida" | sed -n 's/^Respaldo en \\([^:]*\\):.*/\\1/p' | tail -n 1)"
 fi
 unzip -q "$tmp/entrega.zip" -d "$tmp/codigo"
 if ! mkdir -p "$destino" 2>/dev/null || [ ! -w "$destino" ]; then
@@ -249,15 +259,47 @@ else
   echo "Creado $destino/.env con un secreto nuevo."
 fi
 rm "$tmp/codigo/.env"
-# Igual que scripts/actualizar.sh: no se tocan la configuración ni los datos propios del servidor.
-rsync -a --delete --exclude=/.env '--exclude=/respaldos*' --exclude=/compose.override.yaml --exclude=/cron/ --exclude=/.version-anterior/ "$tmp/codigo/" "$destino/"
+
+# Versión anterior, como scripts/actualizar.sh: el código actual y una copia del respaldo recién tomado, para que
+# \`sh scripts/actualizar.sh --volver\` vuelva a lo que había antes de ESTE despliegue.
+anterior="$destino/.version-anterior"
+if [ -f "$destino/compose.yaml" ]; then
+  rm -rf "$anterior"
+  if [ -n "$respaldo" ]; then
+    echo "Guardando el código actual en $anterior…"
+    mkdir -p "$anterior/codigo" "$anterior/datos"
+    sincronizar "$destino" "$anterior/codigo"
+    printf '%s\\n' "$respaldo" > "$anterior/respaldo"
+    (cd "$destino" && docker compose cp "cotizador:$respaldo" "$anterior/datos/") || {
+      rm -rf "$anterior/datos"
+      echo "Aviso: no se pudo copiar el respaldo a $anterior; --volver lo usará mientras siga en el volumen." >&2
+    }
+  else
+    echo "Aviso: el cotizador no estaba corriendo, así que no hubo respaldo ni queda versión anterior a la que volver." >&2
+  fi
+fi
+
+sincronizar "$tmp/codigo" "$destino"
 cd "$destino"
 if ! grep -q '^BETTER_AUTH_URL=https://.' .env || ! grep -q '^NELTUME_HOSTS=.' .env; then
   echo "Falta BETTER_AUTH_URL o NELTUME_HOSTS en $destino/.env." >&2
   echo "Complétalos allí (o borra ese .env y repite con --url https://...) y vuelve a desplegar." >&2
   exit 3
 fi
-docker compose up -d --build --remove-orphans --wait --wait-timeout 300
+# --pull: la imagen base (Node, Chromium de Debian) trae sus parches; sin él la capa queda congelada en la caché.
+if ! docker compose build --pull; then
+  if [ -d "$anterior/codigo" ]; then
+    sincronizar "$anterior/codigo" "$destino"
+    echo "No se pudo construir la versión nueva. Se dejaron los archivos como estaban; sigue la versión anterior." >&2
+  fi
+  exit 8
+fi
+if ! docker compose up -d --remove-orphans --wait --wait-timeout 300; then
+  docker compose ps || true
+  echo "La versión nueva no pasó el chequeo de salud." >&2
+  [ -d "$anterior/codigo" ] && echo "Para volver a la anterior, en el servidor: sh $destino/scripts/actualizar.sh --volver" >&2
+  exit 9
+fi
 docker compose ps
 # Cada build deja sin etiqueta la imagen anterior; se borran solo las de este proyecto.
 docker image prune -f --filter label=cl.neltume.cotizador

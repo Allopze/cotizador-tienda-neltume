@@ -319,7 +319,8 @@ export function CampoEditable({
                   onBlur: cerrarSugerencias,
                   'aria-autocomplete': 'list' as const,
                   'aria-expanded': conLista,
-                  'aria-controls': idLista,
+                  // Solo mientras la lista existe: un id ausente es una referencia rota para el lector.
+                  'aria-controls': conLista ? idLista : undefined,
                   'aria-activedescendant': activa >= 0 && conLista ? `${idLista}-${activa}` : undefined,
                 }
               : {})}

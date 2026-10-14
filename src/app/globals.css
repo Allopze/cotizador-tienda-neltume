@@ -951,3 +951,149 @@ button[type='submit'].button.peligro:not(:disabled) {
 .masthead + .sr-only + .workspace {
   margin-top: 18px;
 }
+/* Historial: seguimiento comercial, operación y vendedora, como las fechas (un control de 44px con su etiqueta). */
+.history-seguimiento {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.history-seguimiento label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control);
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.history-seguimiento label:focus-within {
+  outline: 2px solid var(--warm);
+  outline-offset: 1px;
+}
+.history-seguimiento select {
+  min-height: calc(var(--control) - 2px);
+  max-width: 220px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.history-seguimiento select:focus-visible {
+  outline: 0;
+}
+/* Exportación por partes y plazo de la papelera. */
+.history-partes {
+  margin: 16px 0 0;
+}
+.history-partes p {
+  margin: 0 0 10px;
+}
+.history-partes-botones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.history-plazo {
+  margin: 14px 0 0;
+  font-size: var(--fs-sm);
+}
+/* Directorio de clientes: una ficha plegable por cliente, con sus cotizaciones. */
+.clientes-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.clientes-lista > li {
+  border-bottom: 1px solid var(--line-soft);
+}
+.cliente-ficha > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-height: var(--control);
+  padding: 14px 4px;
+  cursor: pointer;
+}
+.cliente-ficha > summary:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: 1px;
+}
+.cliente-nombre {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.cliente-resumen {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  text-align: right;
+}
+.cliente-ficha small {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
+.cliente-detalle {
+  padding: 0 4px 16px;
+}
+.cliente-detalle > p {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+}
+.cliente-cotizaciones {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.cliente-cotizaciones a {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) auto 1fr auto;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: var(--control);
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  color: inherit;
+  text-decoration: none;
+}
+.cliente-cotizaciones a:hover {
+  background: var(--panel);
+}
+.cliente-cotizaciones a:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: -2px;
+}
+.cliente-cotizacion-proyecto {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.cliente-cotizaciones strong {
+  font-weight: 400;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+  .cliente-resumen {
+    text-align: left;
+  }
+  .cliente-cotizaciones a {
+    grid-template-columns: auto 1fr auto;
+  }
+  .cliente-cotizacion-proyecto {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+}

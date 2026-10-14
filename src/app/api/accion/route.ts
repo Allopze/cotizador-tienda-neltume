@@ -1,8 +1,8 @@
 import { ErrorIA } from '@/asistente/errores';
 import { z } from 'zod';
 import { Servicio, type DiagnosticoTurno } from '@/servidor/servicio';
-import { Almacen, type FiltrosListado } from '@/servidor/almacen';
-import { csvCotizaciones, MAX_EXPORTACION } from '@/servidor/exportar';
+import { Almacen, DIAS_PAPELERA, type FiltrosListado } from '@/servidor/almacen';
+import { csvCotizaciones, MAX_EXPORTACION, partesExportacion } from '@/servidor/exportar';
 import { fechaLocal } from '@/negocio/vigencia';
 import { MARGEN_MAX, MARGEN_MIN, rangoMedidas } from '@/negocio/limites';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
@@ -14,7 +14,15 @@ import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { descuentoItemSchema } from '@/servidor/persistencia-esquemas';
 import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
 import { ErrorPrecio } from '@/negocio/precios';
-import { ESTADOS, type EstadoCotizacion, type ResumenCotizacion } from '@/negocio/estado';
+import {
+  ESTADOS,
+  etiquetaComercial,
+  etiquetaOperativo,
+  type EstadoComercial,
+  type EstadoCotizacion,
+  type EstadoOperativo,
+  type ResumenCotizacion,
+} from '@/negocio/estado';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
@@ -316,13 +324,39 @@ const listadoSchema = z.object({
     .optional(),
   desde: fecha.optional(),
   hasta: fecha.optional(),
+  comercial: z
+    .string()
+    .transform((s) => s.split(',').filter(Boolean))
+    .pipe(z.array(z.enum(Object.keys(etiquetaComercial) as [EstadoComercial, ...EstadoComercial[]])))
+    .optional(),
+  operativo: z
+    .string()
+    .transform((s) => s.split(',').filter(Boolean))
+    .pipe(z.array(z.enum(Object.keys(etiquetaOperativo) as [EstadoOperativo, ...EstadoOperativo[]])))
+    .optional(),
+  vendedora: z.string().trim().min(1).max(200).optional(),
   pagina: z.coerce.number().int().min(1).max(10000).optional(),
   porPagina: z.coerce.number().int().min(1).max(200).optional(),
   formato: z.literal('csv').optional(),
+  /** Parte del CSV (1, 2…) cuando el listado pasa de `MAX_EXPORTACION` filas. */
+  parte: z.coerce.number().int().min(1).max(1000).optional(),
+});
+const papeleraSchema = z.object({
+  papelera: z.literal('1'),
+  q: z.string().max(200).optional(),
+  pagina: z.coerce.number().int().min(1).max(10000).optional(),
+  porPagina: z.coerce.number().int().min(1).max(200).optional(),
 });
 const modoFijo = () => process.env.NELTUME_LLM === 'fijo' && process.env.NELTUME_TEST_MODE === '1';
 const sinCache = { 'Cache-Control': 'no-store' };
 const configurado = () => modoFijo() || asistenteConfigurado();
+
+/** Acción reservada a una cuenta administradora: mismo cuerpo y cabeceras que los demás errores. */
+const sinPermiso = () =>
+  Response.json(
+    { error: 'Esta acción requiere una cuenta administradora.', codigo: 'sin_permiso' },
+    { status: 403, headers: sinCache },
+  );
 
 const NO_CONFIGURADO = 'El cotizador no está listo. Pide a quien administra el cotizador que lo revise.';
 
@@ -377,39 +411,86 @@ export async function GET(req: Request) {
         { headers: sinCache },
       );
     }
-    // Papelera del historial: borradores eliminados que se pueden restaurar con `restaurar_borrador`.
-    const papelera = url.searchParams.get('papelera');
-    if (papelera !== null) {
-      if (papelera !== '1')
-        return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
-      return Response.json({ borradores: almacen.papelera() }, { headers: sinCache });
+    // Papelera del historial: borradores eliminados que se pueden restaurar con `restaurar_borrador`. Paginada y
+    // con búsqueda en el servidor, como el listado; dice en cuántos días se vacía.
+    if (url.searchParams.has('papelera')) {
+      const consulta = papeleraSchema.safeParse(Object.fromEntries(url.searchParams));
+      if (!consulta.success)
+        return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400, headers: sinCache });
+      const { q, pagina, porPagina } = consulta.data;
+      return Response.json(
+        { ...almacen.listarPapelera({ q, pagina, porPagina }), plazoDias: DIAS_PAPELERA },
+        { headers: sinCache },
+      );
+    }
+    // Número manual al emitir: el diálogo muestra el último usado y el tope antes de enviar. Solo administración,
+    // como el número manual mismo.
+    if (url.searchParams.has('numeracion')) {
+      if (url.searchParams.get('numeracion') !== '1')
+        return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400, headers: sinCache });
+      if (sesion.usuario.rol !== 'admin') return sinPermiso();
+      return Response.json(almacen.numeracion(), { headers: sinCache });
+    }
+    // Quienes crearon cotizaciones, para el filtro «Vendedora» del historial.
+    if (url.searchParams.has('vendedoras')) {
+      if (url.searchParams.get('vendedoras') !== '1')
+        return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400, headers: sinCache });
+      return Response.json({ vendedoras: almacen.vendedoras() }, { headers: sinCache });
     }
     const filtros = listadoSchema.safeParse(Object.fromEntries(url.searchParams));
     if (!filtros.success)
       return Response.json({ error: 'Filtros inválidos.', codigo: 'solicitud_invalida' }, { status: 400 });
-    const { estado, formato, ...resto } = filtros.data;
+    const { estado, comercial, operativo, formato, parte, ...resto } = filtros.data;
     const estados = estado as EstadoCotizacion[] | undefined;
-    if (formato === 'csv') return exportarCsv(almacen, { ...resto, estados });
-    const pagina = almacen.listar({ ...resto, estados });
+    const filtrosListado: FiltrosListado = { ...resto, estados, comerciales: comercial, operativos: operativo };
+    if (formato === 'csv') return exportarCsv(almacen, filtrosListado, parte);
+    const pagina = almacen.listar(filtrosListado);
     return Response.json({ ...pagina, asistenteConfigurado: configurado() }, { headers: sinCache });
   } catch (e) {
     return responderError(e);
   }
 }
 
-/** Listado completo con los filtros vigentes, en CSV (separador «;» y BOM para Excel en español). */
-function exportarCsv(almacen: Almacen, filtros: FiltrosListado) {
+/**
+ * Listado completo con los filtros vigentes, en CSV (separador «;» y BOM para Excel en español). Hasta
+ * `MAX_EXPORTACION` filas por archivo: si el listado es más largo, sin `parte` responde 409 `exportacion_por_partes`
+ * con el total y las partes (nunca corta en silencio), y con `parte` entrega ese tramo, en el orden del historial.
+ */
+function exportarCsv(almacen: Almacen, filtros: FiltrosListado, parte?: number) {
+  const porParte = MAX_EXPORTACION;
+  const { total } = almacen.listar({ ...filtros, pagina: 1, porPagina: 1 });
+  const partes = partesExportacion(total, porParte);
+  const detalle = { total, partes, porParte };
+  if (parte === undefined && partes > 1)
+    return Response.json(
+      {
+        error: `Hay ${total.toLocaleString('es-CL')} cotizaciones con estos filtros y un archivo admite ${porParte.toLocaleString('es-CL')}. Descárgalas en ${partes} partes o acota las fechas.`,
+        codigo: 'exportacion_por_partes',
+        detalle,
+      },
+      { status: 409, headers: sinCache },
+    );
+  const numeroParte = parte ?? 1;
+  if (numeroParte > partes)
+    return Response.json(
+      { error: `El listado tiene ${partes === 1 ? 'una parte' : `${partes} partes`}.`, codigo: 'solicitud_invalida', detalle },
+      { status: 400, headers: sinCache },
+    );
+  // Páginas que dividen exacto la parte: la parte N empieza en la fila (N − 1) × porParte.
+  const porPagina = Math.min(200, porParte);
   const filas: ResumenCotizacion[] = [];
-  for (let pagina = 1; filas.length < MAX_EXPORTACION; pagina++) {
-    const p = almacen.listar({ ...filtros, pagina, porPagina: 200 });
+  for (let pagina = ((numeroParte - 1) * porParte) / porPagina + 1; filas.length < porParte; pagina++) {
+    const p = almacen.listar({ ...filtros, pagina, porPagina });
     filas.push(...p.cotizaciones);
-    if (filas.length >= p.total || !p.cotizaciones.length) break;
+    if (p.cotizaciones.length < porPagina) break;
   }
   const hoy = fechaLocal(new Date());
-  return new Response(`\uFEFF${csvCotizaciones(filas.slice(0, MAX_EXPORTACION))}`, {
+  const sufijo = partes > 1 ? `-parte-${numeroParte}-de-${partes}` : '';
+  return new Response(`\uFEFF${csvCotizaciones(filas.slice(0, porParte))}`, {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
-      'Content-Disposition': `attachment; filename="cotizaciones-${hoy}.csv"`,
+      'Content-Disposition': `attachment; filename="cotizaciones-${hoy}${sufijo}.csv"`,
+      'X-Total-Cotizaciones': String(total),
       ...sinCache,
     },
   });
@@ -424,7 +505,7 @@ export async function POST(req: Request) {
   if (!parsed.success)
     return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
   if ((parsed.data.tipo === 'regenerar_pdf' || (parsed.data.tipo === 'emitir' && parsed.data.numero !== undefined)) && sesion.usuario.rol !== 'admin')
-    return Response.json({ error: 'Esta acción requiere una cuenta administradora.' }, { status: 403 });
+    return sinPermiso();
   try {
     const catalogo = await cargarCatalogo();
     let llm: LLM;

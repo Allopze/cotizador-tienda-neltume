@@ -4,19 +4,20 @@ import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-can
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, DESCUENTO_MAXIMO } from '../negocio/limites';
 import { abrirBaseDatos } from './base-datos';
+import { problemaSvg } from './svg-seguro';
 import { tramoDescuentoSchema } from './persistencia-esquemas';
 import type { DatosEmpresa } from './empresa';
 
 const texto = (max: number) => z.string().trim().max(max).nullable();
 const TRANSPORTISTAS_INICIALES = ['Starken', 'Transportes Paredes', 'Ignacio', 'Otro'];
+// El logo se valida con un parser y una lista de elementos y atributos de dibujo permitidos (svg-seguro.ts).
 const logoSvg = z
   .string()
   .max(48_000)
-  .refine((valor) => /<svg(?:\s|>)/i.test(valor), 'El logo debe ser un SVG válido.')
-  .refine(
-    (valor) => !/<script|<foreignObject|\son\w+\s*=|javascript:/i.test(valor),
-    'El SVG contiene contenido no permitido.',
-  )
+  .superRefine((valor, ctx) => {
+    const problema = problemaSvg(valor);
+    if (problema) ctx.addIssue({ code: 'custom', message: problema });
+  })
   .nullable();
 
 export const configuracionNegocioSchema = z
@@ -104,12 +105,24 @@ export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
   };
 }
 
+/**
+ * Un logo guardado antes de la validación con parser puede no pasarla: se descarta solo el logo (vuelve el
+ * predeterminado) en vez de perder toda la configuración del negocio.
+ */
+function logoGuardado(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null;
+  const problema = valor.length > 48_000 ? 'excede el tamaño máximo' : problemaSvg(valor);
+  if (!problema) return valor;
+  console.error('[configuracion-negocio] se ignora el logo guardado:', problema);
+  return null;
+}
+
 function validarConfiguracion(valor: unknown, respaldo: ConfiguracionNegocio) {
   const parcial = valor as Partial<ConfiguracionNegocio> | null;
   const reglasParciales = parcial?.reglas as Partial<ReglasComerciales> | undefined;
   return configuracionNegocioSchema.parse({
     transportistas: parcial?.transportistas ?? respaldo.transportistas,
-    empresa: { ...respaldo.empresa, ...(parcial?.empresa ?? {}) },
+    empresa: { ...respaldo.empresa, ...(parcial?.empresa ?? {}), logoSvg: logoGuardado(parcial?.empresa?.logoSvg) },
     reglas: {
       ...respaldo.reglas,
       ...(reglasParciales ?? {}),

@@ -10,6 +10,21 @@ import { leerMedida } from './formato';
 /** Con más opciones que estas, un desplegable se lee mejor que una fila de botones. */
 const MAX_BOTONES = 10;
 
+/** Resumen del detalle de un ítem pendiente por precio o descuento: la explicación completa va bajo el producto. */
+export const RESUMEN_FUERA_DE_REGLA = 'Precio o descuento fuera de regla';
+
+/**
+ * Preguntas del detalle de un ítem sin la explicación de un precio o descuento fuera de regla, que ya se lee bajo
+ * el producto: la pregunta conserva el título y el botón para corregirlo. En el chat se muestra completa.
+ */
+export function sinExplicacionRepetida(preguntas: PreguntaPendiente[], explicacion: string | null) {
+  if (!explicacion) return preguntas;
+  // El detalle es la explicación sin una lista final de opciones (`sinLista`): basta con que la empiece.
+  return preguntas.map((p) =>
+    p.campo === null && p.detalle && explicacion.startsWith(p.detalle) ? { ...p, detalle: null } : p,
+  );
+}
+
 interface Props {
   preguntas: PreguntaPendiente[];
   editable: boolean;

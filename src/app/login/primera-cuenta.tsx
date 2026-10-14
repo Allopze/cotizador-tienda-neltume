@@ -2,6 +2,8 @@
 
 import { useState, type FormEvent } from 'react';
 import Image from 'next/image';
+import { correoValido, useErrorCampo } from '../error-campo';
+import { campoDelError, type CampoPrimeraCuenta as Campo } from './mensajes';
 import { ErrorSolicitud, MENSAJES, pedirJSON } from '../solicitud';
 
 const MINIMO = 8;
@@ -17,25 +19,30 @@ export function PrimeraCuenta() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repetida, setRepetida] = useState('');
-  const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
+  const errores = useErrorCampo<Campo>('primera-cuenta');
 
   async function crear(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     if (ocupado) return;
+    if (!codigo.trim()) return errores.fallar('codigo', 'Pega el código que aparece en el registro del servidor.');
+    if (!nombre.trim()) return errores.fallar('nombre', 'Escribe tu nombre.');
+    if (!email.trim()) return errores.fallar('correo', 'Escribe tu correo electrónico.');
+    if (!correoValido(email)) return errores.fallar('correo', 'Revisa el correo: debe tener la forma nombre@dominio.cl.');
     if (password.length < MINIMO || password.length > MAXIMO)
-      return setError(`La contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
-    if (password !== repetida) return setError('La confirmación no coincide con la contraseña.');
+      return errores.fallar('clave', `La contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
+    if (password !== repetida) return errores.fallar('repetida', 'La confirmación no coincide con la contraseña.');
     setOcupado(true);
-    setError('');
+    errores.limpiar();
     try {
       await pedirJSON('/api/primer-arranque', { json: { codigo, nombre, email, password } });
     } catch (e) {
       const status = e instanceof ErrorSolicitud ? e.status : 0;
       // 404: otra persona creó la primera cuenta mientras tanto; se vuelve al inicio de sesión normal.
       if (status === 404) return window.location.replace('/login');
-      setError(e instanceof ErrorSolicitud ? e.message : MENSAJES.general);
       setOcupado(false);
+      const mensaje = e instanceof ErrorSolicitud ? e.message : MENSAJES.general;
+      errores.fallar(campoDelError(status, mensaje), mensaje);
       return;
     }
     try {
@@ -69,7 +76,7 @@ export function PrimeraCuenta() {
           El código de un solo uso aparece en el registro del servidor. Con Docker, en la carpeta de instalación:{' '}
           <code>docker compose logs cotizador</code>. Usa el último que aparezca; vence en 24 horas.
         </p>
-        <form onSubmit={crear} className="login-form">
+        <form onSubmit={crear} className="login-form" noValidate>
           <label htmlFor="codigo">Código del registro del servidor</label>
           <input
             id="codigo"
@@ -79,10 +86,13 @@ export function PrimeraCuenta() {
             spellCheck={false}
             required
             maxLength={64}
+            {...errores.atributos('codigo')}
+            ref={errores.ref('codigo')}
             value={codigo}
             onChange={(e) => setCodigo(e.target.value)}
             disabled={ocupado}
           />
+          {errores.mensaje('codigo')}
           <label htmlFor="nombre">Nombre</label>
           <input
             id="nombre"
@@ -90,10 +100,13 @@ export function PrimeraCuenta() {
             autoComplete="name"
             required
             maxLength={120}
+            {...errores.atributos('nombre')}
+            ref={errores.ref('nombre')}
             value={nombre}
             onChange={(e) => setNombre(e.target.value)}
             disabled={ocupado}
           />
+          {errores.mensaje('nombre')}
           <label htmlFor="correo">Correo electrónico</label>
           <input
             id="correo"
@@ -103,10 +116,13 @@ export function PrimeraCuenta() {
             inputMode="email"
             required
             maxLength={254}
+            {...errores.atributos('correo')}
+            ref={errores.ref('correo')}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             disabled={ocupado}
           />
+          {errores.mensaje('correo')}
           <label htmlFor="clave">Contraseña (mínimo {MINIMO} caracteres)</label>
           <input
             id="clave"
@@ -116,10 +132,13 @@ export function PrimeraCuenta() {
             required
             minLength={MINIMO}
             maxLength={MAXIMO}
+            {...errores.atributos('clave')}
+            ref={errores.ref('clave')}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             disabled={ocupado}
           />
+          {errores.mensaje('clave')}
           <label htmlFor="clave-repetida">Repite la contraseña</label>
           <input
             id="clave-repetida"
@@ -128,17 +147,14 @@ export function PrimeraCuenta() {
             autoComplete="new-password"
             required
             maxLength={MAXIMO}
-            aria-invalid={error ? true : undefined}
-            aria-describedby={error ? 'primera-cuenta-error' : undefined}
+            {...errores.atributos('repetida')}
+            ref={errores.ref('repetida')}
             value={repetida}
             onChange={(e) => setRepetida(e.target.value)}
             disabled={ocupado}
           />
-          {error && (
-            <p className="login-error" id="primera-cuenta-error" role="alert">
-              {error}
-            </p>
-          )}
+          {errores.mensaje('repetida')}
+          {errores.mensaje(null)}
           <button className="button primary login-submit" type="submit" disabled={ocupado}>
             {ocupado ? 'Creando la cuenta…' : 'Crear cuenta e ingresar'}
           </button>

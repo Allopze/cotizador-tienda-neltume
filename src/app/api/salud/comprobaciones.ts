@@ -5,6 +5,9 @@ import { validarConfiguracionAutenticacion } from '@/servidor/autenticacion-conf
 import { abrirBaseDatos, directorioDatos, VERSION_ESQUEMA } from '@/servidor/base-datos';
 import { chromiumPath } from '@/servidor/chromium';
 import { sincronizacionActiva } from '@/servidor/feriados-sync';
+import { prepararPdf } from '@/servidor/pdf';
+import { leerEntornoStarken } from '@/servidor/starken';
+import { leerConfiguracionStarken } from '@/servidor/starken-configuracion';
 
 /**
  * Comprobaciones de /api/salud. `error` significa que el cotizador no puede cumplir su función principal (cotizar,
@@ -77,15 +80,109 @@ export function comprobarDisco(directorio = directorioDatos()): Comprobacion {
   }
 }
 
-export function comprobarChromium(): Comprobacion {
+/** Plazo para que Chromium arranque y abra una página: menos que el timeout del healthcheck de Compose (10 s). */
+export const PLAZO_CHROMIUM_SALUD_MS = 8_000;
+/**
+ * Lanzar Chromium cuesta un par de segundos y memoria: el healthcheck corre cada 30 s, así que un arranque exitoso se
+ * recuerda 10 minutos. Una falla se recuerda solo 1 minuto, para que se note pronto cuando se corrige.
+ */
+export const CHROMIUM_OK_VIGENTE_MS = 10 * 60 * 1000;
+export const CHROMIUM_FALLA_VIGENTE_MS = 60 * 1000;
+
+interface ArranqueChromium {
+  ruta: string;
+  hasta: number;
+  comprobado: number;
+  error: string | null;
+}
+let ultimoArranque: ArranqueChromium | null = null;
+let arranqueEnCurso: Promise<ArranqueChromium> | null = null;
+
+/** Solo pruebas: olvida el último arranque de Chromium comprobado. */
+export function olvidarArranqueChromium() {
+  ultimoArranque = null;
+  arranqueEnCurso = null;
+}
+
+/** Arranca Chromium de verdad (el mismo navegador compartido de los PDF) y abre una página, con plazo corto. */
+async function arrancarChromium(ruta: string, ahora: number): Promise<ArranqueChromium> {
+  if (ultimoArranque?.ruta === ruta && ahora < ultimoArranque.hasta) return ultimoArranque;
+  // Dos healthchecks simultáneos (o el healthcheck y una administradora) comparten el mismo intento.
+  arranqueEnCurso ??= prepararPdf(PLAZO_CHROMIUM_SALUD_MS)
+    .then(
+      () => null,
+      (error: unknown) => textoError(error).replace(/^No se pudo preparar Chromium[^:]*: /, ''),
+    )
+    .then((error) => {
+      const comprobado = Date.now();
+      ultimoArranque = {
+        ruta,
+        comprobado,
+        error,
+        hasta: comprobado + (error ? CHROMIUM_FALLA_VIGENTE_MS : CHROMIUM_OK_VIGENTE_MS),
+      };
+      return ultimoArranque;
+    })
+    .finally(() => {
+      arranqueEnCurso = null;
+    });
+  return arranqueEnCurso;
+}
+
+/**
+ * Chromium instalado y capaz de arrancar: sin él no se emiten PDF, así que una falla pone el healthcheck en rojo (y
+ * una actualización que no lo arranca no pasa `docker compose up --wait`). El arranque se comprueba como mucho cada
+ * 10 minutos (ver CHROMIUM_OK_VIGENTE_MS).
+ */
+export async function comprobarChromium(ahora = Date.now()): Promise<Comprobacion> {
   const ruta = chromiumPath();
   if (!ruta) return { estado: 'error', detalle: 'No se encontró Chromium: no se pueden generar los PDF.' };
   try {
     accessSync(ruta, constants.X_OK);
-    return { estado: 'ok', detalle: 'Chromium está instalado.', ruta };
   } catch {
     return { estado: 'error', detalle: `Chromium no existe o no se puede ejecutar en ${ruta}.`, ruta };
   }
+  const arranque = await arrancarChromium(ruta, ahora);
+  const comprobado = new Date(arranque.comprobado).toISOString();
+  return arranque.error
+    ? {
+        estado: 'error',
+        detalle: `Chromium está instalado pero no arranca: ${arranque.error}`,
+        ruta,
+        comprobado,
+      }
+    : { estado: 'ok', detalle: 'Chromium arranca y abre páginas.', ruta, comprobado };
+}
+
+/**
+ * Despacho con Starken: es opcional, así que sin configurar no es un aviso. Solo dice si hay credenciales completas
+ * y ciudad de origen; nunca las muestra ni llama a Starken.
+ */
+export function comprobarStarken(): Comprobacion {
+  const credenciales = leerEntornoStarken() !== null;
+  const algunaVariable = Object.keys(process.env).some((k) => k.startsWith('STARKEN_') && process.env[k]?.trim());
+  let origen = false;
+  try {
+    origen = leerConfiguracionStarken().origen !== null;
+  } catch {
+    // Sin base no hay origen guardado; la comprobación de la base ya informa el problema.
+  }
+  if (!credenciales)
+    return algunaVariable
+      ? {
+          estado: 'aviso',
+          detalle:
+            'Starken está a medio configurar: faltan variables STARKEN_ o la URL no es HTTPS. El botón de despacho sigue desactivado.',
+          configurado: false,
+        }
+      : { estado: 'ok', detalle: 'Starken no está configurado (es opcional).', configurado: false };
+  if (!origen)
+    return {
+      estado: 'aviso',
+      detalle: 'Starken tiene credenciales, pero falta elegir la ciudad de origen en Ajustes.',
+      configurado: false,
+    };
+  return { estado: 'ok', detalle: 'Starken está configurado.', configurado: true };
 }
 
 export function comprobarIA(): Comprobacion {
@@ -167,21 +264,25 @@ export function comprobarRespaldo(ahora = new Date()): Comprobacion {
   }
 }
 
-/** Lo que mira el healthcheck: barato, cada 30 segundos y sin sesión. */
-export function comprobacionesBasicas(): Record<string, Comprobacion> {
+/**
+ * Lo que mira el healthcheck: cada 30 segundos y sin sesión. Todo es barato salvo el arranque de Chromium, que se
+ * recuerda 10 minutos.
+ */
+export async function comprobacionesBasicas(): Promise<Record<string, Comprobacion>> {
   return {
     base: comprobarBase(),
     autenticacion: comprobarAutenticacion(),
     disco: comprobarDisco(),
-    chromium: comprobarChromium(),
+    chromium: await comprobarChromium(),
   };
 }
 
-/** Detalle para una persona administradora. */
-export function comprobacionesCompletas(ahora = new Date()): Record<string, Comprobacion> {
+/** Detalle para una persona administradora. La IA se revisa sin llamarla: solo si la clave existe y se puede leer. */
+export async function comprobacionesCompletas(ahora = new Date()): Promise<Record<string, Comprobacion>> {
   return {
-    ...comprobacionesBasicas(),
+    ...(await comprobacionesBasicas()),
     ia: comprobarIA(),
+    starken: comprobarStarken(),
     feriados: comprobarFeriados(ahora),
     respaldo: comprobarRespaldo(ahora),
   };

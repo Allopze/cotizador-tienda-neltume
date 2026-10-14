@@ -23,3 +23,5 @@ screenshots
 **/*.xlsx
 **/*.pdf
 .DS_Store
+# Build de las pruebas E2E (distDir con NELTUME_TEST_MODE=1, cientos de MB): no va al contexto de docker build.
+.next-e2e

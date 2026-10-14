@@ -426,6 +426,14 @@ p + .pregunta-opciones {
   gap: 8px;
   min-width: 380px;
 }
+/* Ajustes → Usuarios: el error de un campo y la contraseña de confirmación ocupan todo el ancho del editor. */
+.manual-editor > .catalog-error,
+.manual-editor > .manual-editor-ancho {
+  grid-column: 1 / -1;
+}
+.manual-editor > .catalog-error {
+  margin-top: 0;
+}
 .manual-editor label {
   display: grid;
   gap: 4px;

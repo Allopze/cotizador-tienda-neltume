@@ -3,6 +3,7 @@ import { headers } from 'next/headers';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
+import { DIAS_PAPELERA } from '@/servidor/almacen';
 import { auth } from '@/servidor/autenticacion';
 import { validarConfiguracionAutenticacion } from '@/servidor/autenticacion-config';
 import { Encabezado } from '../encabezado';
@@ -166,7 +167,8 @@ export default async function AyudaPage() {
             </li>
             <li>
               <strong>Un borrador eliminado:</strong> en <Link href="/historial">Historial</Link>, filtro «Papelera»,
-              pulsa «Restaurar».
+              pulsa «Restaurar». Los borradores eliminados se guardan {DIAS_PAPELERA} días en la papelera; después se
+              borran para siempre y ya no se pueden restaurar.
             </li>
             <li>
               <strong>Una aprobación registrada por error:</strong> «Deshacer aprobación» en el seguimiento, mientras

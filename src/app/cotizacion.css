@@ -886,8 +886,9 @@ td small {
     font-weight: 600;
   }
   /* La fila de usuario lleva tres acciones: ocupan el ancho y se envuelven, en vez de apilarse
-     alineadas a la derecha una por línea. */
-  .usuarios-admin .catalogo-lista td:last-child,
+     alineadas a la derecha una por línea. Solo la celda de acciones: el registro de cambios, en la misma
+     pantalla, no tiene acciones y su última celda (el cambio) sigue siendo texto. */
+  .usuarios-admin .catalogo-lista td.celda-acciones,
   .gestion-manuales .catalogo-lista td.celda-acciones {
     grid-column: 1 / -1;
     display: flex;
