@@ -432,7 +432,13 @@ export class CommandCodeLLM implements LLM {
         respaldo !== consulta.modelo &&
         this.restante(consulta) >= (error.codigo === 'ia_timeout' ? MINIMO_SEGUNDA_MS : MINIMO_INTENTO_MS);
       if (!usar) throw error;
-      console.warn('[asistente] respaldo', { de: consulta.modelo, a: respaldo, codigo: error.codigo });
+      // Con el detalle técnico (estado y comienzo del cuerpo): un modelo mal escrito en Ajustes se ve en el registro.
+      console.warn('[asistente] respaldo', {
+        de: consulta.modelo,
+        a: respaldo,
+        codigo: error.codigo,
+        ...(error.tecnico ? { tecnico: error.tecnico } : {}),
+      });
       this.usoRespaldo = true;
       consulta.modelo = respaldo;
       return this.intentar(consulta, contexto, system, definiciones);
@@ -512,7 +518,11 @@ export class CommandCodeLLM implements LLM {
     } catch (error) {
       if (error instanceof ErrorIA) throw error;
       if (esTimeout(error)) throw errorTimeout(plazoMs);
-      throw errorProveedor(error instanceof Anthropic.APIError ? error.status : undefined);
+      // El mensaje del SDK incluye el cuerpo del rechazo: errorProveedor guarda su comienzo para el registro.
+      throw errorProveedor(
+        error instanceof Anthropic.APIError ? error.status : undefined,
+        error instanceof Anthropic.APIError ? error.message.split(apiKey).join('[clave]') : undefined,
+      );
     }
   }
 }

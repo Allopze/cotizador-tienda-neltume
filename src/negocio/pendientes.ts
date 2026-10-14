@@ -63,6 +63,9 @@ export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
   cantidad: 'Cantidad',
 };
 
+/** Qué es una escuadría, en palabras de quien cotiza: el mismo texto de ayuda de la pantalla de Catálogo. */
+export const EXPLICA_ESCUADRIA = 'Escuadría: grosor por ancho de la pieza.';
+
 const CANTIDAD = { min: 1, max: 10000, paso: 1, unidad: null } as const;
 /** Familia con que se lee cada dimensión: el ancho es siempre de puerta; el alto o largo, de su familia. */
 const familiaDe = (campo: 'ancho' | 'alto', familia: Familia): Familia => (campo === 'ancho' ? 'PUERTA' : familia);
@@ -154,7 +157,14 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
               entrada: null,
             });
           case 'medida':
-            return parte({ ...base, campo: 'medida', opciones: opcionesTexto(disponibles), entrada: null });
+            // «Escuadría» se explica igual que en Catálogo (alta-producto, gestion-manuales).
+            return parte({
+              ...base,
+              campo: 'medida',
+              detalle: EXPLICA_ESCUADRIA,
+              opciones: opcionesTexto(disponibles),
+              entrada: null,
+            });
           case 'alto':
             return parte({ ...base, campo: 'alto', opciones: opcionesMetros(disponibles), entrada: null });
           case 'ancho':

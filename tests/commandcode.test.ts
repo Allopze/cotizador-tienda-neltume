@@ -554,3 +554,84 @@ describe('Reintento con corrección', () => {
     });
   });
 });
+
+describe('#38 · diagnóstico de los rechazos del proveedor', () => {
+  afterEach(() => vi.restoreAllMocks());
+  const chatRechazo = (status: number, cuerpo: string) => new Response(cuerpo, { status });
+
+  it('un 4xx de Chat Completions deja el comienzo de su cuerpo como detalle técnico, sin la clave', async () => {
+    vi.stubEnv('CMD_API_KEY', 'sk-secreta-123');
+    const cuerpo = JSON.stringify({
+      error: { message: `No endpoints found for deepseek/mal-escrito. key=sk-secreta-123 ${'x'.repeat(600)}` },
+    });
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(chatRechazo(404, cuerpo)));
+    const error = await new CommandCodeLLM('deepseek/mal-escrito', undefined, { respaldo: null })
+      .interpretar(contexto)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ codigo: 'ia_configuracion', status: 502 });
+    const { tecnico, message } = error as { tecnico: string; message: string };
+    expect(tecnico).toMatch(/^HTTP 404: .*No endpoints found for deepseek\/mal-escrito/);
+    expect(tecnico).not.toContain('sk-secreta-123');
+    expect(tecnico).toContain('[clave]');
+    // Solo los primeros 300 caracteres del cuerpo; el mensaje para la vendedora no lo incluye.
+    expect(tecnico.length).toBeLessThanOrEqual('HTTP 404: '.length + 300);
+    expect(message).not.toMatch(/endpoints|HTTP/);
+  });
+
+  it('un 4xx del camino Anthropic también lleva su cuerpo; un 5xx no tiene detalle', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          { type: 'error', error: { type: 'permission_error', message: 'model not in your plan' } },
+          { status: 403 },
+        ),
+      ),
+    );
+    await expect(new CommandCodeLLM().interpretar(contexto)).rejects.toMatchObject({
+      codigo: 'ia_acceso',
+      tecnico: expect.stringMatching(/^HTTP 403: .*model not in your plan/),
+    });
+    vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(chatRechazo(500, 'interno')));
+    const error = await new CommandCodeLLM('deepseek/x', undefined, { respaldo: null })
+      .interpretar(contexto)
+      .catch((e: unknown) => e);
+    expect(error).toMatchObject({ codigo: 'ia_no_disponible' });
+    expect((error as { tecnico?: string }).tecnico).toBeUndefined();
+  });
+
+  it('I5: el paso al respaldo deja un console.warn con el detalle y el diagnóstico del modelo', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const exito = Response.json({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            tool_calls: [
+              { type: 'function', function: { name: llamada.name, arguments: JSON.stringify(llamada.input) } },
+            ],
+          },
+        },
+      ],
+    });
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(chatRechazo(404, '{"error":{"message":"No endpoints found for deepseek/mal"}}'))
+      .mockResolvedValueOnce(exito);
+    vi.stubGlobal('fetch', fetchMock);
+    const llm = new CommandCodeLLM('deepseek/mal', undefined, { respaldo: 'Qwen/Qwen3.7-Flash' });
+    expect(llm.usoRespaldo).toBe(false);
+    expect(await llm.interpretar(contexto)).toEqual({ name: llamada.name, input: llamada.input });
+    expect(warn).toHaveBeenCalledWith('[asistente] respaldo', {
+      de: 'deepseek/mal',
+      a: 'Qwen/Qwen3.7-Flash',
+      codigo: 'ia_configuracion',
+      tecnico: expect.stringContaining('No endpoints found for deepseek/mal'),
+    });
+    expect(llm.modeloEfectivo).toBe('Qwen/Qwen3.7-Flash');
+    expect(llm.usoRespaldo).toBe(true);
+  });
+});

@@ -20,7 +20,13 @@ export function pregunta(r: Rechazo, modelo: string | null) {
     case 'faltan_datos':
       return r.campos
         .map((c) => {
-          const campo = c === 'medida' ? 'sección o escuadría' : c === 'alto' ? 'alto o largo' : c;
+          // La escuadría se explica como en la pantalla: no es un término que todas conozcan.
+          const campo =
+            c === 'medida'
+              ? 'sección o escuadría (grosor por ancho de la pieza)'
+              : c === 'alto'
+                ? 'alto o largo'
+                : c;
           return `¿Qué ${campo} necesitas para ${nombre}? Opciones: ${opciones((r.disponibles[c] ?? []).map((s) => (['madera', 'modelo'].includes(c) ? bonito(s) : s)))}.`;
         })
         .join('\n');

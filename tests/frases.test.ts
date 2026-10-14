@@ -41,6 +41,18 @@ describe('ubicar una frase', () => {
     tramo = ubicarFrase(texto, '2 molco rauli 80x200');
     expect(tramo && texto.slice(...tramo)).toBe('2 Molco raulí 80 * 200');
   });
+  it('una unidad pegada a la última cifra cierra la frase («83x236cm»); otras letras pegadas, no', () => {
+    for (const unidad of ['cm', 'mm', 'm', 'mt', 'mts', 'CM']) {
+      const texto = `cotiza 2 molco lenga 83x236${unidad}, gracias`;
+      const tramo = ubicarFrase(texto, '2 molco lenga 83x236');
+      expect(tramo && texto.slice(...tramo), unidad).toBe('2 molco lenga 83x236');
+    }
+    expect(ubicarFrase('2 molco lenga 83x236cmx', '2 molco lenga 83x236')).toBeNull();
+    expect(ubicarFrase('2 molco lenga 83x236abc', '2 molco lenga 83x236')).toBeNull();
+    expect(ubicarFrase('2 molco lenga 83x2361', '2 molco lenga 83x236')).toBeNull();
+    // Solo tras una cifra: «2 molcos» no es «2 molco» más una unidad.
+    expect(ubicarFrase('2 molcom lenga', '2 molco')).toBeNull();
+  });
   it('las posiciones valen en el texto recibido aunque traiga acentos sueltos', () => {
     const texto = 'cliente Raúl ´ Pérez: 2 Molco lenga 80x200';
     const tramo = ubicarFrase(texto, '2 molco lenga 80x200');

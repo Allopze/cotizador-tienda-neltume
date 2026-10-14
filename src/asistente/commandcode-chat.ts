@@ -50,7 +50,7 @@ export async function interpretarChat(
     });
   // Un modelo que no acepta temperature o tool_choice «required» se vuelve a pedir sin esa opción.
   const response = await negociar(pedir, async (r) => (r?.status === 400 ? r.clone().text() : null));
-  if (!response.ok) throw errorProveedor(response.status);
+  if (!response.ok) throw errorProveedor(response.status, await cuerpoRechazo(response, apiKey));
   const parsed = respuestaSchema.safeParse(await response.json());
   if (!parsed.success || parsed.data.choices.length !== 1) return null;
   const choice = parsed.data.choices[0];
@@ -63,6 +63,20 @@ export async function interpretarChat(
     return { name, input: desenvolver(input, tools.find((t) => t.name === name)?.input_schema) };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Texto de un rechazo 4xx para el registro del servidor (errorProveedor guarda sus primeros 300 caracteres). Si el
+ * proveedor repitiera la clave en el cuerpo, se oculta; un cuerpo ilegible no impide informar el error.
+ */
+export async function cuerpoRechazo(response: Response, apiKey: string): Promise<string | undefined> {
+  if (response.status < 400 || response.status >= 500) return undefined;
+  try {
+    const texto = await response.text();
+    return apiKey ? texto.split(apiKey).join('[clave]') : texto;
+  } catch {
+    return undefined;
   }
 }
 

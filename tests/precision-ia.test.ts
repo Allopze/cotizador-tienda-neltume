@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { anclarCifras, anclarNombres, cifrasDelTexto } from '../src/asistente/anclaje';
 import { HERRAMIENTAS_COTIZACION, herramientas } from '../src/asistente/llm';
-import { CAMPOS_ITEM, casosSchema, puntuar, resumen } from '../src/asistente/evaluacion';
+import { CAMPOS_ITEM, avisosDeRevision, casosSchema, categoriaEvaluada, puntuar, resumen } from '../src/asistente/evaluacion';
 import { contextoSeguro, problemaSalida, SYSTEM } from '../src/asistente/llm';
 import { mapaCatalogo } from '../src/catalogo/mapa';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
@@ -498,5 +498,112 @@ describe('evaluación', () => {
     );
     expect(conError.total).toBe(CAMPOS_ITEM.length * 2 + 1);
     expect(resumen([perfecto, conError])).toMatchObject({ perfectos: 1, casos: 2 });
+  });
+  it('los casos nuevos de la revisión están y usan avisos y pendientes', async () => {
+    const casos = casosSchema.parse(JSON.parse(await readFile('evals/cotizacion.json', 'utf8')));
+    const porId = new Map(casos.map((c) => [c.id, c]));
+    for (const id of [
+      'i2-madera-no-fija-alto',
+      'i2-alto-no-fija-madera',
+      'i3-4-marcos-de-6',
+      'i4-x-pegada',
+      'i4-x-espacios',
+      'i4-x-signo',
+      'i6-responde-segundo-pendiente',
+      'i7-precio-total',
+      'i8-un-millon',
+      'i8-cu-pegado',
+      'i8-flete-cien-mil',
+      'mismo-item-dos-veces',
+      'riñihue-despacho-no-es-pedido',
+    ])
+      expect(porId.has(id), id).toBe(true);
+    expect(porId.get('i2-madera-no-fija-alto')?.esperado.pendientes).toEqual([{ item: 1, campo: 'alto' }]);
+    expect(porId.get('i7-precio-total')?.esperado.avisos).toEqual([{ categoria: 'precio', texto: 'precio total' }]);
+    expect(porId.get('riñihue-despacho-no-es-pedido')?.esperado).toMatchObject({ items: [] });
+    // Los tres separadores de medida de I4 («x», « x », «×»).
+    expect(['i4-x-pegada', 'i4-x-espacios', 'i4-x-signo'].map((id) => porId.get(id)?.mensajes[0])).toEqual([
+      expect.stringContaining('80x200'),
+      expect.stringContaining('80 x 200'),
+      expect.stringContaining('80×200'),
+    ]);
+  });
+
+  it('el esquema rechaza avisos sin categoría ni texto, categorías desconocidas y campos pendientes inválidos', () => {
+    const base = { id: 'x', descripcion: 'x', mensajes: ['x'] };
+    const con = (esperado: Record<string, unknown>) =>
+      casosSchema.safeParse([{ ...base, esperado: { items: [], ...esperado } }]).success;
+    expect(con({ avisos: [{ categoria: 'precio' }, { texto: 'flete' }, { categoria: 'noRegistre', ausente: true }] })).toBe(true);
+    expect(con({ avisos: [{ ausente: true }] })).toBe(false);
+    expect(con({ avisos: [{ categoria: 'inventada' }] })).toBe(false);
+    expect(con({ avisos: [{ categoria: 'precio', ausente: false }] })).toBe(false);
+    expect(con({ pendientes: [{ item: 1, campo: 'alto' }, { item: 2 }, { item: 3, campo: null }] })).toBe(true);
+    expect(con({ pendientes: [{ item: 0 }] })).toBe(false);
+    expect(con({ pendientes: [{ item: 1, campo: 'color' }] })).toBe(false);
+  });
+
+  it('los avisos de precio y flete que piden revisar tienen categoría propia; los informativos siguen en otros', () => {
+    const otros = (texto: string) => categoriaEvaluada({ categoria: 'otros', texto });
+    expect(otros('Escribiste un precio total para el ítem 1; indica el valor por unidad.')).toBe('precio');
+    expect(otros('No apliqué el precio del ítem 1 (MOLCO): no aparece escrito en su línea del pedido.')).toBe('precio');
+    expect(otros('El precio del ítem 1 (MOLCO) quedó en $450: revisa si le faltan ceros.')).toBe('precio');
+    expect(otros('No apliqué el flete: su valor no aparece escrito en el mensaje.')).toBe('flete');
+    expect(otros('El flete quedó en $350: revisa si le faltan ceros.')).toBe('flete');
+    expect(otros('No apliqué la cantidad 3 del flete: no aparece escrita en el mensaje.')).toBe('flete');
+    expect(otros('Usé el precio que indicaste para el ítem 1: $400.000 sin IVA c/u; el de catálogo es $380.000.')).toBe('otros');
+    expect(otros('Tomé $350.000 como valor del flete sin IVA. Si lo incluía, escribe «con IVA incluido».')).toBe('otros');
+    expect(categoriaEvaluada({ categoria: 'cifras', texto: 'No apliqué el precio' })).toBe('cifras');
+    expect(
+      avisosDeRevision([
+        { categoria: 'otros', texto: 'Tomé $1 como precio sin IVA del ítem 1.' },
+        { categoria: 'otros', texto: 'No apliqué el flete: su valor no aparece escrito en el mensaje.' },
+      ]),
+    ).toEqual([{ categoria: 'flete', texto: 'No apliqué el flete: su valor no aparece escrito en el mensaje.' }]);
+  });
+
+  it('puntúa los avisos esperados (presentes y ausentes) y las preguntas pendientes', () => {
+    const caso = casosSchema.parse([
+      {
+        id: 'x',
+        descripcion: 'x',
+        mensajes: ['x'],
+        esperado: {
+          items: [],
+          avisos: [{ categoria: 'precio', texto: 'precio total' }, { categoria: 'noRegistre', ausente: true }],
+          pendientes: [{ item: 1, campo: 'alto' }, { item: 2 }],
+        },
+      },
+    ])[0];
+    const vacio = { items: [], cliente: clienteVacio() };
+    const total = { categoria: 'otros', texto: 'Escribiste un precio total para el ítem 1; indica el valor por unidad.' };
+    const perfecto = puntuar(caso, {
+      ...vacio,
+      avisos: [total],
+      pendientes: [
+        { item: 1, campo: 'alto' },
+        { item: 2, campo: 'madera' },
+      ],
+    });
+    expect(perfecto).toMatchObject({ aciertos: 4, total: 4, diferencias: [] });
+    const mal = puntuar(caso, {
+      ...vacio,
+      avisos: [{ categoria: 'noRegistre', texto: 'No registré «x».' }],
+      pendientes: [
+        { item: 1, campo: 'madera' },
+        { item: 3, campo: null },
+      ],
+    });
+    expect(mal.aciertos).toBe(0);
+    expect(mal.diferencias).toEqual([
+      { item: null, campo: 'aviso', esperado: '[precio] «precio total»', obtenido: '(ninguno)' },
+      { item: null, campo: 'aviso', esperado: 'sin [noRegistre]', obtenido: '[noRegistre] No registré «x».' },
+      { item: 1, campo: 'pendiente', esperado: 'alto', obtenido: 'madera' },
+      { item: 2, campo: 'pendiente', esperado: '(pendiente)', obtenido: '(sin pendiente)' },
+      { item: 1, campo: 'pendiente', esperado: '(sin pendiente)', obtenido: 'madera' },
+      { item: 3, campo: 'pendiente', esperado: '(sin pendiente)', obtenido: null },
+    ]);
+    expect(mal.total).toBe(6);
+    // Sin avisos ni pendientes obtenidos (otro ejecutor), no se miden.
+    expect(puntuar(caso, vacio)).toMatchObject({ aciertos: 0, total: 0, diferencias: [] });
   });
 });

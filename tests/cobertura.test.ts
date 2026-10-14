@@ -199,4 +199,18 @@ describe('pedidos sin registrar', () => {
     ).toBe(true);
     expect(pareceUnPedido('hola, buenas tardes', resolver)).toBe(false);
   });
+  it('un despacho a un lugar que se llama como un modelo no es un pedido (#21)', () => {
+    const conRinihue = {
+      ...resolver,
+      modelo: (s: string) => (normalizar(s) === 'RINIHUE' ? 'RINIHUE' : resolver.modelo(s)),
+    };
+    const pareceUnPedidoAqui = (m: string) => pareceUnPedido(m, conRinihue);
+    expect(pareceUnPedidoAqui('3 Riñihue lenga')).toBe(true);
+    expect(pareceUnPedidoAqui('Necesito despacho a Riñihue para 3 pallets')).toBe(false);
+    expect(pareceUnPedidoAqui('flete a Riñihue, 3 pallets')).toBe(false);
+    // Lo que va antes del dato del cliente o del despacho sí puede ser un pedido.
+    expect(pareceUnPedidoAqui('3 Molco lenga para Juan Pérez')).toBe(true);
+    expect(pareceUnPedidoAqui('3 Molco lenga\ndespacho a Riñihue')).toBe(true);
+    expect(pareceUnPedidoAqui('despacho a Riñihue de 3 Molco lenga 80x200')).toBe(true);
+  });
 });

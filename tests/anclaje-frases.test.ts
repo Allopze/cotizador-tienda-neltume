@@ -1120,7 +1120,7 @@ describe('largos de accesorio sobre 3 m y la escuadría «de N» que existe', ()
     const doble = modos([marco({ medida: null, alto: 4 })], fuente);
     expect(doble.corregir.items[0]).toMatchObject({ medida: '2X4', alto: null });
     expect(doble.corregir.avisos).toEqual([
-      'El asistente usó la escuadría «2X4» también como largo del ítem 1 (MARCO): quedó pendiente para que lo confirmes.',
+      'El asistente usó la escuadría «2X4» (grosor por ancho de la pieza) también como largo del ítem 1 (MARCO): quedó pendiente para que lo confirmes.',
     ]);
     expect(doble.avisar).toEqual([
       'Revisa el ítem 1 (MARCO): tu mensaje parece decir la sección «2X4» y no lo anoté; anoté el alto 4 m, pero no lo encuentro en tu mensaje.',
@@ -1135,5 +1135,74 @@ describe('largos de accesorio sobre 3 m y la escuadría «de N» que existe', ()
       items: [{ medida: '2X4', alto: 4 }],
       avisos: [],
     });
+  });
+});
+
+describe('partes comunes del mensaje: «ambas de», «las dos», «cada una» (#14)', () => {
+  const familia = (m: string) => (m === 'MOLCO' ? 'PUERTA' : null);
+  const molco = (madera: string, fuente: string, s: Partial<SolicitudItem> = {}) =>
+    item({ modelo: 'MOLCO', madera, cantidad: 1, ancho: 0.73, alto: 2.4, fuente, ...s });
+  const modos = (ia: SolicitudItem[], mensaje: string) => {
+    const porFrase = anclarFrases(ia, [], mensaje, resolver, [], familia);
+    return { corregir: porFrase, avisar: avisosDeCampos(ia, porFrase.items, familia) };
+  };
+
+  it('los ítems heredan las medidas de la parte común y la cantidad escrita antes es el total', () => {
+    const mensaje = 'dame 2 Molco, una en raulí y otra en lenga, ambas de 73x240';
+    // Como cortó las frases la IA en el caso reproducido: el «2» y las medidas quedan en frases distintas.
+    for (const [a, b] of [
+      ['2 Molco, una en raulí', 'otra en lenga, ambas de 73x240'],
+      ['dame 2 Molco, una en raulí', 'otra en lenga'],
+      ['una en raulí', 'otra en lenga, ambas de 73x240'],
+    ]) {
+      const ia = [molco('RAULI', a), molco('LENGA', b)];
+      const { corregir, avisar } = modos(ia, mensaje);
+      expect(avisar, a).toEqual([]);
+      expect(corregir.avisos, a).toEqual([]);
+      expect(corregir.items, a).toEqual(ia);
+    }
+  });
+
+  it('vale igual con «las dos», «cada una de» y «todas de»', () => {
+    for (const comun of ['las dos de 73x240', 'cada una de 0,73 x 2,40', 'todas de 73 x 240']) {
+      const mensaje = `2 Molco, una en raulí y otra en lenga, ${comun}`;
+      const ia = [molco('RAULI', '2 Molco, una en raulí'), molco('LENGA', `otra en lenga, ${comun}`)];
+      const { corregir, avisar } = modos(ia, mensaje);
+      expect(avisar, comun).toEqual([]);
+      expect(corregir.items, comun).toEqual(ia);
+    }
+  });
+
+  it('la parte común corrige una medida mal leída del ítem que no dice las suyas', () => {
+    const mensaje = '2 Molco, una en raulí y otra en lenga, ambas de 73x240';
+    const ia = [molco('RAULI', '2 Molco, una en raulí', { ancho: 0.8 }), molco('LENGA', 'otra en lenga, ambas de 73x240')];
+    const { corregir, avisar } = modos(ia, mensaje);
+    expect(corregir.items[0]).toMatchObject({ ancho: 0.73, alto: 2.4, cantidad: 1 });
+    expect(avisar).toEqual(['Revisa el ítem 1 (MOLCO): anoté el ancho 0,8 m, pero tu mensaje parece decir 0,73 m.']);
+  });
+
+  it('sin reparto, la cantidad escrita antes del modelo sigue corrigiendo a la IA', () => {
+    const { avisar } = modos([molco('RAULI', '2 Molco raulí 73x240')], '2 Molco raulí 73x240');
+    expect(avisar).toEqual(['Revisa el ítem 1 (MOLCO): anoté la cantidad 1, pero tu mensaje parece decir 2.']);
+  });
+});
+
+describe('un par con una cifra sobre 300 (#18)', () => {
+  it('«102 x 320» se lee en centímetros: no hay un alto de 1,02 m que proponer', () => {
+    expect(parMedidaPuerta('4 LANCO en Lenga de 102 x 320')).toBeNull();
+    const ia = [
+      item({ modelo: 'LANCO', madera: 'LENGA', cantidad: 4, ancho: 1.02, alto: 3.2, fuente: '4 LANCO en Lenga de 102 x 320' }),
+    ];
+    const porFrase = anclarFrases(ia, [], '4 LANCO en Lenga de 102 x 320', resolver);
+    expect(porFrase.avisos).toEqual([]);
+    expect(porFrase.items).toEqual(ia);
+    expect(avisosDeCampos(ia, porFrase.items)).toEqual([]);
+  });
+
+  it('los pares en una sola unidad se leen como antes', () => {
+    expect(parMedidaPuerta('1230 x 2600 mm')).toEqual({ ancho: 1.23, alto: 2.6 });
+    expect(parMedidaPuerta('800 x 2100')).toEqual({ ancho: 0.8, alto: 2.1 });
+    expect(parMedidaPuerta('102 x 210')).toEqual({ ancho: 1.02, alto: 2.1 });
+    expect(parMedidaPuerta('0,8 x 2,1')).toEqual({ ancho: 0.8, alto: 2.1 });
   });
 });

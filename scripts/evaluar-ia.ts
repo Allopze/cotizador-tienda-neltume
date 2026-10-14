@@ -8,15 +8,28 @@
 //   npm run evaluar:ia -- --repeticiones 3       corre cada caso 3 veces: perfecto solo si las 3 lo son
 //   npm run evaluar:ia -- --min-perfectos 0.95   sale con error si menos del 95 % de los casos es perfecto
 //   npm run evaluar:ia -- --anclaje corregir,avisar  compara los modos del anclaje por frase (ver ModoAnclaje)
+//   npm run evaluar:ia -- --max-silenciosos 0    sale con error si algún error de lectura no tuvo aviso
+//   npm run evaluar:ia -- --max-falsas 0.05      sale con error si más del 5 % de las corridas perfectas avisó algo
+//
+// Cada modelo (y modo de anclaje) deja su informe en data/test-evaluar-ia/<fecha>-<modelo>.json y .md: el resumen,
+// los avisos y las diferencias de cada caso, para compararlo con otra corrida sin volver a pagarla.
 //
 // Usa la clave y el catálogo de la base configurada (NELTUME_DATA_DIR). Cada caso corre en una base temporal:
 // no crea cotizaciones en la base real. Llama al proveedor de IA: tiene un costo (pequeño) por ejecución.
 // La IA no responde siempre igual («No entendí» salía 1 de cada 4 veces con un pedido real): con repeticiones,
 // un caso que falla a veces no pasa por perfecto.
-import { readFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { CommandCodeLLM, type ModoAnclaje } from '../src/asistente/llm';
-import { casosSchema, resumen, type CasoEvaluacion } from '../src/asistente/evaluacion';
+import { avisosDeRevision, casosSchema, resumen, type CasoEvaluacion } from '../src/asistente/evaluacion';
+import {
+  armarInforme,
+  informeMarkdown,
+  leerUmbral,
+  nombreInforme,
+  umbralesSuperados,
+} from '../src/asistente/informe-evaluacion';
 import { leerAjustesIA, leerClaveCommandCode } from '../src/servidor/ajustes-ia';
 import { cargarCatalogo } from '../src/servidor/catalogo';
 import { correrCaso, type ResultadoEjecucion } from '../src/servidor/evaluar-caso';
@@ -33,8 +46,15 @@ const { values } = parseArgs({
     paralelo: { type: 'string', default: '3' },
     repeticiones: { type: 'string', default: '1' },
     casos: { type: 'string', default: 'evals/cotizacion.json' },
+    'max-silenciosos': { type: 'string' },
+    'max-falsas': { type: 'string' },
+    salida: { type: 'string', default: 'data/test-evaluar-ia' },
   },
 });
+const umbrales = {
+  maxSilenciosos: leerUmbral(values['max-silenciosos'], 'max-silenciosos'),
+  maxFalsas: leerUmbral(values['max-falsas'], 'max-falsas'),
+};
 
 const casos = casosSchema
   .parse(JSON.parse(await readFile(values.casos!, 'utf8')))
@@ -94,9 +114,11 @@ async function enParalelo<T, R>(lista: T[], limite: number, f: (x: T) => Promise
 
 const mostrar = (v: unknown) => (v === null || v === undefined ? '∅' : JSON.stringify(v));
 /** Avisos que piden revisar el pedido; los `otros` (flete neto, precio de catálogo…) solo informan. */
-const revision = (r: ResultadoEjecucion) => r.avisos.filter((a) => a.categoria !== 'otros');
+const revision = (r: ResultadoEjecucion) => avisosDeRevision(r.avisos);
 let peor = 1,
   peoresPerfectos = 1;
+const umbralesFallidos: string[] = [];
+await mkdir(values.salida!, { recursive: true });
 for (const modelo of modelos)
   for (const anclaje of modos as ModoAnclaje[]) {
     console.log(
@@ -158,21 +180,28 @@ for (const modelo of modelos)
     );
     // Avisos que piden revisar el pedido (no los informativos): en una corrida perfecta son falsas alarmas; en una
     // con errores, el error quedó a la vista. Un error sin aviso es silencioso: el que más cuesta.
-    const respondidas = resultados.filter((r) => !r.error);
-    const perfectas = respondidas.filter((r) => !r.diferencias.length);
-    const falsas = perfectas.filter((r) => revision(r).length);
-    const conErrores = respondidas.filter((r) => r.diferencias.length);
-    const silenciosas = conErrores.filter((r) => !revision(r).length);
-    const porCategoria = new Map<string, number>();
-    for (const a of falsas.flatMap(revision))
-      porCategoria.set(a.categoria, (porCategoria.get(a.categoria) ?? 0) + 1);
+    const fecha = new Date();
+    const informe = armarInforme({
+      fecha,
+      modelo,
+      anclaje,
+      casos,
+      repeticiones,
+      corridas: resultados,
+      segundos: (Date.now() - inicio) / 1000,
+      consumo: { ...consumo, costoUSD: costo },
+    });
+    const { avisos } = informe;
+    const categorias = Object.entries(avisos.porCategoria);
     console.log(
-      `  avisos: falsas alarmas en ${falsas.length}/${perfectas.length} corridas perfectas${porCategoria.size ? ` (${[...porCategoria].map(([c, n]) => `${c} ${n}`).join(', ')})` : ''} · errores avisados ${conErrores.length - silenciosas.length}/${conErrores.length} · silenciosos ${silenciosas.length}`,
+      `  avisos: falsas alarmas en ${avisos.falsas}/${avisos.perfectas} corridas perfectas${categorias.length ? ` (${categorias.map(([c, n]) => `${c} ${n}`).join(', ')})` : ''} · errores avisados ${avisos.conErrores - avisos.silenciosas}/${avisos.conErrores} · silenciosos ${avisos.silenciosas}`,
     );
-    for (const texto of [
-      ...new Set(falsas.flatMap(revision).map((a) => `[${a.categoria}] ${a.texto}`)),
-    ].slice(0, 15))
-      console.log(`    falsa alarma ${texto}`);
+    for (const texto of avisos.ejemplos) console.log(`    falsa alarma ${texto}`);
+    const base = join(values.salida!, nombreInforme(fecha, modelo, modos.length > 1 ? anclaje : undefined));
+    await writeFile(`${base}.json`, `${JSON.stringify(informe, null, 2)}\n`);
+    await writeFile(`${base}.md`, informeMarkdown(informe));
+    console.log(`  informe: ${base}.json y .md`);
+    umbralesFallidos.push(...umbralesSuperados(informe, umbrales));
   }
 if (values.min && peor < Number(values.min)) {
   console.error(
@@ -184,5 +213,9 @@ if (values['min-perfectos'] && peoresPerfectos < Number(values['min-perfectos'])
   console.error(
     `\nCasos perfectos ${(peoresPerfectos * 100).toFixed(1)} % bajo el mínimo ${(Number(values['min-perfectos']) * 100).toFixed(1)} %.`,
   );
+  process.exit(1);
+}
+if (umbralesFallidos.length) {
+  console.error(`\n${umbralesFallidos.join('\n')}`);
   process.exit(1);
 }

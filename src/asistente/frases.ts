@@ -33,7 +33,9 @@ export function ubicacionesFrase(texto: string, frase: string): [number, number]
   const patron = partes
     .map((p) => (p === 'por' || p === 'x' ? '(?:x|por)' : p))
     .join('(?:[^a-z0-9ñ]|\\ben\\b)*');
-  return [...comparable(texto).matchAll(new RegExp(`(?<![a-z0-9ñ])${patron}(?![a-z0-9ñ])`, 'g'))].map(
+  // Una unidad pegada a la última cifra («83x236cm») también cierra la frase; otras letras pegadas, no.
+  const fin = String.raw`(?=(?<=\d)(?:cm|mm|mts|mt|m)(?![a-z0-9ñ])|(?![a-z0-9ñ]))`;
+  return [...comparable(texto).matchAll(new RegExp(`(?<![a-z0-9ñ])${patron}${fin}`, 'g'))].map(
     (m): [number, number] => [m.index, m.index + m[0].length],
   );
 }

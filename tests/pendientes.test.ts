@@ -224,6 +224,27 @@ describe('preguntas de los ítems pendientes', () => {
     });
   });
 
+  it('la sección que falta explica qué es una escuadría, con el texto de Catálogo (#37)', () => {
+    const [seccion, alto] = preguntasPendientes({
+      solicitudes: [item({ modelo: 'Marco', madera: 'LENGA', medida: null, ancho: null, alto: null })],
+      incompletos: [
+        { indice: 0, rechazo: faltan(['medida', 'alto'], { medida: ['2X4', '2X5'], alto: ['2.2'] }), pregunta: '' },
+      ],
+    });
+    expect(seccion).toMatchObject({
+      campo: 'medida',
+      texto: 'Sección o escuadría para el ítem 1 (Marco)',
+      detalle: 'Escuadría: grosor por ancho de la pieza.',
+    });
+    expect(alto.detalle).toBeNull();
+    const html = renderToStaticMarkup(
+      createElement(PreguntasPendientes, {
+        preguntas: [seccion], editable: true, asistente: false, guardando: null, responder: async () => true,
+      }),
+    );
+    expect(html).toContain('Escuadría: grosor por ancho de la pieza.');
+  });
+
   it('alto con botones en metros, ancho y cantidad como entrada numérica', () => {
     const preguntas = preguntasPendientes({
       solicitudes: [item({ ancho: null, alto: null, cantidad: null, madera: 'LENGA' })],

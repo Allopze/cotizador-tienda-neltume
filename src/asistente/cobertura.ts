@@ -168,13 +168,22 @@ export function fleteAlFinal(mensaje: string) {
 
 /**
  * ¿El mensaje pide productos? Nombra un modelo y trae una cifra, y no es una pregunta sin medidas. A diferencia de un
- * trozo suelto, un mensaje completo puede traer además el cliente («… para Juan Pérez»).
+ * trozo suelto, un mensaje completo puede traer además el cliente («… para Juan Pérez»): en cada línea sin medidas
+ * se lee solo lo que va antes de un dato del cliente, del despacho o una edición (`NO_ES_PEDIDO`). Así «Necesito
+ * despacho a Riñihue para 3 pallets» no pide la puerta Riñihue.
  */
 export function pareceUnPedido(mensaje: string, resolver: Resolver) {
   const plano = sinTildes(mensaje);
+  const productos = plano
+    .split('\n')
+    .map((l) => {
+      const dato = tieneMedidas(l) ? -1 : l.search(NO_ES_PEDIDO);
+      return dato >= 0 ? l.slice(0, dato) : l;
+    })
+    .join('\n');
   return (
     !esPregunta(plano) &&
-    nombresDichos(plano, resolver.modelo, resolver.madera).resueltos.size > 0 &&
-    cifrasDelTexto(plano).length > 0
+    nombresDichos(productos, resolver.modelo, resolver.madera).resueltos.size > 0 &&
+    cifrasDelTexto(productos).length > 0
   );
 }

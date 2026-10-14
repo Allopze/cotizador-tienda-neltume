@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { zipSync, strToU8 } from 'fflate';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -48,7 +48,11 @@ async function principal() {
     console.warn(
       'Se omite la verificación (--sin-verificar): la entrega no pasó por tipos, lint, pruebas ni evaluación de la IA.',
     );
-  else await verificar({ sinIa: values['sin-ia'] });
+  else {
+    // Se advierte al empezar y al terminar: entre medio, la salida de las pruebas la deja fuera de la vista.
+    if (values['sin-ia']) console.warn(advertenciaSinIa());
+    await verificar({ sinIa: values['sin-ia'] });
+  }
   if (values['solo-verificar']) return;
 
   let origen = '';
@@ -139,6 +143,27 @@ async function principal() {
 }
 
 /**
+ * Advertencia destacada de --sin-ia: la entrega no pasó la evaluación de la IA (precisión, errores silenciosos y
+ * falsas alarmas), así que un cambio en el asistente puede llegar a las vendedoras sin medir.
+ */
+export function advertenciaSinIa() {
+  const lineas = [
+    'ATENCIÓN: SE OMITIÓ LA EVALUACIÓN DE LA IA (--sin-ia)',
+    '',
+    'Esta entrega no midió la precisión del asistente, sus errores',
+    'silenciosos ni sus falsas alarmas. Si cambió el asistente, el',
+    'anclaje o los casos, corre «npm run evaluar:regresion» antes',
+    'de usarlo con las vendedoras.',
+  ];
+  const ancho = Math.max(...lineas.map((l) => l.length));
+  const borde = `+${'-'.repeat(ancho + 2)}+`;
+  const cuerpo = lineas.map((l) => `| ${l.padEnd(ancho)} |`);
+  const texto = ['', borde, ...cuerpo, borde, ''].join('\n');
+  // Amarillo y negrita en una terminal; texto plano si la salida va a un archivo.
+  return process.stderr.isTTY ? `\x1b[1;33m${texto}\x1b[0m` : texto;
+}
+
+/**
  * Nada llega al servidor sin pasar las pruebas: unos tests rotos estuvieron días sin que nadie lo notara, y no
  * hay CI. La evaluación de la IA corre cada caso varias veces (cuesta unos centavos de dólar).
  */
@@ -168,7 +193,7 @@ async function verificar({ sinIa }) {
             : ''),
       );
   }
-  if (sinIa) console.warn('\nSe omitió la evaluación de la IA (--sin-ia).');
+  if (sinIa) console.warn(advertenciaSinIa());
   console.log('\nVerificación completa.');
 }
 
@@ -258,7 +283,9 @@ function desplegarRemoto(host, dir, zip, forzar) {
   });
 }
 
-principal().catch((error) => {
-  console.error(`No se pudo generar el despliegue: ${error.message}`);
-  process.exitCode = 1;
-});
+// Solo al ejecutarlo: las pruebas importan el módulo para revisar la advertencia sin desplegar nada.
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href)
+  principal().catch((error) => {
+    console.error(`No se pudo generar el despliegue: ${error.message}`);
+    process.exitCode = 1;
+  });

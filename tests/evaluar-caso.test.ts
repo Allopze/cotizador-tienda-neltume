@@ -145,4 +145,41 @@ describe('correr un caso de evaluación', () => {
       { item: null, campo: 'flete', esperado: '(sin flete)', obtenido: { unitario: 50000, cantidad: 1 } },
     ]);
   });
+  it('mide las preguntas pendientes y los avisos esperados de la conversación', async () => {
+    // Sin madera: el ítem queda pendiente de la madera y no hay avisos de revisión.
+    const mensaje = 'una Molco de 80 x 200';
+    const sinMadera = {
+      name: 'modificar_cotizacion',
+      input: { agregar: [{ ...salida.input.agregar[0], madera: null, fuente: mensaje }] },
+    };
+    const conPendientes = (pendientes: unknown, avisos: unknown = undefined): CasoEvaluacion =>
+      casosSchema.parse([
+        {
+          ...caso,
+          mensajes: [mensaje],
+          esperado: {
+            items: [{ modelo: 'MOLCO', madera: null, ancho: 0.8, alto: 2, medida: null, cantidad: 1 }],
+            pendientes,
+            ...(avisos ? { avisos } : {}),
+          },
+        },
+      ])[0];
+    const llm = () => ({ interpretar: vi.fn().mockResolvedValue(sinMadera), verificarCifras: true });
+    const bien = await correrCaso(
+      conPendientes([{ item: 1, campo: 'madera' }], [{ categoria: 'noRegistre', ausente: true }]),
+      llm(),
+      catalogo,
+    );
+    expect(bien.diferencias).toEqual([]);
+    expect(bien.total).toBe(CAMPOS_ITEM.length + 2);
+    const mal = await correrCaso(conPendientes([]), llm(), catalogo);
+    expect(mal.diferencias).toEqual([{ item: 1, campo: 'pendiente', esperado: '(sin pendiente)', obtenido: 'madera' }]);
+    // Si la IA falla, el total no cambia: los avisos y pendientes esperados cuentan como errores.
+    const caida = await correrCaso(
+      conPendientes([{ item: 1, campo: 'madera' }]),
+      { interpretar: vi.fn().mockRejectedValue(new ErrorIA('ia_limite', 'Límite.')), verificarCifras: true },
+      catalogo,
+    );
+    expect(caida).toMatchObject({ aciertos: 0, total: CAMPOS_ITEM.length + 1 });
+  });
 });

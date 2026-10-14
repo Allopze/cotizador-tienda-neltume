@@ -241,3 +241,68 @@ describe('3.4 · número de cotización elegido a mano', () => {
     }
   });
 });
+
+describe('#38 · diagnóstico del chat (I5)', () => {
+  const chat = (cuerpo: unknown) =>
+    Response.json({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            tool_calls: [{ type: 'function', function: { name: 'responder', arguments: JSON.stringify(cuerpo) } }],
+          },
+        },
+      ],
+    });
+  /** El principal está mal escrito (404 con cuerpo); el respaldo responde. */
+  const proveedor = () =>
+    vi.fn<typeof fetch>(async (_url, opciones) => {
+      const { model } = JSON.parse(String(opciones?.body)) as { model: string };
+      if (model === 'deepseek/mal-escrito')
+        return new Response('{"error":{"message":"No endpoints found for deepseek/mal-escrito."}}', {
+          status: 404,
+        });
+      return chat({ texto: '¿Qué madera necesitas?' });
+    });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('la respuesta trae el modelo que respondió y si fue el respaldo; el 4xx queda en el registro', async () => {
+    const m = await montar();
+    try {
+      m.ia.guardarClaveCommandCode('sk-de-prueba', m.db);
+      m.ia.guardarAjustesIA({ commandcode: { modelo: 'deepseek/mal-escrito', respaldo: 'Qwen/Qwen3.7-Flash' } }, m.db);
+      vi.stubGlobal('fetch', proveedor());
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      vi.spyOn(console, 'info').mockImplementation(() => {});
+      const r = await m.accion.POST(
+        m.peticion('/api/accion', { cookie: m.usuario, cuerpo: { tipo: 'chat', mensaje: 'cotiza una puerta' } }),
+      );
+      expect(r.status).toBe(200);
+      const cuerpo = (await r.json()) as { diagnostico: { modelo: string; respaldo: boolean; ms: number } };
+      expect(cuerpo.diagnostico).toEqual({ modelo: 'Qwen/Qwen3.7-Flash', respaldo: true, ms: expect.any(Number) });
+      expect(warn).toHaveBeenCalledWith(
+        '[asistente] respaldo',
+        expect.objectContaining({ tecnico: expect.stringContaining('No endpoints found for deepseek/mal-escrito') }),
+      );
+
+      // Sin respaldo, el error llega a la vendedora sin el detalle, que sí queda en el registro del servidor.
+      m.ia.guardarAjustesIA({ commandcode: { modelo: 'deepseek/mal-escrito', respaldo: null } }, m.db);
+      const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const fallida = await m.accion.POST(
+        m.peticion('/api/accion', { cookie: m.usuario, cuerpo: { tipo: 'chat', mensaje: 'cotiza una puerta' } }),
+      );
+      expect(fallida.status).toBe(502);
+      const texto = await fallida.text();
+      expect(texto).toContain('ia_configuracion');
+      expect(texto).not.toContain('No endpoints');
+      expect(error.mock.calls.flat().join(' ')).toMatch(
+        /ia_configuracion: HTTP 404: .*No endpoints found for deepseek\/mal-escrito/,
+      );
+    } finally {
+      m.cerrar();
+    }
+  });
+});

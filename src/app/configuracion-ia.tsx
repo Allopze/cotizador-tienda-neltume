@@ -15,6 +15,8 @@ import type { TipoAviso } from './avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 import { SeccionAvanzada } from './ajustes/avanzado';
 import { AccionesGuardar, useAvisarCambios } from './ajustes/borrador';
+import { ultimoDiagnosticoIA, type DiagnosticoIA } from './diagnostico-ia';
+import { useEsCliente } from './memoria-pantalla';
 
 export interface EstadoAjustes {
   ajustes: AjustesIA;
@@ -293,6 +295,7 @@ function Formulario({
                 )}
               </p>
             </div>
+            <UltimaRespuesta nombreDe={nombreDe} />
             {catalogo?.desactualizado && (
               <p className="ia-status falta" role="status">
                 CommandCode no respondió; se muestra el último catálogo disponible.
@@ -373,6 +376,36 @@ function Formulario({
       </SeccionAvanzada>
       {dialogoConfirmacion}
     </>
+  );
+}
+
+/** Texto del último diagnóstico del chat: qué modelo respondió, si fue el respaldo y cuánto tardó. */
+export function textoDiagnostico(d: DiagnosticoIA | null, nombre?: string) {
+  if (!d) return 'Todavía no hay mensajes del chat en esta pestaña.';
+  const modelo = d.modelo ? (nombre ? `${nombre} (${d.modelo})` : d.modelo) : 'sin consultar a la IA';
+  const segundos = (d.ms / 1000).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const hora = new Date(d.fecha).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return `${hora} · ${modelo}${d.respaldo ? ' · respondió el modelo de respaldo' : ''} · ${segundos} s`;
+}
+
+/**
+ * Último mensaje del chat en esta pestaña (lo guarda el cotizador en sessionStorage). Si respondió el respaldo,
+ * el modelo del asistente está fallando: es la pista para revisarlo o probarlo.
+ */
+function UltimaRespuesta({ nombreDe }: { nombreDe: (id: string) => string | undefined }) {
+  const cliente = useEsCliente();
+  const d = cliente ? ultimoDiagnosticoIA() : null;
+  return (
+    <div className="ia-field">
+      <span>Última respuesta del chat</span>
+      <p
+        className={d?.respaldo ? 'ia-status falta' : 'ia-permiso'}
+        data-testid="ia-ultima-respuesta"
+      >
+        {textoDiagnostico(d, d?.modelo ? nombreDe(d.modelo) : undefined)}
+        {d?.respaldo && '. El modelo del asistente falló en ese mensaje: pruébalo o revisa el registro del servidor.'}
+      </p>
+    </div>
   );
 }
 

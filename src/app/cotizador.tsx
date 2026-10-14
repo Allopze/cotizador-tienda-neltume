@@ -65,6 +65,7 @@ import {
   pedirJSON,
   recordarAbierta,
 } from './solicitud';
+import { guardarDiagnosticoIA } from './diagnostico-ia';
 
 const ejemplo = 'Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco';
 const LIMITE = 6000,
@@ -1216,6 +1217,7 @@ export function Cotizador({
         control.signal,
       );
       idPendiente.current = null;
+      guardarDiagnosticoIA(d);
       setMensaje('');
       setTextoConservado(false);
       if (d.seleccion) {
@@ -1264,6 +1266,7 @@ export function Cotizador({
         },
         control.signal,
       );
+      guardarDiagnosticoIA(d);
       if (d.seleccion) {
         setSeleccion({ ...pendiente, opciones: d.seleccion });
         return;

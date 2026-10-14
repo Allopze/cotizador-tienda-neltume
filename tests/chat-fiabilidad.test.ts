@@ -27,6 +27,14 @@ const catalogo: Catalogo = {
     puerta('HUI-M-3-A', 'Huilo Huilo'),
     puerta('HUI-L-3-A', 'Huilo Huilo', 'LENGA'),
     puerta('PAN-M-3-A', 'PANGUIPULLI'),
+    // Ranco de 0,70 con dos altos: «2 Ranco de 70» deja pendientes la madera y el alto, con sus opciones.
+    ...(['MARA', 'LENGA'] as const).flatMap((madera) =>
+      [2, 2.1].map((alto) => ({
+        ...puerta(`RAN-${madera[0]}-${alto}`, 'RANCO', madera),
+        medida: '0,70 A 0,75', anchoMin: 0.7, anchoMax: 0.75, altoMin: alto, altoMax: alto, largo: alto,
+        descripcion: `RANCO ${madera} 0,70 A 0,75 MT X ${alto} MT`,
+      })),
+    ),
   ],
 };
 const PEDIDO = 'cotiza 2 pillo de mara 83x236';
@@ -262,4 +270,93 @@ describe('precio total de varias unidades', () => {
     expect(r.avisos ?? []).not.toContain(total);
     expect(r.cotizacion.montos.lineas).toHaveLength(1);
   });
+});
+
+describe('lo que solo dijo el asistente no respalda una cifra (I2, en dos turnos)', () => {
+  const ranco = (extra: Record<string, unknown>) => ({
+    modelo: 'RANCO', madera: null, ancho: 70, alto: null, medida: null, cantidad: 2, fuente: '2 Ranco de 70', ...extra,
+  });
+  for (const modo of MODOS)
+    it(`«lenga» a la pregunta con opciones no fija el alto que solo estaba en ellas (modo ${modo})`, async () => {
+      const { chat } = await setup(modo);
+      const q = (await chat('2 Ranco de 70', lista(ranco({})))).cotizacion;
+      // La pregunta pendiente trae los altos como opciones: el 2,1 queda escrito en el historial del asistente.
+      expect(q.historial.at(-1)!.texto).toMatch(/Opciones: 2, 2,1/);
+      const r = await chat('lenga', lista(ranco({ madera: 'LENGA', alto: 2.1, fuente: 'lenga' })), q);
+      expect(r.cotizacion.solicitudes[0]).toMatchObject({ madera: 'LENGA', alto: null, cantidad: 2 });
+      expect(r.cotizacion.montos.lineas).toHaveLength(0);
+      // En «corregir», «lenga» se aplica sin la IA (respuesta directa) y no hay alto que avisar.
+      if (modo === 'avisar')
+        expect(r.avisos).toContain(
+          'El asistente propuso el alto o largo 2,1 m para el ítem 1 (RANCO), pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.',
+        );
+    });
+});
+
+describe('la pregunta pendiente sobrevive al recorte del historial (I6)', () => {
+  it('con avisos largos, la IA recibe la pregunta dentro de los 500 caracteres del turno', async () => {
+    const { chat, llm } = await setup('avisar');
+    // Dos ítems con cifras y una madera que el mensaje no dice: avisos largos, y «Pillo» queda como pregunta.
+    const q = (
+      await chat(
+        PEDIDO,
+        lista(
+          pedido('Pillo'),
+          pedido('PANGUIPULLI', { madera: 'LENGA', cantidad: 7, ancho: 91, alto: 245, fuente: 'otra panguipulli' }),
+        ),
+      )
+    ).cotizacion;
+    const turno = q.historial.at(-1)!.texto;
+    expect(turno.length).toBeGreaterThan(500);
+    expect(turno.indexOf(PREGUNTA)).toBeGreaterThan(-1);
+    await chat('sí', lista(pedido('Huilo Huilo')), q);
+    const contexto = llm.interpretar.mock.calls[1][0] as { historial: { rol: string; texto: string }[] };
+    const recortado = contexto.historial.at(-1)!;
+    expect(recortado.rol).toBe('asistente');
+    expect(recortado.texto.length).toBeLessThanOrEqual(500);
+    expect(recortado.texto).toContain(PREGUNTA);
+  });
+});
+
+describe('edición por el chat con la frase parafraseada', () => {
+  for (const modo of MODOS)
+    it(`avisa «No pude verificar» cuando la frase del cambio no está en el mensaje (modo ${modo})`, async () => {
+      const { chat } = await setup(modo);
+      const mensaje = 'cotiza 2 huilo huilo de mara 83x236';
+      const q = (await chat(mensaje, lista(pedido('Huilo Huilo', { fuente: '2 huilo huilo de mara 83x236' }))))
+        .cotizacion;
+      const r = await chat('que sean 3', editar({ cantidad: 3, fuente: 'cambiar a tres unidades' }), q);
+      expect(r.avisos).toContain('No pude verificar el ítem 1 contra tu mensaje; revísalo.');
+    });
+});
+
+describe('frases que antes no se ubicaban o daban falsas alarmas', () => {
+  for (const modo of MODOS)
+    it(`«83x236cm»: la unidad pegada no impide ubicar la frase (modo ${modo})`, async () => {
+      const { chat } = await setup(modo);
+      const r = await chat(
+        'cotiza 2 huilo huilo de mara 83x236cm',
+        lista(pedido('Huilo Huilo', { fuente: '2 huilo huilo de mara 83x236' })),
+      );
+      expect(r.avisos).toBeUndefined();
+      expect(r.cotizacion.montos.lineas.map((l) => l.producto.codigo)).toEqual(['HUI-M-3-A']);
+    });
+
+  for (const modo of MODOS)
+    it(`«una en mara y otra en lenga, ambas de 83x236» no avisa cantidad ni medidas (modo ${modo})`, async () => {
+      const { chat } = await setup(modo);
+      const mensaje = 'cotiza 2 Huilo Huilo, una en mara y otra en lenga, ambas de 83x236';
+      const r = await chat(
+        mensaje,
+        lista(
+          pedido('Huilo Huilo', { cantidad: 1, fuente: '2 Huilo Huilo, una en mara' }),
+          pedido('Huilo Huilo', { madera: 'LENGA', cantidad: 1, fuente: 'otra en lenga, ambas de 83x236' }),
+        ),
+      );
+      expect(r.avisos).toBeUndefined();
+      expect(r.cotizacion.montos.lineas.map((l) => `${l.producto.codigo}×${l.cantidad}`)).toEqual([
+        'HUI-M-3-A×1',
+        'HUI-L-3-A×1',
+      ]);
+    });
 });

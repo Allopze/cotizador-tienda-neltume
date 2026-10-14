@@ -475,12 +475,24 @@ export function parMedidaPuerta(frase: string): { ancho: number; alto: number } 
   if (nombradas.ancho !== undefined && nombradas.alto !== undefined)
     return { ancho: nombradas.ancho, alto: nombradas.alto };
   const pares = [...separado(frase).matchAll(PAR_MEDIDAS)].flatMap((m) => {
-    const a = metros(Number(m[1].replace(',', '.'))),
-      b = metros(Number(m[2].replace(',', '.')));
+    const [x, y] = [m[1], m[2]].map((n) => Number(n.replace(',', '.')));
+    // Las dos cifras de un par van en la misma unidad: «102 x 320» son centímetros, y 3,2 m no es una puerta; no
+    // 1,02 m por 320 mm.
+    const enCm = x > 10 && y > 10 && Math.min(x, y) <= 300 && Math.max(x, y) > 300;
+    const a = metros(enCm ? x / 100 : x),
+      b = metros(enCm ? y / 100 : y);
     return a !== null && b !== null ? [{ ancho: Math.min(a, b), alto: Math.max(a, b) }] : [];
   });
   return pares.length === 1 ? pares[0] : null;
 }
+
+/**
+ * Parte del mensaje que vale para varios ítems: «ambas de 73x240», «las dos en 80x200», «cada una de 0,73 x 2,4»,
+ * «todas de 70x210». Llega hasta la coma, el punto y coma o el final (una coma decimal no corta).
+ */
+const PARTE_COMUN = /\b(?:ambas|ambos|las dos|los dos|cada una|cada uno|todas|todos)\b(?:[^,;]|,(?=\d))*/g;
+/** ¿La frase trae un par de medidas propio? */
+const PAR_MEDIDAS_PLANO = /\d\s*(?:x|por)\s*\d/;
 
 /** Escuadría dicha en pulgadas («de 8 pulgadas», «6"»): en marcos y piezas T es la sección 2xN. */
 const PULGADAS = /(?<![\d.,x×*])(\d{1,2})\s*(?:pulgadas?|pulg\.?|"|”)/g;
@@ -568,6 +580,10 @@ export function anclarFrases(
         : p[campo] === valor,
     );
   const conSuMarco = /\bcon (su |sus )?marcos?\b|\bcada (una|uno) con\b/.test(texto);
+  // «… una en raulí y otra en lenga, ambas de 73x240»: la parte común del mensaje vale para cada ítem que no dice
+  // sus propias medidas, y la cantidad escrita antes («2 Molco, una en raulí…») es el total que se reparte.
+  const comunes = [...texto.matchAll(PARTE_COMUN)].map((m) => m[0]);
+  const reparte = comunes.length > 0 || /\bun[oa]\b.*\botr[oa]\b/.test(texto);
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     const frase = frases[i];
@@ -593,6 +609,7 @@ export function anclarFrases(
     const deOtroItem = (campo: 'ancho' | 'alto', v: number, fam = 'PUERTA') =>
       !continua &&
       !respaldo(campo, v, sinOtras(i), fam) &&
+      !comunes.some((c) => respaldo(campo, v, c, fam)) &&
       !(antes && respaldo(campo, v, antes, fam)) &&
       frases.some((f, j) => j !== i && !!f && respaldo(campo, v, f, fam));
 
@@ -689,7 +706,9 @@ export function anclarFrases(
     /** Familia con que se leen sus medidas (`familiaItem`): «360» es un largo de 3,6 m en un guardapolvo. */
     const fam = familiaItem(resultado, null, null, familia);
     const esPuerta = fam === 'PUERTA';
-    const par = parMedidaPuerta(frase);
+    // Sin un par propio, el de la parte común («ambas de 73x240»), si es uno solo.
+    const comun = comunes.length ? parMedidaPuerta(comunes.join(' ; ')) : null;
+    const par = parMedidaPuerta(frase) ?? (frase.match(PAR_MEDIDAS_PLANO) ? null : comun);
     // La sección escrita en la frase («marco 2x5 pino», «de 8 pulgadas») gana a otra que proponga la IA (30x70
     // de los finger) y completa la que dejó vacía.
     if (!esPuerta && resultado.ancho == null && secciones.length === 1) {
@@ -713,6 +732,10 @@ export function anclarFrases(
         (otro, j) => j !== i && otro.cantidad === cantidad && (/\bmarcos?\b/.test(frase) || /\bmarcos?\b/.test(frases[j] ?? '')),
       );
     const otraUna = cantidad === 1 && /\b(otra|otro)\b/.test(frase);
+    // El total que se reparte entre ítems del mismo modelo («2 Molco, una en raulí y otra en lenga»).
+    const total = items
+      .filter((o) => !!o.modelo && !!item.modelo && normalizar(o.modelo) === normalizar(item.modelo))
+      .reduce((suma, o) => suma + (o.cantidad ?? 0), 0);
     const invalida = cantidad != null && !(Number.isInteger(cantidad) && cantidad >= 1 && cantidad <= 10000);
     const ajena =
       cantidad != null &&
@@ -726,9 +749,11 @@ export function anclarFrases(
     // justo antes del modelo manda sobre las demás.
     const antesDelModelo = resultado.modelo ? cantidadAntesDelModelo(frase, resultado.modelo) : null;
     const dichas = antesDelModelo !== null ? [antesDelModelo] : cantidadesDichas(frase);
+    const repartida = reparte && cantidad != null && dichas.length === 1 && dichas[0] === total && total > cantidad;
     if (
       !heredada &&
       !otraUna &&
+      !repartida &&
       dichas.length === 1 &&
       dichas[0] !== cantidad &&
       (cantidad == null || invalida || ajena || !conocida('cantidad', cantidad))
@@ -767,7 +792,7 @@ export function anclarFrases(
       for (const campo of ['ancho', 'alto'] as const) {
         const v = resultado[campo];
         if (v == null || conocida(campo, v)) continue;
-        if (metros(v) !== null && respaldo(campo, v, frase)) continue;
+        if (metros(v) !== null && [frase, ...comunes].some((t) => respaldo(campo, v, t))) continue;
         if (par) {
           resultado = { ...resultado, [campo]: par[campo] };
           corregido(campo === 'ancho' ? 'el ancho' : 'el alto', metrosAviso(v), metrosAviso(par[campo]));
@@ -795,7 +820,7 @@ export function anclarFrases(
           // «6 marcos de 4» leído con un largo de 4 m: el 4 ya es la escuadría.
           resultado = { ...resultado, alto: null };
           avisos.push(
-            `El asistente usó la escuadría «${escuadriaComoLargo}» también como largo del ${etiquetaItem.slice(3)}: quedó pendiente para que lo confirmes.`,
+            `El asistente usó la escuadría «${escuadriaComoLargo}» (grosor por ancho de la pieza) también como largo del ${etiquetaItem.slice(3)}: quedó pendiente para que lo confirmes.`,
           );
         } else if (alto != null && deOtroItem('alto', alto, fam)) {
           resultado = { ...resultado, alto: null };

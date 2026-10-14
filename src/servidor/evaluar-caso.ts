@@ -7,6 +7,7 @@ import { puntuar, type CasoEvaluacion, type ResultadoCaso } from '../asistente/e
 import type { LLM } from '../asistente/llm';
 import type { CatalogoConsultable } from '../catalogo/resolver';
 import { clienteVacio } from '../catalogo/tipos';
+import { preguntasPendientes } from '../negocio/pendientes';
 import { cantidadFlete, sumarCharla, unitarioFlete, type Cotizacion, type Mensaje } from '../negocio/estado';
 import { Almacen, cerrarAlmacen } from './almacen';
 import { Servicio, type DiagnosticoTurno } from './servicio';
@@ -51,13 +52,18 @@ export async function correrCaso(
         items: q?.solicitudes ?? [],
         cliente: q?.cliente ?? clienteVacio(),
         flete: q && q.flete > 0 ? { unitario: unitarioFlete(q), cantidad: cantidadFlete(q) } : null,
+        avisos,
+        pendientes: q
+          ? preguntasPendientes(q).flatMap((p) => p.indices.map((i) => ({ item: i + 1, campo: p.campo })))
+          : [],
       }),
       ms: Date.now() - inicio,
       avisos,
     };
   } catch (e) {
     return {
-      ...puntuar(caso, { items: [], cliente: clienteVacio(), flete: null }),
+      // Con avisos y pendientes vacíos: el total del caso es el mismo que en una corrida que sí respondió.
+      ...puntuar(caso, { items: [], cliente: clienteVacio(), flete: null, avisos: [], pendientes: [] }),
       aciertos: 0,
       ms: Date.now() - inicio,
       avisos,
