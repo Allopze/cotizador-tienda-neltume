@@ -117,4 +117,27 @@ describe('sincronización de feriados', () => {
     abrirBaseDatos(ruta);
     expect(esFeriado('2026-11-13')).toBe(false);
   });
+
+  it('solo guarda los feriados nacionales: civiles, religiosos e irrenunciables; descarta los regionales', async () => {
+    const db = await base();
+    // Forma de boostr.cl, con su tipo y su detalle; los dos últimos imitan feriados regionales.
+    const fuente = {
+      status: 'success',
+      data: [
+        { date: '2026-01-01', title: 'Año Nuevo', type: 'Civil', inalienable: true, extra: 'Civil e Irrenunciable' },
+        { date: '2026-04-03', title: 'Viernes Santo', type: 'Religioso', inalienable: false, extra: 'Religioso' },
+        { date: '2026-05-01', title: 'Día Nacional del Trabajo', type: 'Civil', inalienable: true, extra: 'Civil e Irrenunciable' },
+        { date: '2026-05-21', title: 'Día de las Glorias Navales', type: 'Civil', inalienable: false, extra: 'Civil' },
+        { date: '2026-09-18', title: 'Independencia Nacional', type: 'Civil', inalienable: true, extra: 'Civil e Irrenunciable' },
+        { date: '2026-12-25', title: 'Navidad', type: 'Religioso', inalienable: true, extra: 'Religioso e Irrenunciable' },
+        { date: '2026-06-07', title: 'Asalto y Toma del Morro de Arica', type: 'Civil', inalienable: false, extra: 'Regional (Región de Arica y Parinacota)' },
+        { date: '2026-08-20', title: 'Nacimiento del Prócer de la Independencia', type: 'Regional', inalienable: false, extra: 'Chillán y Chillán Viejo' },
+      ],
+    };
+    await prepararFeriados(db, { ahora, obtener: async () => Response.json(fuente), forzar: true });
+    const fechas = estadoFeriados(db).feriados.map((f) => f.fecha);
+    expect(fechas).toEqual(['2026-01-01', '2026-04-03', '2026-05-01', '2026-05-21', '2026-09-18', '2026-12-25']);
+    expect(esFeriado('2026-06-07')).toBe(false);
+    expect(esFeriado('2026-08-20')).toBe(false);
+  });
 });

@@ -1,4 +1,4 @@
-import { rangoMedidas } from '../negocio/limites';
+import { errorMedida, rangoCampoMedida, rangoMedidas, textoRangoMedida } from '../negocio/limites';
 import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
@@ -54,7 +54,10 @@ export interface PlanillaAnterior {
   edicionesManuales: number;
 }
 type EdicionManual = { codigo: string; fecha: string };
-type CopiaPlanilla = Partial<Omit<Catalogo, 'productos'>> & { productos: Producto[]; ediciones?: EdicionManual[] };
+type CopiaPlanilla = Partial<Omit<Catalogo, 'productos'>> & {
+  productos: Producto[];
+  ediciones?: EdicionManual[];
+};
 
 const FAMILIAS_PRODUCTO = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'] as const;
 /** Copia de un producto manual en la papelera (las anteriores a v22 no traen fechas ni autor). */
@@ -179,7 +182,12 @@ const lista = (items: string[], max = 5) =>
   items.slice(0, max).join(', ') + (items.length > max ? ` y ${items.length - max} más` : '');
 
 /** Fecha de la última importación y huella de todas las planillas juntas; se recalculan en cada importación. */
-function actualizarMetadata(db: Database.Database, origen: OrigenCatalogo, catalogo: Catalogo, fecha: string) {
+function actualizarMetadata(
+  db: Database.Database,
+  origen: OrigenCatalogo,
+  catalogo: Catalogo,
+  fecha: string,
+) {
   db.prepare(
     `
     INSERT INTO catalogo_origenes (origen, fuente, sha256, fecha, cantidad_productos)
@@ -257,7 +265,10 @@ export function guardarCatalogo(
     )
   `);
   db.transaction(() => {
-    if (versionEsperada !== undefined && (new RepositorioCatalogoSqlite(db).version ?? '') !== versionEsperada)
+    if (
+      versionEsperada !== undefined &&
+      (new RepositorioCatalogoSqlite(db).version ?? '') !== versionEsperada
+    )
       throw new ErrorCatalogoCambiado();
     const metaAnterior = db.prepare('SELECT fecha FROM catalogo_meta WHERE id = 1').get() as
       { fecha: string } | undefined;
@@ -283,12 +294,16 @@ export function guardarCatalogo(
         )
         .all(origen) as EdicionManual[];
       const previo: CopiaPlanilla = { ...meta, origen, productos: repo.importados(origen), ediciones };
-      db.prepare('INSERT INTO catalogo_anterior VALUES (?, ?, ?) ON CONFLICT(origen) DO UPDATE SET contenido=excluded.contenido, version=excluded.version').run(origen, JSON.stringify(previo), repo.version ?? '');
+      db.prepare(
+        'INSERT INTO catalogo_anterior VALUES (?, ?, ?) ON CONFLICT(origen) DO UPDATE SET contenido=excluded.contenido, version=excluded.version',
+      ).run(origen, JSON.stringify(previo), repo.version ?? '');
     } else {
       // Sin productos previos no hay a qué volver: una copia de antes ya no corresponde a esta importación.
       db.prepare('DELETE FROM catalogo_anterior WHERE origen = ?').run(origen);
     }
-    db.prepare('DELETE FROM catalogo_ediciones WHERE codigo IN (SELECT codigo FROM productos_catalogo WHERE origen = ?)').run(origen);
+    db.prepare(
+      'DELETE FROM catalogo_ediciones WHERE codigo IN (SELECT codigo FROM productos_catalogo WHERE origen = ?)',
+    ).run(origen);
     db.prepare('DELETE FROM productos_catalogo WHERE origen = ?').run(origen);
     // Un código o producto que ya tiene otra planilla no se puede repetir: se avisa antes de que lo rechace SQLite.
     const deOtras = db
@@ -345,21 +360,28 @@ export function guardarCatalogo(
   }).immediate();
 }
 
+/**
+ * Configuración guardada en la base (Catálogo → Nombres y alias, o la última importación); null si la base
+ * todavía no tiene ninguna.
+ */
+export function configuracionGuardada(db: Database.Database): ConfiguracionCatalogo | null {
+  const fila = db.prepare('SELECT configuracion_json FROM catalogo_configuracion WHERE id = 1').get() as
+    { configuracion_json: string } | undefined;
+  if (!fila) return null;
+  let guardada: unknown;
+  try {
+    guardada = JSON.parse(fila.configuracion_json);
+  } catch {
+    throw new Error('La configuración del catálogo guardada en SQLite no es válida.');
+  }
+  return validarConfiguracionCatalogo(guardada);
+}
+
 export class RepositorioCatalogoSqlite implements FuenteCatalogo {
   readonly configuracion: ConfiguracionCatalogo;
 
   constructor(private db: Database.Database) {
-    const fila = db.prepare('SELECT configuracion_json FROM catalogo_configuracion WHERE id = 1').get() as
-      { configuracion_json: string } | undefined;
-    let guardada: unknown = {};
-    if (fila) {
-      try {
-        guardada = JSON.parse(fila.configuracion_json);
-      } catch {
-        throw new Error('La configuración del catálogo guardada en SQLite no es válida.');
-      }
-    }
-    this.configuracion = validarConfiguracionCatalogo(guardada);
+    this.configuracion = configuracionGuardada(db) ?? validarConfiguracionCatalogo({});
   }
 
   get metadata(): (Omit<Catalogo, 'productos'> & { cantidadProductos: number }) | null {
@@ -380,9 +402,15 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
   metadataOrigen(origen: OrigenCatalogo) {
     const fila = this.db
       .prepare('SELECT fuente, sha256, fecha, cantidad_productos FROM catalogo_origenes WHERE origen = ?')
-      .get(origen) as { fuente: string; sha256: string; fecha: string; cantidad_productos: number } | undefined;
+      .get(origen) as
+      { fuente: string; sha256: string; fecha: string; cantidad_productos: number } | undefined;
     return fila
-      ? { fuente: fila.fuente, sha256: fila.sha256, fecha: fila.fecha, cantidadProductos: fila.cantidad_productos }
+      ? {
+          fuente: fila.fuente,
+          sha256: fila.sha256,
+          fecha: fila.fecha,
+          cantidadProductos: fila.cantidad_productos,
+        }
       : null;
   }
 
@@ -612,7 +640,11 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         FROM productos_adicionales ${codigo === undefined ? '' : 'WHERE codigo = ?'} ORDER BY creada DESC, rowid DESC
       `,
       )
-      .all(...(codigo === undefined ? [] : [codigo])) as (FilaProducto & { creada: string; creada_por: string | null; actualizada: string | null })[];
+      .all(...(codigo === undefined ? [] : [codigo])) as (FilaProducto & {
+      creada: string;
+      creada_por: string | null;
+      actualizada: string | null;
+    })[];
     return filas.map((f) => ({
       ...convertirProducto(f),
       creada: f.creada,
@@ -696,21 +728,36 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         const medida = cambios.medida?.replace(/\s+/g, ' ').trim() || actual.medida;
         const anchoMin = cambios.anchoMin === undefined ? actual.anchoMin : cambios.anchoMin;
         const anchoMax = cambios.anchoMax === undefined ? actual.anchoMax : cambios.anchoMax;
-        const altoMin = cambios.altoMin === undefined ? actual.altoMin ?? null : cambios.altoMin;
-        const altoMax = cambios.altoMax === undefined ? actual.altoMax ?? null : cambios.altoMax;
+        const altoMin = cambios.altoMin === undefined ? (actual.altoMin ?? null) : cambios.altoMin;
+        const altoMax = cambios.altoMax === undefined ? (actual.altoMax ?? null) : cambios.altoMax;
         const largo = cambios.largo ?? actual.largo;
         const precioNeto = cambios.precioNeto ?? actual.precioNeto;
-        if ((cambios.largo !== undefined || cambios.familia !== undefined) && (largo < 0.3 || largo > rangoMedidas(familia).max))
-          throw new ErrorUsuarioCatalogo(`El largo debe estar entre 0,3 y ${rangoMedidas(familia).max} m.`);
+        if (
+          (cambios.largo !== undefined || cambios.familia !== undefined) &&
+          (largo < 0.3 || largo > rangoMedidas(familia).max)
+        )
+          throw new ErrorUsuarioCatalogo(errorMedida('alto', familia));
         if (!modelo || !madera || !medida || !Number.isFinite(largo) || largo <= 0 || largo > 100)
           throw new ErrorUsuarioCatalogo('Modelo, madera, medida y largo deben tener valores válidos.');
         if (
           (anchoMin !== null && (!Number.isFinite(anchoMin) || anchoMin <= 0)) ||
           (anchoMax !== null && (!Number.isFinite(anchoMax) || anchoMax <= 0)) ||
-          (anchoMin !== null && anchoMax !== null && anchoMin > anchoMax)
+          (anchoMin !== null && anchoMax !== null && anchoMin > anchoMax) ||
+          (familia === 'PUERTA' &&
+            [anchoMin, anchoMax].some(
+              (a) =>
+                a !== null &&
+                (a < rangoCampoMedida('ancho', familia).min || a > rangoCampoMedida('ancho', familia).max),
+            ))
         )
-          throw new ErrorUsuarioCatalogo('El rango de ancho no es válido.');
-        if ((altoMin !== null && (altoMin <= 0 || altoMin > 100)) || (altoMax !== null && (altoMax <= 0 || altoMax > 100)) || (altoMin !== null && altoMax !== null && altoMin > altoMax))
+          throw new ErrorUsuarioCatalogo(
+            `El rango de ancho no es válido: debe estar ${textoRangoMedida('ancho', 'PUERTA')}.`,
+          );
+        if (
+          (altoMin !== null && (altoMin <= 0 || altoMin > 100)) ||
+          (altoMax !== null && (altoMax <= 0 || altoMax > 100)) ||
+          (altoMin !== null && altoMax !== null && altoMin > altoMax)
+        )
           throw new ErrorUsuarioCatalogo('El rango de alto no es válido.');
         if (!Number.isFinite(precioNeto) || precioNeto <= 0 || precioNeto > 100_000_000)
           throw new ErrorUsuarioCatalogo(
@@ -795,7 +842,9 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
               codigo,
             );
         }
-        this.db.prepare('INSERT OR REPLACE INTO catalogo_ediciones VALUES (?, ?)').run(codigo, new Date().toISOString());
+        this.db
+          .prepare('INSERT OR REPLACE INTO catalogo_ediciones VALUES (?, ?)')
+          .run(codigo, new Date().toISOString());
         this.tocarMetadata();
         return this.buscarPorCodigo(codigo)!;
       })
@@ -807,12 +856,18 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     return this.editarProducto(codigo, cambios);
   }
 
-  edicionesManuales() { return (this.db.prepare('SELECT codigo FROM catalogo_ediciones').all() as { codigo: string }[]).map((r) => r.codigo); }
+  edicionesManuales() {
+    return (this.db.prepare('SELECT codigo FROM catalogo_ediciones').all() as { codigo: string }[]).map(
+      (r) => r.codigo,
+    );
+  }
 
   /** Productos agregados a mano que están en la papelera, del eliminado más reciente al más antiguo. */
   productosEliminados(limite = 200): ProductoEliminado[] {
     const filas = this.db
-      .prepare("SELECT contenido, eliminada FROM papelera WHERE tipo = 'producto' ORDER BY eliminada DESC, id LIMIT ?")
+      .prepare(
+        "SELECT contenido, eliminada FROM papelera WHERE tipo = 'producto' ORDER BY eliminada DESC, id LIMIT ?",
+      )
       .all(Math.min(Math.max(Math.trunc(limite), 1), 500)) as { contenido: string; eliminada: string }[];
     return filas.flatMap((f) => {
       const leido = leerProductoEnPapelera(f.contenido);
@@ -831,19 +886,34 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
 
   /** Devuelve al catálogo un producto manual de la papelera, con su autor y su fecha de alta. */
   restaurarProducto(codigo: string) {
-    return this.db.transaction(() => {
-      const fila = this.db.prepare("SELECT contenido FROM papelera WHERE tipo = 'producto' AND id = ?").get(codigo) as { contenido: string } | undefined;
-      if (!fila) throw new ErrorUsuarioCatalogo('No se encontró el producto eliminado.', 'no_encontrada', 404);
-      if (this.buscarPorCodigo(codigo)) throw new ErrorUsuarioCatalogo('El código ya está ocupado. No se sobrescribió ningún producto.', 'version_obsoleta', 409);
-      const leido = leerProductoEnPapelera(fila.contenido);
-      if (!leido) throw new ErrorUsuarioCatalogo('La copia del producto eliminado está dañada y no se puede restaurar.', 'estado_invalido', 409);
-      this.agregarProductoManual(leido.producto, this.version ?? '', undefined, leido.creadaPor, {
-        creada: leido.creada,
-        actualizada: leido.actualizada,
-      });
-      this.db.prepare("DELETE FROM papelera WHERE tipo = 'producto' AND id = ?").run(codigo);
-      return this.buscarPorCodigo(codigo)!;
-    }).immediate();
+    return this.db
+      .transaction(() => {
+        const fila = this.db
+          .prepare("SELECT contenido FROM papelera WHERE tipo = 'producto' AND id = ?")
+          .get(codigo) as { contenido: string } | undefined;
+        if (!fila)
+          throw new ErrorUsuarioCatalogo('No se encontró el producto eliminado.', 'no_encontrada', 404);
+        if (this.buscarPorCodigo(codigo))
+          throw new ErrorUsuarioCatalogo(
+            'El código ya está ocupado. No se sobrescribió ningún producto.',
+            'version_obsoleta',
+            409,
+          );
+        const leido = leerProductoEnPapelera(fila.contenido);
+        if (!leido)
+          throw new ErrorUsuarioCatalogo(
+            'La copia del producto eliminado está dañada y no se puede restaurar.',
+            'estado_invalido',
+            409,
+          );
+        this.agregarProductoManual(leido.producto, this.version ?? '', undefined, leido.creadaPor, {
+          creada: leido.creada,
+          actualizada: leido.actualizada,
+        });
+        this.db.prepare("DELETE FROM papelera WHERE tipo = 'producto' AND id = ?").run(codigo);
+        return this.buscarPorCodigo(codigo)!;
+      })
+      .immediate();
   }
 
   /** Copia que guardó la última importación de una planilla; null si no hay a qué volver. */
@@ -859,6 +929,21 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       productos: copia.productos.length,
       edicionesManuales: (copia.ediciones ?? []).filter((e) => codigos.has(e.codigo)).length,
     };
+  }
+
+  /**
+   * «Volver a la planilla anterior» que sigue disponible para un origen: solo si hay copia y nada cambió el
+   * catálogo después de la última importación de esa planilla (ni otra importación, ni un alta o una edición a
+   * mano). `importada` es la planilla que se desharía y `versionCatalogo`, la que debe seguir vigente para volver.
+   */
+  deshacerImportacion(
+    origen: OrigenCatalogo,
+  ): (PlanillaAnterior & { importada: string; versionCatalogo: string }) | null {
+    const anterior = this.planillaAnterior(origen);
+    const ultima = this.metadataOrigen(origen);
+    const version = this.version;
+    if (!anterior || !ultima || !version || this.metadata?.fecha !== ultima.fecha) return null;
+    return { ...anterior, importada: ultima.fuente, versionCatalogo: version };
   }
 
   private copiaPlanilla(origen: OrigenCatalogo): CopiaPlanilla | null {
@@ -880,35 +965,41 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
    * productos agregados a mano. La importación deshecha queda como copia: se puede volver a ella igual.
    */
   restaurarImportacion(origen: OrigenCatalogo, version: string): PlanillaAnterior {
-    return this.db.transaction(() => {
-      if (this.version !== version)
-        throw new ErrorUsuarioCatalogo(
-          'El catálogo cambió después de la importación. Revisa el catálogo antes de volver a la planilla anterior.',
-          'version_obsoleta',
-          409,
+    return this.db
+      .transaction(() => {
+        if (this.version !== version)
+          throw new ErrorUsuarioCatalogo(
+            'El catálogo cambió después de la importación. Revisa el catálogo antes de volver a la planilla anterior.',
+            'version_obsoleta',
+            409,
+          );
+        const resumen = this.planillaAnterior(origen);
+        const copia = this.copiaPlanilla(origen);
+        if (!resumen || !copia)
+          throw new ErrorUsuarioCatalogo(
+            'No hay una planilla anterior a la que volver.',
+            'no_encontrada',
+            404,
+          );
+        const { ediciones = [], ...anterior } = copia;
+        guardarCatalogo(
+          this.db,
+          {
+            fuente: anterior.fuente ?? '',
+            sha256: anterior.sha256 ?? '',
+            productos: anterior.productos,
+            origen,
+            fecha: new Date().toISOString(),
+          },
+          this.configuracion,
+          { forzar: true },
         );
-      const resumen = this.planillaAnterior(origen);
-      const copia = this.copiaPlanilla(origen);
-      if (!resumen || !copia)
-        throw new ErrorUsuarioCatalogo('No hay una planilla anterior a la que volver.', 'no_encontrada', 404);
-      const { ediciones = [], ...anterior } = copia;
-      guardarCatalogo(
-        this.db,
-        {
-          fuente: anterior.fuente ?? '',
-          sha256: anterior.sha256 ?? '',
-          productos: anterior.productos,
-          origen,
-          fecha: new Date().toISOString(),
-        },
-        this.configuracion,
-        { forzar: true },
-      );
-      const marcar = this.db.prepare('INSERT OR REPLACE INTO catalogo_ediciones VALUES (?, ?)');
-      const codigos = new Set(anterior.productos.map((p) => p.codigo));
-      for (const e of ediciones) if (codigos.has(e.codigo)) marcar.run(e.codigo, e.fecha);
-      return resumen;
-    }).immediate();
+        const marcar = this.db.prepare('INSERT OR REPLACE INTO catalogo_ediciones VALUES (?, ?)');
+        const codigos = new Set(anterior.productos.map((p) => p.codigo));
+        for (const e of ediciones) if (codigos.has(e.codigo)) marcar.run(e.codigo, e.fecha);
+        return resumen;
+      })
+      .immediate();
   }
 
   guardarConfiguracion(configuracion: ConfiguracionCatalogo) {
@@ -932,7 +1023,9 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         this.manual(codigo);
         // Copia completa, con quién lo agregó y cuándo, para poder restaurarlo tal cual con restaurarProducto.
         const producto = this.listarManuales(codigo)[0];
-        this.db.prepare("INSERT OR REPLACE INTO papelera VALUES ('producto', ?, ?, ?)").run(codigo, JSON.stringify(producto), new Date().toISOString());
+        this.db
+          .prepare("INSERT OR REPLACE INTO papelera VALUES ('producto', ?, ?, ?)")
+          .run(codigo, JSON.stringify(producto), new Date().toISOString());
         this.db.prepare('DELETE FROM productos_adicionales WHERE codigo = ?').run(codigo);
         this.tocarMetadata();
       })

@@ -4,7 +4,7 @@ import { Servicio, type DiagnosticoTurno } from '@/servidor/servicio';
 import { Almacen, type FiltrosListado } from '@/servidor/almacen';
 import { csvCotizaciones, MAX_EXPORTACION } from '@/servidor/exportar';
 import { fechaLocal } from '@/negocio/vigencia';
-import { MARGEN_MAX, MARGEN_MIN } from '@/negocio/limites';
+import { MARGEN_MAX, MARGEN_MIN, rangoMedidas } from '@/negocio/limites';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { leerJson } from '@/servidor/cuerpo';
@@ -18,6 +18,14 @@ import { ESTADOS, type EstadoCotizacion, type ResumenCotizacion } from '@/negoci
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Topes de las medidas que llegan ya en metros, de `rangoMedidas`: el ancho es siempre de puerta y el alto o largo
+ * llega al de un accesorio. El servidor vuelve a revisarlas con la familia del producto (`metros`).
+ */
+const RANGO_ANCHO = rangoMedidas('PUERTA');
+const RANGO_LARGO = rangoMedidas('MOLDURA');
+const anchoMetros = z.number().finite().min(RANGO_ANCHO.min).max(RANGO_ANCHO.max);
+const altoMetros = z.number().finite().min(RANGO_LARGO.min).max(RANGO_LARGO.max);
 const version = z.iso.datetime();
 const texto = (max: number) => z.string().max(max).nullable().optional();
 const clienteParcial = z
@@ -97,8 +105,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
       actualizada: version.optional(),
       codigo: z.string().trim().min(1).max(80),
       cantidad: z.number().int().min(1).max(10000),
-      ancho: z.number().finite().min(0.3).max(3).optional(),
-      alto: z.number().finite().min(0.3).max(6).optional(),
+      ancho: anchoMetros.optional(),
+      alto: altoMetros.optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
     })
     .strict()
@@ -114,8 +122,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
           familia: familiaSchema,
           madera: z.string().trim().min(1).max(300),
           descripcion: texto(300),
-          ancho: z.number().finite().min(0.3).max(3).nullable().optional(),
-          alto: z.number().finite().min(0.3).max(6).nullable().optional(),
+          ancho: anchoMetros.nullable().optional(),
+          alto: altoMetros.nullable().optional(),
           tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
           cantidad: z.number().int().min(1).max(10000),
           precioUnitario: z.number().int().positive().max(100_000_000),

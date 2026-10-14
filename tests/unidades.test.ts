@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { normalizar, metros, normalizarMedida } from '../src/catalogo/resolver';
+import { claveEscuadria, normalizar, metros, normalizarMedida, resolverItem } from '../src/catalogo/resolver';
 import { cotizar, ErrorPrecio } from '../src/negocio/precios';
 import { pregunta } from '../src/asistente/preguntas';
 import { contextoSeguro } from '../src/asistente/llm';
-import { clienteVacio, type Producto } from '../src/catalogo/tipos';
+import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipos';
 const producto: Producto = {
   codigo: 'PRUEBA',
   modelo: 'MOLCO',
@@ -148,4 +148,61 @@ it('el contexto del LLM proyecta exclusivamente solicitudes y cliente sin precio
   const contexto = contextoSeguro('cotiza', [s], c, ['MOLCO'], ['LENGA']);
   expect(JSON.stringify(contexto)).not.toMatch(/precio|costo|total|999|888|777/);
   expect(contexto.borrador.items[0].modelo).toBe('MOLCO');
+});
+
+describe('escuadría con unidad o con los factores invertidos', () => {
+  it('normalizarMedida quita milímetros y centímetros; claveEscuadria ordena los factores', () => {
+    for (const texto of ['30x70 mm', '30 mm x 70 mm', '30MMx70MM', '30x70mm.']) expect(normalizarMedida(texto), texto).toBe('30X70');
+    expect(normalizarMedida('3 x 7 cm')).toBe('3X7');
+    // El orden escrito se conserva para mostrarlo; la clave no depende de él.
+    expect(normalizarMedida('4x2')).toBe('4X2');
+    expect(claveEscuadria('4x2')).toBe('2X4');
+    expect(claveEscuadria('2X4')).toBe('2X4');
+    expect(claveEscuadria('12X1')).toBe(claveEscuadria('1x12'));
+    expect(claveEscuadria('6 x 4.5')).toBe('4,5X6');
+    expect(claveEscuadria('70x30 mm')).toBe('30X70');
+    expect(claveEscuadria('0,80 A 0,85')).toBe('0,80A0,85');
+  });
+
+  const pieza = (modelo: string, familia: Producto['familia'], medida: string): Producto => ({
+    codigo: `${modelo}-${medida}`,
+    modelo,
+    familia,
+    tipo: null,
+    madera: 'PINO OREGON',
+    medida,
+    anchoMin: null,
+    anchoMax: null,
+    largo: 3,
+    precioNeto: 10_000,
+    descripcion: `${modelo} ${medida}`,
+    filaOrigen: 1,
+  });
+  const catalogo: Catalogo = {
+    fuente: 'test',
+    sha256: 'test',
+    fecha: '2026-01-01',
+    productos: [pieza('MARCO', 'MARCO', '2X4'), pieza('FINGER', 'MOLDURA', '30X70'), pieza('GUARDAPOLVO', 'MOLDURA', '12X1')],
+  };
+  const resolver = (modelo: string, medida: string) =>
+    resolverItem(catalogo, { modelo, madera: 'PINO OREGON', medida, alto: 3, cantidad: 1 });
+
+  it('«4x2», «30x70 mm» y «1x12» se cotizan con la escuadría del catálogo, escrita como el catálogo', () => {
+    for (const [modelo, medida, esperada] of [
+      ['MARCO', '4x2', '2X4'],
+      ['MARCO', '4 x 2"', '2X4'],
+      ['FINGER', '30x70 mm', '30X70'],
+      ['FINGER', '70x30', '30X70'],
+      ['GUARDAPOLVO', '1x12', '12X1'],
+    ]) {
+      const r = resolver(modelo, medida);
+      expect(r.ok, `${modelo} ${medida}`).toBe(true);
+      if (r.ok) {
+        expect(r.producto.medida).toBe(esperada);
+        expect(r.medidaSolicitada).toBe(esperada);
+      }
+    }
+    // Una escuadría que de verdad no existe sigue sin precio.
+    expect(resolver('MARCO', '2x8')).toMatchObject({ ok: false, rechazo: { tipo: 'medida_no_disponible' } });
+  });
 });

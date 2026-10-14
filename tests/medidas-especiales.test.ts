@@ -218,7 +218,10 @@ describe('aviso de medida especial en la cotización', () => {
 
     const chat = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza 3 puertas Huilo Huilo en Mara de 83,5 x 236 medida vano y una de 80 x 210' });
     let q = chat.cotizacion;
-    expect(chat.avisos).toEqual([aviso]);
+    // El vano de 0,835 m queda a 3,5 cm del inicio del tramo 0,80–0,85: también se avisa (docs/reglas-negocio.md).
+    const vano = 
+      'Revisa el ítem 1 (Huilo Huilo): el vano de 0,835 m se cobra en el tramo 0,80–0,85 m y queda a menos de 5 cm de su inicio. La hoja es más angosta que el vano: si la medida es del hueco, la puerta podría ser del tramo 0,70–0,75 m.';
+    expect(chat.avisos).toEqual([aviso, vano]);
     expect(q.historial.at(-1)?.texto).toContain(aviso);
     expect(q.montos.lineas.map((l) => l.producto.codigo)).toEqual(['HUIL-M-3-E', 'HUIL-M-3-B']);
 
@@ -248,6 +251,8 @@ describe('aviso de medida especial en la cotización', () => {
     expect(chat.avisos).toEqual([
       'Medida especial 0,835 × 2,36 m: se cotiza con la referencia HUIL-M-3-E (0,80–0,85 × 2,40 m), la siguiente medida del catálogo.',
       'Largo especial 2,55 m: se cotiza con la referencia MAR-M-2X4-G (2,60 m), la siguiente medida del catálogo.',
+      // Las dos líneas de vano iguales comparten un aviso.
+      'Revisa los ítems 1 y 2 (Huilo Huilo): el vano de 0,835 m se cobra en el tramo 0,80–0,85 m y queda a menos de 5 cm de su inicio. La hoja es más angosta que el vano: si la medida es del hueco, la puerta podría ser del tramo 0,70–0,75 m.',
     ]);
     expect(chat.cotizacion.montos.lineas.map((l) => l.producto.codigo)).toEqual(['HUIL-M-3-E', 'HUIL-M-3-E', 'MAR-M-2X4-G']);
   });

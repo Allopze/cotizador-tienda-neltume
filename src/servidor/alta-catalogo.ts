@@ -11,7 +11,7 @@ import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { REGLAS } from '../negocio/precios';
 import { ErrorUsuarioCatalogo } from './errores';
 import { RepositorioCatalogoSqlite } from './repositorio-catalogo';
-import { rangoMedidas } from '../negocio/limites';
+import { errorMedida, rangoCampoMedida, rangoMedidas, textoRangoMedida } from '../negocio/limites';
 import { etiquetaFamilia } from '../catalogo/familias';
 
 const borradorSchema = atributosProductoSchema
@@ -323,13 +323,12 @@ export class ServicioAltaCatalogo {
     if (borrador.familia === 'PUERTA') {
       if (
         borrador.anchoMin !== null &&
-        (borrador.anchoMin <= 0 ||
-          borrador.anchoMin > 4 ||
+        (borrador.anchoMin < rangoCampoMedida('ancho', 'PUERTA').min ||
           borrador.anchoMax === null ||
           borrador.anchoMax < borrador.anchoMin ||
-          borrador.anchoMax > 4)
+          borrador.anchoMax > rangoCampoMedida('ancho', 'PUERTA').max)
       )
-        return 'El rango de ancho no es válido. Indica, por ejemplo, de 0,80 a 0,85 m.';
+        return `El rango de ancho no es válido: debe estar ${textoRangoMedida('ancho', 'PUERTA')}, por ejemplo de 0,80 a 0,85 m.`;
     } else if (borrador.familia && borrador.medida) {
       const medida = normalizarMedida(borrador.medida);
       if (!/^\d+(?:,\d+)?X\d+(?:,\d+)?$/.test(medida))
@@ -337,7 +336,9 @@ export class ServicioAltaCatalogo {
     }
     const rango = rangoMedidas(borrador.familia ?? 'PUERTA');
     if (borrador.largo !== null && (borrador.largo < rango.min || borrador.largo > rango.max))
-      return `${borrador.familia === 'PUERTA' ? 'El alto' : borrador.familia ? 'El largo' : 'El alto o largo'} debe estar entre ${String(rango.min).replace('.', ',')} y ${rango.max} m.`;
+      return borrador.familia
+        ? errorMedida('alto', borrador.familia)
+        : `El alto o largo debe estar ${textoRangoMedida('alto', 'PUERTA')}.`;
     if (borrador.precioNeto !== null && (borrador.precioNeto <= 0 || borrador.precioNeto > 100_000_000))
       return 'El precio base sin IVA debe ser mayor que $0 y no superar $100.000.000.';
     return null;

@@ -1,6 +1,6 @@
 import { bonito } from '../asistente/preguntas';
 import { metrosTexto } from '../catalogo/escalones';
-import { metros, normalizar, normalizarMedida, type Rechazo } from '../catalogo/resolver';
+import { claveEscuadria, metros, normalizar, type Rechazo } from '../catalogo/resolver';
 import type { Familia, SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion } from './estado';
 import { rangoMedidas } from './limites';
@@ -47,7 +47,12 @@ export interface PreguntaPendiente {
   alta: PrefillAlta | null;
   /** Permite rechazar una sugerencia y dar de alta el nombre escrito. */
   modeloNuevo?: boolean;
+  /** Puerta con el ancho y el alto al revés: medidas que deja la opción «Intercambiar», en metros. */
+  intercambio?: { ancho: number; alto: number };
 }
+
+/** Valor de la opción que intercambia el ancho y el alto de una puerta (ver `cambiosRespuesta`). */
+export const INTERCAMBIAR = 'intercambiar';
 
 export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
   modelo: 'Modelo',
@@ -114,6 +119,7 @@ interface Parte {
   entrada: PreguntaPendiente['entrada'];
   /** Las partes de «faltan datos» iguales se agrupan entre ítems; las demás explican un caso propio. */
   agrupable: boolean;
+  intercambio?: PreguntaPendiente['intercambio'];
 }
 
 function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
@@ -186,6 +192,21 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
       return [parte({ campo: r.campo, opciones: [], entrada: medidaLibre(familia, r.campo) })];
     case 'cantidad_invalida':
       return [parte({ campo: 'cantidad', opciones: [], entrada: CANTIDAD })];
+    case 'medidas_invertidas':
+      return [
+        parte({
+          campo: null,
+          detalle: pregunta,
+          opciones: [
+            {
+              etiqueta: `Intercambiar: ${metrosTexto(r.alto)} m de ancho × ${metrosTexto(r.ancho)} m de alto`,
+              valor: INTERCAMBIAR,
+            },
+          ],
+          entrada: null,
+          intercambio: { ancho: r.alto, alto: r.ancho },
+        }),
+      ];
     case 'producto_ambiguo':
       return [parte({ campo: null, detalle: pregunta, opciones: [], entrada: null })];
   }
@@ -214,7 +235,7 @@ const igual = (campo: CampoPendiente, a: string | number, b: string | number, fa
     const f = familiaDe(campo, familia);
     return Math.abs((metros(Number(a), f) ?? Number(a)) - (metros(Number(b), f) ?? Number(b))) < 5e-4;
   }
-  if (campo === 'medida') return normalizarMedida(String(a)) === normalizarMedida(String(b));
+  if (campo === 'medida') return claveEscuadria(String(a)) === claveEscuadria(String(b));
   return normalizar(String(a)) === normalizar(String(b));
 };
 const listaItems = (indices: number[]) => {
@@ -295,6 +316,7 @@ export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompl
       detalle: parte.detalle,
       opciones: sugerir(q, indices, parte),
       entrada: parte.entrada,
+      ...(parte.intercambio ? { intercambio: parte.intercambio } : {}),
       modeloNuevo: indices.length === 1 && q.incompletos.find((p) => p.indice === indices[0])?.rechazo.tipo === 'modelo_posible',
       alta: indices.length === 1
         ? prefillAlta(q.solicitudes[indices[0]], q.incompletos.find((p) => p.indice === indices[0])?.rechazo)
@@ -323,6 +345,10 @@ export function fueraDeRegla(q: Pick<Cotizacion, 'incompletos'>, indice: number)
 
 /** Cambios de la acción `editar` que responden la pregunta con `valor` en todos sus ítems. */
 export function cambiosRespuesta(p: PreguntaPendiente, valor: string | number) {
+  if (!p.campo && valor === INTERCAMBIAR && p.intercambio) {
+    const { ancho, alto } = p.intercambio;
+    return { items: p.indices.map((indice) => ({ indice, cambios: { ancho, alto } })) };
+  }
   if (!p.campo) {
     // Única respuesta sin campo: quitar el precio o el descuento que dejó el ítem fuera de regla.
     if (valor !== 'precioUnitario' && valor !== 'descuento') return {};

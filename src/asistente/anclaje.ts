@@ -1,6 +1,7 @@
 import { planoFrase, ubicarFrase } from './frases';
-import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
+import { claveEscuadria, metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
+import { familiaItem } from '../negocio/personalizados';
 
 /**
  * Anclaje de cifras: la IA puede completar una cantidad o una medida que nadie escribió. Antes de aceptar
@@ -121,15 +122,6 @@ export function cifraRespaldada(campo: CampoCifra, valor: number, cifras: number
   });
 }
 
-/**
- * Familia con que se leen las medidas de un ítem: la de su modelo y, sin ella, accesorio si trae sección y puerta
- * si no. Un largo de 3,6 m es plausible en un guardapolvo (hasta 6 m), no en una puerta (hasta 3 m).
- */
-export const familiaDeMedidas = (
-  item: Pick<SolicitudItem, 'modelo' | 'medida'>,
-  familia: (modelo: string) => string | null = () => null,
-) => (item.modelo ? familia(item.modelo) : null) ?? (item.medida == null ? 'PUERTA' : 'MOLDURA');
-
 const etiqueta: Record<CampoCifra, string> = {
   cantidad: 'la cantidad',
   ancho: 'el ancho',
@@ -146,7 +138,7 @@ export function anclarCifras(
   items: SolicitudItem[],
   previos: SolicitudItem[],
   textos: string[],
-  /** Familia del modelo en el catálogo: el largo de un accesorio llega a 6 m (ver `familiaDeMedidas`). */
+  /** Familia del modelo en el catálogo: el largo de un accesorio llega a 6 m (ver `familiaItem`). */
   familia: (modelo: string) => string | null = () => null,
 ) {
   const conPalabras = textos.flatMap((t) => cifrasDelTexto(t));
@@ -167,15 +159,15 @@ export function anclarCifras(
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     let resultado = item;
-    const familiaItem = familiaDeMedidas(item, familia);
+    const familiaDelItem = familiaItem(item, null, null, familia);
     for (const campo of CAMPOS_CIFRA) {
       const valor = item[campo];
       if (valor === null || valor === undefined) continue;
-      if (conocidas(campo).some((c) => c === valor || cifraRespaldada(campo, valor, [c], familiaItem))) continue;
-      if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : digitosDe(item), familiaItem)) continue;
+      if (conocidas(campo).some((c) => c === valor || cifraRespaldada(campo, valor, [c], familiaDelItem))) continue;
+      if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : digitosDe(item), familiaDelItem)) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
-        `El asistente propuso ${etiqueta[campo]} ${mostrar(campo, valor, familiaItem)} para el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}, pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.`,
+        `El asistente propuso ${etiqueta[campo]} ${mostrar(campo, valor, familiaDelItem)} para el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}, pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.`,
       );
     }
     return resultado;
@@ -362,7 +354,7 @@ const metrosAviso = (v: number, familia = 'PUERTA') => `${String(metros(v, famil
  */
 function medidaRespaldada(medida: string, texto: string, cantidad: number | null) {
   const m = normalizarMedida(medida);
-  if ([...texto.matchAll(SECCION)].some((s) => normalizarMedida(s[0]) === m)) return true;
+  if ([...texto.matchAll(SECCION)].some((s) => claveEscuadria(s[0]) === claveEscuadria(m))) return true;
   const numeros = m.split('X').map((n) => Number(n.replace(',', '.')));
   if (!numeros.length || numeros.some((n) => !Number.isFinite(n))) return true;
   const cifras = cifrasDelTexto(texto, false);
@@ -548,7 +540,7 @@ export function anclarFrases(
   resolver: Record<CampoNombre, ResolverNombre>,
   /** Mensajes anteriores de la persona (no del asistente): lo que dijo antes también respalda. */
   anteriores: string[] = [],
-  /** Familia del modelo en el catálogo; sin ella, un ítem sin sección se trata como puerta. */
+  /** Familia del modelo en el catálogo; sin ella, la dicen su nombre o su forma (ver `familiaItem`). */
   familia: (modelo: string) => string | null = () => null,
   /**
    * Escuadrías («2X4») que el catálogo tiene para ese modelo y esa madera (null si aún no se sabe): «de N» solo es
@@ -686,7 +678,7 @@ export function anclarFrases(
     if (
       medidaPropuesta &&
       secciones.length !== 1 &&
-      !previos.some((p) => p.medida && normalizarMedida(p.medida) === normalizarMedida(medidaPropuesta)) &&
+      !previos.some((p) => p.medida && claveEscuadria(p.medida) === claveEscuadria(medidaPropuesta)) &&
       ![texto, antes].some((t) => t && medidaRespaldada(medidaPropuesta, t, item.cantidad))
     ) {
       resultado = { ...resultado, medida: null };
@@ -694,17 +686,18 @@ export function anclarFrases(
         `El asistente propuso la sección ${medidaPropuesta} para ${etiquetaItem}, pero no aparece en tu pedido: quedó pendiente para que la confirmes.`,
       );
     }
-    const familiaItem = resultado.modelo ? familia(resultado.modelo) : null;
-    const esPuerta = familiaItem ? familiaItem === 'PUERTA' : resultado.medida == null;
-    /** Familia con que se leen sus medidas (`familiaDeMedidas`): «360» es un largo de 3,6 m en un guardapolvo. */
-    const fam = esPuerta ? 'PUERTA' : (familiaItem ?? 'MOLDURA');
+    /** Familia con que se leen sus medidas (`familiaItem`): «360» es un largo de 3,6 m en un guardapolvo. */
+    const fam = familiaItem(resultado, null, null, familia);
+    const esPuerta = fam === 'PUERTA';
     const par = parMedidaPuerta(frase);
     // La sección escrita en la frase («marco 2x5 pino», «de 8 pulgadas») gana a otra que proponga la IA (30x70
     // de los finger) y completa la que dejó vacía.
     if (!esPuerta && resultado.ancho == null && secciones.length === 1) {
       const propia = resultado.medida ? normalizarMedida(resultado.medida) : null;
-      const conocidaMedida = previos.some((p) => p.medida && normalizarMedida(p.medida) === propia);
-      if (propia !== secciones[0] && !conocidaMedida && (propia || !par)) {
+      const clavePropia = propia && claveEscuadria(propia);
+      const conocidaMedida = previos.some((p) => p.medida && claveEscuadria(p.medida) === clavePropia);
+      // «4x2» y «2X4» son la misma pieza: no es una corrección.
+      if (clavePropia !== claveEscuadria(secciones[0]) && !conocidaMedida && (propia || !par)) {
         resultado = { ...resultado, medida: secciones[0] };
         if (propia) corregido('la sección', `«${item.medida}»`, `«${secciones[0]}»`);
       }
@@ -860,7 +853,7 @@ type CampoFrase = (typeof CAMPOS_FRASE)[number][0];
 
 function mismoValor(campo: CampoFrase, a: string | number, b: string | number, familia: string) {
   if (campo === 'modelo' || campo === 'madera') return normalizar(String(a)) === normalizar(String(b));
-  if (campo === 'medida') return normalizarMedida(String(a)) === normalizarMedida(String(b));
+  if (campo === 'medida') return claveEscuadria(String(a)) === claveEscuadria(String(b));
   if (campo === 'cantidad') return a === b;
   const ma = metros(Number(a), familia),
     mb = metros(Number(b), familia);
@@ -885,14 +878,14 @@ const y = (partes: string[]) =>
 export function avisosDeCampos(
   ia: SolicitudItem[],
   porFrase: SolicitudItem[],
-  /** Familia del modelo en el catálogo: las medidas se comparan y muestran con su rango (ver `familiaDeMedidas`). */
+  /** Familia del modelo en el catálogo: las medidas se comparan y muestran con su rango (ver `familiaItem`). */
   familia: (modelo: string) => string | null = () => null,
 ): string[] {
   const avisos: string[] = [];
   ia.forEach((item, i) => {
     const leido = porFrase[i];
     if (!leido) return;
-    const fam = familiaDeMedidas(item, familia);
+    const fam = familiaItem(item, null, null, familia);
     const distintos: [string, string][] = [],
       faltan: string[] = [],
       sobran: string[] = [];

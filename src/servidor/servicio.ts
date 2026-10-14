@@ -15,7 +15,6 @@ import {
   avisosDePalabras,
   cifrasDelTexto,
   ESCUADRIAS_HABITUALES,
-  familiaDeMedidas,
   fraseDelMensaje,
   nombresDichos,
   sinTildes,
@@ -53,18 +52,27 @@ import {
   type Cliente,
   type DescuentoItem,
   type Familia,
+  type Producto,
   type ReferenciaItem,
   type SolicitudItem,
 } from '../catalogo/tipos';
 import {
-  familiaEspecial,
+  CODIGO_PERSONALIZADO,
+  familiaItem,
   mismasReferencias,
   productoPersonalizado,
   SIN_CATALOGO,
 } from '../negocio/personalizados';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
-import { ANTICIPO_TEXTO, DESCUENTO_MAXIMO, MARGEN_MAX, MARGEN_MIN, RANGO_MARGEN, rangoMedidas } from '../negocio/limites';
-import { indicesMedidaSinTipo } from '../negocio/medidas';
+import {
+  ANTICIPO_TEXTO,
+  DESCUENTO_MAXIMO,
+  errorMedida,
+  MARGEN_MAX,
+  MARGEN_MIN,
+  RANGO_MARGEN,
+} from '../negocio/limites';
+import { avisoVano, indicesMedidaSinTipo } from '../negocio/medidas';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
 import { contarPuertas, descuentoAutomatico, descuentoEsManual, textoPuertas } from '../negocio/descuento-cantidad';
 import {
@@ -111,6 +119,7 @@ import {
   precioConDescuento,
   REGLAS,
   textoDescuentoItem,
+  type Linea,
   type Montos,
 } from '../negocio/precios';
 import { calcularVence, estaVencida, fechaChilena, fechaLocal } from '../negocio/vigencia';
@@ -584,6 +593,9 @@ export class Servicio {
   private recalcular(q: Cotizacion, tocar = true) {
     const clave = (codigo: string, ancho: number | null, alto: number | null) => `${codigo}|${ancho}|${alto}`;
     const previas = new Set(q.montos.lineas.map((l) => clave(l.producto.codigo, l.anchoSolicitado, l.altoSolicitado)));
+    const previasVano = new Set(
+      q.montos.lineas.map((l) => `${clave(l.producto.codigo, l.anchoSolicitado, l.altoSolicitado)}|${l.tipoMedida}`),
+    );
     const avisos: string[] = [];
     // La misma regla que el bulto de Starken (ver items-vigentes.ts). La normalización (modelo canónico, madera
     // con que se cotiza) queda en la cotización, en los mismos objetos.
@@ -629,8 +641,32 @@ export class Servicio {
           margenCotizacion: q.margenCotizacion ?? null,
         })
       : montosVacios();
+    // Un vano justo sobre el inicio de su tramo: la hoja probablemente es del tramo anterior. Se avisa una vez.
+    // Las líneas iguales (mismo producto, medidas y tipo) comparten un solo aviso que nombra todos sus ítems.
+    const vanos = new Map<string, Linea[]>();
+    for (const linea of q.montos.lineas) {
+      const k = `${clave(linea.producto.codigo, linea.anchoSolicitado, linea.altoSolicitado)}|${linea.tipoMedida}`;
+      if (!previasVano.has(k)) vanos.set(k, [...(vanos.get(k) ?? []), linea]);
+    }
+    for (const lineas of vanos.values()) {
+      const indices = lineas.flatMap((l) => (l.indice === null ? [] : [l.indice]));
+      const aviso = avisoVano(lineas[0], this.tramoAnterior(lineas[0].producto), indices);
+      if (aviso) avisos.push(aviso);
+    }
     if (tocar) q.actualizada = marca(q.actualizada);
     return avisos;
+  }
+
+  /** Tramo de ancho inmediatamente menor del mismo modelo y madera; null si no hay o si el producto no es una puerta. */
+  private tramoAnterior(p: Producto) {
+    if (p.familia !== 'PUERTA' || p.anchoMin === null || p.codigo === CODIGO_PERSONALIZADO) return null;
+    const menores = this.productosDe(p.modelo).filter(
+      (o) => o.madera === p.madera && o.anchoMin !== null && o.anchoMax !== null && o.anchoMax < p.anchoMin! - 1e-9,
+    );
+    if (!menores.length) return null;
+    const max = Math.max(...menores.map((o) => o.anchoMax!));
+    const min = Math.min(...menores.filter((o) => Math.abs(o.anchoMax! - max) < 1e-9).map((o) => o.anchoMin!));
+    return { min, max };
   }
 
   /** Solo un borrador cambia de versión con el historial: así no se invalidan selecciones de otras personas. */
@@ -720,7 +756,7 @@ export class Servicio {
       normalizar(s.modelo ?? ''),
       normalizar(s.madera ?? ''),
       claveMedida(s.ancho),
-      claveMedida(s.alto, familiaDeMedidas(s, (m) => this.familiaDe(m))),
+      claveMedida(s.alto, familiaItem(s, null, null, (m) => this.familiaDe(m))),
       s.medida ? normalizarMedida(s.medida) : '',
       s.tipoMedida ?? '',
       s.descripcion ?? '',
@@ -809,7 +845,7 @@ export class Servicio {
 
   private describir(s: SolicitudItem) {
     // Con el rango de su familia: el largo «360» de un guardapolvo es 3,60 m, no 0,36.
-    const familia = s.personalizado?.familia ?? familiaDeMedidas(s, (m) => this.familiaDe(m));
+    const familia = familiaItem(s, null, null, (m) => this.familiaDe(m));
     const medida = (n: number | null) => (n === null ? null : decimal(metros(n, familia) ?? n));
     const medidas = [s.medida ? normalizarMedida(s.medida) : medida(s.ancho), medida(s.alto)].filter(Boolean);
     const cantidad = s.cantidad === null ? '' : `${s.cantidad} × `;
@@ -1179,13 +1215,14 @@ export class Servicio {
         ...(d.referencias?.length ? { referencias: sanearReferencias(this.almacen.directorio, d.referencias) } : {}),
       };
       const r = productoPersonalizado(item, d.familia);
-      // El rango es el de su familia: una puerta hasta 3 m, un accesorio hasta 6 m de largo.
-      const rango = rangoMedidas(d.familia);
+      // El ancho es de puerta (hasta 3 m); el alto o largo, de su familia (un accesorio llega a 6 m).
       if (!r.ok)
         throw new ErrorUsuario(
-          r.campos.includes('ancho') || r.campos.includes('alto')
-            ? `Revisa las medidas: escríbelas en metros, entre ${String(rango.min).replace('.', ',')} y ${rango.max} (por ejemplo ${d.familia === 'PUERTA' ? '0,80 × 2,10' : 'un largo de 3,60'}).`
-            : 'Indica el nombre, la madera, la cantidad y el precio del producto personalizado.',
+          r.campos.includes('ancho')
+            ? errorMedida('ancho', d.familia)
+            : r.campos.includes('alto')
+              ? errorMedida('alto', d.familia)
+              : 'Indica el nombre, la madera, la cantidad y el precio del producto personalizado.',
         );
       return this.agregarItem(u, accion, item);
     });
@@ -2353,7 +2390,7 @@ export class Servicio {
       }
       // Si faltan datos (madera, cantidad), el precio queda en el ítem hasta saber si existe en el catálogo.
       if (!SIN_CATALOGO.has(r.rechazo.tipo) || !item.modelo) return conPrecio;
-      const familia = this.familiaDe(item.modelo) ?? familiaEspecial(r.rechazo, item);
+      const familia = familiaItem(item, null, r.rechazo, (m) => this.familiaDe(m));
       const especial: SolicitudItem = {
         ...conPrecio,
         modelo:

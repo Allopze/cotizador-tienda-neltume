@@ -33,15 +33,24 @@ export function familiaEspecial(
 }
 
 /**
- * Familia con que se leen y validan las medidas de un ítem (puertas hasta 3 m, accesorios hasta 6 m): la del pedido
- * especial, la del producto con que se cotizó o, si está pendiente, la que dicen su rechazo y su nombre.
+ * La única regla de familia de un ítem: con ella se leen y validan sus medidas (puertas hasta 3 m, accesorios
+ * hasta 6 m) en el botón de la pregunta, en el chat y en el servidor. Orden: la del pedido especial, la del producto
+ * con que se cotizó, la que trae su rechazo, la de su modelo en el catálogo (`familiaModelo`, que también acepta
+ * un alias) y, al final, la que dicen su nombre o su forma (`familiaEspecial`).
  */
 export function familiaItem(
-  s: Pick<SolicitudItem, 'modelo' | 'ancho' | 'medida' | 'personalizado'>,
+  s: Pick<SolicitudItem, 'modelo' | 'ancho' | 'medida'> & Partial<Pick<SolicitudItem, 'personalizado'>>,
   cotizado?: { familia: Familia } | null,
   rechazo?: Rechazo | null,
+  familiaModelo?: (modelo: string) => string | null,
 ): Familia {
-  return s.personalizado?.familia ?? cotizado?.familia ?? familiaEspecial(rechazo, s);
+  return (
+    s.personalizado?.familia ??
+    cotizado?.familia ??
+    (rechazo && 'familia' in rechazo ? rechazo.familia : undefined) ??
+    ((s.modelo ? familiaModelo?.(s.modelo) : null) as Familia | null | undefined) ??
+    familiaEspecial(null, s)
+  );
 }
 
 /** Formatos admitidos como referencia del cliente y la extensión con que se guardan. */

@@ -22,6 +22,22 @@ export class ErrorXlsx extends Error {
     this.name = 'ErrorXlsx';
   }
 }
+/** El archivo no es un zip sino un documento compuesto de Office (CFB): un .xlsx con contraseña o un .xls. */
+export class ErrorXlsxCompuesto extends ErrorXlsx {
+  constructor(readonly protegido: boolean) {
+    super(protegido ? 'el libro está cifrado con contraseña' : 'el libro es un Excel antiguo (.xls)');
+    this.name = 'ErrorXlsxCompuesto';
+  }
+}
+const FIRMA_CFB = [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1];
+/** Un .xlsx con contraseña de apertura se guarda como CFB con un flujo «EncryptionInfo» (nombre en UTF-16LE). */
+const ENCRYPTION_INFO = Buffer.from('EncryptionInfo', 'utf16le');
+function rechazarCompuesto(bytes: Uint8Array) {
+  if (bytes.length < FIRMA_CFB.length || FIRMA_CFB.some((b, i) => bytes[i] !== b)) return;
+  throw new ErrorXlsxCompuesto(
+    Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).includes(ENCRYPTION_INFO),
+  );
+}
 const detalle = (error: unknown) => (error instanceof Error ? error.message : 'formato desconocido');
 
 /** Topes de lo descomprimido: una planilla real ocupa pocos MB; un zip que se infla a gigabytes se rechaza. */
@@ -35,6 +51,7 @@ const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
  * truncada (y su XML falla al leerse), nunca ocupa más memoria que la declarada.
  */
 export function descomprimirXlsx(bytes: Uint8Array, limites = LIMITES_DESCOMPRESION) {
+  rechazarCompuesto(bytes);
   let total = 0;
   try {
     unzipSync(bytes, {
@@ -42,7 +59,9 @@ export function descomprimirXlsx(bytes: Uint8Array, limites = LIMITES_DESCOMPRES
         // Sin comprimir ocupa lo que trae el archivo; comprimida, lo que declara.
         const tamano = f.compression === 0 ? f.size : f.originalSize;
         if (tamano > limites.entrada)
-          throw new ErrorXlsx(`una parte del libro descomprimida supera ${mb(limites.entrada)}: ${f.name.slice(0, 80)}`);
+          throw new ErrorXlsx(
+            `una parte del libro descomprimida supera ${mb(limites.entrada)}: ${f.name.slice(0, 80)}`,
+          );
         total += tamano;
         if (total > limites.total) throw new ErrorXlsx(`el libro descomprimido supera ${mb(limites.total)}`);
         return false;

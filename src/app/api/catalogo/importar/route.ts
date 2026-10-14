@@ -8,6 +8,7 @@ import { analizarPlanilla } from '@/servidor/importacion-catalogo';
 import { Almacen, ErrorOcupado } from '@/servidor/almacen';
 import { ErrorCatalogoCambiado, RepositorioCatalogoSqlite } from '@/servidor/repositorio-catalogo';
 import { registrarError } from '@/servidor/errores';
+import { ORIGENES_CATALOGO } from '@/catalogo/origenes';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -49,6 +50,25 @@ async function leerFormulario(req: Request) {
     return { ok: true as const, form: await cuerpo.formData() };
   } catch {
     return rechazo(ARCHIVO_INVALIDO, 'archivo_invalido', 400);
+  }
+}
+
+/**
+ * Lo que la pantalla de importar necesita al abrirse: a qué planilla anterior se puede volver todavía (por origen).
+ * Así «Volver a la planilla anterior» no desaparece al recargar o cambiar de sección.
+ */
+export async function GET(req: Request) {
+  const sesion = await exigirSesion(req);
+  if (!sesion.ok) return sesion.respuesta;
+  if (sesion.usuario.rol !== 'admin')
+    return Response.json({ error: 'Solo quien administra puede importar el catálogo.', codigo: 'sin_permiso' }, { status: 403, headers: sinCache });
+  try {
+    const repo = new RepositorioCatalogoSqlite(abrirBaseDatos());
+    const deshacer = ORIGENES_CATALOGO.flatMap((origen) => repo.deshacerImportacion(origen) ?? []);
+    return Response.json({ deshacer }, { headers: sinCache });
+  } catch (error) {
+    registrarError('api/catalogo/importar', error);
+    return Response.json({ error: 'No se pudo leer el estado de la importación.', codigo: 'error_importacion' }, { status: 500, headers: sinCache });
   }
 }
 

@@ -1,9 +1,9 @@
-import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
+import { claveEscuadria, metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { Cotizacion } from '../negocio/estado';
 import { preguntasPendientes, type PreguntaPendiente } from '../negocio/pendientes';
+import { familiaItem } from '../negocio/personalizados';
 import {
   cantidadesDichas,
-  familiaDeMedidas,
   nombresDichos,
   PALABRAS_NUMERO,
   sinTildes,
@@ -117,7 +117,7 @@ function leer(
     else if (!secciones.length && numeros.length === 1 && /^\d{1,2}$/.test(numeros[0]))
       seccion = `2X${numeros[0]}`; // En marcos y piezas T, «6» o «6 pulgadas» es la escuadría 2x6.
     if (!seccion) return null;
-    const opcion = p.opciones.find((o) => normalizarMedida(String(o.valor)) === normalizarMedida(seccion));
+    const opcion = p.opciones.find((o) => claveEscuadria(String(o.valor)) === claveEscuadria(seccion!));
     return opcion ? String(opcion.valor) : null;
   }
   if (secciones.length) return null;
@@ -144,7 +144,7 @@ export function respuestaDirecta(
   q: Pick<Cotizacion, 'solicitudes' | 'incompletos'>,
   mensaje: string,
   resolver: Resolver,
-  /** Familia del modelo en el catálogo; sin ella, un ítem con sección es un accesorio (ver `familiaDeMedidas`). */
+  /** Familia del modelo en el catálogo; sin ella, la dicen su rechazo, su nombre o su forma (ver `familiaItem`). */
   familia: (modelo: string) => string | null = () => null,
 ): { name: 'modificar_cotizacion'; input: ModificacionCotizacion } | null {
   const texto = sinTildes(mensaje)
@@ -177,10 +177,18 @@ export function respuestaDirecta(
   const lecturas = preguntas
     .filter((p) => p.campo !== 'madera' && (!pistas.length || pistas.includes(p.campo)))
     .flatMap((p) => {
-      // El ancho es siempre de puerta; el largo, de la familia de sus ítems. Una pregunta compartida por ítems de
-      // distinta familia se lee con el rango de puerta, el más estrecho.
+      // El ancho es siempre de puerta; el largo, de la familia de sus ítems, con la misma regla que el botón de la
+      // pregunta (`familiaItem`). Una pregunta compartida por ítems de distinta familia se lee con el rango de
+      // puerta, el más estrecho.
       const familias = new Set(
-        p.indices.map((i) => familiaDeMedidas(q.solicitudes[i] ?? { modelo: null, medida: null }, familia)),
+        p.indices.map((i) =>
+          familiaItem(
+            q.solicitudes[i] ?? { modelo: null, ancho: null, medida: null },
+            null,
+            q.incompletos.find((pendiente) => pendiente.indice === i)?.rechazo,
+            familia,
+          ),
+        ),
       );
       const fam = p.campo === 'ancho' || familias.size !== 1 ? 'PUERTA' : [...familias][0];
       const v = leer(p.campo as Exclude<Campo, 'madera'>, texto, p, fam);

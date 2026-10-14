@@ -40,6 +40,8 @@ export function pregunta(r: Rechazo, modelo: string | null) {
       return `La cantidad de ${nombre} debe ser un entero entre 1 y 10.000. ¿Cuántas unidades necesitas?`;
     case 'medida_implausible':
       return `No entendí la medida ${String(r.valor).replace('.', ',')} de ${r.campo === 'alto' ? 'alto o largo' : 'ancho'} para ${nombre}. Indícala en metros (por ejemplo 0,80) o centímetros (80); admito ${r.disponibles.join(', ')}.`;
+    case 'medidas_invertidas':
+      return `${nombre} quedó con ${metrosTexto(r.ancho)} m de ancho y ${metrosTexto(r.alto)} m de alto: una puerta no es más ancha que alta. ¿Es de ${metrosTexto(r.alto)} m de ancho por ${metrosTexto(r.ancho)} m de alto? Intercambia las medidas para cotizarla.`;
     case 'producto_ambiguo':
       return `Hay más de un producto de ${nombre} que coincide con esas medidas: ${r.disponibles.join('; ')}. ¿Cuál necesitas?`;
     case 'medida_no_disponible': {

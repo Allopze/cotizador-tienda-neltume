@@ -354,6 +354,24 @@ describe('forma de los bloques', () => {
     ]);
   });
 
+  it('un set de marco más largo que una puerta (3,20 m) se lee con el rango de marco', async () => {
+    const r = await importar({
+      Marcos: {
+        ...tituloPuerta(2, 'SET DE MARCO EN PINO FINGER'),
+        ...cabeceraMarco(3),
+        ...filasMarco(5, [
+          ['SET DE MARCO 30X70 MM LARGO 3,20 MTS', 16100],
+          ['SET DE MARCO 30X70 MM LARGO 4,80 MTS', 22100],
+        ]),
+      },
+    });
+    expect(r.incidencias).toEqual([]);
+    expect(r.catalogo.productos.map((p) => [p.codigo, p.largo])).toEqual([
+      ['MARC-PF-30X70-320', 3.2],
+      ['MARC-PF-30X70-480', 4.8],
+    ]);
+  });
+
   it('dos modelos con las mismas 4 primeras letras se abrevian más largo, sin chocar', async () => {
     const r = await importar({
       Uno: {

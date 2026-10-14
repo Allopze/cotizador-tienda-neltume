@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import type { Catalogo, Producto } from '../src/catalogo/tipos';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
+import { avisoVano } from '../src/negocio/medidas';
 
 vi.mock('../src/servidor/pdf', () => ({
   prepararPdf: vi.fn(async () => {}),
@@ -203,5 +204,52 @@ describe('agregar un producto del catálogo', () => {
       }),
     ).rejects.toMatchObject({ codigo: 'no_editable' });
     expect(almacen.obtener(q.id)?.solicitudes).toHaveLength(1);
+  });
+});
+
+describe('aviso de vano justo sobre el inicio de su tramo', () => {
+  const angosta: Producto = { ...puerta, codigo: 'MOL-O-70', medida: '0,70 A 0,75', anchoMin: 0.7, anchoMax: 0.75 };
+  async function conTramos() {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-vano-'));
+    dirs.push(dir);
+    const llm = { interpretar: vi.fn() };
+    return new Servicio({ ...catalogo, productos: [angosta, puerta, marco] }, llm, new Almacen(dir));
+  }
+  const agregar = (servicio: Servicio, ancho: number, tipoMedida: 'vano' | 'hoja' | 'no_especificado') =>
+    servicio.ejecutar({ tipo: 'agregar_producto', codigo: puerta.codigo, cantidad: 1, ancho, alto: 2, tipoMedida });
+
+  it('un vano de 0,82 m se cobra en 0,80–0,85 y avisa que la hoja podría ser del tramo 0,70–0,75', async () => {
+    const servicio = await conTramos();
+    const r = await agregar(servicio, 0.82, 'vano');
+    // No bloquea ni cambia el precio: se cotiza con el ancho pedido.
+    expect(r.cotizacion.incompletos).toEqual([]);
+    expect(r.cotizacion.montos.lineas[0].producto.codigo).toBe('MOL-O');
+    expect(r.avisos).toEqual([
+      'Revisa el ítem 1 (MOLCO): el vano de 0,82 m se cobra en el tramo 0,80–0,85 m y queda a menos de 5 cm de su inicio. La hoja es más angosta que el vano: si la medida es del hueco, la puerta podría ser del tramo 0,70–0,75 m.',
+    ]);
+    // Un cambio que no toca ese ítem no repite el aviso.
+    const q = r.cotizacion;
+    const otra = await servicio.ejecutar({ tipo: 'agregar_producto', id: q.id, actualizada: q.actualizada, codigo: marco.codigo, cantidad: 1 });
+    expect(otra.avisos ?? []).not.toContainEqual(expect.stringContaining('vano'));
+  });
+
+  it('no avisa con una hoja, lejos del inicio del tramo o sin tramo anterior', async () => {
+    const servicio = await conTramos();
+    expect((await agregar(servicio, 0.82, 'hoja')).avisos ?? []).toEqual([]);
+    expect((await agregar(servicio, 0.82, 'no_especificado')).avisos ?? []).toEqual([]);
+    expect((await agregar(servicio, 0.85, 'vano')).avisos ?? []).toEqual([]);
+    const soloUno = await preparar();
+    expect((await agregar(soloUno.servicio, 0.82, 'vano')).avisos ?? []).toEqual([]);
+  });
+});
+
+describe('avisoVano', () => {
+  const linea = (anchoSolicitado: number) => ({ indice: 0, producto: puerta, anchoSolicitado, tipoMedida: 'vano' as const });
+  it('también avisa un vano entre dos tramos que se cobra con la siguiente medida', () => {
+    expect(avisoVano(linea(0.77), { min: 0.7, max: 0.75 })).toContain('el vano de 0,77 m se cobra en el tramo 0,80–0,85 m');
+    expect(avisoVano(linea(0.849), { min: 0.7, max: 0.75 })).toContain("0,849 m");
+    expect(avisoVano(linea(0.85), { min: 0.7, max: 0.75 })).toBeNull();
+    expect(avisoVano(linea(0.82), null)).toBeNull();
+    expect(avisoVano({ ...linea(0.82), producto: marco }, { min: 0.7, max: 0.75 })).toBeNull();
   });
 });

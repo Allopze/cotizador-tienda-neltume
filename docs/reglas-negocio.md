@@ -19,6 +19,10 @@ La columna «Dónde vive» es para quien mantiene el código.
 | Un marco enchapado en Mara se cotiza con el set Pino Finger enchapado Mara si el modelo no tiene esa madera. | — | «Marco enchapado» → set PINO FINGER ENCHAPADO MARA. | | `conEquivalente`, `src/catalogo/resolver.ts` |
 | En marcos y piezas T, un número solo es la escuadría 2xN. | — | «Marco de 6» o «de 6 pulgadas» es 2x6. | | `src/catalogo/resolver.ts` |
 | Si dos productos del catálogo calzan igual de bien, se pregunta en vez de elegir. | — | — | | `src/catalogo/resolver.ts` |
+| Una puerta pedida por **vano** (el hueco del muro) no se convierte a hoja: se cobra con el ancho pedido. Pero si ese ancho queda a menos de 5 cm sobre el inicio del tramo que se cobra (o bajo él, si se cobra con la siguiente medida) y el modelo tiene un tramo anterior en esa madera, se avisa sin bloquear: la hoja real, más angosta que el vano, probablemente es del tramo anterior. Se avisa una vez por ítem y medida. | menos de 5 cm | Molco en vano de 0,82 m: se cobra en 0,80–0,85 m y se avisa que la hoja podría ser del tramo 0,70–0,75 m. Con 0,85 m o con «hoja», no se avisa. | | `MARGEN_VANO`, `avisoVano`, `src/negocio/medidas.ts`; `tramoAnterior`, `src/servidor/servicio.ts` |
+| Una puerta con el ancho mayor que el alto no se busca en el catálogo: queda pendiente con la opción de intercambiar las dos medidas. | — | «Molco de 210 x 80» → «¿Es de 0,80 m de ancho por 2,10 m de alto?» y el botón «Intercambiar». | | `medidas_invertidas`, `src/catalogo/resolver.ts`; `src/negocio/pendientes.ts` |
+| Una escuadría se compara sin su unidad y sin importar el orden de sus factores; se muestra como la escribe el catálogo. | — | «4x2» es el 2X4; «30x70 mm» es el 30X70; «1x12» es el 12X1. | | `normalizarMedida`, `claveEscuadria`, `src/catalogo/resolver.ts` |
+| El plural de un modelo o de un alias seguro es ese modelo, no un modelo por confirmar. | — | «marcos» es Marco; «molcos», Molco. «Pillos» (plural de un alias dudoso) sigue sin cotizarse solo. | | `singularesCatalogo`, `src/catalogo/configuracion.ts` |
 
 ## Unidades de medida
 
@@ -26,6 +30,7 @@ La columna «Dónde vive» es para quien mantiene el código.
 |---|---|---|---|---|
 | Un número hasta 10 son metros; hasta 300, centímetros; hasta 3000, milímetros. En el largo de marcos, molduras y piezas T, hasta 600 cm y 6000 mm. | — | «80» = 0,80 m; «2,10» = 2,10 m; «820» = 0,82 m; moldura de «360» = 3,60 m. | | `metros`, `src/catalogo/resolver.ts` |
 | Una medida fuera de este rango no es creíble: se pregunta. El ancho siempre usa el rango de las puertas. | Puertas 0,3–3 m; largo de marcos, molduras y piezas T 0,3–6 m | «Puerta de 5 m»; «moldura de 7 m». | | `rangoMedidas`, `src/negocio/limites.ts`; `metros`, `src/catalogo/resolver.ts` |
+| En los formularios (detalle, Catálogo → Agregar producto y Gestionar) una medida se escribe con unidad o sin ella, con un solo lector y un solo mensaje de rango para la pantalla y el servidor. | — | «80 cm», «2100 mm», «3600 mm» en un accesorio = 3,60 m. | | `leerMedida`, `src/app/formato.ts`; `errorMedida`, `src/negocio/limites.ts` |
 
 ## Precios, márgenes y montos
 

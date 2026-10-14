@@ -4,6 +4,7 @@ import { access, copyFile, mkdir, readFile, rename, rm } from 'node:fs/promises'
 import { isDeepStrictEqual } from 'node:util';
 import { basename, dirname, join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
+import { nombreCanonicoModelo } from '../catalogo/configuracion';
 import type { Catalogo } from '../catalogo/tipos';
 import { estadoInicial, type Estado } from '../negocio/estado';
 import { guardarEstadoCompleto, leerEstadoDeBase } from './almacen';
@@ -85,6 +86,18 @@ async function leerEstado(ruta: string) {
   const estado = parsed.data as Estado;
   verificarEstado(estado);
   return { estado, bytes };
+}
+
+/**
+ * El catálogo como lo deja `guardarCatalogo`: el nombre del modelo en su forma canónica («HUILO HUILO» → «Huilo
+ * Huilo») y la fecha en ISO con milisegundos. La verificación compara contra esto, no contra el JSON tal cual.
+ */
+function comoSeGuarda(catalogo: Catalogo): Catalogo {
+  return {
+    ...catalogo,
+    fecha: new Date(Date.parse(catalogo.fecha)).toISOString(),
+    productos: catalogo.productos.map((p) => ({ ...p, modelo: nombreCanonicoModelo(p.modelo) })),
+  };
 }
 
 async function respaldarYRetirar(
@@ -225,7 +238,7 @@ async function migrarConBloqueo(
     };
     if (!isDeepStrictEqual(estadoLeido, estado))
       throw new Error('La verificación detectó diferencias en las cotizaciones migradas.');
-    if (!isDeepStrictEqual(catalogoLeido, catalogo))
+    if (!isDeepStrictEqual(catalogoLeido, comoSeGuarda(catalogo)))
       throw new Error('La verificación detectó diferencias en los productos migrados.');
     const integrity = db.pragma('integrity_check', { simple: true });
     const foreignKeys = db.pragma('foreign_key_check') as unknown[];

@@ -29,8 +29,9 @@ export const metros = (n: number, familia: string = 'PUERTA'): number | null => 
   return m >= rango.min - 1e-9 && m <= rango.max + 1e-9 ? m : null;
 };
 /**
- * Forma canónica de una escuadría: «6 x 4.5», «6×4,5» y «6*4.5» → «6X4,5». La unidad en pulgadas se omite:
- * «6 pulgadas» y «2x6"» son «6» y «2X6» (en marcos y piezas T, «6» ya es la sección 2x6).
+ * Forma canónica de una escuadría: «6 x 4.5», «6×4,5» y «6*4.5» → «6X4,5». La unidad se omite: «6 pulgadas» y
+ * «2x6"» son «6» y «2X6» (en marcos y piezas T, «6» ya es la sección 2x6), y «30x70 mm» o «30 mm x 70 mm» son
+ * «30X70». Conserva el orden escrito, que es el que se muestra; para comparar, `claveEscuadria`.
  */
 export const normalizarMedida = (s: string) =>
   s
@@ -38,7 +39,18 @@ export const normalizarMedida = (s: string) =>
     .replace(/[×*]/g, 'X')
     .replace(/\s/g, '')
     .replace(/PULGADAS?|PULG\.?|["”″]|''/g, '')
+    .replace(/(\d)(?:MM|CM)\.?(?=X|$)/g, '$1')
     .replace(/\./g, ',');
+/**
+ * Clave para comparar escuadrías sin importar el orden de los factores: «4x2» y «2X4» son la misma pieza, como
+ * «12X1» y «1x12». El catálogo escribe unas de menor a mayor (2X4, 30X70) y otras al revés (12X1, 6X4,5).
+ */
+export function claveEscuadria(s: string) {
+  const m = normalizarMedida(s);
+  const factores = m.split('X');
+  if (factores.length !== 2 || !factores.every((f) => /^\d+(?:,\d+)?$/.test(f))) return m;
+  return factores.sort((a, b) => Number(a.replace(',', '.')) - Number(b.replace(',', '.'))).join('X');
+}
 export type Rechazo =
   | { tipo: 'faltan_datos'; campos: string[]; disponibles: Record<string, string[]> }
   | { tipo: 'modelo_desconocido'; valor: string; disponibles: string[] }
@@ -55,7 +67,10 @@ export type Rechazo =
       /** Ancho o alto: extremos de los escalones que se cotizan, en metros. */
       rango?: { min: number; max: number };
     }
-  | { tipo: 'medida_implausible'; campo: 'ancho' | 'alto'; valor: number; disponibles: string[] }
+  /** `familia` es la del modelo: fija el rango con que se vuelve a preguntar (puertas hasta 3 m, accesorios hasta 6 m). */
+  | { tipo: 'medida_implausible'; campo: 'ancho' | 'alto'; valor: number; disponibles: string[]; familia?: Familia }
+  /** Una puerta con el ancho mayor que el alto: casi seguro se escribieron al revés. Medidas pedidas, en metros. */
+  | { tipo: 'medidas_invertidas'; ancho: number; alto: number; disponibles: string[]; familia?: Familia }
   | { tipo: 'producto_ambiguo'; valor: string; disponibles: string[] }
   | { tipo: 'cantidad_invalida'; valor: number | null; disponibles: string[] };
 export type Resolucion =
@@ -294,6 +309,14 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     return no({ tipo: 'modelo_desconocido', valor: s.modelo, disponibles: modelosCatalogo(catalogo) });
   const familia = opciones[0].familia,
     puerta = familia === 'PUERTA';
+  // Una puerta más ancha que alta no existe en el catálogo: antes de buscar escalones o maderas, se propone
+  // intercambiar las medidas en vez de responder que el ancho no está disponible.
+  if (puerta && s.ancho !== null && s.alto !== null) {
+    const ancho = metros(s.ancho),
+      alto = metros(s.alto);
+    if (ancho !== null && alto !== null && ancho > alto + 1e-9)
+      return no({ tipo: 'medidas_invertidas', ancho, alto, disponibles: [], familia });
+  }
   // Cada madera tiene sus propios escalones: una alternativa debe calzar con todas las medidas pedidas.
   const maderasCompatibles = () => unicos(opciones, 'madera').filter((madera) => {
     let productos = opciones.filter((p) => p.madera === madera);
@@ -305,7 +328,8 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
     if (!puerta && s.medida) {
       let medida = normalizarMedida(s.medida);
       if (familia !== 'MOLDURA' && /^\d+$/.test(medida)) medida = `2X${medida}`;
-      productos = productos.filter((p) => p.medida === medida);
+      const clave = claveEscuadria(medida);
+      productos = productos.filter((p) => claveEscuadria(p.medida) === clave);
     }
     if (s.alto !== null) {
       const alto = metros(s.alto, familia);
@@ -338,7 +362,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
   if (puerta && s.ancho !== null) {
     const ancho = metros(s.ancho);
     if (ancho === null)
-      return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rangoTexto('PUERTA') });
+      return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rangoTexto('PUERTA'), familia });
     anchoSolicitado = ancho;
     const medidas = unicos(opciones, 'medida');
     const { productos, rango: extremos } = porEscalon(opciones, ancho, 'ancho');
@@ -356,17 +380,19 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
   if (!puerta && s.medida) {
     let medida = normalizarMedida(s.medida);
     if (familia !== 'MOLDURA' && /^\d+$/.test(medida)) medida = `2X${medida}`;
-    medidaSolicitada = medida;
     const medidas = unicos(opciones, 'medida');
-    opciones = opciones.filter((p) => p.medida === medida);
+    const clave = claveEscuadria(medida);
+    opciones = opciones.filter((p) => claveEscuadria(p.medida) === clave);
     if (!opciones.length)
       return no({ tipo: 'medida_no_disponible', campo: 'medida', valor: s.medida, disponibles: medidas, familia });
+    // Se muestra como la escribe el catálogo: «4x2» o «30x70 mm» se cotizan y se leen 2X4 y 30X70.
+    medidaSolicitada = opciones[0].medida;
   }
   if (s.alto !== null) {
     const alto = metros(s.alto, familia),
       disponibles = unicos(opciones, 'largo');
     if (alto === null)
-      return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rangoTexto(familia) });
+      return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rangoTexto(familia), familia });
     altoSolicitado = alto;
     const { productos, rango: extremos } = porEscalon(opciones, alto, 'alto');
     opciones = productos;

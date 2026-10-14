@@ -40,15 +40,15 @@ async function montar() {
   directorio = await mkdtemp(join(tmpdir(), 'neltume-importar-'));
   vi.stubEnv('NELTUME_DATA_DIR', directorio);
   vi.stubEnv('NELTUME_DB_PATH', join(directorio, 'cotizador.sqlite'));
-  const { POST } = await import('../src/app/api/catalogo/importar/route');
+  const { GET, POST } = await import('../src/app/api/catalogo/importar/route');
   const rutaCatalogo = await import('../src/app/api/catalogo/route');
   const { abrirBaseDatos } = await import('../src/servidor/base-datos');
   const { RepositorioCatalogoSqlite } = await import('../src/servidor/repositorio-catalogo');
   const { cargarCatalogo } = await import('../src/servidor/catalogo');
   const archivo = new File([xlsxBytes(planillaEnchapadas())], 'enchapadas.xlsx');
-  const enviar = async (campos: Record<string, string>, otro: Blob = archivo) => {
+  const enviar = async (campos: Record<string, string>, otro: Blob = archivo, nombre = 'enchapadas.xlsx') => {
     const form = new FormData();
-    form.set('archivo', otro, 'enchapadas.xlsx');
+    form.set('archivo', otro, nombre);
     for (const [clave, valor] of Object.entries(campos)) form.set(clave, valor);
     const r = await POST(await multipart(form));
     return { status: r.status, cuerpo: await r.json() };
@@ -65,15 +65,40 @@ async function montar() {
     return { status: r.status, cuerpo: await r.json() };
   };
   /** Lo que envía la pantalla al confirmar una vista previa. */
-  const confirmar = (vista: { versionCatalogo: string | null; sha256: string; baseSha256: string | null }) =>
-    enviar({
-      accion: 'confirmar',
-      versionCatalogo: vista.versionCatalogo ?? '',
-      sha256: vista.sha256,
-      baseSha256: vista.baseSha256 ?? '',
-      forzar: 'false',
-    });
-  return { POST, enviar, confirmar, catalogo, repo: () => new RepositorioCatalogoSqlite(abrirBaseDatos()), cargarCatalogo };
+  const confirmar = (
+    vista: { versionCatalogo: string | null; sha256: string; baseSha256: string | null },
+    { forzar = false, otro }: { forzar?: boolean; otro?: Blob } = {},
+  ) =>
+    enviar(
+      {
+        accion: 'confirmar',
+        versionCatalogo: vista.versionCatalogo ?? '',
+        sha256: vista.sha256,
+        baseSha256: vista.baseSha256 ?? '',
+        forzar: String(forzar),
+      },
+      otro,
+    );
+  /** Lo que consulta la pantalla al abrirse: a qué planilla anterior se puede volver todavía. */
+  const estado = async () => {
+    const r = await GET(new Request(URL_IMPORTAR));
+    return { status: r.status, cuerpo: await r.json() };
+  };
+  /** Filas de las tablas que guardan la copia para volver atrás y las marcas de lo editado a mano. */
+  const copias = () => ({
+    anterior: abrirBaseDatos().prepare('SELECT * FROM catalogo_anterior ORDER BY origen').all(),
+    ediciones: abrirBaseDatos().prepare('SELECT * FROM catalogo_ediciones ORDER BY codigo').all(),
+  });
+  return {
+    POST,
+    enviar,
+    confirmar,
+    catalogo,
+    estado,
+    copias,
+    repo: () => new RepositorioCatalogoSqlite(abrirBaseDatos()),
+    cargarCatalogo,
+  };
 }
 
 /** Copia del zip con el tamaño descomprimido que declara una de sus partes cambiado en el índice central. */
@@ -89,6 +114,9 @@ function declararTamano(zip: Uint8Array, nombre: string, bytes: number) {
   }
   throw new Error(`El zip no trae ${nombre}`);
 }
+
+/** Planilla de enchapadas con solo la hoja de Los Ríos: 3 productos, menos del 90 % de los 27. */
+const reducida = () => new Blob([xlsxBytes({ 'LOS RIOS ENCHP': planillaEnchapadas()['LOS RIOS ENCHP'] })]);
 
 /** Libro de la planilla de enchapadas con el XML de su primera hoja reemplazado. */
 function conHoja(xml: string) {
@@ -284,5 +312,113 @@ describe('subida de la planilla con tope', () => {
     );
     expect(referencia).toMatchObject({ status: 400, cuerpo: { codigo: 'excel_invalido' } });
     expect(referencia.cuerpo.error).toMatch(/referencia de celda inválida/);
+  });
+});
+
+describe('casos de borde de la importación', () => {
+  it('una reducción bajo el 90 % pide la casilla de forzar; con ella se importa', async () => {
+    const m = await montar();
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    const vista = await m.enviar({ accion: 'previsualizar' }, reducida());
+    expect(vista.cuerpo).toMatchObject({ totalProductos: 3, conteos: { sinCambios: 3, eliminados: 24 } });
+    const sinForzar = await m.confirmar(vista.cuerpo, { otro: reducida() });
+    expect(sinForzar).toMatchObject({ status: 409, cuerpo: { codigo: 'confirmacion_requerida' } });
+    expect(sinForzar.cuerpo.error).toMatch(/La planilla trae 3 productos y el catálogo actual tiene 27/);
+    expect(m.repo().conteoPorOrigen()).toEqual({ enchapadas: 27 });
+    const forzada = await m.confirmar(vista.cuerpo, { otro: reducida(), forzar: true });
+    expect(forzada).toMatchObject({ status: 200, cuerpo: { importado: true, conteos: { eliminados: 24 } } });
+    expect(m.repo().conteoPorOrigen()).toEqual({ enchapadas: 3 });
+  });
+
+  it('un archivo que no es .xlsx se rechaza: por su nombre, o por su contenido si se llama .xlsx', async () => {
+    const m = await montar();
+    const csv = await m.enviar({ accion: 'previsualizar' }, new Blob(['codigo;precio\nA;1']), 'precios.csv');
+    expect(csv).toMatchObject({ status: 400, cuerpo: { codigo: 'archivo_invalido', error: 'Selecciona un Excel .xlsx de hasta 20 MB.' } });
+    const texto = await m.enviar({ accion: 'previsualizar' }, new Blob(['codigo;precio\nA;1']));
+    expect(texto).toMatchObject({ status: 400, cuerpo: { codigo: 'excel_invalido' } });
+    expect(texto.cuerpo.error).toMatch(/^No se pudo leer el archivo como un Excel \.xlsx válido \(no es un archivo comprimido/);
+    expect(m.repo().version).toBeNull();
+  });
+
+  it('un Excel con contraseña de apertura dice que está protegido; un .xls antiguo, que hay que guardarlo como .xlsx', async () => {
+    const m = await montar();
+    // Documento compuesto de Office (CFB): firma D0 CF 11 E0 A1 B1 1A E1 y, si está cifrado, el flujo EncryptionInfo.
+    const cfb = (...nombres: string[]) => {
+      const firma = Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]);
+      return new Blob([Buffer.concat([firma, Buffer.alloc(504), ...nombres.map((n) => Buffer.from(n, 'utf16le'))])]);
+    };
+    const protegido = await m.enviar({ accion: 'previsualizar' }, cfb('EncryptionInfo', 'EncryptedPackage'));
+    expect(protegido).toMatchObject({ status: 400, cuerpo: { codigo: 'excel_invalido' } });
+    expect(protegido.cuerpo.error).toMatch(
+      /^El archivo está protegido con contraseña: guárdalo sin contraseña y vuelve a intentarlo\./,
+    );
+    const antiguo = await m.enviar({ accion: 'previsualizar' }, cfb('Workbook'));
+    expect(antiguo).toMatchObject({ status: 400, cuerpo: { codigo: 'excel_invalido' } });
+    expect(antiguo.cuerpo.error).toMatch(/^El archivo es un Excel antiguo \(\.xls\)/);
+  });
+
+  it('una hoja que figura en el libro pero falta en el zip es un Excel inválido (400)', async () => {
+    const m = await montar();
+    const partes = unzipSync(xlsxBytes(planillaEnchapadas()));
+    delete partes['xl/worksheets/sheet2.xml'];
+    const r = await m.enviar({ accion: 'previsualizar' }, new Blob([zipSync(partes)]));
+    expect(r).toMatchObject({ status: 400, cuerpo: { codigo: 'excel_invalido' } });
+    expect(r.cuerpo.error).toMatch(/falta xl\/worksheets\/sheet2\.xml en la planilla/);
+  });
+
+  it('importar dos veces la misma planilla: la vista previa no ve cambios y la anterior pasa a ser la misma', async () => {
+    const m = await montar();
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    const vista = (await m.enviar({ accion: 'previsualizar' })).cuerpo;
+    expect(vista.conteos).toEqual({ nuevos: 0, modificados: 0, soloDescripcion: 0, sinCambios: 27, eliminados: 0 });
+    const r = await m.confirmar(vista);
+    expect(r.cuerpo.anterior).toMatchObject({ fuente: 'enchapadas.xlsx', productos: 27, edicionesManuales: 0 });
+    const antes = m.repo().importados('enchapadas');
+    const vuelta = await m.catalogo({ tipo: 'volver_planilla', origen: 'enchapadas', versionCatalogo: r.cuerpo.versionCatalogo });
+    expect(vuelta.status).toBe(200);
+    expect(m.repo().importados('enchapadas')).toEqual(antes);
+  });
+
+  it('una importación rechazada deja intactas la copia para volver atrás y las marcas de lo editado a mano', async () => {
+    const m = await montar();
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    m.repo().editarProducto('HUIL-EM-085-240', { precioNeto: 110_000 });
+    const antes = m.copias();
+    expect(antes.anterior).toHaveLength(1);
+    expect(antes.ediciones).toEqual([expect.objectContaining({ codigo: 'HUIL-EM-085-240' })]);
+    const vista = (await m.enviar({ accion: 'previsualizar' }, reducida())).cuerpo;
+    expect((await m.confirmar(vista, { otro: reducida() })).status).toBe(409);
+    expect(m.copias()).toEqual(antes);
+    expect(m.repo().buscarPorCodigo('HUIL-EM-085-240')?.precioNeto).toBe(110_000);
+  });
+});
+
+describe('volver a la planilla anterior después de recargar', () => {
+  it('la pantalla consulta a qué planilla se puede volver: aparece tras importar, se va si el catálogo cambia y vuelve a ofrecerse tras deshacer', async () => {
+    const m = await montar();
+    expect(await m.estado()).toEqual({ status: 200, cuerpo: { deshacer: [] } });
+    await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    // La primera importación no tiene a qué volver.
+    expect((await m.estado()).cuerpo.deshacer).toEqual([]);
+    const segunda = await m.confirmar((await m.enviar({ accion: 'previsualizar' })).cuerpo);
+    const { deshacer } = (await m.estado()).cuerpo;
+    expect(deshacer).toEqual([
+      expect.objectContaining({
+        origen: 'enchapadas',
+        fuente: 'enchapadas.xlsx',
+        importada: 'enchapadas.xlsx',
+        productos: 27,
+        versionCatalogo: segunda.cuerpo.versionCatalogo,
+      }),
+    ]);
+    // Con lo que entrega la consulta se puede volver, igual que justo después de importar.
+    const vuelta = await m.catalogo({ tipo: 'volver_planilla', origen: 'enchapadas', versionCatalogo: deshacer[0].versionCatalogo });
+    expect(vuelta.status).toBe(200);
+    // La importación deshecha queda como anterior: se ofrece volver a ella.
+    expect((await m.estado()).cuerpo.deshacer).toEqual([expect.objectContaining({ origen: 'enchapadas', productos: 27 })]);
+    // Un cambio posterior en el catálogo (una edición a mano) deja de ofrecerlo.
+    m.repo().editarProducto('HUIL-EM-085-240', { precioNeto: 110_000 });
+    expect((await m.estado()).cuerpo.deshacer).toEqual([]);
   });
 });

@@ -17,7 +17,10 @@ import {
   type Linea,
 } from '@/negocio/precios';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '@/negocio/medidas';
-import { rangoMedidas } from '@/negocio/limites';
+import { errorMedida, rangoCampoMedida, textoRangoMedida, type CampoMedida } from '@/negocio/limites';
+
+// Los textos de rango de las medidas viven con sus límites (`limites.ts`), para que el servidor diga lo mismo.
+export { errorMedida, rangoCampoMedida, textoRangoMedida, type CampoMedida };
 import { metros } from '@/catalogo/resolver';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
@@ -135,18 +138,6 @@ export function medidaProducto(p: {
 
 /** Número para un campo editable, con coma decimal y sin separador de miles: 0.8 → «0,8». */
 export const decimalCampo = (n: number) => n.toLocaleString('es-CL', { maximumFractionDigits: 4, useGrouping: false });
-/** «0,80», «0.8» u «80» (centímetros, sobre `limite`) → metros; vacío o ilegible → null. */
-export function leerMetros(valor: string, limite: number) {
-  const n = Number(valor.trim().replace(',', '.'));
-  if (!valor.trim() || !Number.isFinite(n)) return null;
-  return n > limite ? n / 100 : n;
-}
-
-/** Dimensión de un ítem: el ancho es de puerta; el alto o largo, de la familia del producto. */
-export type CampoMedida = 'ancho' | 'alto';
-/** Rango admisible de una dimensión: el ancho siempre con el de puertas; el alto o largo, con el de su familia. */
-export const rangoCampoMedida = (campo: CampoMedida, familia: string) =>
-  rangoMedidas(campo === 'ancho' ? 'PUERTA' : familia);
 const DIVISOR_UNIDAD: Record<string, number> = {
   m: 1, mt: 1, mts: 1, metro: 1, metros: 1,
   cm: 100, cms: 100, centimetro: 100, centimetros: 100,
@@ -176,16 +167,6 @@ export function leerMedida(texto: string, familia: string, campo: CampoMedida = 
   const redondeado = Math.round(valor * 10_000) / 10_000;
   return redondeado >= rango.min - 1e-9 && redondeado <= rango.max + 1e-9 ? redondeado : null;
 }
-/** Qué escribir cuando una medida no se entiende o queda fuera de rango, con el rango de la familia y ejemplos. */
-export function errorMedida(campo: CampoMedida, familia: string) {
-  const { min, max } = rangoCampoMedida(campo, familia);
-  const rango = `entre ${decimalCampo(min)} y ${decimalCampo(max)} m`;
-  if (campo === 'ancho') return `Indica un ancho ${rango}: en metros (0,80), centímetros (80 cm) o milímetros (800 mm).`;
-  return familia === 'PUERTA'
-    ? `Indica un alto ${rango}: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).`
-    : `Indica un largo ${rango}: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).`;
-}
-
 export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   nombre: 'Cliente',
   rut: 'RUT',

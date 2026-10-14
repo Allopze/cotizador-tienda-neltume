@@ -1,14 +1,21 @@
 'use client';
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { leerPesos } from '@/negocio/cifras';
-import { rangoMedidas } from '@/negocio/limites';
 import { pesos } from '@/negocio/precios';
 import type { ProductoEliminado } from '@/servidor/repositorio-catalogo';
 import type { Avisar } from './avisos';
 import type { ProductoAdministrable } from './contrato';
 import { Dialogo, useConfirmacion } from './dialogo';
 import { FAMILIAS } from '@/catalogo/familias';
-import { decimalCampo, fechaCorta, leerMetros, medidaProducto, nombreProducto } from './formato';
+import {
+  decimalCampo,
+  errorMedida,
+  fechaCorta,
+  leerMedida,
+  medidaProducto,
+  nombreProducto,
+  textoRangoMedida,
+} from './formato';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
@@ -40,12 +47,6 @@ export const campos = (p: ProductoAdministrable): Campos => ({
   descripcion: p.descripcion,
 });
 
-/** «Entre 0,3 y 3 m» en una puerta o «entre 0,3 y 6 m» en un accesorio: el rango que acepta el servidor. */
-const textoRango = (familia: string) => {
-  const { min, max } = rangoMedidas(familia);
-  return `entre ${decimalCampo(min)} y ${decimalCampo(max)} m`;
-};
-
 /** Solo lo que cambió; un error por campo si algo no se puede guardar. */
 export function cambiosDe(p: ProductoAdministrable, c: Campos) {
   const errores: Partial<Record<keyof Campos, string>> = {};
@@ -58,19 +59,20 @@ export function cambiosDe(p: ProductoAdministrable, c: Campos) {
   if (c.familia !== p.familia) cambios.familia = c.familia as ProductoAdministrable['familia'];
   const tipo = c.tipo.trim() || null;
   if (tipo !== p.tipo) cambios.tipo = tipo;
+  // Las medidas se leen como en el detalle y el chat (`leerMedida`): «80 cm», «2100 mm» o «3600 mm». Solo se
+  // revisan si cambian (el largo, también si cambia la familia, como en el servidor): un producto de la planilla
+  // fuera de rango se puede seguir corrigiendo en lo demás.
+  const originales = campos(p);
   for (const campo of ['anchoMin', 'anchoMax'] as const) {
-    const valor = c[campo].trim() ? leerMetros(c[campo], 4) : null;
-    if (c[campo].trim() && (valor === null || valor <= 0)) errores[campo] = 'Escribe un número en metros, como 0,80.';
+    const texto = c[campo].trim();
+    if (texto === originales[campo]) continue;
+    const valor = texto ? leerMedida(texto, 'PUERTA', 'ancho') : null;
+    if (texto && valor === null) errores[campo] = errorMedida('ancho', 'PUERTA');
     else if (valor !== p[campo]) cambios[campo] = valor;
   }
-  // El servidor revisa el rango de la familia solo si cambian el largo o la familia: un producto de la planilla
-  // fuera de rango se puede seguir corrigiendo en lo demás.
-  if (c.largo.trim() !== campos(p).largo || c.familia !== p.familia) {
-    const rango = rangoMedidas(c.familia);
-    const largo = leerMetros(c.largo, rango.max);
-    if (largo === null || largo <= 0) errores.largo = 'Escribe un número en metros, como 2,10.';
-    else if (largo < rango.min || largo > rango.max)
-      errores.largo = `${c.familia === 'PUERTA' ? 'El alto' : 'El largo'} debe estar ${textoRango(c.familia)}.`;
+  if (c.largo.trim() !== originales.largo || c.familia !== p.familia) {
+    const largo = leerMedida(c.largo, c.familia);
+    if (largo === null) errores.largo = errorMedida('alto', c.familia);
     else if (largo !== p.largo) cambios.largo = largo;
   }
   const precio = leerPesos(c.precio);
@@ -464,11 +466,11 @@ function EditorProducto({
           {campo('madera', 'Madera')}
           {campo('tipo', 'Tipo (opcional)')}
           {campo('medida', puerta ? 'Medida (texto)' : 'Medida o escuadría', puerta ? undefined : { ayuda: 'Escuadría: grosor por ancho de la pieza.' })}
-          {puerta && campo('anchoMin', 'Ancho mínimo', { numero: true, ayuda: 'En metros (0,80) o centímetros (80).' })}
+          {puerta && campo('anchoMin', 'Ancho mínimo', { numero: true, ayuda: 'En metros (0,80), centímetros (80 cm) o milímetros (800 mm).' })}
           {puerta && campo('anchoMax', 'Ancho máximo', { numero: true })}
           {campo('largo', puerta ? 'Alto' : 'Largo', {
             numero: true,
-            ayuda: `En metros (2,10) o centímetros (210), ${textoRango(valores.familia)}.`,
+            ayuda: `En metros (2,10), centímetros (210 cm) o milímetros (2100 mm), ${textoRangoMedida('alto', valores.familia)}.`,
           })}
           {campo('precio', 'Precio base sin IVA', { numero: true, ayuda: 'Costo de fábrica, sin la ganancia de venta.' })}
           {campo('descripcion', 'Descripción', { ancho: true, ayuda: 'Es el texto que aparece en la cotización y el PDF.' })}

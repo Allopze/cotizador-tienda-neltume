@@ -2,7 +2,7 @@ import { importarEnchapadas, esPlanillaEnchapadas } from './enchapadas';
 import { ErrorImportacion, importar } from './importar';
 import { validarConfiguracionCatalogo, type ConfiguracionCatalogo } from './configuracion';
 import type { OrigenCatalogo } from './origenes';
-import { abrirXlsx, ErrorXlsx, type Xlsx } from './xlsx';
+import { abrirXlsx, ErrorXlsx, ErrorXlsxCompuesto, type Xlsx } from './xlsx';
 
 const HOJAS_PRINCIPAL = ['Precio', 'Categorias', 'Cotización'];
 
@@ -34,9 +34,15 @@ export async function importarPlanilla(ruta: string, configEntrada?: Configuraci
 }
 
 const libroInvalido = (error: unknown) =>
-  new ErrorImportacion(
-    `No se pudo leer el archivo como un Excel .xlsx válido (${error instanceof Error ? error.message : 'formato desconocido'}). El catálogo no se modificó.`,
-  );
+  error instanceof ErrorXlsxCompuesto
+    ? new ErrorImportacion(
+        error.protegido
+          ? 'El archivo está protegido con contraseña: guárdalo sin contraseña y vuelve a intentarlo. El catálogo no se modificó.'
+          : 'El archivo es un Excel antiguo (.xls): ábrelo en Excel, guárdalo como .xlsx y vuelve a intentarlo. El catálogo no se modificó.',
+      )
+    : new ErrorImportacion(
+        `No se pudo leer el archivo como un Excel .xlsx válido (${error instanceof Error ? error.message : 'formato desconocido'}). El catálogo no se modificó.`,
+      );
 
 async function importarLibro(ruta: string, x: Xlsx, configEntrada?: ConfiguracionCatalogo) {
   const origen = detectarPlanilla(x);

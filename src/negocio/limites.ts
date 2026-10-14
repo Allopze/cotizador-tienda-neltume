@@ -4,6 +4,29 @@
 export const DESCUENTO_MAXIMO = 50;
 export const rangoMedidas = (familia: string) => ({ min: 0.3, max: familia === 'PUERTA' ? 3 : 6 });
 
+/** Dimensión de un ítem: el ancho es de puerta; el alto o largo, de la familia del producto. */
+export type CampoMedida = 'ancho' | 'alto';
+/** Rango admisible de una dimensión: el ancho siempre con el de puertas; el alto o largo, con el de su familia. */
+export const rangoCampoMedida = (campo: CampoMedida, familia: string) =>
+  rangoMedidas(campo === 'ancho' ? 'PUERTA' : familia);
+const coma = (n: number) => String(n).replace('.', ',');
+/** «entre 0,3 y 3 m» en una puerta o «entre 0,3 y 6 m» en el largo de un accesorio: el rango que se acepta. */
+export function textoRangoMedida(campo: CampoMedida, familia: string) {
+  const { min, max } = rangoCampoMedida(campo, familia);
+  return `entre ${coma(min)} y ${coma(max)} m`;
+}
+/**
+ * El único texto para una medida ilegible o fuera de rango, en la pantalla y en el servidor: el rango de su familia
+ * y cómo escribirla.
+ */
+export function errorMedida(campo: CampoMedida, familia: string) {
+  const rango = textoRangoMedida(campo, familia);
+  if (campo === 'ancho') return `Indica un ancho ${rango}: en metros (0,80), centímetros (80 cm) o milímetros (800 mm).`;
+  return familia === 'PUERTA'
+    ? `Indica un alto ${rango}: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).`
+    : `Indica un largo ${rango}: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).`;
+}
+
 /** Margen sobre el costo de fábrica, como fracción: de −50 % a 500 %. */
 export const MARGEN_MIN = -0.5;
 export const MARGEN_MAX = 5;

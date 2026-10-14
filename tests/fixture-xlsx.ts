@@ -196,3 +196,50 @@ export function planillaEnchapadas(): Hojas {
     },
   };
 }
+
+/** Fila de la hoja Precio de la planilla principal: [código, modelo, tipo, medida, largo, madera, neto]. */
+export type FilaPrecio = [string, string, string, string | number, number | string, string, number];
+/**
+ * Forma mínima de la planilla principal (Precio, Categorias y Cotización), con las tablas de códigos de
+ * Categorias: modelo → abreviatura, medida → segmento y largo → letra.
+ */
+export function planillaPrincipal(
+  filas: FilaPrecio[] = [
+    ['LANC-L-070-A', 'LANCO', 'PUERTA', '70 A 80', 2, 'LENGA', 100000],
+    ['LANC-L-070-B', 'LANCO', 'PUERTA', '70 A 80', 2.4, 'LENGA', 120000],
+    ['LANC-R-090-A', 'LANCO', 'PUERTA', '0,90', 2, 'RAULI', 150000],
+  ],
+): Hojas {
+  const precio: Celdas = {};
+  filas.forEach(([codigo, modelo, tipo, medida, largo, madera, neto], i) => {
+    const r = 4 + i;
+    Object.assign(precio, {
+      [`A${r}`]: codigo,
+      [`B${r}`]: modelo,
+      [`C${r}`]: tipo,
+      [`D${r}`]: medida,
+      [`F${r}`]: largo,
+      [`G${r}`]: madera,
+      [`O${r}`]: neto,
+      [`P${r}`]: Math.round(neto * 1.19 * 100) / 100,
+    });
+  });
+  return {
+    Precio: precio,
+    Categorias: {
+      G4: 'LENGA',
+      G5: 'RAULI',
+      O4: 'LANCO',
+      P4: 'LANC',
+      R4: '70 A 80',
+      S4: '070',
+      R5: '0,90',
+      S5: '090',
+      U4: 2,
+      V4: 'A',
+      U5: 2.4,
+      V5: 'B',
+    },
+    Cotización: { C8: 'Ítem' },
+  };
+}

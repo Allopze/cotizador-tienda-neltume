@@ -104,7 +104,7 @@ test('catálogo: un producto agregado a mano eliminado se restaura con su autor;
     await expect(editor).toContainText('entre 0,3 y 3 m');
     await editor.getByLabel('Alto', { exact: true }).fill('4');
     await editor.getByRole('button', { name: 'Guardar cambios' }).click();
-    await expect(editor).toContainText('El alto debe estar entre 0,3 y 3 m.');
+    await expect(editor).toContainText('Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).');
     await expect(editor.getByLabel('Alto', { exact: true })).toBeFocused();
     await editor.getByRole('button', { name: 'Cancelar' }).click();
 

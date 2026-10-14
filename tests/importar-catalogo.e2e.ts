@@ -123,8 +123,13 @@ test('importar: sube una planilla, la compara, la aplica y avisa lo editado a ma
     await expect(seccion.getByRole('status')).toHaveText(
       'Planilla de enchapadas, prepintadas y marcos finger de vuelta en enchapadas-e2e.xlsx: 27 productos, 1 editado a mano.',
     );
-    await expect(seccion.getByRole('button', { name: 'Volver a la planilla anterior' })).toHaveCount(0);
     expect(conBase((db) => db.prepare("SELECT precio_neto FROM productos_catalogo WHERE codigo = 'HUIL-EM-085-240'").get())).toEqual({ precio_neto: 111_000 });
+    // La planilla deshecha queda como anterior: el botón sigue disponible, también después de recargar.
+    await page.reload();
+    await expect(seccion.getByRole('button', { name: 'Volver a la planilla anterior' })).toBeVisible();
+    await seccion.getByRole('button', { name: 'Volver a la planilla anterior' }).click();
+    await expect(volver).toContainText('queda guardada como planilla anterior');
+    await volver.getByRole('button', { name: 'Cancelar' }).click();
     await analizar();
     await expect(vista).toContainText('1 producto de esta planilla se editó a mano.');
     await seccion.getByRole('button', { name: 'Descartar vista previa' }).click();

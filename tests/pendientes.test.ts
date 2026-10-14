@@ -6,6 +6,8 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AltaProducto } from '../src/app/alta-producto';
 import { PreguntasPendientes } from '../src/app/preguntas-pendientes';
+import { pregunta } from '../src/asistente/preguntas';
+import { resolverItem } from '../src/catalogo/resolver';
 import {
   cambiosRespuesta,
   faltantesItem,
@@ -466,5 +468,59 @@ describe('ítem pendiente por precio o descuento fuera de regla', () => {
       expect(q.incompletos).toEqual([]);
       expect(q.montos.lineas[0].precioUnitario).toBe(155_000);
     }
+  });
+});
+
+describe('puerta con el ancho y el alto al revés', () => {
+  const catalogo: Catalogo = {
+    fuente: 'test',
+    sha256: 'test',
+    fecha: '2026-01-01',
+    productos: [2.0, 2.1].map((largo) => ({
+      codigo: `MOL-O-${largo}`,
+      modelo: 'MOLCO',
+      familia: 'PUERTA' as Familia,
+      tipo: 'PUERTA PANEL',
+      madera: 'PINO OREGON',
+      medida: '0,80 A 0,85',
+      anchoMin: 0.8,
+      anchoMax: 0.85,
+      largo,
+      precioNeto: 100_000,
+      descripcion: 'MOLCO',
+      filaOrigen: 1,
+    })),
+  };
+  const pedido = item({ modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 210, alto: 80, cantidad: 1 });
+
+  it('se rechaza con una sugerencia de intercambio, no como «ancho no disponible»', () => {
+    const r = resolverItem(catalogo, pedido);
+    expect(r).toEqual({
+      ok: false,
+      rechazo: { tipo: 'medidas_invertidas', ancho: 2.1, alto: 0.8, disponibles: [], familia: 'PUERTA' },
+    });
+    if (r.ok) return;
+    const texto = pregunta(r.rechazo, pedido.modelo);
+    expect(texto).toContain('¿Es de 0,80 m de ancho por 2,10 m de alto? Intercambia las medidas');
+    const [p] = preguntasPendientes({ solicitudes: [pedido], incompletos: [{ indice: 0, rechazo: r.rechazo, pregunta: texto }] });
+    expect(p).toMatchObject({
+      campo: null,
+      detalle: texto,
+      opciones: [{ etiqueta: 'Intercambiar: 0,80 m de ancho × 2,10 m de alto', valor: 'intercambiar' }],
+    });
+    // La opción deja las dos medidas intercambiadas y el ítem se cotiza.
+    const cambios = cambiosRespuesta(p, 'intercambiar');
+    expect(cambios).toEqual({ items: [{ indice: 0, cambios: { ancho: 0.8, alto: 2.1 } }] });
+    const corregido = resolverItem(catalogo, { ...pedido, ...cambios.items![0].cambios });
+    expect(corregido.ok && corregido.producto.codigo).toBe('MOL-O-2.1');
+  });
+
+  it('una puerta normal o un accesorio no se tocan', () => {
+    expect(resolverItem(catalogo, { ...pedido, ancho: 80, alto: 210 }).ok).toBe(true);
+    // Un ancho que no se entiende sigue siendo implausible, no invertido.
+    expect(resolverItem(catalogo, { ...pedido, ancho: 5, alto: 2.1 })).toMatchObject({
+      ok: false,
+      rechazo: { tipo: 'medida_implausible', campo: 'ancho' },
+    });
   });
 });

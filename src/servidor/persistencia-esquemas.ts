@@ -157,6 +157,14 @@ const rechazoSchema = z.discriminatedUnion('tipo', [
     campo: z.enum(['ancho', 'alto']),
     valor: z.number(),
     disponibles: z.array(z.string()),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
+  }),
+  z.object({
+    tipo: z.literal('medidas_invertidas'),
+    ancho: z.number(),
+    alto: z.number(),
+    disponibles: z.array(z.string()),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
   }),
   z.object({ tipo: z.literal('producto_ambiguo'), valor: z.string(), disponibles: z.array(z.string()) }),
   z.object({

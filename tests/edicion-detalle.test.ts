@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { CotizacionPanel, datosClienteAnterior, esOtroTransportista, type AccionesPanel } from '../src/app/cotizacion-panel';
+import { medidasAlta } from '../src/app/alta-producto';
 import { errorMedida, leerMedida } from '../src/app/formato';
 import type { Rechazo } from '../src/catalogo/resolver';
 import type { Catalogo, Cliente, Producto, SolicitudItem } from '../src/catalogo/tipos';
@@ -99,6 +100,41 @@ describe('leer una medida escrita (una sola función, con la familia)', () => {
     );
     expect(errorMedida('alto', 'PUERTA')).toContain('un alto entre 0,3 y 3 m');
     expect(errorMedida('ancho', 'MOLDURA')).toContain('un ancho entre 0,3 y 3 m');
+  });
+});
+
+describe('Catálogo → Agregar producto lee las medidas con el mismo lector', () => {
+  const vacio = { familia: 'PUERTA', anchoMin: '', anchoMax: '', largo: '' };
+  it('acepta centímetros y milímetros con unidad, y «3600» en un accesorio son 3,6 m', () => {
+    expect(medidasAlta({ ...vacio, anchoMin: '80 cm', anchoMax: '850 mm', largo: '2100 mm' })).toEqual({
+      anchoMin: 0.8,
+      anchoMax: 0.85,
+      largo: 2.1,
+      errores: {},
+    });
+    for (const largo of ['3600 mm', '3600', '360 cm', '3,6'])
+      expect(medidasAlta({ ...vacio, familia: 'MOLDURA', largo }), largo).toEqual({
+        anchoMin: null,
+        anchoMax: null,
+        largo: 3.6,
+        errores: {},
+      });
+  });
+  it('lo vacío pide el dato; lo ilegible o fuera de rango dice el rango de la familia', () => {
+    expect(medidasAlta(vacio).errores).toEqual({
+      anchoMin: 'Escribe el ancho mínimo.',
+      anchoMax: 'Escribe el ancho máximo.',
+      largo: 'Escribe el alto.',
+    });
+    const r = medidasAlta({ ...vacio, anchoMin: '4', anchoMax: 'ochenta', largo: '3,6' });
+    expect(r.errores).toEqual({
+      anchoMin: errorMedida('ancho', 'PUERTA'),
+      anchoMax: errorMedida('ancho', 'PUERTA'),
+      largo: errorMedida('alto', 'PUERTA'),
+    });
+    expect(medidasAlta({ ...vacio, familia: 'MARCO', largo: '7' }).errores).toEqual({
+      largo: errorMedida('alto', 'MARCO'),
+    });
   });
 });
 

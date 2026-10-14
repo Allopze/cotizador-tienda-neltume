@@ -137,18 +137,35 @@ describe('Gestionar → Editar: largo según la familia', () => {
   };
 
   it('una puerta acepta hasta 3 m de alto y un accesorio hasta 6 m de largo, como el servidor', () => {
-    expect(cambiosDe(puerta, { ...campos(puerta), largo: '4' }).errores.largo).toBe('El alto debe estar entre 0,3 y 3 m.');
-    expect(cambiosDe(puerta, { ...campos(puerta), largo: '3,5' }).errores.largo).toBe('El alto debe estar entre 0,3 y 3 m.');
+    expect(cambiosDe(puerta, { ...campos(puerta), largo: '4' }).errores.largo).toBe(
+      'Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
+    );
+    expect(cambiosDe(puerta, { ...campos(puerta), largo: '3,5' }).errores.largo).toBe(
+      'Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
+    );
     expect(cambiosDe(puerta, { ...campos(puerta), largo: '2,4' }).cambios).toEqual({ largo: 2.4 });
     // En centímetros, como en el alta.
     expect(cambiosDe(puerta, { ...campos(puerta), largo: '240' }).cambios).toEqual({ largo: 2.4 });
     expect(cambiosDe(moldura, { ...campos(moldura), largo: '5,5' }).cambios).toEqual({ largo: 5.5 });
     expect(cambiosDe(moldura, { ...campos(moldura), largo: '7' }).errores.largo).toBe(
-      'El largo debe estar entre 0,3 y 6 m.',
+      'Indica un largo entre 0,3 y 6 m: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).',
     );
     // Pasar a puerta un accesorio de 3,2 m deja el largo fuera de rango: se avisa antes de enviarlo.
     expect(cambiosDe(moldura, { ...campos(moldura), familia: 'PUERTA' }).errores.largo).toBe(
-      'El alto debe estar entre 0,3 y 3 m.',
+      'Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
+    );
+  });
+
+  it('lee las medidas como el detalle y el chat: con unidad, en milímetros y con el tope de la familia', () => {
+    for (const largo of ['2100 mm', '210 cm', '2,1 m', '2100'])
+      expect(cambiosDe(puerta, { ...campos(puerta), largo }).cambios, largo).toEqual({ largo: 2.1 });
+    // «3600» en un accesorio son milímetros (3,6 m), no 36 m.
+    for (const largo of ['3600 mm', '3600', '360 cm'])
+      expect(cambiosDe(moldura, { ...campos(moldura), largo }).cambios, largo).toEqual({ largo: 3.6 });
+    expect(cambiosDe(puerta, { ...campos(puerta), anchoMin: '75 cm' }).cambios).toEqual({ anchoMin: 0.75 });
+    expect(cambiosDe(puerta, { ...campos(puerta), anchoMax: '900 mm' }).cambios).toEqual({ anchoMax: 0.9 });
+    expect(cambiosDe(puerta, { ...campos(puerta), anchoMin: '4' }).errores.anchoMin).toBe(
+      'Indica un ancho entre 0,3 y 3 m: en metros (0,80), centímetros (80 cm) o milímetros (800 mm).',
     );
   });
 

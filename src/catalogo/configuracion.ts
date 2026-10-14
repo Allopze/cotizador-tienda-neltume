@@ -322,6 +322,17 @@ export function conMaderasEnchapadas(configuracion: ConfiguracionCatalogo): Conf
  * Índice de nombres seguros: incluye todos los canónicos reales, aunque no tengan alias. Se construye una
  * vez para el anclaje; cada consulta compara claves ya calculadas. Un dudoso nunca habilita tolerancia segura.
  */
+/**
+ * Claves en singular de una clave de `normalizarCatalogo`: sin la «s» final y, si termina en «es», también sin ella
+ * («MARCOS» → «MARCO»; «PANELES» → «PANELE», «PANEL»). Claves cortas no se tocan.
+ */
+export function singularesCatalogo(clave: string) {
+  return [
+    ...(clave.length > 3 && clave.endsWith('S') ? [clave.slice(0, -1)] : []),
+    ...(clave.length > 4 && clave.endsWith('ES') ? [clave.slice(0, -2)] : []),
+  ];
+}
+
 export function crearResolverModeloConfigurado(
   configuracion: Pick<ConfiguracionCatalogo, 'aliasModelos' | 'aliasPosiblesModelos'>,
   modelos: string[] = [],
@@ -357,6 +368,15 @@ export function crearResolverModeloConfigurado(
     const exacto = exactos.get(clave);
     if (exacto?.size === 1 && !dudososExactos.has(clave))
       return { modelo: [...exacto.values()][0], canonico: false, ambiguo: false };
+    // «marcos» o «molcos» son el plural de un modelo, no otro parecido: el singular se prueba antes de la distancia.
+    if (tolerante)
+      for (const singular of singularesCatalogo(clave)) {
+        const deSingular = canonicos.get(singular);
+        if (deSingular !== undefined) return { modelo: deSingular, canonico: false, ambiguo: false };
+        const aliasSingular = exactos.get(singular);
+        if (aliasSingular?.size === 1 && !dudososExactos.has(singular))
+          return { modelo: [...aliasSingular.values()][0], canonico: false, ambiguo: false };
+      }
     const parecidos = tolerantes.get(claveTolerante(valor));
     const ambiguo = (exacto?.size ?? 0) > 1 || (parecidos?.size ?? 0) > 1;
     const modelo = tolerante && !ambiguo && !dudososTolerantes.has(claveTolerante(valor)) && parecidos?.size === 1
@@ -405,6 +425,10 @@ function distanciaDamerau(a: string, b: string) {
  * igual de cerca. Las claves iguales se resuelven antes, como coincidencias tolerantes seguras.
  */
 export function modeloParecido(valor: string, configuracion: ConfiguracionCatalogo, modelos: string[] = []): string | null {
+  // El plural de un modelo o de un alias seguro es ese modelo (`crearResolverModeloConfigurado`), no uno posible.
+  const singulares = singularesCatalogo(normalizarCatalogo(valor));
+  const conocidos = [...modelos, ...Object.entries(configuracion.aliasModelos).flatMap(([m, a]) => [m, ...a])];
+  if (conocidos.some((palabra) => singulares.includes(normalizarCatalogo(palabra)))) return null;
   const clave = claveTolerante(valor);
   if (clave.length < 5) return null;
   const candidatos = new Map<string, string>();

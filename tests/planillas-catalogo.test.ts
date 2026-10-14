@@ -17,7 +17,7 @@ import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipo
 import { MARGENES_INICIALES } from '../src/negocio/precios';
 import { Almacen } from '../src/servidor/almacen';
 import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
-import { analizarPlanilla } from '../src/servidor/importacion-catalogo';
+import { analizarPlanilla, compararCatalogo } from '../src/servidor/importacion-catalogo';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { Servicio } from '../src/servidor/servicio';
 import { escribirXlsx, filasPuerta, planillaEnchapadas, type Hojas } from './fixture-xlsx';
@@ -277,6 +277,39 @@ describe('productos agregados a mano frente a una planilla nueva', () => {
   });
 });
 
+describe('comparación de la vista previa', () => {
+  const p = (codigo: string, cambios: Partial<Producto> = {}): Producto => ({
+    codigo,
+    modelo: 'LANCO',
+    familia: 'PUERTA',
+    tipo: 'PUERTA',
+    madera: 'LENGA',
+    medida: '0,60 A 0,70',
+    anchoMin: 0.6,
+    anchoMax: 0.7,
+    largo: 2,
+    precioNeto: 100_000,
+    descripcion: 'LANCO LENGA 0,60 A 0,70 MT X 2 MT',
+    filaOrigen: 4,
+    ...cambios,
+  });
+  it('solo el formato de la descripción («0,60» → «0,6») no cuenta como modificado: va aparte', () => {
+    const actual = [p('A'), p('B'), p('C')];
+    const nueva = [
+      p('A', { descripcion: 'LANCO LENGA 0,6 A 0,7 MT X 2 MT' }),
+      p('B', { descripcion: 'LANCO LENGA 0,6 A 0,7 MT X 2 MT', precioNeto: 110_000 }),
+      p('C'),
+    ];
+    const r = compararCatalogo(actual, nueva);
+    expect(r.conteos).toEqual({ nuevos: 0, modificados: 1, soloDescripcion: 1, sinCambios: 1, eliminados: 0 });
+    expect(r.productos.soloDescripcion).toEqual([
+      { codigo: 'A', anterior: 'LANCO LENGA 0,60 A 0,70 MT X 2 MT', nueva: 'LANCO LENGA 0,6 A 0,7 MT X 2 MT' },
+    ]);
+    // Un cambio real sigue siendo modificado aunque también cambie la descripción.
+    expect(r.productos.modificados.map((m) => m.codigo)).toEqual(['B']);
+  });
+});
+
 describe('vista previa de la importación por origen', () => {
   it('compara solo con los productos de su propio origen y dice qué otra planilla no se toca', async () => {
     const { db } = await base();
@@ -306,7 +339,7 @@ describe('vista previa de la importación por origen', () => {
     const { ruta: ruta2, limpiar: limpiar2 } = await escribirXlsx(hojas);
     limpiezas.push(limpiar2);
     const segunda = (await analizarPlanilla(ruta2, 'valores.xlsx', new RepositorioCatalogoSqlite(db))).vista;
-    expect(segunda.conteos).toEqual({ nuevos: 0, modificados: 1, sinCambios: 26, eliminados: 0 });
+    expect(segunda.conteos).toEqual({ nuevos: 0, modificados: 1, soloDescripcion: 0, sinCambios: 26, eliminados: 0 });
     expect(segunda.productos.modificados[0]).toMatchObject({
       codigo: 'LOSR-EM-070-220',
       anterior: { precioNeto: 73_660 },

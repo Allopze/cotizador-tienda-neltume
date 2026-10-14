@@ -192,7 +192,18 @@ describe('pedido especial de un accesorio', () => {
     expect(q.montos.lineas.map((l) => [l.producto.codigo, l.altoSolicitado])).toEqual([['ESPECIAL', 3.2]]);
     await expect(
       servicio.ejecutar({ tipo: 'agregar_personalizado', id: q.id, actualizada: q.actualizada, item: especial(7) } as never),
-    ).rejects.toThrow('Revisa las medidas: escríbelas en metros, entre 0,3 y 6 (por ejemplo un largo de 3,60).');
+    ).rejects.toThrow(
+      'Indica un largo entre 0,3 y 6 m: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).',
+    );
+    // El ancho es siempre de puerta, también en un accesorio: el mensaje no promete 6 m.
+    await expect(
+      servicio.ejecutar({
+        tipo: 'agregar_personalizado',
+        id: q.id,
+        actualizada: q.actualizada,
+        item: { ...especial(3.2), ancho: 4 },
+      } as never),
+    ).rejects.toThrow('Indica un ancho entre 0,3 y 3 m: en metros (0,80), centímetros (80 cm) o milímetros (800 mm).');
     // Una puerta especial conserva su rango y su ejemplo.
     await expect(
       servicio.ejecutar({
@@ -201,7 +212,9 @@ describe('pedido especial de un accesorio', () => {
         actualizada: q.actualizada,
         item: { ...especial(3.2), familia: 'PUERTA', ancho: 0.9 },
       } as never),
-    ).rejects.toThrow('Revisa las medidas: escríbelas en metros, entre 0,3 y 3 (por ejemplo 0,80 × 2,10).');
+    ).rejects.toThrow(
+      'Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
+    );
   });
 });
 
@@ -242,14 +255,14 @@ describe('mensajes de rango según la familia', () => {
       precioNeto: 9_000,
     };
     // Antes decía «debe ser mayor que cero», aunque el problema era pasar del tope.
-    expect(() => alta.proponerManual(undefined, { ...moldura, largo: 7 }, 'u1')).toThrow('El largo debe estar entre 0,3 y 6 m.');
+    expect(() => alta.proponerManual(undefined, { ...moldura, largo: 7 }, 'u1')).toThrow('Indica un largo entre 0,3 y 6 m: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).');
     expect(() =>
       alta.proponerManual(
         undefined,
         { ...moldura, modelo: 'MOLCO', familia: 'PUERTA', medida: null, anchoMin: 0.9, anchoMax: 0.95, largo: 3.5 },
         'u1',
       ),
-    ).toThrow('El alto debe estar entre 0,3 y 3 m.');
+    ).toThrow('Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).');
     expect(alta.proponerManual(undefined, { ...moldura, largo: 3.6 }, 'u1').propuesta).toMatchObject({
       familia: 'MOLDURA',
       largo: 3.6,

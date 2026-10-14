@@ -1,5 +1,4 @@
 'use client';
-import { rangoMedidas } from '@/negocio/limites';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Familia, Producto } from '@/catalogo/tipos';
 import type { PrefillAlta } from '@/negocio/pendientes';
@@ -7,7 +6,7 @@ import { leerPesos } from '@/negocio/cifras';
 import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
 import { useConfirmacion } from './dialogo';
 import { FAMILIAS, etiquetaFamilia } from '@/catalogo/familias';
-import { decimalCampo, enterEnvia, leerMetros, nombreProducto } from './formato';
+import { decimalCampo, enterEnvia, errorMedida, leerMedida, nombreProducto, type CampoMedida } from './formato';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
@@ -56,6 +55,30 @@ const VACIO: Campos = {
   largo: '',
   precio: '',
 };
+
+/**
+ * Medidas del alta con el mismo lector que el detalle y el chat (`leerMedida`): «0,80», «80 cm», «2100 mm» o
+ * «3600 mm» en un accesorio. El ancho es de puerta; el alto o largo, de la familia elegida. Un campo vacío pide el
+ * dato; uno ilegible o fuera de rango dice el rango y cómo escribirlo (`errorMedida`).
+ */
+export function medidasAlta(c: Pick<Campos, 'familia' | 'anchoMin' | 'anchoMax' | 'largo'>) {
+  const puerta = c.familia === 'PUERTA';
+  const errores: Partial<Record<'anchoMin' | 'anchoMax' | 'largo', string>> = {};
+  const leer = (nombre: 'anchoMin' | 'anchoMax' | 'largo', campo: CampoMedida, vacio: string) => {
+    const texto = c[nombre].trim();
+    if (!texto) {
+      errores[nombre] = vacio;
+      return null;
+    }
+    const valor = leerMedida(texto, c.familia, campo);
+    if (valor === null) errores[nombre] = errorMedida(campo, c.familia);
+    return valor;
+  };
+  const anchoMin = puerta ? leer('anchoMin', 'ancho', 'Escribe el ancho mínimo.') : null;
+  const anchoMax = puerta ? leer('anchoMax', 'ancho', 'Escribe el ancho máximo.') : null;
+  const largo = leer('largo', 'alto', puerta ? 'Escribe el alto.' : 'Escribe el largo.');
+  return { anchoMin, anchoMax, largo, errores };
+}
 
 /**
  * Alta de un producto al catálogo en una sola pantalla: el formulario es la vía manual y el asistente,
@@ -192,11 +215,12 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
     if (!campos.familia) faltan.familia = 'Elige la familia.';
     if (!campos.modelo.trim()) faltan.modelo = 'Escribe el modelo.';
     if (!campos.madera.trim()) faltan.madera = 'Escribe la madera.';
+    const medidas = medidasAlta(campos);
     if (puerta) {
-      if (leerMetros(campos.anchoMin, 4) === null) faltan.anchoMin = 'Escribe el ancho mínimo.';
-      if (leerMetros(campos.anchoMax, 4) === null) faltan.anchoMax = 'Escribe el ancho máximo.';
+      if (medidas.errores.anchoMin) faltan.anchoMin = medidas.errores.anchoMin;
+      if (medidas.errores.anchoMax) faltan.anchoMax = medidas.errores.anchoMax;
     } else if (!campos.medida.trim()) faltan.medida = 'Escribe la medida o escuadría.';
-    if (leerMetros(campos.largo, rangoMedidas(campos.familia).max) === null) faltan.largo = puerta ? 'Escribe el alto.' : 'Escribe el largo.';
+    if (medidas.errores.largo) faltan.largo = medidas.errores.largo;
     if (precio === null || !Number.isFinite(precio) || precio <= 0) faltan.precio = 'Escribe el precio base sin IVA, en pesos.';
     setErrores(faltan);
     const primero = Object.keys(faltan)[0];
@@ -219,9 +243,9 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
           madera: campos.madera.trim() || null,
           tipo: campos.tipo.trim() || null,
           medida: puerta ? null : campos.medida.trim() || null,
-          anchoMin: puerta ? leerMetros(campos.anchoMin, 4) : null,
-          anchoMax: puerta ? leerMetros(campos.anchoMax, 4) : null,
-          largo: leerMetros(campos.largo, rangoMedidas(campos.familia).max),
+          anchoMin: medidas.anchoMin,
+          anchoMax: medidas.anchoMax,
+          largo: medidas.largo,
           precioNeto: precio !== null && Number.isFinite(precio) && precio > 0 ? precio : null,
         },
       });
@@ -419,12 +443,12 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
             <>
               {campo('anchoMin', 'Ancho mínimo', {
                 placeholder: 'Ej.: 0,80',
-                ayuda: 'En metros (0,80) o centímetros (80).',
+                ayuda: 'En metros (0,80), centímetros (80 cm) o milímetros (800 mm).',
               })}
               {campo('anchoMax', 'Ancho máximo', { placeholder: 'Ej.: 0,85' })}
               {campo('largo', 'Alto', {
                 placeholder: 'Ej.: 2,10',
-                ayuda: 'En metros (2,10) o centímetros (210).',
+                ayuda: 'En metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
               })}
             </>
           ) : (
@@ -434,8 +458,8 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
                 ayuda: 'Escuadría: grosor por ancho de la pieza.',
               })}
               {campo('largo', 'Largo', {
-                placeholder: 'Ej.: 2,10',
-                ayuda: 'En metros (2,10) o centímetros (210).',
+                placeholder: 'Ej.: 3,60',
+                ayuda: 'En metros (3,60), centímetros (360 cm) o milímetros (3600 mm).',
               })}
             </>
           )}

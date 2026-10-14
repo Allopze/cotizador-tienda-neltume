@@ -19,10 +19,12 @@ interface Preview {
   edicionesManuales: ProductoBreve[];
   fuente: string;
   totalProductos: number;
-  conteos: { nuevos: number; modificados: number; sinCambios: number; eliminados: number };
+  /** `soloDescripcion`: productos iguales a los guardados salvo el texto de la descripción; no cuentan como modificados. */
+  conteos: { nuevos: number; modificados: number; soloDescripcion: number; sinCambios: number; eliminados: number };
   productos: {
     nuevos: ProductoBreve[];
     modificados: { codigo: string; anterior: ProductoBreve; nuevo: ProductoBreve }[];
+    soloDescripcion: { codigo: string; anterior: string; nueva: string }[];
     sinCambios: ProductoBreve[];
     eliminados: ProductoBreve[];
   };
@@ -82,9 +84,26 @@ export function ImportarCatalogo() {
   useEffect(() => {
     if (obsoleta) volverAnalizar.current?.focus();
   }, [obsoleta]);
-  const cantidadAnterior = preview ? preview.conteos.sinCambios + preview.conteos.modificados + preview.conteos.eliminados : 0;
+  // «Volver a la planilla anterior» sigue disponible al recargar o al volver a esta sección: lo dice el servidor.
+  useEffect(() => {
+    const control = new AbortController();
+    void consultarDeshacer(control.signal);
+    return () => control.abort();
+  }, []);
+  const conteos = preview?.conteos;
+  const cantidadAnterior = conteos ? conteos.sinCambios + conteos.modificados + conteos.soloDescripcion + conteos.eliminados : 0;
   const requiereForzar = !!preview && preview.totalProductos < cantidadAnterior * 0.9;
-  const sinCambios = !!preview && preview.conteos.nuevos + preview.conteos.modificados + preview.conteos.eliminados === 0;
+  const sinCambios = !!conteos && conteos.nuevos + conteos.modificados + conteos.soloDescripcion + conteos.eliminados === 0;
+
+  /** Pregunta al servidor si todavía se puede volver a la planilla anterior (p. ej. tras recargar). */
+  async function consultarDeshacer(signal?: AbortSignal) {
+    try {
+      const r = await pedirJSON<{ deshacer: Deshacer[] }>('/api/catalogo/importar', { signal });
+      setDeshacer(r.deshacer[0] ?? null);
+    } catch {
+      // Sin esa consulta solo falta el atajo para volver atrás: la importación sigue funcionando.
+    }
+  }
 
   function elegir(nuevo: File | null) {
     setPreview(null);
@@ -128,6 +147,9 @@ export function ImportarCatalogo() {
             <dl className="import-resumen">
               <div><dt>Nuevos</dt><dd>{cantidad(preview.conteos.nuevos)}</dd></div>
               <div><dt>Modificados</dt><dd>{cantidad(preview.conteos.modificados)}</dd></div>
+              {preview.conteos.soloDescripcion > 0 && (
+                <div><dt>Formato de descripción actualizado</dt><dd>{cantidad(preview.conteos.soloDescripcion)}</dd></div>
+              )}
               <div><dt>Sin cambios</dt><dd>{cantidad(preview.conteos.sinCambios)}</dd></div>
               <div><dt>Retirados</dt><dd>{cantidad(preview.conteos.eliminados)}</dd></div>
             </dl>
@@ -201,7 +223,8 @@ export function ImportarCatalogo() {
           )}
           <p>
             No cambian la otra planilla ni los productos agregados a mano, y las cotizaciones ya emitidas conservan
-            sus precios. Si después quieres la planilla que acabas de importar, vuelve a importarla.
+            sus precios. <strong>{d.importada}</strong> queda guardada como planilla anterior: si nadie cambia el
+            catálogo, podrás volver a ella con este mismo botón.
           </p>
         </>
       ),
@@ -218,7 +241,9 @@ export function ImportarCatalogo() {
       setMensaje(
         `${r.restaurada.etiqueta} de vuelta en ${r.restaurada.fuente}: ${cantidad(r.restaurada.productos)} productos${r.restaurada.edicionesManuales ? `, ${plural(r.restaurada.edicionesManuales, 'editado', 'editados')} a mano` : ''}.`,
       );
+      // La planilla que se deshizo queda como copia: ahora se puede volver a ella con el mismo botón.
       setDeshacer(null);
+      await consultarDeshacer();
     } catch (causa) {
       if (esSilencioso(causa)) return;
       setError(mensajeDe(causa));
@@ -288,7 +313,7 @@ export function ImportarCatalogo() {
       {deshacer && (
         <div className="import-deshacer">
           <p className="muted">
-            ¿No era esta planilla? Puedes volver a la anterior ({deshacer.fuente}) mientras nadie cambie el catálogo.
+            ¿No era {deshacer.importada}? Puedes volver a la {deshacer.etiqueta.toLowerCase()} anterior ({deshacer.fuente}) mientras nadie cambie el catálogo.
           </p>
           <div className="alta-acciones">
             <button type="button" className="button secondary" disabled={!!ocupado} onClick={() => void volverAnterior()}>
@@ -311,10 +336,18 @@ export function ImportarCatalogo() {
           <div className="import-counts">
             <span><strong>{cantidad(preview.conteos.nuevos)}</strong> Nuevos</span>
             <span><strong>{cantidad(preview.conteos.modificados)}</strong> Modificados</span>
+            {preview.conteos.soloDescripcion > 0 && <span><strong>{cantidad(preview.conteos.soloDescripcion)}</strong> Formato de descripción actualizado</span>}
             <span><strong>{cantidad(preview.conteos.sinCambios)}</strong> Sin cambios</span>
             <span><strong>{cantidad(preview.conteos.eliminados)}</strong> Retirados</span>
           </div>
           {sinCambios && <p className="notice">La planilla es idéntica al catálogo vigente: no hay nada que importar.</p>}
+          {preview.conteos.soloDescripcion > 0 && (
+            <details>
+              <summary>Formato de descripción actualizado: {cantidad(preview.conteos.soloDescripcion)} · mismo precio y medidas</summary>
+              <ul>{preview.productos.soloDescripcion.map((p) => <li key={p.codigo}>{p.codigo} · {p.anterior} → {p.nueva}</li>)}</ul>
+              {preview.conteos.soloDescripcion > preview.productos.soloDescripcion.length && <small>Se muestran los primeros {preview.productos.soloDescripcion.length}.</small>}
+            </details>
+          )}
           {preview.edicionesManuales.length > 0 && (
             <>
               <p className="catalog-warning">

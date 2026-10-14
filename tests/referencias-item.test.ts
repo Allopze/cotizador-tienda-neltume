@@ -129,7 +129,7 @@ describe('producto personalizado', () => {
     ).rejects.toThrow(/nombre, la madera/);
     await expect(
       servicio.ejecutar({ tipo: 'agregar_personalizado', item: personalizado({ ancho: 25 }) }),
-    ).rejects.toThrow(/medidas/);
+    ).rejects.toThrow(/Indica un ancho entre 0,3 y 3 m/);
     const { cotizacion: q } = await servicio.ejecutar({ tipo: 'agregar_personalizado', item: personalizado() });
     await expect(editar(servicio, q, [{ indice: 0, cambios: { margen: 0.3 } }])).rejects.toThrow(/no usa ganancia/);
     await expect(editar(servicio, q, [{ indice: 0, cambios: { precioUnitario: null } }])).rejects.toThrow(/precio unitario/);

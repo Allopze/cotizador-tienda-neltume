@@ -184,13 +184,21 @@ Entra al dominio HTTPS con la cuenta creada. Desde la configuración del catálo
 oficiales; desde Ajustes puedes configurar la clave de IA y crear otras cuentas. Hasta importar el catálogo no
 habrá productos para cotizar.
 
-Para importar por terminal, copia la planilla temporalmente al contenedor:
+Para importar por terminal, monta la planilla de solo lectura en un contenedor de un solo uso (se borra al
+terminar y no deja copias de la planilla dentro del servicio):
 
 ```sh
-docker compose cp /ruta/COTIZADOR_2026.xlsx cotizador:/tmp/COTIZADOR_2026.xlsx
-docker compose exec cotizador npm run importar -- /tmp/COTIZADOR_2026.xlsx
-docker compose exec cotizador rm /tmp/COTIZADOR_2026.xlsx
+cd /opt/neltume-cotizador
+docker compose run --rm --no-deps -v /ruta/COTIZADOR_2026.xlsx:/planillas/COTIZADOR_2026.xlsx:ro \
+  cotizador npm run importar -- /planillas/COTIZADOR_2026.xlsx
 ```
+
+El archivo debe poder leerlo el usuario del contenedor (uid 1000): si no, `chmod a+r /ruta/COTIZADOR_2026.xlsx`.
+La importación por terminal respeta los nombres y alias editados en **Catálogo → Nombres y alias**:
+`config/catalogo.json` solo suma los modelos y maderas que la base todavía no tiene. El reporte queda en el volumen
+de datos (`data/reporte-importacion.md`, o `data/reporte-importacion-enchapadas.md`), también cuando la importación
+se rechaza; si la planilla trae menos del 90 % de los productos y la reducción es intencional, agrega `--forzar` al
+final del comando.
 
 ## Actualizar
 

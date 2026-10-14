@@ -135,7 +135,10 @@ describe('agregarProductoManual y mantención', () => {
       precioNeto: 101000,
       tipo: 'PUERTA ESPECIAL',
     });
-    expect(r.listarAdministrables('MOL-O-3-A').productos[0]).toMatchObject({ fuente: 'planilla', precioNeto: 101000 });
+    expect(r.listarAdministrables('MOL-O-3-A').productos[0]).toMatchObject({
+      fuente: 'planilla',
+      precioNeto: 101000,
+    });
     expect(() => r.editarManual('MOL-O-3-A', { precioNeto: 1 })).toThrow(/agregados en la aplicación/);
     expect(() => r.editarManual('NO-EXISTE', { precioNeto: 1 })).toThrow(/No se encontró/);
     const pedido = { modelo: 'MOLCO', madera: 'pino', ancho: 0.72, alto: 2, medida: null, cantidad: 1 };
@@ -160,13 +163,31 @@ describe('agregarProductoManual y mantención', () => {
     r.editarManual('IA-1', { precioNeto: 95_500 });
     const guardado = r.buscarPorCodigo('IA-1')!;
     const [alta] = r.listarManuales();
-    expect(alta).toMatchObject({ creadaPor: 'Paula', creada: expect.any(String), actualizada: expect.any(String) });
+    expect(alta).toMatchObject({
+      creadaPor: 'Paula',
+      creada: expect.any(String),
+      actualizada: expect.any(String),
+    });
     r.eliminarManual('IA-1');
     expect(r.buscarPorCodigo('IA-1')).toBeUndefined();
     // La copia guarda también quién lo agregó y cuándo.
-    expect(JSON.parse((db.prepare("SELECT contenido FROM papelera WHERE tipo = 'producto' AND id = 'IA-1'").get() as { contenido: string }).contenido)).toEqual(alta);
+    expect(
+      JSON.parse(
+        (
+          db.prepare("SELECT contenido FROM papelera WHERE tipo = 'producto' AND id = 'IA-1'").get() as {
+            contenido: string;
+          }
+        ).contenido,
+      ),
+    ).toEqual(alta);
     expect(r.productosEliminados()).toEqual([
-      { ...guardado, creada: alta.creada, creadaPor: 'Paula', eliminada: expect.any(String), codigoOcupado: false },
+      {
+        ...guardado,
+        creada: alta.creada,
+        creadaPor: 'Paula',
+        eliminada: expect.any(String),
+        codigoOcupado: false,
+      },
     ]);
     expect(r.restaurarProducto('IA-1')).toEqual(guardado);
     expect(r.buscarPorCodigo('IA-1')).toEqual(guardado);
@@ -186,13 +207,25 @@ describe('agregarProductoManual y mantención', () => {
 
   it('una copia de la papelera sin autor ni fechas (anterior a guardarlos) se restaura igual; una dañada no', async () => {
     const r = await repo();
-    const nuevo = producto({ codigo: 'IA-7', medida: '0,70 A 0,75', anchoMin: 0.7, anchoMax: 0.75, filaOrigen: 0 });
+    const nuevo = producto({
+      codigo: 'IA-7',
+      medida: '0,70 A 0,75',
+      anchoMin: 0.7,
+      anchoMax: 0.75,
+      filaOrigen: 0,
+    });
     const insertar = db.prepare("INSERT INTO papelera VALUES ('producto', ?, ?, ?)");
     insertar.run('IA-7', JSON.stringify(nuevo), new Date().toISOString());
     insertar.run('IA-8', '{no es json', new Date().toISOString());
-    expect(r.productosEliminados().map((p) => [p.codigo, p.creada, p.creadaPor])).toEqual([['IA-7', null, null]]);
+    expect(r.productosEliminados().map((p) => [p.codigo, p.creada, p.creadaPor])).toEqual([
+      ['IA-7', null, null],
+    ]);
     expect(r.restaurarProducto('IA-7')).toEqual(nuevo);
-    expect(r.listarManuales()[0]).toMatchObject({ codigo: 'IA-7', creada: expect.any(String), creadaPor: null });
+    expect(r.listarManuales()[0]).toMatchObject({
+      codigo: 'IA-7',
+      creada: expect.any(String),
+      creadaPor: null,
+    });
     expect(() => r.restaurarProducto('IA-8')).toThrow(/dañada/);
   });
 });
@@ -232,7 +265,11 @@ describe('volver a la planilla anterior', () => {
     expect(r.edicionesManuales()).toEqual(['MOL-O-3-A']);
     expect(r.metadataOrigen('principal')?.fuente).toBe('test.xlsx');
     // La importación deshecha queda como copia: se puede volver a ella.
-    expect(r.planillaAnterior('principal')).toMatchObject({ fuente: 'nueva.xlsx', productos: 2, edicionesManuales: 0 });
+    expect(r.planillaAnterior('principal')).toMatchObject({
+      fuente: 'nueva.xlsx',
+      productos: 2,
+      edicionesManuales: 0,
+    });
   });
 
   it('una planilla importada por primera vez no tiene a qué volver, aunque quede una copia antigua', async () => {
@@ -348,12 +385,40 @@ describe('ServicioAltaCatalogo.proponerManual', () => {
   it('aplica las mismas validaciones: faltantes, duplicados y rangos superpuestos', async () => {
     const r = await repo();
     const alta = new ServicioAltaCatalogo(db, r, sinAsistente());
-    expect(() => alta.proponerManual(undefined, { ...datos, precioNeto: null }, 'u1')).toThrow(/precio base sin IVA/);
+    expect(() => alta.proponerManual(undefined, { ...datos, precioNeto: null }, 'u1')).toThrow(
+      /precio base sin IVA/,
+    );
     expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 0.84, anchoMax: 0.9 }, 'u1')).toThrow(
       /superpone/,
     );
     expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 0.8, anchoMax: 0.85 }, 'u1')).toThrow(
       /Ya existe/,
+    );
+  });
+
+  it('el alta y la edición usan el mismo rango y texto de medidas que la pantalla', async () => {
+    const r = await repo();
+    const alta = new ServicioAltaCatalogo(db, r, sinAsistente());
+    // Ancho de puerta sobre 3 m (antes se aceptaba hasta 4 m).
+    expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 3.2, anchoMax: 3.5 }, 'u1')).toThrow(
+      /entre 0,3 y 3 m/,
+    );
+    // Largo de un accesorio sobre 6 m: el texto único de limites.ts, con cómo escribirlo.
+    expect(() =>
+      alta.proponerManual(
+        undefined,
+        { ...datos, familia: 'MOLDURA', medida: '1x4', anchoMin: null, anchoMax: null, largo: 7 },
+        'u1',
+      ),
+    ).toThrow(
+      'Indica un largo entre 0,3 y 6 m: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).',
+    );
+    // Editar un producto: alto de puerta fuera de rango y ancho de puerta fuera de rango.
+    expect(() => r.editarProducto('MOL-O-3-A', { largo: 3.5 })).toThrow(
+      'Indica un alto entre 0,3 y 3 m: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
+    );
+    expect(() => r.editarProducto('MOL-O-3-A', { anchoMax: 3.4 })).toThrow(
+      /rango de ancho no es válido: debe estar entre 0,3 y 3 m/,
     );
   });
 

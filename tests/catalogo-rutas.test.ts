@@ -139,3 +139,18 @@ describe('papelera de productos agregados a mano', () => {
     ).toMatchObject({ status: 403, cuerpo: { codigo: 'sin_permiso' } });
   });
 });
+
+describe('edición de productos importados', () => {
+  it('un largo fuera de rangoMedidas (sobre el tope de cualquier familia o bajo el mínimo) se rechaza en la solicitud', async () => {
+    const { rangoMedidas } = await import('../src/negocio/limites');
+    const m = await montar();
+    const tope = rangoMedidas('MARCO').max;
+    expect(
+      await m.pedir({ tipo: 'editar', codigo: 'MOL-O-3-A', cambios: { largo: tope + 0.5, familia: 'MARCO' } }),
+    ).toMatchObject({ status: 400, cuerpo: { error: 'Solicitud inválida.', codigo: 'solicitud_invalida' } });
+    expect(
+      await m.pedir({ tipo: 'editar', codigo: 'MOL-O-3-A', cambios: { largo: rangoMedidas('PUERTA').min / 2 } }),
+    ).toMatchObject({ status: 400, cuerpo: { error: 'Solicitud inválida.' } });
+    expect(m.repo().buscarPorCodigo('MOL-O-3-A')?.largo).toBe(2);
+  });
+});

@@ -140,8 +140,9 @@ const RE_TITULO_PUERTA = /^(.+?) (PREPINTAD[AO]S?|ENCHAPE EN MARA|ENCHAPAD[AO]S?
 const RE_TITULO_FINGER = /^SET DE MARCO EN PINO FINGER(?: (DESNUDO|SIN ENCHAPE))?$/;
 const RE_TITULO_FINGER_ENCHAPADO = /^SET DE MARCO EN PINO FINGER ENCHAPADO(?: EN)? MARA$/;
 
-const aMetros = (s: string) => {
-  const m = metros(Number(s.replace(',', '.')));
+/** Metros según la familia del bloque: un set de marco admite largos que una puerta no (3,20 m). */
+const aMetros = (s: string, familia: 'PUERTA' | 'MARCO' = 'PUERTA') => {
+  const m = metros(Number(s.replace(',', '.')), familia);
   return m === null ? null : num(m);
 };
 /** «2,00 A 2,20 MTS» o «0,70 MT» en metros; un valor solo vale como rango de un único punto. */
@@ -236,7 +237,7 @@ function lectorDeBloque(bloque: Bloque): ((f: Fila) => Lectura | null) | null {
   if (!titulo) return null;
   return (f) => {
     const m = RE_MARCO.exec(sinTildes(f.B));
-    const largo = m ? aMetros(m[3]) : null,
+    const largo = m ? aMetros(m[3], 'MARCO') : null,
       precioNeto = leerCosto(f.C);
     if (!m || largo === null || precioNeto === null) return null;
     const medida = `${Number(m[1])}X${Number(m[2])}`;

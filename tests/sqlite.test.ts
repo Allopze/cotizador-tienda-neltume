@@ -140,6 +140,32 @@ describe('Persistencia SQLite', () => {
     expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
   });
 
+  it('migra un catálogo con «HUILO HUILO» y una fecha sin milisegundos: la verificación compara como se guarda', async () => {
+    const dir = await temp();
+    const rutaDb = join(dir, 'cotizador.sqlite');
+    const catalogoPath = join(dir, 'catalogo.json');
+    const huilo = producto({
+      codigo: 'HUIL-O-3-A',
+      modelo: 'HUILO HUILO',
+      descripcion: 'HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2 MT',
+    });
+    await writeFile(
+      catalogoPath,
+      JSON.stringify({ ...catalogoFixture(), fecha: '2026-01-01T00:00:00Z', productos: [producto(), huilo] }),
+    );
+    const resultado = await migrarJsonASqlite({
+      rutaDb,
+      catalogo: catalogoPath,
+      estado: join(dir, 'estado.json'),
+      directorioRespaldo: join(dir, 'respaldo'),
+    });
+    expect(resultado.yaMigrada).toBe(false);
+    const repo = new RepositorioCatalogoSqlite(abrirBaseDatos(rutaDb));
+    expect(repo.buscarPorCodigo('HUIL-O-3-A')).toMatchObject({ modelo: 'Huilo Huilo', precioNeto: 100.4 });
+    expect(repo.metadata?.fecha).toBe('2026-01-01T00:00:00.000Z');
+    cerrarBaseDatos(rutaDb);
+  });
+
   it('la migración a v12 separa la descripción del documento, deshace el REPLACE de v11 y limpia la observación automática', async () => {
     const dir = await temp();
     const rutaDb = join(dir, 'cotizador.sqlite');
