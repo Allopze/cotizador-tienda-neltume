@@ -17,6 +17,8 @@ import {
   type Linea,
 } from '@/negocio/precios';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '@/negocio/medidas';
+import { rangoMedidas } from '@/negocio/limites';
+import { metros } from '@/catalogo/resolver';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
 
@@ -138,6 +140,50 @@ export function leerMetros(valor: string, limite: number) {
   const n = Number(valor.trim().replace(',', '.'));
   if (!valor.trim() || !Number.isFinite(n)) return null;
   return n > limite ? n / 100 : n;
+}
+
+/** Dimensión de un ítem: el ancho es de puerta; el alto o largo, de la familia del producto. */
+export type CampoMedida = 'ancho' | 'alto';
+/** Rango admisible de una dimensión: el ancho siempre con el de puertas; el alto o largo, con el de su familia. */
+export const rangoCampoMedida = (campo: CampoMedida, familia: string) =>
+  rangoMedidas(campo === 'ancho' ? 'PUERTA' : familia);
+const DIVISOR_UNIDAD: Record<string, number> = {
+  m: 1, mt: 1, mts: 1, metro: 1, metros: 1,
+  cm: 100, cms: 100, centimetro: 100, centimetros: 100,
+  mm: 1000, milimetro: 1000, milimetros: 1000,
+};
+/**
+ * Lee una medida tal como se escribe, con coma o punto decimal y unidad opcional: «80», «0,80», «0.80», «80 cm»,
+ * «2100 mm», «2.100 mm» o «3,6 m». Sin unidad, como en el chat (`metros`): hasta 10 son metros y lo demás
+ * centímetros o milímetros según el tope de la familia. Devuelve metros; null si está vacía, no se entiende o queda
+ * fuera del rango (`rangoCampoMedida`). El ancho se lee siempre con el rango de puertas.
+ */
+export function leerMedida(texto: string, familia: string, campo: CampoMedida = 'alto'): number | null {
+  const limpio = texto.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const partes = limpio.match(/^(\d+(?:[.,]\d+)*)\s*([a-z]+)?\.?$/);
+  if (!partes) return null;
+  const [, cifra, unidad] = partes;
+  const divisor = unidad ? DIVISOR_UNIDAD[unidad] : 1;
+  if (!divisor) return null;
+  // «2.100 mm»: en centímetros y milímetros el punto con tres cifras detrás separa miles.
+  const miles = divisor > 1 && /^\d{1,3}(\.\d{3})+$/.test(cifra);
+  const numero = miles ? cifra.replace(/\./g, '') : cifra.replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(numero)) return null;
+  const n = Number(numero);
+  const rango = rangoCampoMedida(campo, familia);
+  const valor = unidad ? n / divisor : metros(n, campo === 'ancho' ? 'PUERTA' : familia);
+  if (valor === null || !Number.isFinite(valor)) return null;
+  const redondeado = Math.round(valor * 10_000) / 10_000;
+  return redondeado >= rango.min - 1e-9 && redondeado <= rango.max + 1e-9 ? redondeado : null;
+}
+/** Qué escribir cuando una medida no se entiende o queda fuera de rango, con el rango de la familia y ejemplos. */
+export function errorMedida(campo: CampoMedida, familia: string) {
+  const { min, max } = rangoCampoMedida(campo, familia);
+  const rango = `entre ${decimalCampo(min)} y ${decimalCampo(max)} m`;
+  if (campo === 'ancho') return `Indica un ancho ${rango}: en metros (0,80), centímetros (80 cm) o milímetros (800 mm).`;
+  return familia === 'PUERTA'
+    ? `Indica un alto ${rango}: en metros (2,10), centímetros (210 cm) o milímetros (2100 mm).`
+    : `Indica un largo ${rango}: en metros (3,60), centímetros (360 cm) o milímetros (3600 mm).`;
 }
 
 export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {

@@ -1,7 +1,7 @@
 import { z } from 'zod';
 // Módulo sin dependencias de Node: lo usan tanto el servidor como la pantalla de configuración.
 
-export const MODELO_COMMANDCODE_PREDETERMINADO = 'claude-sonnet-5';
+export const MODELO_COMMANDCODE_PREDETERMINADO = 'deepseek/deepseek-v4.1-flash';
 /**
  * Responde cuando el modelo principal falla. El principal recomendado es DeepSeek V4.1 Flash (evaluación del
  * 2026-10-11); el respaldo es de otro proveedor para no caer junto con él.

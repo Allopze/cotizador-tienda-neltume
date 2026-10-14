@@ -1,9 +1,9 @@
-import { createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
-import type { TarifaStarkenAplicada } from '../negocio/starken';
+import { createHash, createHmac, hkdfSync, randomBytes, timingSafeEqual } from 'node:crypto';
+import { clavePedido, type LineaPedido, type TarifaStarkenAplicada } from '../negocio/starken';
 
 // Firma de las tarifas de Starken. El navegador no es de fiar para decir cuánto cuesta un envío: cada tarifa que
-// entrega /api/starken/cotizar lleva una firma HMAC ligada a la cotización, al destino y a sus datos, y la acción
-// `editar` la verifica antes de aceptar el valor y de dejar la tarifa en la actividad.
+// entrega /api/starken/cotizar lleva una firma HMAC ligada a la cotización, al pedido (su huella), al destino y a
+// sus datos, y la acción `editar` la verifica antes de aceptar el valor y de dejar la tarifa en la actividad.
 
 export const VIGENCIA_FIRMA_MS = 15 * 60 * 1000;
 
@@ -27,8 +27,9 @@ function clave(): Buffer {
 const mensaje = (cotizacionId: string, t: DatosFirmados, vence: string) =>
   JSON.stringify([
     'starken-tarifa',
-    1,
+    2,
     cotizacionId,
+    t.huellaBulto ?? null,
     t.codigoCiudadDestino,
     t.ciudadDestino,
     t.tipoEntrega,
@@ -61,3 +62,7 @@ export function verificarTarifa(
   const vence = Date.parse(t.vence);
   return Number.isNaN(vence) || vence < ahora ? 'vencida' : 'valida';
 }
+
+/** Huella del pedido que se firma con cada tarifa: al aplicarla, la de las líneas que quedarán debe ser la misma. */
+export const huellaBulto = (lineas: readonly LineaPedido[]) =>
+  createHash('sha256').update(clavePedido(lineas)).digest('hex');

@@ -2,7 +2,7 @@ import { importarEnchapadas, esPlanillaEnchapadas } from './enchapadas';
 import { ErrorImportacion, importar } from './importar';
 import { validarConfiguracionCatalogo, type ConfiguracionCatalogo } from './configuracion';
 import type { OrigenCatalogo } from './origenes';
-import { abrirXlsx, type Xlsx } from './xlsx';
+import { abrirXlsx, ErrorXlsx, type Xlsx } from './xlsx';
 
 const HOJAS_PRINCIPAL = ['Precio', 'Categorias', 'Cotización'];
 
@@ -22,10 +22,23 @@ export function detectarPlanilla(x: Xlsx): OrigenCatalogo | null {
 export async function importarPlanilla(ruta: string, configEntrada?: ConfiguracionCatalogo) {
   const x = await abrirXlsx(ruta).catch((error: unknown) => {
     if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') throw error;
-    throw new ErrorImportacion(
-      `No se pudo leer el archivo como un Excel .xlsx válido (${error instanceof Error ? error.message : 'formato desconocido'}). El catálogo no se modificó.`,
-    );
+    throw libroInvalido(error);
   });
+  try {
+    return await importarLibro(ruta, x, configEntrada);
+  } catch (error) {
+    // Una hoja con XML o referencias inválidas recién aparece al leerla, ya dentro del importador.
+    if (error instanceof ErrorXlsx) throw libroInvalido(error);
+    throw error;
+  }
+}
+
+const libroInvalido = (error: unknown) =>
+  new ErrorImportacion(
+    `No se pudo leer el archivo como un Excel .xlsx válido (${error instanceof Error ? error.message : 'formato desconocido'}). El catálogo no se modificó.`,
+  );
+
+async function importarLibro(ruta: string, x: Xlsx, configEntrada?: ConfiguracionCatalogo) {
   const origen = detectarPlanilla(x);
   if (!origen)
     throw new ErrorImportacion(

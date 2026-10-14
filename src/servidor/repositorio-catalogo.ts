@@ -1,5 +1,7 @@
+import { rangoMedidas } from '../negocio/limites';
 import { createHash } from 'node:crypto';
 import type Database from 'better-sqlite3';
+import { z } from 'zod';
 import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/resolver';
 import { coincideBusquedaCatalogo, terminosBusquedaCatalogo, textoBusquedaCatalogo } from './busqueda';
 import { escalon, escalonesSeTocan } from '../catalogo/escalones';
@@ -32,6 +34,76 @@ export type ProductoAdministrable = Producto & {
   creadaPor: string | null;
   actualizada: string | null;
 };
+/** Producto agregado a mano que está en la papelera: se puede restaurar si su código sigue libre. */
+export type ProductoEliminado = Producto & {
+  creada: string | null;
+  creadaPor: string | null;
+  eliminada: string;
+  /** Otro producto ocupa hoy el código: restaurarlo fallaría. */
+  codigoOcupado: boolean;
+};
+/** Lo que trae «volver a la planilla anterior» de un origen. */
+export interface PlanillaAnterior {
+  origen: OrigenCatalogo;
+  etiqueta: string;
+  fuente: string;
+  /** Fecha en que se había importado esa planilla. */
+  fecha: string;
+  productos: number;
+  /** Productos de esa copia que se habían editado a mano: vuelven con la edición y su marca. */
+  edicionesManuales: number;
+}
+type EdicionManual = { codigo: string; fecha: string };
+type CopiaPlanilla = Partial<Omit<Catalogo, 'productos'>> & { productos: Producto[]; ediciones?: EdicionManual[] };
+
+const FAMILIAS_PRODUCTO = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'] as const;
+/** Copia de un producto manual en la papelera (las anteriores a v22 no traen fechas ni autor). */
+const productoEnPapeleraSchema = z.looseObject({
+  codigo: z.string().min(1),
+  modelo: z.string().min(1),
+  familia: z.enum(FAMILIAS_PRODUCTO),
+  tipo: z.string().nullable(),
+  madera: z.string().min(1),
+  medida: z.string().min(1),
+  anchoMin: z.number().nullable(),
+  anchoMax: z.number().nullable(),
+  altoMin: z.number().nullable().optional(),
+  altoMax: z.number().nullable().optional(),
+  largo: z.number(),
+  precioNeto: z.number(),
+  descripcion: z.string(),
+  filaOrigen: z.number().int().optional(),
+  creada: z.string().optional(),
+  creadaPor: z.string().nullable().optional(),
+  actualizada: z.string().nullable().optional(),
+});
+function leerProductoEnPapelera(contenido: string) {
+  try {
+    const leido = productoEnPapeleraSchema.safeParse(JSON.parse(contenido));
+    if (!leido.success) return null;
+    const { creada = null, creadaPor = null, actualizada = null, filaOrigen = 0, ...resto } = leido.data;
+    const producto: Producto = {
+      codigo: resto.codigo,
+      modelo: resto.modelo,
+      familia: resto.familia,
+      tipo: resto.tipo,
+      madera: resto.madera,
+      medida: resto.medida,
+      anchoMin: resto.anchoMin,
+      anchoMax: resto.anchoMax,
+      ...(resto.altoMin != null ? { altoMin: resto.altoMin } : {}),
+      ...(resto.altoMax != null ? { altoMax: resto.altoMax } : {}),
+      largo: resto.largo,
+      precioNeto: resto.precioNeto,
+      descripcion: resto.descripcion,
+      filaOrigen,
+    };
+    return { producto, creada, creadaPor, actualizada };
+  } catch {
+    return null;
+  }
+}
+
 export interface CambiosProductoManual {
   modelo?: string;
   familia?: Producto['familia'];
@@ -186,6 +258,24 @@ export function guardarCatalogo(
       throw new Error(
         `La planilla trae ${catalogo.productos.length} productos y el catálogo actual tiene ${anteriores}${origen === 'principal' ? '' : ` de la ${ETIQUETA_ORIGEN[origen].toLowerCase()}`}. Si la reducción es intencional, repite la importación con --forzar; el catálogo no se modificó.`,
       );
+    if (anteriores) {
+      // Copia para «volver a la planilla anterior»: los productos como están en la base, con lo editado a mano,
+      // y las marcas de esa edición, para que la vista previa siguiente vuelva a avisarlas.
+      const repo = new RepositorioCatalogoSqlite(db);
+      const meta = repo.metadataOrigen(origen)!;
+      const ediciones = db
+        .prepare(
+          `SELECT e.codigo, e.fecha FROM catalogo_ediciones e
+           JOIN productos_catalogo p ON p.codigo = e.codigo WHERE p.origen = ? ORDER BY e.codigo`,
+        )
+        .all(origen) as EdicionManual[];
+      const previo: CopiaPlanilla = { ...meta, origen, productos: repo.importados(origen), ediciones };
+      db.prepare('INSERT INTO catalogo_anterior VALUES (?, ?, ?) ON CONFLICT(origen) DO UPDATE SET contenido=excluded.contenido, version=excluded.version').run(origen, JSON.stringify(previo), repo.version ?? '');
+    } else {
+      // Sin productos previos no hay a qué volver: una copia de antes ya no corresponde a esta importación.
+      db.prepare('DELETE FROM catalogo_anterior WHERE origen = ?').run(origen);
+    }
+    db.prepare('DELETE FROM catalogo_ediciones WHERE codigo IN (SELECT codigo FROM productos_catalogo WHERE origen = ?)').run(origen);
     db.prepare('DELETE FROM productos_catalogo WHERE origen = ?').run(origen);
     // Un código o producto que ya tiene otra planilla no se puede repetir: se avisa antes de que lo rechace SQLite.
     const deOtras = db
@@ -499,16 +589,17 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
       .run(fecha, cantidad.n);
   }
 
-  listarManuales(): ProductoManual[] {
+  /** Productos agregados a mano, los más recientes primero; con `codigo`, solo ese. */
+  listarManuales(codigo?: string): ProductoManual[] {
     const filas = this.db
       .prepare(
         `
         SELECT codigo, modelo, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max, largo, precio_neto,
                descripcion, fila_origen, creada, creada_por, actualizada
-        FROM productos_adicionales ORDER BY creada DESC, rowid DESC
+        FROM productos_adicionales ${codigo === undefined ? '' : 'WHERE codigo = ?'} ORDER BY creada DESC, rowid DESC
       `,
       )
-      .all() as (FilaProducto & { creada: string; creada_por: string | null; actualizada: string | null })[];
+      .all(...(codigo === undefined ? [] : [codigo])) as (FilaProducto & { creada: string; creada_por: string | null; actualizada: string | null })[];
     return filas.map((f) => ({
       ...convertirProducto(f),
       creada: f.creada,
@@ -596,6 +687,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         const altoMax = cambios.altoMax === undefined ? actual.altoMax ?? null : cambios.altoMax;
         const largo = cambios.largo ?? actual.largo;
         const precioNeto = cambios.precioNeto ?? actual.precioNeto;
+        if ((cambios.largo !== undefined || cambios.familia !== undefined) && (largo < 0.3 || largo > rangoMedidas(familia).max))
+          throw new ErrorUsuarioCatalogo(`El largo debe estar entre 0,3 y ${rangoMedidas(familia).max} m.`);
         if (!modelo || !madera || !medida || !Number.isFinite(largo) || largo <= 0 || largo > 100)
           throw new ErrorUsuarioCatalogo('Modelo, madera, medida y largo deben tener valores válidos.');
         if (
@@ -608,7 +701,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           throw new ErrorUsuarioCatalogo('El rango de alto no es válido.');
         if (!Number.isFinite(precioNeto) || precioNeto <= 0 || precioNeto > 100_000_000)
           throw new ErrorUsuarioCatalogo(
-            'El precio neto unitario debe ser mayor que $0 y no superar $100.000.000.',
+            'El precio base sin IVA debe ser mayor que $0 y no superar $100.000.000.',
           );
         const descripcion = cambios.descripcion?.replace(/\s+/g, ' ').trim() || actual.descripcion;
         const tipo =
@@ -689,6 +782,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
               codigo,
             );
         }
+        this.db.prepare('INSERT OR REPLACE INTO catalogo_ediciones VALUES (?, ?)').run(codigo, new Date().toISOString());
         this.tocarMetadata();
         return this.buscarPorCodigo(codigo)!;
       })
@@ -698,6 +792,110 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
   editarManual(codigo: string, cambios: CambiosProductoManual) {
     this.manual(codigo);
     return this.editarProducto(codigo, cambios);
+  }
+
+  edicionesManuales() { return (this.db.prepare('SELECT codigo FROM catalogo_ediciones').all() as { codigo: string }[]).map((r) => r.codigo); }
+
+  /** Productos agregados a mano que están en la papelera, del eliminado más reciente al más antiguo. */
+  productosEliminados(limite = 200): ProductoEliminado[] {
+    const filas = this.db
+      .prepare("SELECT contenido, eliminada FROM papelera WHERE tipo = 'producto' ORDER BY eliminada DESC, id LIMIT ?")
+      .all(Math.min(Math.max(Math.trunc(limite), 1), 500)) as { contenido: string; eliminada: string }[];
+    return filas.flatMap((f) => {
+      const leido = leerProductoEnPapelera(f.contenido);
+      if (!leido) return [];
+      return [
+        {
+          ...leido.producto,
+          creada: leido.creada,
+          creadaPor: leido.creadaPor,
+          eliminada: f.eliminada,
+          codigoOcupado: !!this.buscarPorCodigo(leido.producto.codigo),
+        },
+      ];
+    });
+  }
+
+  /** Devuelve al catálogo un producto manual de la papelera, con su autor y su fecha de alta. */
+  restaurarProducto(codigo: string) {
+    return this.db.transaction(() => {
+      const fila = this.db.prepare("SELECT contenido FROM papelera WHERE tipo = 'producto' AND id = ?").get(codigo) as { contenido: string } | undefined;
+      if (!fila) throw new ErrorUsuarioCatalogo('No se encontró el producto eliminado.', 'no_encontrada', 404);
+      if (this.buscarPorCodigo(codigo)) throw new ErrorUsuarioCatalogo('El código ya está ocupado. No se sobrescribió ningún producto.', 'version_obsoleta', 409);
+      const leido = leerProductoEnPapelera(fila.contenido);
+      if (!leido) throw new ErrorUsuarioCatalogo('La copia del producto eliminado está dañada y no se puede restaurar.', 'estado_invalido', 409);
+      this.agregarProductoManual(leido.producto, this.version ?? '', undefined, leido.creadaPor, {
+        creada: leido.creada,
+        actualizada: leido.actualizada,
+      });
+      this.db.prepare("DELETE FROM papelera WHERE tipo = 'producto' AND id = ?").run(codigo);
+      return this.buscarPorCodigo(codigo)!;
+    }).immediate();
+  }
+
+  /** Copia que guardó la última importación de una planilla; null si no hay a qué volver. */
+  planillaAnterior(origen: OrigenCatalogo): PlanillaAnterior | null {
+    const copia = this.copiaPlanilla(origen);
+    if (!copia) return null;
+    const codigos = new Set(copia.productos.map((p) => p.codigo));
+    return {
+      origen,
+      etiqueta: ETIQUETA_ORIGEN[origen],
+      fuente: copia.fuente ?? '',
+      fecha: copia.fecha ?? '',
+      productos: copia.productos.length,
+      edicionesManuales: (copia.ediciones ?? []).filter((e) => codigos.has(e.codigo)).length,
+    };
+  }
+
+  private copiaPlanilla(origen: OrigenCatalogo): CopiaPlanilla | null {
+    const fila = this.db.prepare('SELECT contenido FROM catalogo_anterior WHERE origen = ?').get(origen) as
+      { contenido: string } | undefined;
+    if (!fila) return null;
+    try {
+      const copia = JSON.parse(fila.contenido) as CopiaPlanilla;
+      return Array.isArray(copia?.productos) && copia.productos.length ? copia : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Vuelve una planilla a como estaba antes de su última importación: sus productos tal como estaban en la
+   * base, con los cambios hechos a mano y la marca de esos cambios (la vista previa siguiente los vuelve a
+   * avisar). Solo si el catálogo no cambió desde que se pidió (`version`); no toca la otra planilla ni los
+   * productos agregados a mano. La importación deshecha queda como copia: se puede volver a ella igual.
+   */
+  restaurarImportacion(origen: OrigenCatalogo, version: string): PlanillaAnterior {
+    return this.db.transaction(() => {
+      if (this.version !== version)
+        throw new ErrorUsuarioCatalogo(
+          'El catálogo cambió después de la importación. Revisa el catálogo antes de volver a la planilla anterior.',
+          'version_obsoleta',
+          409,
+        );
+      const resumen = this.planillaAnterior(origen);
+      const copia = this.copiaPlanilla(origen);
+      if (!resumen || !copia)
+        throw new ErrorUsuarioCatalogo('No hay una planilla anterior a la que volver.', 'no_encontrada', 404);
+      const { ediciones = [], ...anterior } = copia;
+      guardarCatalogo(
+        this.db,
+        {
+          fuente: anterior.fuente ?? '',
+          sha256: anterior.sha256 ?? '',
+          productos: anterior.productos,
+          origen,
+          fecha: new Date().toISOString(),
+        },
+        this.configuracion,
+        { forzar: true },
+      );
+      const marcar = this.db.prepare('INSERT OR REPLACE INTO catalogo_ediciones VALUES (?, ?)');
+      const codigos = new Set(anterior.productos.map((p) => p.codigo));
+      for (const e of ediciones) if (codigos.has(e.codigo)) marcar.run(e.codigo, e.fecha);
+      return resumen;
+    }).immediate();
   }
 
   guardarConfiguracion(configuracion: ConfiguracionCatalogo) {
@@ -719,6 +917,9 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     this.db
       .transaction(() => {
         this.manual(codigo);
+        // Copia completa, con quién lo agregó y cuándo, para poder restaurarlo tal cual con restaurarProducto.
+        const producto = this.listarManuales(codigo)[0];
+        this.db.prepare("INSERT OR REPLACE INTO papelera VALUES ('producto', ?, ?, ?)").run(codigo, JSON.stringify(producto), new Date().toISOString());
         this.db.prepare('DELETE FROM productos_adicionales WHERE codigo = ?').run(codigo);
         this.tocarMetadata();
       })
@@ -730,6 +931,8 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     versionEsperada: string,
     pendienteId?: string,
     creadaPor: string | null = null,
+    /** Al restaurarlo desde la papelera conserva sus fechas; un alta nueva usa la de hoy. */
+    fechas: { creada: string | null; actualizada: string | null } = { creada: null, actualizada: null },
   ) {
     return this.db
       .transaction(() => {
@@ -751,16 +954,16 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           throw new ErrorUsuarioCatalogo(
             `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) para el mismo modelo, madera y alto.`,
           );
-        const creada = new Date().toISOString();
+        const creada = fechas.creada ?? new Date().toISOString();
         this.db
           .prepare(
             `
           INSERT INTO productos_adicionales (
             codigo, modelo, modelo_normalizado, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
-            largo, precio_neto, descripcion, fila_origen, creada, creada_por
+            largo, precio_neto, descripcion, fila_origen, creada, creada_por, actualizada
           ) VALUES (
             @codigo, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida, @ancho_min, @ancho_max, @alto_min, @alto_max,
-            @largo, @precio_neto, @descripcion, 0, @creada, @creada_por
+            @largo, @precio_neto, @descripcion, 0, @creada, @creada_por, @actualizada
           )
         `,
           )
@@ -781,6 +984,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
             descripcion: producto.descripcion,
             creada,
             creada_por: creadaPor,
+            actualizada: fechas.actualizada,
           });
         this.tocarMetadata();
         if (pendienteId) this.db.prepare('DELETE FROM productos_pendientes WHERE id = ?').run(pendienteId);

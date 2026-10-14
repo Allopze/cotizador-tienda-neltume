@@ -10,6 +10,7 @@ import {
   resolverModeloPosibleConfigurado,
 } from '@/catalogo/configuracion';
 import type { Familia } from '@/catalogo/tipos';
+import { SeccionAvanzada } from './ajustes/avanzado';
 import type { Avisar } from './avisos';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
@@ -628,10 +629,12 @@ export function ConfiguracionCatalogo({
         </button>
       </fieldset>
 
-      <details className="config-json">
-        <summary>Vista técnica (JSON)</summary>
-        <pre>{JSON.stringify(borrador, null, 2)}</pre>
-      </details>
+      <SeccionAvanzada
+        titulo="vista técnica para soporte"
+        advertencia="Muestra esta misma configuración en el formato que usa el sistema (JSON). Solo sirve para que quien da soporte revise un problema; aquí no se cambia nada."
+      >
+        <pre className="config-json">{JSON.stringify(borrador, null, 2)}</pre>
+      </SeccionAvanzada>
 
       {!puedeEditar ? (
         <p className="ia-permiso">Solo quien administra el cotizador puede cambiar esta configuración.</p>

@@ -6,7 +6,7 @@ import { leerPesos } from '@/negocio/cifras';
 import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta, ProductoElegido, ProductoPersonalizadoElegido } from './contrato';
 import { Dialogo } from './dialogo';
-import { leerMetros, nombreProducto } from './formato';
+import { decimalCampo, errorMedida, leerMedida, nombreProducto } from './formato';
 import { ReferenciasItem } from './referencias-item';
 import { SelectorDesplegable } from './selector-desplegable';
 import { SelectorFamilia } from './selector-familia';
@@ -140,7 +140,7 @@ export function AgregarProducto({
                       </span>
                       <span>
                         <strong>{pesos(p.unitario)}</strong>
-                        <small>unitario neto de referencia</small>
+                        <small>unitario sin IVA de referencia</small>
                       </span>
                     </button>
                   </li>
@@ -175,34 +175,63 @@ function SeleccionProducto({
   ocupado: boolean;
   volver: () => void;
 }) {
+  const puerta = p.familia === 'PUERTA';
   const [cantidad, setCantidad] = useState('1');
   const [error, setError] = useState('');
-  const [ancho, setAncho] = useState(String(p.anchoMax ?? p.anchoMin ?? ''));
-  const [alto, setAlto] = useState(String(p.altoMax ?? p.largo));
+  const inicialAncho = p.anchoMax ?? p.anchoMin ?? null;
+  const [ancho, setAncho] = useState(inicialAncho === null ? '' : decimalCampo(inicialAncho));
+  const [alto, setAlto] = useState(decimalCampo(p.altoMax ?? p.largo));
   const [tipoMedida, setTipoMedida] = useState<NonNullable<ProductoElegido['tipoMedida']>>('no_especificado');
+  /** Lo que admite este producto, en palabras: «entre 0,80 y 0,85 m» o «3,6 m». */
+  const tramo = (min: number, max: number) =>
+    min === max ? `${decimalCampo(min)} m` : `entre ${decimalCampo(min)} y ${decimalCampo(max)} m`;
   async function enviar(e: FormEvent) {
     e.preventDefault();
     setError('');
+    // Medidas como texto (coma, punto, «cm» o «mm»): un campo numérico del navegador las entregaba vacías.
+    const n = Number(cantidad.trim());
+    const anchoM = puerta ? leerMedida(ancho, 'PUERTA', 'ancho') : null;
+    const altoM = leerMedida(alto, p.familia);
+    const anchoMin = p.anchoMin ?? inicialAncho ?? 0,
+      anchoMax = p.anchoMax ?? inicialAncho ?? Infinity,
+      altoMin = p.altoMin ?? p.largo,
+      altoMax = p.altoMax ?? p.largo;
+    const dentro = (m: number, min: number, max: number) => m >= min - 1e-9 && m <= max + 1e-9;
+    const problema = !Number.isInteger(n) || n < 1 || n > 10000
+      ? 'La cantidad debe ser un número entero entre 1 y 10.000.'
+      : puerta && anchoM === null
+        ? errorMedida('ancho', 'PUERTA')
+        : puerta && anchoM !== null && !dentro(anchoM, anchoMin, anchoMax)
+          ? `Este producto se cotiza con un ancho ${tramo(anchoMin, anchoMax)}.`
+          : altoM === null
+            ? errorMedida('alto', p.familia)
+            : !dentro(altoM, altoMin, altoMax)
+              ? `Este producto se cotiza con un ${puerta ? 'alto' : 'largo'} ${tramo(altoMin, altoMax)}.`
+              : null;
+    if (problema) {
+      setError(problema);
+      return;
+    }
     try {
       await agregar({
         codigo: p.codigo,
-        cantidad: Number(cantidad),
-        ...(p.familia === 'PUERTA' ? { ancho: Number(ancho), tipoMedida } : {}),
-        alto: Number(alto),
+        cantidad: n,
+        ...(puerta ? { ancho: anchoM!, tipoMedida } : {}),
+        alto: altoM!,
       });
     } catch (e) {
       setError(mensajeDe(e));
     }
   }
   return (
-    <form onSubmit={enviar} className="producto-seleccion">
+    <form onSubmit={enviar} className="producto-seleccion" noValidate>
       <button type="button" className="producto-volver" onClick={volver} disabled={ocupado}>
         ← Volver a resultados
       </button>
       <div className="producto-elegido">
         <strong>{nombreProducto(p.descripcion)}</strong>
         <small>
-          {p.codigo} · {pesos(p.unitario)} neto unitario de referencia
+          {p.codigo} · {pesos(p.unitario)} sin IVA, unitario de referencia
         </small>
       </div>
       <p className="ayuda">El precio final se calcula con las condiciones de esta cotización.</p>
@@ -221,15 +250,13 @@ function SeleccionProducto({
             disabled={ocupado}
           />
         </label>
-        {p.familia === 'PUERTA' && (
+        {puerta && (
           <label>
             Ancho (m)
             <input
-              type="number"
-              min={p.anchoMin ?? 0.3}
-              max={p.anchoMax ?? 3}
-              step="0.001"
-              required
+              type="text"
+              inputMode="decimal"
+              maxLength={12}
               value={ancho}
               onChange={(e) => setAncho(e.target.value)}
               disabled={ocupado}
@@ -237,13 +264,11 @@ function SeleccionProducto({
           </label>
         )}
         <label>
-          {p.familia === 'PUERTA' ? 'Alto (m)' : 'Largo (m)'}
+          {puerta ? 'Alto (m)' : 'Largo (m)'}
           <input
-            type="number"
-            min={p.altoMin ?? p.largo}
-            max={p.altoMax ?? p.largo}
-            step="0.001"
-            required
+            type="text"
+            inputMode="decimal"
+            maxLength={12}
             value={alto}
             onChange={(e) => setAlto(e.target.value)}
             disabled={ocupado}
@@ -258,8 +283,8 @@ function SeleccionProducto({
               disabled={ocupado}
             >
               <option value="no_especificado">Por confirmar</option>
-              <option value="hoja">Hoja</option>
-              <option value="vano">Vano</option>
+              <option value="hoja">Hoja (la puerta)</option>
+              <option value="vano">Vano (hueco del muro)</option>
             </select>
           </label>
         )}
@@ -280,8 +305,8 @@ function SeleccionProducto({
 
 const TIPOS_MEDIDA = [
   { value: 'no_especificado', label: 'Por confirmar' },
-  { value: 'hoja', label: 'Hoja' },
-  { value: 'vano', label: 'Vano' },
+  { value: 'hoja', label: 'Hoja (la puerta)' },
+  { value: 'vano', label: 'Vano (hueco del muro)' },
 ] as const;
 
 /**
@@ -313,6 +338,8 @@ function FormPersonalizado({
   const [familia, setFamilia] = useState<Familia>('PUERTA');
   const [tipoMedida, setTipoMedida] = useState<ProductoPersonalizadoElegido['tipoMedida']>('no_especificado');
   const [referencias, setReferencias] = useState<ReferenciaItem[]>([]);
+  // Mientras sube una referencia no se agrega: el producto quedaría sin ella y sin aviso.
+  const [subiendo, setSubiendo] = useState(false);
   const [errores, setErrores] = useState<Partial<Record<keyof typeof campos, string>>>({});
   const [error, setError] = useState('');
   const cambiar = (campo: keyof typeof campos, valor: string) => {
@@ -322,23 +349,26 @@ function FormPersonalizado({
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
+    if (subiendo) return;
     setError('');
-    const medida = (texto: string) => (texto.trim() ? leerMetros(texto, 3) : null);
-    const ancho = medida(campos.ancho),
-      alto = medida(campos.alto),
+    // El largo de un accesorio llega a 6 m; el ancho y el alto de una puerta, a 3 m (`rangoMedidas`).
+    const medida = (texto: string, campo: 'ancho' | 'alto') =>
+      texto.trim() ? leerMedida(texto, familia, campo) : null;
+    const ancho = medida(campos.ancho, 'ancho'),
+      alto = medida(campos.alto, 'alto'),
       cantidad = Number(campos.cantidad),
       precio = campos.precio.trim() ? leerPesos(campos.precio) : null;
-    const fueraDeRango = (texto: string, n: number | null) => !!texto.trim() && (n === null || n < 0.3 || n > 3);
+    const ilegible = (texto: string, n: number | null) => !!texto.trim() && n === null;
     const nuevos: typeof errores = {
       ...(!campos.nombre.trim() && { nombre: 'Escribe el nombre del producto.' }),
       ...(!campos.madera.trim() && { madera: 'Indica la madera.' }),
-      ...(fueraDeRango(campos.ancho, ancho) && { ancho: 'Escribe el ancho en metros (0,80) o centímetros (80).' }),
-      ...(fueraDeRango(campos.alto, alto) && { alto: 'Escribe el alto en metros (2,10) o centímetros (210).' }),
+      ...(ilegible(campos.ancho, ancho) && { ancho: errorMedida('ancho', familia) }),
+      ...(ilegible(campos.alto, alto) && { alto: errorMedida('alto', familia) }),
       ...((!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 10000) && {
         cantidad: 'La cantidad debe ser un entero entre 1 y 10.000.',
       }),
       ...((precio === null || !Number.isSafeInteger(precio) || precio <= 0 || precio > 100_000_000) && {
-        precio: 'Escribe el precio unitario neto, por ejemplo 245.000.',
+        precio: 'Escribe el precio unitario sin IVA, por ejemplo 245.000.',
       }),
     };
     setErrores(nuevos);
@@ -408,11 +438,11 @@ function FormPersonalizado({
         </div>
         {campo('madera', 'Madera', { placeholder: 'Ej.: Roble' })}
         {campo('cantidad', 'Cantidad', { inputMode: 'numeric', maxLength: 6 })}
-        {campo('ancho', 'Ancho (m) · opcional', { placeholder: '0,80', inputMode: 'decimal', maxLength: 8 })}
+        {campo('ancho', 'Ancho (m) · opcional', { placeholder: '0,80', inputMode: 'decimal', maxLength: 12 })}
         {campo('alto', familia === 'PUERTA' ? 'Alto (m) · opcional' : 'Largo (m) · opcional', {
-          placeholder: '2,10',
+          placeholder: familia === 'PUERTA' ? '2,10' : '3,60',
           inputMode: 'decimal',
-          maxLength: 8,
+          maxLength: 12,
         })}
         {familia === 'PUERTA' && (
           <div className="producto-campo">
@@ -426,7 +456,7 @@ function FormPersonalizado({
             />
           </div>
         )}
-        {campo('precio', 'Precio unitario neto ($)', { placeholder: 'Ej.: 245.000', inputMode: 'numeric', maxLength: 15 })}
+        {campo('precio', 'Precio unitario sin IVA ($)', { placeholder: 'Ej.: 245.000', inputMode: 'numeric', maxLength: 15 })}
       </div>
       <div className="producto-medidas producto-textos">
         {campo('descripcion', 'Descripción para el documento · opcional', {
@@ -444,6 +474,7 @@ function FormPersonalizado({
           setReferencias(lista);
           return true;
         }}
+        alSubir={setSubiendo}
       />
       {error && (
         <p role="alert" className="producto-error">
@@ -451,8 +482,8 @@ function FormPersonalizado({
         </p>
       )}
       <div className="dialogo-acciones">
-        <button type="submit" className="button primary" disabled={ocupado}>
-          {ocupado ? 'Agregando…' : 'Agregar al pedido'}
+        <button type="submit" className="button primary" disabled={ocupado || subiendo}>
+          {ocupado ? 'Agregando…' : subiendo ? 'Subiendo referencia…' : 'Agregar al pedido'}
         </button>
       </div>
     </form>

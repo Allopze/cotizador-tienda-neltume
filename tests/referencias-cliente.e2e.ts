@@ -36,10 +36,19 @@ test('producto personalizado con referencias del cliente por ítem', async ({ pa
   await form.getByLabel('Cantidad').fill('2');
   await form.getByLabel('Ancho (m) · opcional').fill('80');
   await form.getByLabel('Alto (m) · opcional').fill('2,10');
-  await form.getByLabel('Precio unitario neto ($)').fill('345.000');
+  await form.getByLabel('Precio unitario sin IVA ($)').fill('345.000');
   await form.getByLabel('Descripción para el documento · opcional').fill('Puerta sólida de roble según fotografía adjunta.');
+  // Una subida lenta no deja agregar el producto a medias: quedaría sin su referencia y sin aviso.
+  await page.route('**/api/referencias', async (ruta) => {
+    await new Promise((listo) => setTimeout(listo, 800));
+    await ruta.continue();
+  });
   await form.locator('input[type=file]').setInputFiles({ name: 'foto-whatsapp.png', mimeType: 'image/png', buffer: PNG });
-  await expect(form.getByText('foto-whatsapp.png')).toBeVisible();
+  await expect(form.getByRole('button', { name: 'Subiendo referencia…' })).toBeDisabled();
+  // «Subiendo foto-whatsapp.png…» también contiene el nombre: se espera la tarjeta ya subida.
+  await expect(form.locator('.referencia-tarjeta')).toHaveCount(1);
+  await expect(form.getByRole('button', { name: 'Agregar al pedido' })).toBeEnabled();
+  await page.unroute('**/api/referencias');
   await page.screenshot({ path: 'test-results/referencias-formulario.png' });
   await form.getByRole('button', { name: 'Agregar al pedido' }).click();
   await expect(form).toHaveCount(0);

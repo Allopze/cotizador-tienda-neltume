@@ -1,5 +1,6 @@
 'use client';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   anticipoMinimo,
@@ -24,6 +25,7 @@ import { preguntasPendientes } from '@/negocio/pendientes';
 import { AgregarProducto } from './agregar-producto';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAnulacionPago, useAprobacion, useEmision } from './dialogos-cotizacion';
+import { ContextoDocumentos, type AccionesDocumentos } from './panel-totales';
 import type {
   CambiosEdicion,
   Despacho as CambiosDespacho,
@@ -51,6 +53,7 @@ import {
   ErrorSolicitud,
   codigoDe,
   alExpirarSesion,
+  documentoDisponible,
   esSilencioso,
   guardarArchivo,
   guardarBorrador,
@@ -87,6 +90,16 @@ interface NotaLocal {
   texto: string;
   tipo?: 'cambios';
 }
+/** Avisos de ediciones directas (no del chat) de la cotización abierta; duran hasta el próximo mensaje. */
+interface AvisosLocales {
+  id: string;
+  textos: string[];
+}
+const MAX_AVISOS_LOCALES = 6;
+/** Pantalla táctil: ahí una descarga sin gesto abre un diálogo del sistema (iOS) en vez de guardar. */
+const esTactil = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
+const urlDocumento = (archivo: string, ver = false) =>
+  `/api/documento/${encodeURIComponent(archivo)}${ver ? '?ver=1' : ''}`;
 interface HistorialEdicion {
   id: string | null;
   version: string | null;
@@ -107,10 +120,13 @@ const idNuevo = () =>
 export function Cotizador({
   email,
   nombre,
+  admin,
   abrirId,
 }: {
   email: string;
   nombre: string;
+  /** Cuenta administradora: número manual al emitir y regenerar un PDF perdido. */
+  admin: boolean;
   /** Cotización pedida por URL (`/?cotizacion=…`), p. ej. desde el historial. */
   abrirId: string | null;
 }) {
@@ -184,6 +200,7 @@ export function Cotizador({
   /** Totales de las opciones en selección: se leen aparte, el asistente nunca recibe montos. */
   const [totalesOpciones, setTotalesOpciones] = useState<Record<string, number>>({});
   const [notaLocal, setNotaLocal] = useState<NotaLocal | null>(null);
+  const [avisosLocales, setAvisosLocales] = useState<AvisosLocales | null>(null);
   const [anuncio, setAnuncio] = useState('');
   const [restaurando, setRestaurando] = useState(true),
     [configurado, setConfigurado] = useState(true);
@@ -199,12 +216,16 @@ export function Cotizador({
     workspace = useRef<HTMLElement>(null),
     titulo = useRef<HTMLHeadingElement>(null);
   const abortar = useRef<AbortController | null>(null);
+  /** PDF ya bajado para compartir: si la descarga tardó, el navegador exige un toque nuevo para la hoja. */
+  const paraCompartir = useRef<{ archivo: string; pdf: File } | null>(null);
   const ocupado = enCurso !== null;
   const ocupadoRef = useRef(false);
   const volverAlCompositor = useRef(false);
   useEffect(() => {
     ocupadoRef.current = ocupado;
   }, [ocupado]);
+  // Al salir de la pantalla se corta la espera del chat: la respuesta ya no tendría dónde mostrarse.
+  useEffect(() => () => abortar.current?.abort(), []);
 
   const cargando = restaurando;
   // Al volver desde otra pantalla, el cotizador sigue a la misma altura. Si llega una cotización pedida
@@ -252,7 +273,11 @@ export function Cotizador({
     if (abrirId) window.history.replaceState(null, '', '/');
     Promise.resolve()
       .then(async () => {
-        if (b && (!abrirId || b.id === abrirId)) setMensaje(b.texto);
+        // Lo escrito se conserva aunque se abra otra cotización desde el historial, señalado como de la anterior.
+        if (b?.texto.trim()) {
+          setMensaje(b.texto);
+          if (abrirId && b.id !== abrirId) setTextoConservado(true);
+        }
         if (id) {
           const q = await leerDetalle(id, control.signal);
           setActual(q);
@@ -344,7 +369,7 @@ export function Cotizador({
     // misma cotización, se acerca el último mensaje sin mover la página al abrir otra.
     if (anterior.id === actualId && largoHistorial > anterior.largo)
       el.lastElementChild?.scrollIntoView({ behavior: comportamientoScroll(), block: 'nearest' });
-  }, [actualId, largoHistorial, seleccion, notaLocal, charla]);
+  }, [actualId, largoHistorial, seleccion, notaLocal, avisosLocales, charla]);
 
   useEffect(() => {
     if (!seleccion) return;
@@ -384,6 +409,7 @@ export function Cotizador({
     setActual(q);
     setSeleccion(null);
     setNotaLocal(null);
+    setAvisosLocales(null);
     setCharla([]);
     idPendiente.current = null;
     if (enfocarTitulo) {
@@ -500,6 +526,7 @@ export function Cotizador({
     if (d.eliminada) {
       setActual(null);
       setNotaLocal(null);
+      setAvisosLocales(null);
       vaciarHistorialEdicion(null);
     } else {
       if (!previa || previa.id !== q.id) vaciarHistorialEdicion(q.id);
@@ -515,6 +542,14 @@ export function Cotizador({
       if (q.estado === 'aprobada') setVistaMobile('cotizacion');
     }
     if (d.avisos?.length) avisar('info', d.avisos.join(' '));
+    // Los de una edición directa quedan además como nota en la conversación: el aviso dura 7 s. Se omiten los
+    // que el servidor ya dejó en el historial (p. ej. una revisión desvinculada).
+    const nuevos = opciones.anunciar || d.eliminada ? [] : (d.avisos ?? []).filter((a) => !q.historial.some((m) => m.texto === a));
+    if (nuevos.length)
+      setAvisosLocales((v) => ({
+        id: q.id,
+        textos: [...(v?.id === q.id ? v.textos.filter((t) => !nuevos.includes(t)) : []), ...nuevos].slice(-MAX_AVISOS_LOCALES),
+      }));
     if (
       previa &&
       !d.eliminada &&
@@ -530,7 +565,24 @@ export function Cotizador({
     const ultimo = q.historial.at(-1);
     if (opciones.anunciar && ultimo?.rol === 'asistente')
       setAnuncio(cambios ? `${ultimo.texto} ${cambios}` : ultimo.texto);
-    if (d.archivo) void descargar(d.archivo);
+    if (d.archivo) entregarDocumento(d.archivo);
+  }
+
+  /**
+   * PDF recién generado (emisión, nota de pedido): en escritorio se descarga; en una pantalla táctil una
+   * descarga sin gesto abre un diálogo del sistema, así que se ofrece abrirlo con un toque.
+   */
+  function entregarDocumento(archivo: string) {
+    if (!esTactil()) return void descargar(archivo);
+    avisar('exito', `PDF listo: ${archivo}. También queda junto al total para verlo, descargarlo o compartirlo.`, {
+      clave: 'descarga',
+      accion: {
+        etiqueta: 'Ver PDF',
+        fn: () => {
+          if (!ver(archivo)) void descargar(archivo);
+        },
+      },
+    });
   }
 
   function nuevaCotizacion() {
@@ -545,6 +597,7 @@ export function Cotizador({
     setCambioVisual(null);
     setSeleccion(null);
     setNotaLocal(null);
+    setAvisosLocales(null);
     setCharla([]);
     idPendiente.current = null;
     limpiar('operacion');
@@ -553,18 +606,131 @@ export function Cotizador({
     input.current?.focus();
   }
 
-  async function descargar(archivo: string) {
+  /** `reintento`: ya se regeneró una vez; un segundo 404 se informa sin volver a ofrecerlo. */
+  async function descargar(archivo: string, reintento = false) {
     setDescargando(archivo);
     try {
-      const { blob, nombre } = await pedirArchivo(`/api/documento/${encodeURIComponent(archivo)}`);
+      const { blob, nombre } = await pedirArchivo(urlDocumento(archivo));
       guardarArchivo(blob, nombre ?? archivo);
       avisar('exito', `Documento listo: se descargó ${nombre ?? archivo}.`, { clave: 'descarga' });
     } catch (e) {
-      fallo(e);
+      if (reintento || !(e instanceof ErrorSolicitud && e.status === 404)) return fallo(e);
+      setDescargando(null);
+      const recuperado = await recuperarPdf(archivo);
+      if (recuperado) await descargar(recuperado, true);
     } finally {
       setDescargando(null);
     }
   }
+
+  /**
+   * El PDF emitido ya no está en el servidor (respaldo incompleto, disco cambiado): una cuenta administradora lo
+   * regenera con lo guardado al emitir; las demás reciben a quién pedírselo. Devuelve el archivo o null.
+   */
+  async function recuperarPdf(archivo: string) {
+    const q = actualRef.current;
+    const documento = !q ? null : q.nota?.pdf === archivo ? 'nota' : q.pdf === archivo ? 'cotizacion' : null;
+    if (!q || !documento || !admin) {
+      avisar(
+        'error',
+        `No se encontró el PDF en el servidor.${admin ? '' : ' Pide a una cuenta administradora que lo regenere.'}`,
+        { clave: 'descarga' },
+      );
+      return null;
+    }
+    const ok = await confirmar({
+      titulo: 'No se encontró el PDF',
+      mensaje: (
+        <p>
+          El archivo de {documento === 'nota' ? `la nota de pedido N° ${q.nota!.numero}` : `la cotización ${numeroCotizacion(q.numero)}`}{' '}
+          ya no está en el servidor. Se puede regenerar con los mismos datos con que se emitió.
+        </p>
+      ),
+      aceptar: 'Regenerar PDF',
+    });
+    if (!ok || ocupadoRef.current) return null;
+    setEnCurso('workflow');
+    limpiar('operacion');
+    try {
+      const { archivo: regenerado, ...d } = await peticion({ tipo: 'regenerar_pdf', id: q.id, ...versionDe(q), documento });
+      recibir(d, { previa: q });
+      avisar('exito', 'PDF regenerado.', { clave: 'descarga' });
+      return regenerado ?? archivo;
+    } catch (e) {
+      fallo(e, q);
+      return null;
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
+  /**
+   * Abre un PDF en otra pestaña comprobando antes que exista: la pestaña se abre ya, dentro del toque (abrirla
+   * después de la comprobación la bloquearía el navegador), y se cierra si falta el archivo. Falso si el
+   * navegador no la abrió: quien llama sigue el enlace normal.
+   */
+  function ver(archivo: string) {
+    const pestana = window.open('', '_blank');
+    if (!pestana) return false;
+    pestana.opener = null;
+    documentoDisponible(urlDocumento(archivo, true))
+      .then(async (existe) => {
+        if (existe) return pestana.location.replace(urlDocumento(archivo, true));
+        pestana.close();
+        // Se reintenta como descarga: otra pestaña ya no sería parte del toque.
+        const recuperado = await recuperarPdf(archivo);
+        if (recuperado) await descargar(recuperado, true);
+      })
+      .catch((e) => {
+        pestana.close();
+        fallo(e);
+      });
+    return true;
+  }
+
+  async function compartir(archivo: string) {
+    const listo = paraCompartir.current?.archivo === archivo ? paraCompartir.current.pdf : null;
+    let pdf = listo;
+    if (!pdf) {
+      setDescargando(archivo);
+      try {
+        const { blob, nombre } = await pedirArchivo(urlDocumento(archivo));
+        pdf = new File([blob], nombre ?? archivo, { type: 'application/pdf' });
+        paraCompartir.current = { archivo, pdf };
+      } catch (e) {
+        if (e instanceof ErrorSolicitud && e.status === 404) {
+          setDescargando(null);
+          const recuperado = await recuperarPdf(archivo);
+          if (recuperado) avisar('info', 'PDF regenerado: toca «Compartir» para enviarlo.', {
+            clave: 'descarga',
+            accion: { etiqueta: 'Compartir', fn: () => void compartir(recuperado) },
+          });
+        } else fallo(e);
+        return;
+      } finally {
+        setDescargando(null);
+      }
+    }
+    try {
+      await navigator.share({ files: [pdf], title: pdf.name });
+    } catch (e) {
+      const nombre = e instanceof DOMException ? e.name : '';
+      // AbortError: la persona cerró la hoja. NotAllowedError: la descarga consumió el toque; se pide otro.
+      if (nombre === 'AbortError') return;
+      if (nombre === 'NotAllowedError' && !listo)
+        avisar('info', 'El PDF está listo para compartir.', {
+          clave: 'descarga',
+          accion: { etiqueta: 'Compartir', fn: () => void compartir(archivo) },
+        });
+      else avisar('error', 'No se pudo compartir el PDF. Descárgalo y envíalo desde tus archivos.', { clave: 'descarga' });
+    }
+  }
+  const accionesDocumentos: AccionesDocumentos = {
+    ver,
+    compartir: (archivo) => void compartir(archivo),
+    // Solo el PDF vigente: el de una reemplazada o anulada ya no es lo que se ofrece al cliente.
+    compartible: actual && (actual.estado === 'emitida' || actual.estado === 'aprobada') ? actual.pdf : null,
+  };
 
   /** Ejecuta una acción sobre la cotización abierta con su versión (`actualizada`). */
   async function ejecutar(
@@ -705,6 +871,7 @@ export function Cotizador({
       const emision = await pedirEmision({
         total: q.montos.total,
         reemplaza: q.origen,
+        numeroManual: admin,
         cliente: q.cliente.nombre,
         productos: q.montos.lineas.map((linea, i) => ({
           nombre: descripcionItem(q, linea.indice ?? i),
@@ -804,14 +971,19 @@ export function Cotizador({
         titulo: 'Eliminar borrador',
         mensaje: (
           <p>
-            ¿Eliminar este borrador{q.cliente.nombre ? ` de ${q.cliente.nombre}` : ''}? Se borran su
-            conversación y sus ítems; no se puede deshacer.
+            ¿Eliminar este borrador{q.cliente.nombre ? ` de ${q.cliente.nombre}` : ''}? Sale del historial con
+            su conversación y sus ítems, y pasa a la papelera: puedes deshacerlo desde el aviso o restaurarlo en
+            Historial → Papelera.
           </p>
         ),
         aceptar: 'Eliminar borrador',
       });
+      // La papelera guarda el borrador con la versión que tenía: con ella se restaura.
       if (ok && (await ejecutar('eliminar', { tipo: 'eliminar', ...versionDe(q) }, q)))
-        avisar('exito', 'Borrador eliminado.', { clave: 'operacion' });
+        avisar('exito', 'Borrador eliminado: quedó en la papelera.', {
+          clave: 'papelera',
+          accion: { etiqueta: 'Deshacer', fn: () => void restaurarBorrador(q.id, q.actualizada) },
+        });
     },
     async anular() {
       const q = actual;
@@ -940,6 +1112,27 @@ export function Cotizador({
     }
   }
 
+  /**
+   * «Deshacer» del aviso de borrador eliminado: lo saca de la papelera y lo abre. Se llama desde un aviso que
+   * pudo quedar abierto un rato: solo lee estado por referencias.
+   */
+  async function restaurarBorrador(id: string, actualizada: string) {
+    if (ocupadoRef.current) return;
+    setEnCurso('eliminar');
+    limpiar('operacion');
+    try {
+      recibir(await peticion({ tipo: 'restaurar_borrador', id, actualizada }));
+      setSeleccion(null);
+      setVistaMobile('cotizacion');
+      setEnfocar((n) => n + 1);
+      avisar('exito', 'Borrador restaurado.', { clave: 'papelera' });
+    } catch (e) {
+      fallo(e, null);
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
   async function aprobarDesdeChat(
     c: NonNullable<Resultado['confirmar']>,
     conversacion: Cotizacion,
@@ -985,6 +1178,7 @@ export function Cotizador({
     abortar.current = control;
     setEnCurso('chat');
     setNotaLocal(null);
+    setAvisosLocales(null);
     limpiar('operacion');
     const previa = actual;
     if (!previa && !idPendiente.current) idPendiente.current = idNuevo() ?? null;
@@ -1076,6 +1270,7 @@ export function Cotizador({
     setSeleccion(null);
     setActual(null);
     setNotaLocal(null);
+    setAvisosLocales(null);
     setCharla([]);
     requestAnimationFrame(() => input.current?.focus());
   }
@@ -1090,6 +1285,8 @@ export function Cotizador({
 
   // Atajos: Ctrl/⌘+K abre el historial con el buscador; Alt+N empieza una cotización nueva.
   const irAlHistorial = () => {
+    // Igual que los enlaces del encabezado: no se sale con el chat esperando respuesta.
+    if (abortar.current) return;
     antesDeNavegar();
     router.push('/historial', { scroll: false });
   };
@@ -1134,7 +1331,7 @@ export function Cotizador({
   // dice el estado real y qué pasa si se escribe un cambio.
   const estadoChat =
     actual?.estado === 'emitida' && esEditable(actual)
-      ? `${numeroCotizacion(actual.numero)} emitida${actual.fechaEmision ? ` el ${fechaLarga(actual.fechaEmision)}` : ''}. Si escribes un cambio, se creará una revisión en borrador y se conservará este PDF.`
+      ? `${numeroCotizacion(actual.numero)} emitida${actual.fechaEmision ? ` el ${fechaLarga(actual.fechaEmision)}` : ''}. Si escribes un cambio, se creará una revisión (una versión nueva en borrador que la reemplazará al emitirla) y este PDF se conserva.`
       : null;
   const mostrarNueva = !!actual || !!charla.length || !!seleccion;
   const aprobada = actual?.estado === 'aprobada';
@@ -1149,6 +1346,7 @@ export function Cotizador({
         pantalla="cotizar"
         alLogo={nuevaCotizacion}
         logoDeshabilitado={ocupado}
+        navegacionBloqueada={enCurso === 'chat'}
       />
       {/* La pestaña activa ya dice «Cotizar»: un título visible solo lo repetiría. */}
       <h1 className="sr-only">Cotizar</h1>
@@ -1247,6 +1445,19 @@ export function Cotizador({
                       <b aria-hidden>→</b>
                     </button>
                   )}
+                  <div className="welcome-ayuda">
+                    ¿Primera vez?{' '}
+                    {/* Mientras el chat espera respuesta no se sale (igual que la cabecera): el borrador quedaría huérfano. */}
+                    <Link
+                      href="/ayuda"
+                      scroll={false}
+                      aria-disabled={enCurso === 'chat' || undefined}
+                      onClick={enCurso === 'chat' ? (e) => e.preventDefault() : undefined}
+                    >
+                      Mira cómo funciona el cotizador
+                    </Link>
+                    : del pedido al PDF, la aprobación, el anticipo y el despacho.
+                  </div>
                 </div>
               )}
               {(actual ? actual.historial : charla).map((m, i, lista) => {
@@ -1291,6 +1502,14 @@ export function Cotizador({
                 <div className="message asistente local estado">
                   <span className="speaker">NELTUME</span>
                   <p>{estadoChat}</p>
+                </div>
+              )}
+              {avisosLocales && avisosLocales.id === actualId && (
+                <div className="message asistente local avisos-edicion" data-testid="avisos-locales">
+                  <span className="speaker">NELTUME</span>
+                  {avisosLocales.textos.map((t) => (
+                    <p key={t}>{t}</p>
+                  ))}
                 </div>
               )}
               {notaLocal && notaLocal.id === actualId && (
@@ -1476,19 +1695,21 @@ export function Cotizador({
             )}
           </div>
         </section>
-        <CotizacionPanel
-          asistente={configurado}
-          actual={actual}
-          enCurso={enCurso}
-          guardando={guardando}
-          descargando={descargando}
-          acciones={acciones}
-          tituloRef={titulo}
-          agregarProducto={() => setAgregandoProducto(true)}
-          mostrarCotizacion={() => setVistaMobile('cotizacion')}
-          cargando={cargando}
-          cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
-        />
+        <ContextoDocumentos value={accionesDocumentos}>
+          <CotizacionPanel
+            asistente={configurado}
+            actual={actual}
+            enCurso={enCurso}
+            guardando={guardando}
+            descargando={descargando}
+            acciones={acciones}
+            tituloRef={titulo}
+            agregarProducto={() => setAgregandoProducto(true)}
+            mostrarCotizacion={() => setVistaMobile('cotizacion')}
+            cargando={cargando}
+            cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
+          />
+        </ContextoDocumentos>
       </main>
       <footer className="site-footer">
         <span>

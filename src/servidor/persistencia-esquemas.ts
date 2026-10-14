@@ -182,7 +182,7 @@ export const cotizacionSchema = z.looseObject({
   fechaEmision: z.string().nullable().optional(),
   origen: z.number().int().nullable().optional(),
   vence: z.string().nullable(),
-  descuento: z.number().min(0).max(100),
+  descuento: z.number().min(0).max(50),
   /** Ausente: el descuento de quien lo guardó antes de existir el automático (se deriva al guardar). */
   descuentoManual: z.boolean().optional(),
   flete: z.number().int().nonnegative(),

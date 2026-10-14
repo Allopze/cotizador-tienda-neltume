@@ -16,6 +16,8 @@ import {
 } from '@/servidor/busqueda';
 import { leerConfiguracionNegocio } from '@/servidor/configuracion-negocio';
 import type { Producto } from '@/catalogo/tipos';
+import { ORIGENES_CATALOGO, type OrigenCatalogo } from '@/catalogo/origenes';
+import type { LLM } from '@/asistente/llm';
 import { margenProducto } from '@/negocio/precios';
 
 export const runtime = 'nodejs';
@@ -65,8 +67,25 @@ const peticionSchema = z.discriminatedUnion('tipo', [
     })
     .strict(),
   z.object({ tipo: z.literal('eliminar'), codigo }).strict(),
+  // Papelera de productos agregados a mano.
+  z.object({ tipo: z.literal('listar_eliminados') }).strict(),
+  z.object({ tipo: z.literal('restaurar'), codigo }).strict(),
+  // Deshace la última importación de una planilla si el catálogo no cambió desde entonces (`versionCatalogo`).
+  z
+    .object({
+      tipo: z.literal('volver_planilla'),
+      origen: z.enum(ORIGENES_CATALOGO as [OrigenCatalogo, ...OrigenCatalogo[]]),
+      versionCatalogo: z.string().min(1).max(300),
+    })
+    .strict(),
 ]);
 const sinCache = { 'Cache-Control': 'no-store' };
+/** Solo el alta asistida usa la IA: las demás acciones no dependen de que su clave se pueda leer. */
+const sinIA: LLM = {
+  interpretar: async () => {
+    throw new Error('Esta acción no utiliza el asistente.');
+  },
+};
 
 const consultaSchema = z.object({
   q: z.string().max(100).optional(),
@@ -171,6 +190,11 @@ export async function POST(req: Request) {
         { error: 'Solo quien administra el catálogo puede modificar productos importados.', codigo: 'sin_permiso' },
         { status: 403, headers: sinCache },
       );
+    if (peticion.tipo === 'volver_planilla' && sesion.usuario.rol !== 'admin')
+      return Response.json(
+        { error: 'Solo quien administra puede importar el catálogo.', codigo: 'sin_permiso' },
+        { status: 403, headers: sinCache },
+      );
     if (peticion.tipo === 'listar_manuales')
       return Response.json({ productos: catalogo.listarManuales() }, { headers: sinCache });
     if (peticion.tipo === 'listar_productos')
@@ -184,7 +208,20 @@ export async function POST(req: Request) {
       catalogo.eliminarManual(peticion.codigo);
       return Response.json({ eliminado: peticion.codigo }, { headers: sinCache });
     }
-    const servicio = new ServicioAltaCatalogo(abrirBaseDatos(), catalogo, crearLLM());
+    if (peticion.tipo === 'listar_eliminados')
+      return Response.json({ productos: catalogo.productosEliminados() }, { headers: sinCache });
+    if (peticion.tipo === 'restaurar')
+      return Response.json({ producto: catalogo.restaurarProducto(peticion.codigo) }, { headers: sinCache });
+    if (peticion.tipo === 'volver_planilla') {
+      const anterior = catalogo.restaurarImportacion(peticion.origen, peticion.versionCatalogo);
+      return Response.json({ restaurada: anterior, versionCatalogo: catalogo.version }, { headers: sinCache });
+    }
+    // La clave de la IA se lee solo para el alta asistida: si no se puede leer, el alta manual sigue funcionando.
+    const servicio = new ServicioAltaCatalogo(
+      abrirBaseDatos(),
+      catalogo,
+      peticion.tipo === 'mensaje' ? crearLLM() : sinIA,
+    );
     if (peticion.tipo === 'mensaje')
       return Response.json(await servicio.mensaje(peticion.id, peticion.mensaje, usuarioId), {
         headers: sinCache,

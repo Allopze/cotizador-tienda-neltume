@@ -25,6 +25,7 @@ import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repo
 import { Servicio } from '../src/servidor/servicio';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));

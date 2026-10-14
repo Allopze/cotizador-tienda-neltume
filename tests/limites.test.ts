@@ -22,7 +22,7 @@ describe('límites comerciales en un solo lugar', () => {
     expect(margenValido(MARGEN_MIN - 0.01)).toBe(false);
     expect(margenValido(MARGEN_MAX + 0.01)).toBe(false);
     expect(errorMargenTexto(String(MARGEN_MAX * 100))).toBeNull();
-    expect(errorMargenTexto(String(MARGEN_MAX * 100 + 1))).toBe('El margen debe estar entre -50 y 500 %.');
+    expect(errorMargenTexto(String(MARGEN_MAX * 100 + 1))).toBe('La ganancia debe estar entre -50 y 500 %.');
     expect(RANGO_MARGEN).toBe('−50 % a 500 %');
   });
 

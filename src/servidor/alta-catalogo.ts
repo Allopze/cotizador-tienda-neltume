@@ -7,9 +7,11 @@ import { descripcion } from '../catalogo/importar';
 import type { Familia, Producto } from '../catalogo/tipos';
 import { normalizarMedida } from '../catalogo/resolver';
 import { interpretarCifra } from '../negocio/cifras';
+import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { REGLAS } from '../negocio/precios';
 import { ErrorUsuarioCatalogo } from './errores';
 import { RepositorioCatalogoSqlite } from './repositorio-catalogo';
+import { rangoMedidas } from '../negocio/limites';
 import { etiquetaFamilia } from '../catalogo/familias';
 
 const borradorSchema = atributosProductoSchema
@@ -188,7 +190,7 @@ function montoDesde(t: string, desde: number): { valor: number; fin: number } | 
  * Busca montos vinculados a una expresión de precio o al signo $. «+ IVA», «más IVA» o «neto» se
  * toman como neto; «IVA incluido», «con IVA» o «bruto» se convierten a neto dividiendo por 1 + IVA.
  */
-export function buscarPrecios(texto: string): PrecioIndicado[] {
+export function buscarPrecios(texto: string, iva = REGLAS.iva): PrecioIndicado[] {
   const t = sinTildes(texto);
   const precios: PrecioIndicado[] = [];
   for (const marcador of t.matchAll(MARCADOR)) {
@@ -201,7 +203,7 @@ export function buscarPrecios(texto: string): PrecioIndicado[] {
     if (precios.some((p) => inicio < p.fin)) continue;
     const despues = t.slice(monto.fin, monto.fin + 30);
     const bruto = /\bbruto\b/.test(marcador[0]) || (BRUTO.test(despues) && !NETO_EXPLICITO.test(despues));
-    const neto = bruto ? Math.round((monto.valor / (1 + REGLAS.iva)) * 10000) / 10000 : monto.valor;
+    const neto = bruto ? Math.round((monto.valor / (1 + iva)) * 10000) / 10000 : monto.valor;
     const extra = (bruto ? despues.match(BRUTO) : despues.match(NETO_EXPLICITO))?.[0].length ?? 0;
     precios.push({ neto, indicado: monto.valor, bruto, inicio, fin: monto.fin + extra });
   }
@@ -313,7 +315,7 @@ export class ServicioAltaCatalogo {
       if (!borrador.medida) faltan.push('la medida o escuadría');
       if (borrador.largo === null) faltan.push('el largo en metros');
     }
-    if (borrador.precioNeto === null) faltan.push('el precio neto unitario en pesos');
+    if (borrador.precioNeto === null) faltan.push('el precio base sin IVA, en pesos');
     return faltan;
   }
 
@@ -333,10 +335,11 @@ export class ServicioAltaCatalogo {
       if (!/^\d+(?:,\d+)?X\d+(?:,\d+)?$/.test(medida))
         return 'La medida debe tener formato de escuadría, por ejemplo 2x4 o 6x4,5.';
     }
-    if (borrador.largo !== null && (borrador.largo <= 0 || borrador.largo > 10))
-      return 'El alto o largo debe ser mayor que cero y estar expresado en metros.';
+    const rango = rangoMedidas(borrador.familia ?? 'PUERTA');
+    if (borrador.largo !== null && (borrador.largo < rango.min || borrador.largo > rango.max))
+      return `${borrador.familia === 'PUERTA' ? 'El alto' : borrador.familia ? 'El largo' : 'El alto o largo'} debe estar entre ${String(rango.min).replace('.', ',')} y ${rango.max} m.`;
     if (borrador.precioNeto !== null && (borrador.precioNeto <= 0 || borrador.precioNeto > 100_000_000))
-      return 'El precio neto unitario debe ser mayor que $0 y no superar $100.000.000.';
+      return 'El precio base sin IVA debe ser mayor que $0 y no superar $100.000.000.';
     return null;
   }
 
@@ -384,11 +387,12 @@ export class ServicioAltaCatalogo {
     const borradorPrevio = leerJson(fila.borrador_json, borradorSchema);
     const historialPrevio = leerJson(fila.mensajes_json, mensajesSchema);
     const historial = [...historialPrevio, { rol: 'usuario' as const, texto }];
-    const precioMensaje = buscarPrecios(texto)[0];
+    const iva = leerConfiguracionNegocio(this.db).reglas.iva;
+    const precioMensaje = buscarPrecios(texto, iva)[0];
     const precioNeto = precioMensaje?.neto ?? borradorPrevio.precioNeto;
     const avisoPrecio = precioMensaje
       ? precioMensaje.bruto
-        ? `Convertí el precio con IVA ${formatoPrecio(precioMensaje.indicado)} a neto ${formatoPrecio(precioMensaje.neto)} (dividido por ${1 + REGLAS.iva}).`
+        ? `Convertí el precio con IVA ${formatoPrecio(precioMensaje.indicado)} a neto ${formatoPrecio(precioMensaje.neto)} (dividido por ${1 + iva}).`
         : null
       : (borradorPrevio.avisoPrecio ?? null);
     const contexto: ContextoAltaProducto = {
@@ -433,7 +437,7 @@ export class ServicioAltaCatalogo {
     let avisos: string[] = [];
     if (!parsed.success) {
       respuesta =
-        'No pude identificar todos los datos. Describe el producto y agrega el precio neto unitario explícitamente.';
+        'No pude identificar todos los datos. Describe el producto y agrega el precio base sin IVA (por ejemplo «precio $145.000 sin IVA»).';
     } else ({ propuesta, respuesta, avisos } = this.evaluar(borrador));
     if (propuesta && borrador.avisoPrecio) avisos.unshift(borrador.avisoPrecio);
     if (avisos.length) respuesta = [...avisos, respuesta].join('\n\n');

@@ -12,17 +12,21 @@ import {
   type ConfiguracionCatalogo,
   resolverModeloPosibleConfigurado,
 } from './configuracion';
+import { rangoMedidas } from '../negocio/limites';
 export const normalizar = normalizarCatalogo;
-/** Rango físico admisible para anchos y altos de puertas y largos de accesorios, en metros. */
-export const RANGO_METROS = { min: 0.3, max: 3 } as const;
+/** Rango físico admisible para el ancho y el alto de una puerta, en metros; los accesorios usan `rangoMedidas`. */
+export const RANGO_METROS = rangoMedidas('PUERTA');
 /**
- * Convierte a metros: hasta 10 se asume metros, hasta 300 centímetros y hasta 3000 milímetros.
- * Devuelve null si el resultado queda fuera de 0,3–3 m (medida implausible: se pregunta).
+ * Convierte a metros según la familia (`rangoMedidas`): hasta 10 se asume metros; sobre eso, centímetros hasta
+ * el tope de la familia (300 en puertas, 600 en accesorios) y milímetros hasta mil veces el tope. Devuelve null
+ * si el resultado queda fuera de su rango, 0,3–3 m en puertas y 0,3–6 m en accesorios (medida implausible: se
+ * pregunta). Sin familia se lee como puerta.
  */
-export const metros = (n: number): number | null => {
+export const metros = (n: number, familia: string = 'PUERTA'): number | null => {
   if (!Number.isFinite(n) || n <= 0) return null;
-  const m = n <= 10 ? n : n <= 300 ? n / 100 : n <= 3000 ? n / 1000 : NaN;
-  return m >= RANGO_METROS.min - 1e-9 && m <= RANGO_METROS.max + 1e-9 ? m : null;
+  const rango = rangoMedidas(familia);
+  const m = n <= 10 ? n : n <= rango.max * 100 ? n / 100 : n <= rango.max * 1000 ? n / 1000 : NaN;
+  return m >= rango.min - 1e-9 && m <= rango.max + 1e-9 ? m : null;
 };
 /**
  * Forma canónica de una escuadría: «6 x 4.5», «6×4,5» y «6*4.5» → «6X4,5». La unidad en pulgadas se omite:
@@ -304,7 +308,7 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       productos = productos.filter((p) => p.medida === medida);
     }
     if (s.alto !== null) {
-      const alto = metros(s.alto);
+      const alto = metros(s.alto, familia);
       if (alto === null) return false;
       productos = porEscalon(productos, alto, 'alto').productos;
     }
@@ -322,15 +326,19 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
   }
   if (s.cantidad !== null && (!Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000))
     return no({ tipo: 'cantidad_invalida', valor: s.cantidad, disponibles: ['Entero entre 1 y 10.000'] });
-  // Valida también medidas presentes aunque falten otros datos: nunca oculta un ancho imposible.
-  const rango = ['0,3 a 3 m (o 30 a 300 cm)'];
+  // Valida también medidas presentes aunque falten otros datos: nunca oculta un ancho imposible. El ancho es de
+  // puerta; el alto o largo, de la familia del modelo (un guardapolvo llega a 6 m).
+  const rangoTexto = (f: string) => {
+    const { min, max } = rangoMedidas(f);
+    return [`${String(min).replace('.', ',')} a ${max} m (o ${Math.round(min * 100)} a ${Math.round(max * 100)} cm)`];
+  };
   let anchoSolicitado: number | null = null,
     altoSolicitado: number | null = null,
     medidaSolicitada: string | null = null;
   if (puerta && s.ancho !== null) {
     const ancho = metros(s.ancho);
     if (ancho === null)
-      return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rango });
+      return no({ tipo: 'medida_implausible', campo: 'ancho', valor: s.ancho, disponibles: rangoTexto('PUERTA') });
     anchoSolicitado = ancho;
     const medidas = unicos(opciones, 'medida');
     const { productos, rango: extremos } = porEscalon(opciones, ancho, 'ancho');
@@ -355,10 +363,10 @@ export function resolverItem(catalogo: CatalogoConsultable, entrada: Partial<Sol
       return no({ tipo: 'medida_no_disponible', campo: 'medida', valor: s.medida, disponibles: medidas, familia });
   }
   if (s.alto !== null) {
-    const alto = metros(s.alto),
+    const alto = metros(s.alto, familia),
       disponibles = unicos(opciones, 'largo');
     if (alto === null)
-      return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rango });
+      return no({ tipo: 'medida_implausible', campo: 'alto', valor: s.alto, disponibles: rangoTexto(familia) });
     altoSolicitado = alto;
     const { productos, rango: extremos } = porEscalon(opciones, alto, 'alto');
     opciones = productos;

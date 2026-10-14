@@ -25,24 +25,24 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   // Sin margen especial: la línea muestra el estándar de su categoría (Pino Oregón, 85 %), sin corrección manual.
   await panel.locator('.item-details > summary').first().click();
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 85 %', { exact: true }),
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 85 %', { exact: true }),
   ).toBeVisible();
   await expect(panel.getByText('Por categoría', { exact: true })).toBeVisible();
 
   // Margen especial de la cotización.
-  await panel.getByRole('button', { name: 'Editar margen especial de la cotización' }).click();
-  await panel.getByLabel('Margen especial de la cotización').fill('42');
+  await panel.getByRole('button', { name: 'Editar ganancia especial de la cotización' }).click();
+  await panel.getByLabel('Ganancia especial de la cotización').fill('42');
   await panel.getByRole('button', { name: 'Guardar' }).click();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 42 % — modificado manualmente (cotización)', {
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 42 % — cambiada a mano para toda la cotización', {
       exact: true,
     }),
   ).toBeVisible();
   await expect(panel.getByText('42 %', { exact: true })).toBeVisible();
 
   // Un margen propio en la línea gana al de la cotización; quitarlo devuelve el de la cotización.
-  const margenLinea = panel.getByLabel('Margen de la línea (%)');
+  const margenLinea = panel.getByLabel('Ganancia de la línea (%)');
   // Fuera de rango: se avisa sin enviar nada, y el campo se corrige con Enter.
   await margenLinea.fill('700');
   await margenLinea.press('Enter');
@@ -52,11 +52,11 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   await margenLinea.press('Enter');
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }, 0.3));
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 30 % — modificado manualmente (línea)', {
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 30 % — cambiada a mano en esta línea', {
       exact: true,
     }),
   ).toBeVisible();
-  await panel.getByRole('button', { name: 'Usar el margen de la cotización' }).click();
+  await panel.getByRole('button', { name: 'Usar la ganancia de la cotización' }).click();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
 
   // El margen queda guardado: se reabre desde el historial.
@@ -69,28 +69,28 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
     .click();
   await panel.locator('.item-details > summary').first().click();
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 42 % — modificado manualmente (cotización)', {
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 42 % — cambiada a mano para toda la cotización', {
       exact: true,
     }),
   ).toBeVisible();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
 
   // Restaurar vuelve a la categoría.
-  await panel.getByRole('button', { name: 'Restaurar margen por categoría' }).click();
+  await panel.getByRole('button', { name: 'Volver a la ganancia por categoría' }).click();
   await expect(totalPantalla).toHaveText(total());
   await expect(panel.getByText('Por categoría', { exact: true })).toBeVisible();
   await expect(
-    panel.getByText('Margen estándar: 85 % · Margen aplicado: 85 %', { exact: true }),
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 85 %', { exact: true }),
   ).toBeVisible();
 
   // Un valor fuera de rango se rechaza en el formulario.
-  await panel.getByRole('button', { name: 'Editar margen especial de la cotización' }).click();
-  await panel.getByLabel('Margen especial de la cotización').fill('600');
+  await panel.getByRole('button', { name: 'Editar ganancia especial de la cotización' }).click();
+  await panel.getByLabel('Ganancia especial de la cotización').fill('600');
   await panel.getByRole('button', { name: 'Guardar' }).click();
   await expect(panel.getByRole('alert')).toContainText('entre -50 y 500');
   // Sin ningún número («-», «%») no se guarda un 0 %, que dejaría el precio de fábrica.
   for (const texto of ['-', '%', '- %']) {
-    await panel.getByLabel('Margen especial de la cotización').fill(texto);
+    await panel.getByLabel('Ganancia especial de la cotización').fill(texto);
     await panel.getByRole('button', { name: 'Guardar' }).click();
     await expect(panel.getByRole('alert')).toHaveText('Escribe un número.');
   }
@@ -105,11 +105,11 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
     .getByRole('button', { name: 'Quitar ítem' })
     .click();
   await expect(panel.getByText('Este borrador todavía no tiene productos.')).toBeVisible();
-  await panel.getByRole('button', { name: 'Editar margen especial de la cotización' }).click();
-  await panel.getByLabel('Margen especial de la cotización').fill('10,5');
+  await panel.getByRole('button', { name: 'Editar ganancia especial de la cotización' }).click();
+  await panel.getByLabel('Ganancia especial de la cotización').fill('10,5');
   await panel.getByRole('button', { name: 'Guardar' }).click();
   await expect(panel.getByText('10,5 %', { exact: true })).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Restaurar margen por categoría' })).toBeVisible();
+  await expect(panel.getByRole('button', { name: 'Volver a la ganancia por categoría' })).toBeVisible();
 
   // Deja el historial como estaba: el borrador se elimina.
   await panel.getByRole('button', { name: 'Más acciones' }).click();

@@ -1,6 +1,9 @@
 // Límites de las reglas comerciales en un solo lugar: los usan el cálculo, las validaciones del servidor y la
 // pantalla. Sin dependencias, para que también los importe el navegador. Ver docs/reglas-negocio.md.
 
+export const DESCUENTO_MAXIMO = 50;
+export const rangoMedidas = (familia: string) => ({ min: 0.3, max: familia === 'PUERTA' ? 3 : 6 });
+
 /** Margen sobre el costo de fábrica, como fracción: de −50 % a 500 %. */
 export const MARGEN_MIN = -0.5;
 export const MARGEN_MAX = 5;

@@ -11,6 +11,7 @@ import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -125,7 +126,7 @@ describe('medidas especiales por escalones del catálogo', () => {
     // La regla es solo de marcos: las piezas T bajo su kit menor siguen sin precio.
     expect(accesorio('Piezas T', '2x4', 2.45)).toMatchObject(noDisponible('alto'));
     // Sobre 3 m ya es una medida implausible (RANGO_METROS): tampoco tiene precio.
-    expect(accesorio('Marco', '2x4', 3.1)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_implausible', campo: 'alto' } });
+    expect(accesorio('Marco', '2x4', 3.1)).toMatchObject({ ok: false, rechazo: { tipo: 'medida_no_disponible', campo: 'alto' } });
     expect(accesorio('Marco', '2x5', 2.6)).toMatchObject(noDisponible('medida'));
     expect(elegido(accesorio('Piezas T', '2x4', 2.55))).toEqual(['PT-M-2X4-G', null, 'siguiente']);
     expect(elegido(accesorio('Piezas T', '2x4', 3.0))).toEqual(['PT-M-2X4-H', null, 'exacto']);

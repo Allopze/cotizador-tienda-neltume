@@ -7,11 +7,13 @@ import { LogoutButton } from './logout-button';
 interface Props {
   email: string;
   nombre: string;
-  /** Pantalla actual: marca el enlace activo y el texto de la cabecera. */
-  pantalla: (typeof PANTALLAS)[number][0];
+  /** Pantalla actual: marca el enlace activo y el texto de la cabecera. La guía se abre desde el menú de cuenta. */
+  pantalla: (typeof PANTALLAS)[number][0] | 'ayuda';
   /** En el cotizador el logo empieza una cotización nueva; en las demás pantallas vuelve al inicio. */
   alLogo?: () => void;
   logoDeshabilitado?: boolean;
+  /** Mientras el chat espera respuesta: salir de la pantalla la cortaría (el borrador nuevo quedaría huérfano). */
+  navegacionBloqueada?: boolean;
 }
 
 const PANTALLAS = [
@@ -22,7 +24,7 @@ const PANTALLAS = [
 ] as const;
 
 /** Cabecera común: logo, pantalla actual y menú de cuenta (compacto en móvil). */
-export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado }: Props) {
+export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado, navegacionBloqueada }: Props) {
   const [menuCuenta, setMenuCuenta] = useState(false);
   const toggleCuenta = useRef<HTMLButtonElement>(null),
     cuenta = useRef<HTMLDivElement>(null);
@@ -68,8 +70,17 @@ export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado 
       )}
       {/* scroll={false}: cada pantalla restaura su propio scroll (useScrollRecordado). */}
       <nav className="header-nav" aria-label="Pantallas">
+        {/* Bloqueados siguen enfocables (aria-disabled) para que el lector diga por qué no responden. */}
         {PANTALLAS.map(([id, href, texto]) => (
-          <Link key={id} href={href} scroll={false} aria-current={pantalla === id ? 'page' : undefined}>
+          <Link
+            key={id}
+            href={href}
+            scroll={false}
+            aria-current={pantalla === id ? 'page' : undefined}
+            aria-disabled={navegacionBloqueada || undefined}
+            title={navegacionBloqueada ? 'Espera la respuesta del asistente o cancélala' : undefined}
+            onClick={navegacionBloqueada ? (e) => e.preventDefault() : undefined}
+          >
             {texto}
           </Link>
         ))}
@@ -96,6 +107,17 @@ export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado 
             )}
           </span>
           {/* Cambiar la contraseña vive en «Ajustes». */}
+          <Link
+            href="/ayuda"
+            scroll={false}
+            className="ia-settings-button"
+            aria-current={pantalla === 'ayuda' ? 'page' : undefined}
+            aria-disabled={navegacionBloqueada || undefined}
+            title={navegacionBloqueada ? 'Espera la respuesta del asistente o cancélala' : undefined}
+            onClick={navegacionBloqueada ? (e) => e.preventDefault() : () => setMenuCuenta(false)}
+          >
+            Cómo funciona
+          </Link>
           <LogoutButton />
         </div>
       </div>

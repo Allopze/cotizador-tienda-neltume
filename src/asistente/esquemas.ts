@@ -11,6 +11,17 @@ const precioSchema = z
     iva: z.enum(['neto', 'incluido']).nullable(),
   })
   .strict();
+/**
+ * Descuento especial que la persona pidió para un producto («15 % de descuento», «rebájale $20.000 c/u»): un
+ * porcentaje o un monto por unidad. Como el precio, el servidor solo lo acepta si la cifra está escrita en la
+ * conversación; null lo quita.
+ */
+const descuentoSchema = z
+  .object({
+    tipo: z.enum(['porcentaje', 'monto']),
+    valor: z.number().nullable(),
+  })
+  .strict();
 export const solicitudSchema = z
   .object({
     modelo: texto,
@@ -26,6 +37,7 @@ export const solicitudSchema = z
     /** Frase exacta del mensaje que describe el ítem; el servidor la muestra junto al ítem. */
     fuente: texto.optional(),
     precio: precioSchema.nullable().optional(),
+    descuento: descuentoSchema.nullable().optional(),
   })
   .strict();
 export const clienteSchema = z
@@ -56,6 +68,7 @@ const solicitudCambioSchema = z
     observaciones: z.string().max(1000).nullable().optional(),
     fuente: texto.optional(),
     precio: precioSchema.nullable().optional(),
+    descuento: descuentoSchema.nullable().optional(),
   })
   .strict();
 const clienteCambioSchema = z

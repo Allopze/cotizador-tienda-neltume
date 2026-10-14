@@ -10,6 +10,7 @@ import { guardarReferencia, leerReferencia, tipoDelContenido } from '../src/serv
 import { Servicio, type ProductoPersonalizado } from '../src/servidor/servicio';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -130,7 +131,7 @@ describe('producto personalizado', () => {
       servicio.ejecutar({ tipo: 'agregar_personalizado', item: personalizado({ ancho: 25 }) }),
     ).rejects.toThrow(/medidas/);
     const { cotizacion: q } = await servicio.ejecutar({ tipo: 'agregar_personalizado', item: personalizado() });
-    await expect(editar(servicio, q, [{ indice: 0, cambios: { margen: 0.3 } }])).rejects.toThrow(/no usa margen/);
+    await expect(editar(servicio, q, [{ indice: 0, cambios: { margen: 0.3 } }])).rejects.toThrow(/no usa ganancia/);
     await expect(editar(servicio, q, [{ indice: 0, cambios: { precioUnitario: null } }])).rejects.toThrow(/precio unitario/);
     await expect(editar(servicio, q, [{ indice: 0, cambios: { modelo: '' } }])).rejects.toThrow(/nombre/);
     const { cotizacion: cambiada } = await editar(servicio, q, [{ indice: 0, cambios: { precioUnitario: 300000, modelo: 'Toscana especial' } }]);

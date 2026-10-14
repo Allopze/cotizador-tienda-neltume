@@ -237,6 +237,7 @@ export interface ResumenCotizacion {
   saldoPendiente?: number;
   porcentajePagado?: number;
   pagos?: number;
+  facturacion?: Pick<Facturacion, 'estado'>;
 }
 /** Entrada del registro de actividad de una cotización. */
 export interface EventoCotizacion {

@@ -58,6 +58,7 @@ export function textoBusqueda(q: {
     comuna: string | null;
     proyecto: string | null;
     giro?: string | null;
+    telefono?: string | null;
   };
   productos: (string | null)[];
 }) {
@@ -69,6 +70,8 @@ export function textoBusqueda(q: {
     q.cliente.comuna,
     q.cliente.proyecto,
     q.cliente.giro ?? '',
+    q.cliente.telefono ?? '',
+    (q.cliente.telefono ?? '').replace(/\D/g, ''),
     ...new Set(q.productos.map(normalizarTexto)),
   ];
   return ` ${normalizarTexto(partes.join(' '))} `;

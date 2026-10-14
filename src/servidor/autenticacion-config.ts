@@ -22,6 +22,30 @@ const MAX_CORREOS_REGISTRADOS = 5000;
 
 const produccion = () => process.env.NODE_ENV === 'production';
 
+/**
+ * Cabecera de la que se toma la IP del cliente para el límite de intentos (NELTUME_IP_HEADER). Solo se confía en
+ * la que pone el proxy que está delante: si se leyera otra, cualquiera podría inventarla en cada intento y saltarse
+ * el límite por IP.
+ * - `cf-connecting-ip` (predeterminada): Cloudflare Tunnel o un proxy de Cloudflare, que reemplazan la cabecera.
+ * - `x-real-ip`: Nginx con `proxy_set_header X-Real-IP $remote_addr;`.
+ * - `x-forwarded-for`: un proxy que la reemplaza por la IP del cliente (Caddy por omisión). Si trae varias IP
+ *   (una la agregó el propio cliente), Better Auth no elige ninguna y esa solicitud cae en la cubeta compartida.
+ * - `ninguna`: sin proxy de confianza. Riesgo de cubeta compartida: todas las personas cuentan como una sola IP, y
+ *   pocos intentos fallidos de cualquiera (5 en 15 minutos) bloquean el inicio de sesión de todas por un rato.
+ *   El límite por correo (MAX_FALLOS_POR_CORREO) sigue aplicándose a cada cuenta.
+ */
+export const CABECERAS_IP_CLIENTE = ['cf-connecting-ip', 'x-real-ip', 'x-forwarded-for', 'ninguna'] as const;
+export type CabeceraIpCliente = (typeof CABECERAS_IP_CLIENTE)[number];
+
+export function cabeceraIpCliente(valor = process.env.NELTUME_IP_HEADER): CabeceraIpCliente {
+  const normalizado = (valor ?? '').trim().toLowerCase() || 'cf-connecting-ip';
+  if (!(CABECERAS_IP_CLIENTE as readonly string[]).includes(normalizado))
+    throw new Error(
+      `NELTUME_IP_HEADER no es válida (${normalizado.slice(0, 40)}). Usa una de: ${CABECERAS_IP_CLIENTE.join(', ')}.`,
+    );
+  return normalizado as CabeceraIpCliente;
+}
+
 // Las cuentas se gestionan desde rutas propias y scripts/usuarios.ts; el plugin admin no se expone por HTTP.
 export const esRutaAdminAuth = (pathname: string) => /^\/api\/auth\/+admin(\/|$)/i.test(pathname);
 
@@ -119,6 +143,7 @@ export function opcionesAutenticacion(
 ): BetterAuthOptions & { plugins: ReturnType<typeof admin>[] } {
   const baseURL = process.env.BETTER_AUTH_URL || 'http://127.0.0.1:3000';
   const secret = secretoAutenticacion();
+  const cabeceraIp = cabeceraIpCliente();
 
   return {
     appName: 'Neltume Cotizador',
@@ -131,7 +156,8 @@ export function opcionesAutenticacion(
     advanced: {
       disableOriginCheck: false,
       disableCSRFCheck: false,
-      ipAddress: { ipAddressHeaders: ['cf-connecting-ip', 'x-forwarded-for'] },
+      // Una lista vacía (`ninguna`) no lee ninguna cabecera: todas las solicitudes comparten una sola cubeta.
+      ipAddress: { ipAddressHeaders: cabeceraIp === 'ninguna' ? [] : [cabeceraIp] },
     },
     hooks: limitePorCorreo(),
     emailAndPassword: {
@@ -167,6 +193,7 @@ export function crearAutenticacion(database: Database.Database) {
 export type Autenticacion = ReturnType<typeof crearAutenticacion>;
 
 export function validarConfiguracionAutenticacion() {
+  cabeceraIpCliente();
   if (!produccion()) {
     secretoAutenticacion();
     return;

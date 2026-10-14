@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-cantidad';
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
-import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX } from '../negocio/limites';
+import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, DESCUENTO_MAXIMO } from '../negocio/limites';
 import { abrirBaseDatos } from './base-datos';
 import { tramoDescuentoSchema } from './persistencia-esquemas';
 import type { DatosEmpresa } from './empresa';
@@ -43,7 +43,7 @@ export const configuracionNegocioSchema = z
         ajuste: z.number().finite().min(AJUSTE_MIN).max(AJUSTE_MAX),
         iva: z.number().finite().min(0).max(1),
         vigenciaDiasHabiles: z.number().int().min(0).max(365),
-        descuentoMaximo: z.number().finite().min(0).max(100),
+        descuentoMaximo: z.number().finite().min(0).max(DESCUENTO_MAXIMO),
         // Vacío por omisión: una configuración guardada antes de esta regla no aplica descuento por cantidad.
         // Se guardan de menor a mayor umbral; la validación (umbrales distintos, porcentaje hasta el máximo)
         // se hace abajo porque depende de `descuentoMaximo`.
@@ -113,6 +113,8 @@ function validarConfiguracion(valor: unknown, respaldo: ConfiguracionNegocio) {
     reglas: {
       ...respaldo.reglas,
       ...(reglasParciales ?? {}),
+      descuentoMaximo: Math.min(reglasParciales?.descuentoMaximo ?? respaldo.reglas.descuentoMaximo, DESCUENTO_MAXIMO),
+      descuentosPorCantidad: (reglasParciales?.descuentosPorCantidad ?? respaldo.reglas.descuentosPorCantidad)?.map((t) => ({ ...t, porcentaje: Math.min(t.porcentaje, reglasParciales?.descuentoMaximo ?? DESCUENTO_MAXIMO, DESCUENTO_MAXIMO) })),
       margenes: { ...respaldo.reglas.margenes, ...(reglasParciales?.margenes ?? {}) },
     },
   });

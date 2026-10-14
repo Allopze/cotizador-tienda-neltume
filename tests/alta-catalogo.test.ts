@@ -145,6 +145,106 @@ describe('agregarProductoManual y mantención', () => {
     expect(tras.ok ? null : tras.rechazo.tipo).toBe('medida_no_disponible');
     expect(r.metadata?.cantidadProductos).toBe(2);
   });
+
+  it('un producto manual eliminado va a la papelera y se restaura igual; no pisa un código ocupado', async () => {
+    const r = await repo();
+    const nuevo = producto({
+      codigo: 'IA-1',
+      medida: '0,70 A 0,75',
+      anchoMin: 0.7,
+      anchoMax: 0.75,
+      descripcion: 'MOLCO PINO OREGON 0,70 A 0,75 MT X 2 MT',
+      filaOrigen: 0,
+    });
+    r.agregarProductoManual(nuevo, r.version!, undefined, 'Paula');
+    r.editarManual('IA-1', { precioNeto: 95_500 });
+    const guardado = r.buscarPorCodigo('IA-1')!;
+    const [alta] = r.listarManuales();
+    expect(alta).toMatchObject({ creadaPor: 'Paula', creada: expect.any(String), actualizada: expect.any(String) });
+    r.eliminarManual('IA-1');
+    expect(r.buscarPorCodigo('IA-1')).toBeUndefined();
+    // La copia guarda también quién lo agregó y cuándo.
+    expect(JSON.parse((db.prepare("SELECT contenido FROM papelera WHERE tipo = 'producto' AND id = 'IA-1'").get() as { contenido: string }).contenido)).toEqual(alta);
+    expect(r.productosEliminados()).toEqual([
+      { ...guardado, creada: alta.creada, creadaPor: 'Paula', eliminada: expect.any(String), codigoOcupado: false },
+    ]);
+    expect(r.restaurarProducto('IA-1')).toEqual(guardado);
+    expect(r.buscarPorCodigo('IA-1')).toEqual(guardado);
+    // Vuelve con su autor y sus fechas, no como un alta nueva y anónima.
+    expect(r.listarManuales()).toEqual([alta]);
+    expect(r.productosEliminados()).toEqual([]);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM papelera').get()).toEqual({ n: 0 });
+    expect(() => r.restaurarProducto('IA-1')).toThrow(/No se encontró el producto eliminado/);
+    // Si otro producto ocupó el código, la copia queda en la papelera y no se sobrescribe nada.
+    r.eliminarManual('IA-1');
+    r.agregarProductoManual({ ...nuevo, precioNeto: 95000 }, r.version!);
+    expect(() => r.restaurarProducto('IA-1')).toThrow(/código ya está ocupado/);
+    expect(r.buscarPorCodigo('IA-1')?.precioNeto).toBe(95000);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM papelera').get()).toEqual({ n: 1 });
+    expect(r.productosEliminados().map((p) => [p.codigo, p.codigoOcupado])).toEqual([['IA-1', true]]);
+  });
+
+  it('una copia de la papelera sin autor ni fechas (anterior a guardarlos) se restaura igual; una dañada no', async () => {
+    const r = await repo();
+    const nuevo = producto({ codigo: 'IA-7', medida: '0,70 A 0,75', anchoMin: 0.7, anchoMax: 0.75, filaOrigen: 0 });
+    const insertar = db.prepare("INSERT INTO papelera VALUES ('producto', ?, ?, ?)");
+    insertar.run('IA-7', JSON.stringify(nuevo), new Date().toISOString());
+    insertar.run('IA-8', '{no es json', new Date().toISOString());
+    expect(r.productosEliminados().map((p) => [p.codigo, p.creada, p.creadaPor])).toEqual([['IA-7', null, null]]);
+    expect(r.restaurarProducto('IA-7')).toEqual(nuevo);
+    expect(r.listarManuales()[0]).toMatchObject({ codigo: 'IA-7', creada: expect.any(String), creadaPor: null });
+    expect(() => r.restaurarProducto('IA-8')).toThrow(/dañada/);
+  });
+});
+
+describe('volver a la planilla anterior', () => {
+  const nueva = (): Catalogo => ({
+    ...catalogo(),
+    fuente: 'nueva.xlsx',
+    sha256: 'sha-nueva',
+    fecha: '2026-02-01T00:00:00.000Z',
+    productos: catalogo().productos.map((p) => ({ ...p, precioNeto: p.precioNeto + 5000 })),
+  });
+
+  it('vuelve los productos como estaban, con lo editado a mano y su marca, y avisa qué trae', async () => {
+    const r = await repo();
+    r.editarProducto('MOL-O-3-A', { precioNeto: 99_000 });
+    expect(r.edicionesManuales()).toEqual(['MOL-O-3-A']);
+    guardarCatalogo(db, nueva());
+    // La importación reemplazó el precio editado y quitó su marca.
+    expect(r.buscarPorCodigo('MOL-O-3-A')?.precioNeto).toBe(105_000);
+    expect(r.edicionesManuales()).toEqual([]);
+    const anterior = r.planillaAnterior('principal');
+    expect(anterior).toEqual({
+      origen: 'principal',
+      etiqueta: 'Planilla de puertas sólidas',
+      fuente: 'test.xlsx',
+      fecha: expect.any(String),
+      productos: 2,
+      edicionesManuales: 1,
+    });
+
+    expect(() => r.restaurarImportacion('principal', 'otra-version')).toThrow(/El catálogo cambió/);
+    expect(r.restaurarImportacion('principal', r.version!)).toEqual(anterior);
+    expect(r.buscarPorCodigo('MOL-O-3-A')?.precioNeto).toBe(99_000);
+    expect(r.buscarPorCodigo('MOL-O-3-B')?.precioNeto).toBe(110_000);
+    // La marca vuelve: la próxima vista previa avisará otra vez que ese precio se editó a mano.
+    expect(r.edicionesManuales()).toEqual(['MOL-O-3-A']);
+    expect(r.metadataOrigen('principal')?.fuente).toBe('test.xlsx');
+    // La importación deshecha queda como copia: se puede volver a ella.
+    expect(r.planillaAnterior('principal')).toMatchObject({ fuente: 'nueva.xlsx', productos: 2, edicionesManuales: 0 });
+  });
+
+  it('una planilla importada por primera vez no tiene a qué volver, aunque quede una copia antigua', async () => {
+    const r = await repo();
+    db.prepare("DELETE FROM productos_catalogo WHERE origen = 'principal'").run();
+    db.prepare("INSERT OR REPLACE INTO catalogo_anterior VALUES ('principal', ?, '')").run(
+      JSON.stringify({ ...catalogo(), fuente: 'vieja.xlsx' }),
+    );
+    guardarCatalogo(db, nueva());
+    expect(r.planillaAnterior('principal')).toBeNull();
+    expect(() => r.restaurarImportacion('principal', r.version!)).toThrow(/No hay una planilla anterior/);
+  });
 });
 
 describe('ServicioAltaCatalogo', () => {
@@ -248,7 +348,7 @@ describe('ServicioAltaCatalogo.proponerManual', () => {
   it('aplica las mismas validaciones: faltantes, duplicados y rangos superpuestos', async () => {
     const r = await repo();
     const alta = new ServicioAltaCatalogo(db, r, sinAsistente());
-    expect(() => alta.proponerManual(undefined, { ...datos, precioNeto: null }, 'u1')).toThrow(/precio neto/);
+    expect(() => alta.proponerManual(undefined, { ...datos, precioNeto: null }, 'u1')).toThrow(/precio base sin IVA/);
     expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 0.84, anchoMax: 0.9 }, 'u1')).toThrow(
       /superpone/,
     );

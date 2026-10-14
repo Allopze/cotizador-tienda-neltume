@@ -23,6 +23,7 @@ import { Servicio } from '../src/servidor/servicio';
 import { escribirXlsx, filasPuerta, planillaEnchapadas, type Hojas } from './fixture-xlsx';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));

@@ -14,6 +14,7 @@ import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repo
 import { cotizacionSchema } from '../src/servidor/persistencia-esquemas';
 import type { Rechazo } from '../src/catalogo/resolver';
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));

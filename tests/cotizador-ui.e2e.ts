@@ -94,7 +94,7 @@ test('desktop: catálogo, edición compacta, scroll de página y resumen persist
 
   await panel.locator('.item-details > summary').click();
   await panel.getByRole('button', { name: /^Editar ancho \(m\)/ }).click();
-  await expect(panel.getByLabel('Ancho (m)', { exact: true })).toHaveValue('0.8');
+  await expect(panel.getByLabel('Ancho (m)', { exact: true })).toHaveValue('0,8');
   await panel.getByRole('button', { name: 'Cancelar', exact: true }).click();
   await panel.locator('.quote-client-section > summary').click();
   await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();

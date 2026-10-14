@@ -2,6 +2,7 @@
 import { useState, type FormEvent } from 'react';
 import type { TipoAviso } from '../avisos';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { EVENTO_CUENTAS } from './usuarios';
 
 const MINIMO = 8;
 const MAXIMO = 128;
@@ -50,6 +51,7 @@ export function CrearUsuario({ avisar }: Props) {
       );
       limpiar();
       setAbierto(false);
+      window.dispatchEvent(new Event(EVENTO_CUENTAS));
       avisar(
         'exito',
         `Cuenta creada para ${data.usuario.email}. La persona podrá cambiar su contraseña desde Ajustes.`,

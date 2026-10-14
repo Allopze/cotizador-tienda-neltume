@@ -1181,5 +1181,209 @@
         "cantidad": 1
       }
     }
+  },
+  {
+    "id": "descuento-despues-un-item",
+    "descripcion": "Descuento en porcentaje para un solo producto, pedido en otro mensaje: el otro ítem no cambia",
+    "mensajes": [
+      "2 Molco lenga 80x200 y 2 Palena raulí 80x200",
+      "a las Molco hazles un 15% de descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 15
+          }
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-en-el-pedido",
+    "descripcion": "Descuento escrito junto al producto: no se confunde con la cantidad",
+    "mensajes": [
+      "3 Lican oregón 80x200 con 10 % de descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "LICAN",
+          "madera": "PINO OREGON",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 10
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-monto",
+    "descripcion": "Descuento en pesos por unidad, no es un precio",
+    "mensajes": [
+      "2 Molco lenga 80x200",
+      "rebájale 20 mil a cada Molco"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "monto",
+            "valor": 20000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-en-todo",
+    "descripcion": "«Descuento a todo» es el mismo descuento en cada ítem",
+    "mensajes": [
+      "2 Molco lenga 80x200 y 1 Palena raulí 80x200",
+      "hazle un 5% de descuento a todo"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 5
+          }
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 1,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 5
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-palabras",
+    "descripcion": "Porcentaje dicho en palabras (voz)",
+    "mensajes": [
+      "2 Palena raulí 80x200",
+      "a las Palena un diez por ciento de descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 10
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-quitar",
+    "descripcion": "«Sin descuento» quita el descuento especial",
+    "mensajes": [
+      "2 Molco lenga 80x200 con 10% de descuento",
+      "mejor déjalas sin descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-se-conserva",
+    "descripcion": "Cambiar otro dato del ítem no borra su descuento",
+    "mensajes": [
+      "2 Molco lenga 80x200",
+      "hazle 15% de descuento a las Molco",
+      "mejor que sean 4"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 4,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 15
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-sin-cifra",
+    "descripcion": "Pedir un descuento sin decir cuánto no inventa uno",
+    "mensajes": [
+      "2 Molco lenga 80x200",
+      "hazle un descuento a las Molco"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
   }
 ]

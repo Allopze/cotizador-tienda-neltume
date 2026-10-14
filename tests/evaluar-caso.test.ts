@@ -7,6 +7,7 @@ import type { Catalogo } from '../src/catalogo/tipos';
 import { correrCaso } from '../src/servidor/evaluar-caso';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));

@@ -17,6 +17,8 @@ async function principal() {
       port: { type: 'string', default: '3000' },
       forzar: { type: 'boolean' },
       'sin-ia': { type: 'boolean' },
+      'solo-verificar': { type: 'boolean' },
+      'sin-verificar': { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -24,17 +26,30 @@ async function principal() {
     console.log(
       'Uso: npm run deploy -- [--url https://cotizador.example.cl]\n' +
         '     npm run deploy:zip -- [--url https://cotizador.example.cl] [--port 3000]\n' +
+        '     npm run verificar\n' +
         'Con --ssh <host> --dir <ruta> sube la entrega por SSH y la levanta con Docker Compose;\n' +
         'sin --ssh genera un ZIP en deploy/. --forzar omite el chequeo de recursos del servidor.\n' +
         'Antes de empaquetar corre tipos, lint, pruebas y la evaluación de la IA; si algo falla, no se despliega.\n' +
-        '--sin-ia omite solo la evaluación de la IA (por ejemplo, si el proveedor no responde).',
+        '--sin-ia omite solo la evaluación de la IA (por ejemplo, si el proveedor no responde).\n' +
+        '--solo-verificar corre la verificación y no empaqueta ni despliega (npm run verificar).\n' +
+        '--sin-verificar empaqueta o despliega sin verificar: solo para una entrega ya verificada en otro equipo.\n' +
+        'En el servidor, el ZIP se instala con: sh scripts/actualizar.sh <zip> (ver docker/LEEME.md).',
     );
     return;
   }
   if (Boolean(values.ssh) !== Boolean(values.dir)) throw new Error('--ssh y --dir van juntos.');
   if (values.dir && !values.dir.startsWith('/')) throw new Error('--dir debe ser una ruta absoluta.');
   if (!/^\d{1,5}$/.test(values.port)) throw new Error('--port debe ser un número de puerto.');
-  await verificar({ sinIa: values['sin-ia'] });
+  if (values['solo-verificar'] && values['sin-verificar'])
+    throw new Error('--solo-verificar y --sin-verificar no van juntos.');
+  // Verificar (en el equipo de desarrollo o en CI) y desplegar son pasos separados: --sin-verificar permite generar
+  // o subir una entrega urgente sin la planilla privada ni la clave de IA de este equipo.
+  if (values['sin-verificar'])
+    console.warn(
+      'Se omite la verificación (--sin-verificar): la entrega no pasó por tipos, lint, pruebas ni evaluación de la IA.',
+    );
+  else await verificar({ sinIa: values['sin-ia'] });
+  if (values['solo-verificar']) return;
 
   let origen = '';
   let host = '';
@@ -82,10 +97,14 @@ async function principal() {
     '.dockerignore',
     '.env.example',
     'docker/LEEME.md',
+    'docs/manual-operativo.md',
   ])
     await agregar(ruta);
   for (const ruta of ['src', 'public', 'config', 'scripts']) await carpeta(ruta);
   await agregar('docker/iniciar.sh');
+  // El servidor se actualiza con este script sin el equipo de desarrollo: una entrega sin él no sirve.
+  for (const ruta of ['scripts/actualizar.sh', 'scripts/respaldo-diario.sh', 'scripts/restaurar.ts'])
+    if (!archivos[ruta]) throw new Error(`Falta ${ruta} en la entrega.`);
 
   let entorno = await readFile(join(raiz, '.env.example'), 'utf8');
   entorno = entorno
@@ -114,8 +133,9 @@ async function principal() {
   console.log(`ZIP generado: ${relative(raiz, salida)}`);
   console.log(`${Object.keys(archivos).length} archivos. Instalación nueva con base vacía.`);
   if (!origen) console.log('En el servidor, completa BETTER_AUTH_URL y NELTUME_HOSTS en .env.');
-  console.log('Descomprime el ZIP y ejecuta: docker compose up -d');
-  console.log('Instrucciones de dominio, primera cuenta y actualizaciones: docker/LEEME.md');
+  console.log('Instalación nueva: descomprime el ZIP y ejecuta docker compose up -d.');
+  console.log('Actualización: sh <instalación>/scripts/actualizar.sh <zip> (conserva .env y respaldos).');
+  console.log('Instrucciones de dominio, primera cuenta, respaldos y actualizaciones: docker/LEEME.md');
 }
 
 /**
@@ -183,6 +203,14 @@ fi
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/entrega.zip"
+# Respaldo antes de tocar nada, si ya hay una versión corriendo; si falla, no se actualiza.
+if [ -f "$destino/compose.yaml" ] && [ -n "$(cd "$destino" && docker compose ps --status running -q cotizador 2>/dev/null)" ]; then
+  echo "Respaldando los datos antes de actualizar…"
+  (cd "$destino" && docker compose exec -T cotizador npm run --silent respaldar) || {
+    echo "No se pudo respaldar; no se actualizó nada." >&2
+    exit 7
+  }
+fi
 unzip -q "$tmp/entrega.zip" -d "$tmp/codigo"
 if ! mkdir -p "$destino" 2>/dev/null || [ ! -w "$destino" ]; then
   echo "No puedo escribir en $destino. Créalo una vez en el servidor con:" >&2
@@ -196,7 +224,8 @@ else
   echo "Creado $destino/.env con un secreto nuevo."
 fi
 rm "$tmp/codigo/.env"
-rsync -a --delete --exclude=/.env "$tmp/codigo/" "$destino/"
+# Igual que scripts/actualizar.sh: no se tocan la configuración ni los datos propios del servidor.
+rsync -a --delete --exclude=/.env '--exclude=/respaldos*' --exclude=/compose.override.yaml --exclude=/cron/ --exclude=/.version-anterior/ "$tmp/codigo/" "$destino/"
 cd "$destino"
 if ! grep -q '^BETTER_AUTH_URL=https://.' .env || ! grep -q '^NELTUME_HOSTS=.' .env; then
   echo "Falta BETTER_AUTH_URL o NELTUME_HOSTS en $destino/.env." >&2

@@ -14,29 +14,79 @@ const columna = (n: number) => {
   return s;
 };
 const indiceColumna = (s: string) => [...s].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
+
+/** El libro no se puede leer como .xlsx: zip dañado o demasiado grande, XML o referencias inválidas. */
+export class ErrorXlsx extends Error {
+  constructor(mensaje: string) {
+    super(mensaje);
+    this.name = 'ErrorXlsx';
+  }
+}
+const detalle = (error: unknown) => (error instanceof Error ? error.message : 'formato desconocido');
+
+/** Topes de lo descomprimido: una planilla real ocupa pocos MB; un zip que se infla a gigabytes se rechaza. */
+export const LIMITES_DESCOMPRESION = { total: 200 * 1024 * 1024, entrada: 100 * 1024 * 1024 };
+const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
+
+/**
+ * Descomprime el libro sin pasar de los topes. Antes de inflar nada se recorre el índice del zip y se mide
+ * cada parte por el tamaño que declara. Ese tamaño no puede mentir hacia arriba: fflate infla cada parte en un
+ * búfer de exactamente ese largo y no lo agranda, así que una parte que declara menos de lo que trae queda
+ * truncada (y su XML falla al leerse), nunca ocupa más memoria que la declarada.
+ */
+export function descomprimirXlsx(bytes: Uint8Array, limites = LIMITES_DESCOMPRESION) {
+  let total = 0;
+  try {
+    unzipSync(bytes, {
+      filter: (f) => {
+        // Sin comprimir ocupa lo que trae el archivo; comprimida, lo que declara.
+        const tamano = f.compression === 0 ? f.size : f.originalSize;
+        if (tamano > limites.entrada)
+          throw new ErrorXlsx(`una parte del libro descomprimida supera ${mb(limites.entrada)}: ${f.name.slice(0, 80)}`);
+        total += tamano;
+        if (total > limites.total) throw new ErrorXlsx(`el libro descomprimido supera ${mb(limites.total)}`);
+        return false;
+      },
+    });
+    return unzipSync(bytes);
+  } catch (error) {
+    if (error instanceof ErrorXlsx) throw error;
+    throw new ErrorXlsx(`no es un archivo comprimido .xlsx válido: ${detalle(error)}`);
+  }
+}
+
 export async function abrirXlsx(ruta: string) {
   const bytes = await readFile(ruta);
-  const zip = unzipSync(bytes);
+  const zip = descomprimirXlsx(bytes);
   const xml = (ruta: string) => {
-    if (!zip[ruta]) throw new Error(`Falta ${ruta} en la planilla.`);
+    if (!zip[ruta]) throw new ErrorXlsx(`falta ${ruta} en la planilla`);
     return strFromU8(zip[ruta]);
+  };
+  /** Lee un XML del libro; un error de formato o de referencias dentro de él es un libro inválido. */
+  const analizar = (que: string, leer: () => void) => {
+    try {
+      leer();
+    } catch (error) {
+      if (error instanceof ErrorXlsx) throw error;
+      throw new ErrorXlsx(`${que} no se puede leer: ${detalle(error)}`);
+    }
   };
   const relaciones = new Map<string, string>();
   const rp = new SaxesParser();
   rp.on('opentag', (t) => {
     if (t.name === 'Relationship') relaciones.set(String(t.attributes.Id), String(t.attributes.Target));
   });
-  rp.write(xml('xl/_rels/workbook.xml.rels')).close();
+  analizar('xl/_rels/workbook.xml.rels', () => rp.write(xml('xl/_rels/workbook.xml.rels')).close());
   const hojas = new Map<string, string>();
   const wp = new SaxesParser();
   wp.on('opentag', (t) => {
     if (t.name !== 'sheet') return;
     const nombre = String(t.attributes.name),
       target = relaciones.get(String(t.attributes['r:id']));
-    if (!target) throw new Error(`La hoja ${nombre} no tiene relación en workbook.xml.rels.`);
+    if (!target) throw new ErrorXlsx(`la hoja ${nombre} no tiene relación en workbook.xml.rels`);
     hojas.set(nombre, target.startsWith('/') ? target.slice(1) : `xl/${target}`);
   });
-  wp.write(xml('xl/workbook.xml')).close();
+  analizar('xl/workbook.xml', () => wp.write(xml('xl/workbook.xml')).close());
   // Los shared strings solo se decodifican al solicitarlos desde una celda permitida.
   // Incluye <si/> autocerrados para no desplazar los índices.
   const strings: string[] = zip['xl/sharedStrings.xml']
@@ -58,12 +108,12 @@ export async function abrirXlsx(ruta: string) {
       if (t.name === 't') dentro = false;
       else if (t.name === 'rPh') fonetico = false;
     });
-    p.write(strings[i] ?? '<si/>').close();
+    analizar(`el texto compartido ${i}`, () => p.write(strings[i] ?? '<si/>').close());
     return out;
   }
   function leer(nombre: string, permitir: (col: string, fila: number) => boolean): Hoja {
     const ruta = hojas.get(nombre);
-    if (!ruta) throw new Error(`Falta la hoja ${nombre}.`);
+    if (!ruta) throw new ErrorXlsx(`falta la hoja ${nombre}`);
     const resultado: Hoja = new Map();
     // Fórmulas compartidas: las celdas dependientes solo traen el índice `si`; se guarda el texto
     // de la maestra únicamente si esa celda está permitida.
@@ -85,7 +135,7 @@ export async function abrirXlsx(ruta: string) {
       } else if (t.name === 'c') {
         // El atributo r es opcional en OOXML: si falta, la celda sigue a la anterior.
         const m = t.attributes.r ? /^([A-Z]+)(\d+)$/.exec(String(t.attributes.r)) : null;
-        if (t.attributes.r && !m) throw new Error(`Referencia de celda inválida en ${nombre}.`);
+        if (t.attributes.r && !m) throw new ErrorXlsx(`referencia de celda inválida en la hoja ${nombre}`);
         if (m) {
           col = indiceColumna(m[1]);
           fila = Number(m[2]);
@@ -124,7 +174,7 @@ export async function abrirXlsx(ruta: string) {
       }
       permitido = false;
     });
-    p.write(xml(ruta)).close();
+    analizar(`la hoja ${nombre}`, () => p.write(xml(ruta)).close());
     return resultado;
   }
   return { bytes, zip, hojas: [...hojas.keys()], leer };

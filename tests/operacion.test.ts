@@ -23,6 +23,7 @@ import { plantilla } from '../src/servidor/pdf';
 import { estadoPago } from '../src/app/formato';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -359,6 +360,16 @@ describe('versiones obsoletas y cotizaciones sin aprobar', () => {
       );
     expect(t.recargada().estadoOperativo).toBe('sin_pedido');
     expect(t.recargada().despacho ?? null).toBeNull();
+  });
+});
+
+describe('transportista «Otro»', () => {
+  it('no se guarda como transportista: solo indica que falta el nombre', async () => {
+    const t = await setup();
+    await t.aprobada();
+    await t.ir({ tipo: 'despacho', despacho: { transporte: 'Otro', destino: 'Osorno' } });
+    expect(t.recargada().despacho).toMatchObject({ transporte: null, destino: 'Osorno' });
+    expect(t.ultimo('despacho_actualizado')!.detalle).not.toContain('Otro');
   });
 });
 

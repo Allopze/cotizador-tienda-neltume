@@ -1,3 +1,4 @@
+import { planoFrase, ubicarFrase } from './frases';
 import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
 
@@ -67,7 +68,13 @@ export const sinTildes = (s: string) => s.toLocaleLowerCase('es-CL').normalize('
  * en su misma frase, pero nunca es su cantidad ni una medida. Lo quitado deja un separador.
  */
 const MONTOS_EN_PESOS = /\$\s*\d[\d.,]*|(?<![\d.,])\d[\d.,]*\s*(?:millon(?:es)?|mil|lucas?|k)(?![a-zñ])/g;
-export const sinMontos = (t: string) => t.replace(MONTOS_EN_PESOS, ' ; ');
+/**
+ * Porcentajes («15 %», «12,5%», «15 por ciento», «treinta y cinco por ciento»), en un texto ya sin tildes: el
+ * descuento de un ítem va en su misma frase, pero nunca es su cantidad, una medida ni un monto en pesos.
+ */
+const PORCENTAJES = /(?<![\d.,])\d+(?:[.,]\d+)?\s*(?:%|por\s*ciento|porciento)|\b[a-zñ]+(?:\s+y\s+[a-zñ]+)?\s+por\s*ciento/g;
+export const sinPorcentajes = (t: string) => t.replace(PORCENTAJES, ' ; ');
+export const sinMontos = (t: string) => sinPorcentajes(t).replace(MONTOS_EN_PESOS, ' ; ');
 
 /**
  * Cifras que aparecen en el texto, en dígitos («80», «2,10», «10.000») y, con `palabras`, también escritas
@@ -101,28 +108,47 @@ export function cifrasDelTexto(texto: string, palabras = true): number[] {
 type CampoCifra = 'cantidad' | 'ancho' | 'alto';
 export const CAMPOS_CIFRA: readonly CampoCifra[] = ['cantidad', 'ancho', 'alto'];
 
-/** ¿La cifra aparece en el texto? Las medidas se comparan en metros: «80» respalda un ancho de 0,8. */
-export function cifraRespaldada(campo: CampoCifra, valor: number, cifras: number[]) {
+/**
+ * ¿La cifra aparece en el texto? Las medidas se comparan en metros, con el rango de la familia del ítem
+ * (`metros`): «80» respalda un ancho de 0,8 y, en un guardapolvo, «360» un largo de 3,6.
+ */
+export function cifraRespaldada(campo: CampoCifra, valor: number, cifras: number[], familia = 'PUERTA') {
   if (campo === 'cantidad') return cifras.some((c) => c === valor);
-  const objetivo = metros(valor);
-  return cifras.some(
-    (c) => c === valor || (objetivo !== null && metros(c) !== null && Math.abs(metros(c)! - objetivo) < 5e-4),
-  );
+  const objetivo = metros(valor, familia);
+  return cifras.some((c) => {
+    const m = metros(c, familia);
+    return c === valor || (objetivo !== null && m !== null && Math.abs(m - objetivo) < 5e-4);
+  });
 }
+
+/**
+ * Familia con que se leen las medidas de un ítem: la de su modelo y, sin ella, accesorio si trae sección y puerta
+ * si no. Un largo de 3,6 m es plausible en un guardapolvo (hasta 6 m), no en una puerta (hasta 3 m).
+ */
+export const familiaDeMedidas = (
+  item: Pick<SolicitudItem, 'modelo' | 'medida'>,
+  familia: (modelo: string) => string | null = () => null,
+) => (item.modelo ? familia(item.modelo) : null) ?? (item.medida == null ? 'PUERTA' : 'MOLDURA');
 
 const etiqueta: Record<CampoCifra, string> = {
   cantidad: 'la cantidad',
   ancho: 'el ancho',
   alto: 'el alto o largo',
 };
-const mostrar = (campo: CampoCifra, valor: number) =>
-  campo === 'cantidad' ? String(valor) : `${String(metros(valor) ?? valor).replace('.', ',')} m`;
+const mostrar = (campo: CampoCifra, valor: number, familia: string) =>
+  campo === 'cantidad' ? String(valor) : metrosAviso(valor, familia);
 
 /**
  * Deja en null las cifras nuevas que no aparecen en el texto. Una cifra que ya estaba en el borrador (en
  * cualquier ítem, para el mismo campo) se acepta: la persona puede pedir «otra igual» o reordenar.
  */
-export function anclarCifras(items: SolicitudItem[], previos: SolicitudItem[], textos: string[]) {
+export function anclarCifras(
+  items: SolicitudItem[],
+  previos: SolicitudItem[],
+  textos: string[],
+  /** Familia del modelo en el catálogo: el largo de un accesorio llega a 6 m (ver `familiaDeMedidas`). */
+  familia: (modelo: string) => string | null = () => null,
+) {
   const conPalabras = textos.flatMap((t) => cifrasDelTexto(t));
   // Las cifras de la sección del propio ítem («12x2») no respaldan su largo: el 2 es parte de la sección.
   const digitosDe = (item: SolicitudItem) =>
@@ -141,14 +167,15 @@ export function anclarCifras(items: SolicitudItem[], previos: SolicitudItem[], t
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     let resultado = item;
+    const familiaItem = familiaDeMedidas(item, familia);
     for (const campo of CAMPOS_CIFRA) {
       const valor = item[campo];
       if (valor === null || valor === undefined) continue;
-      if (conocidas(campo).some((c) => c === valor || cifraRespaldada(campo, valor, [c]))) continue;
-      if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : digitosDe(item))) continue;
+      if (conocidas(campo).some((c) => c === valor || cifraRespaldada(campo, valor, [c], familiaItem))) continue;
+      if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : digitosDe(item), familiaItem)) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
-        `El asistente propuso ${etiqueta[campo]} ${mostrar(campo, valor)} para el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}, pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.`,
+        `El asistente propuso ${etiqueta[campo]} ${mostrar(campo, valor, familiaItem)} para el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}, pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.`,
       );
     }
     return resultado;
@@ -223,7 +250,7 @@ const ACOMPANAN = new Set([
   'PARA', 'CADA', 'TIPO', 'COLOR', 'HOJA', 'HOJAS', 'VANO', 'VANOS', 'UNID', 'UNIDS', 'UNDS', 'MEDIDA',
   'MEDIDAS', 'METRO', 'METROS', 'CENTIMETROS', 'MILIMETROS', 'PULGADA', 'PULGADAS', 'MADERA', 'MADERAS',
   'PUERTA', 'PUERTAS', 'IGUAL', 'IGUALES', 'OTRA', 'OTRAS', 'OTRO', 'OTROS', 'MISMA', 'MISMAS', 'MISMO',
-  'MISMOS', 'LARGO', 'TAMBIEN',
+  'MISMOS', 'LARGO', 'TAMBIEN', 'DESCUENTO', 'DESCUENTOS', 'REBAJA', 'CIENTO',
 ]);
 
 /**
@@ -326,18 +353,21 @@ export function anclarNombres(
   return { items: anclados, avisos };
 }
 
-const metrosAviso = (v: number) => `${String(metros(v) ?? v).replace('.', ',')} m`;
+/** «2,4 m»; una cifra fuera del rango de su familia se muestra tal como vino. */
+const metrosAviso = (v: number, familia = 'PUERTA') => `${String(metros(v, familia) ?? v).replace('.', ',')} m`;
 
 /**
  * ¿El texto dice la sección? Escrita tal cual («6x1», «30x70») o, en la escuadría 2xN, por su N («de 4»,
  * «4 pulgadas»). Un formato que no se sabe leer no se juzga.
  */
-function medidaRespaldada(medida: string, texto: string) {
+function medidaRespaldada(medida: string, texto: string, cantidad: number | null) {
   const m = normalizarMedida(medida);
   if ([...texto.matchAll(SECCION)].some((s) => normalizarMedida(s[0]) === m)) return true;
   const numeros = m.split('X').map((n) => Number(n.replace(',', '.')));
   if (!numeros.length || numeros.some((n) => !Number.isFinite(n))) return true;
   const cifras = cifrasDelTexto(texto, false);
+  const indiceCantidad = cantidad === null ? -1 : cifras.indexOf(cantidad);
+  if (indiceCantidad >= 0) cifras.splice(indiceCantidad, 1);
   return (/^2X/.test(m) ? numeros.slice(1) : numeros).every((n) => cifras.includes(n));
 }
 
@@ -359,10 +389,10 @@ function palabraDelModelo(frase: string, resolver: Record<CampoNombre, ResolverN
 }
 
 /** Texto comparable: sin tildes, en minúsculas y con un solo espacio entre palabras. */
-const plano = (s: string) => sinTildes(s).replace(/[^a-z0-9ñ.,x×*]+/g, ' ').trim();
-/** ¿La frase está tal cual en el mensaje, sin contar tildes, mayúsculas ni puntuación? */
+const plano = planoFrase;
+/** ¿La frase está en el mensaje, sin contar tildes, mayúsculas ni puntuación? Puede estar más de una vez. */
 export const fraseDelMensaje = (frase: string, mensaje: string) =>
-  !!plano(frase) && plano(mensaje).includes(plano(frase));
+  !!ubicarFrase(plano(mensaje), plano(frase));
 
 /** Sección de un accesorio escrita en el texto («2x5», «6 x 4,5», «30x70»); no las medidas de una puerta («80x210»). */
 export const SECCION = /(?<![\d.,])\d{1,2}\s*[x×*]\s*\d{1,2}(?:[.,]\d)?(?![\d.,]*\d)/g;
@@ -462,6 +492,17 @@ export function parMedidaPuerta(frase: string): { ancho: number; alto: number } 
 
 /** Escuadría dicha en pulgadas («de 8 pulgadas», «6"»): en marcos y piezas T es la sección 2xN. */
 const PULGADAS = /(?<![\d.,x×*])(\d{1,2})\s*(?:pulgadas?|pulg\.?|"|”)/g;
+/**
+ * Escuadría dicha por su N («marcos de 4»): una cifra de 3 a 8, sin decimal, unidad ni lo que se cuenta
+ * después. «de 2», «de 2,2», «de 3 m» o «de 70» son largos o anchos. Solo vale si esa escuadría existe para el
+ * modelo y la madera (ver `anclarFrases`): «6 marcos de 3» no es una 2x3.
+ */
+const DE_ESCUADRIA = new RegExp(
+  String.raw`\bde ([3-8])(?![.,]?\d|x|\s*${UNIDAD_MEDIDA}|\s*(?:unidad|pieza|juego|marco|puerta))`,
+  'g',
+);
+/** Escuadrías 2xN de marcos y piezas T cuando no se sabe cuáles tiene el catálogo para ese modelo y madera. */
+export const ESCUADRIAS_HABITUALES: readonly string[] = ['2X4', '2X5', '2X6', '2X8'];
 
 /** ¿El texto trae medidas de producto (un par «80 x 210» o una sección «2x4»)? Un pedido puede venir como pregunta. */
 export const tieneMedidas = (texto: string) =>
@@ -470,10 +511,10 @@ export const tieneMedidas = (texto: string) =>
 /**
  * Cifras sueltas de la frase que pueden ser una medida: sin secciones, pulgadas, «N unidades» ni la cantidad
  * escrita en dígitos («5 marcos … de 240» deja el 240). Con la cantidad en palabras («dos piezas T … de 2»), el
- * 2 escrito sí es una medida.
+ * 2 escrito sí es una medida. Un porcentaje («15 % de descuento») nunca lo es.
  */
 function medidasSueltas(frase: string, cantidad: number | null | undefined): number[] {
-  const t = separado(frase)
+  const t = sinPorcentajes(separado(frase))
     .replace(SECCION, ' ')
     .replace(PULGADAS, ' ')
     .replace(/(?<![\d.,])\d+\s*(?:unidades|unidad|uds?|u|juegos|piezas)\b/g, ' ');
@@ -494,9 +535,11 @@ function medidasSueltas(frase: string, cantidad: number | null | undefined): num
  * una sola cantidad («media docena» leída como 0,5) o un solo par de medidas («1230 x 2600 mm» leído como
  * 12,3 m). Tampoco acepta como largo la cifra que solo es la cantidad («2 guardapolvos 12x1»).
  *
- * Solo revisa ítems cuya frase aparece tal cual en el mensaje; lo que ya estaba en el borrador o dijo antes la
- * persona se acepta. Una frase sin modelo («… y 2 de 70x210») continúa el ítem anterior y hereda lo que no dice,
- * igual que «otra igual» o «con su marco».
+ * Solo revisa ítems cuya frase se ubica en el mensaje sin contar tildes, puntuación, «×» por «x» ni el
+ * conector «en» (si se repite, dice lo mismo); los demás quedan como los leyó la IA, con el aviso «No pude
+ * verificar» si no estaban ya en el borrador. Lo que ya estaba en el borrador o dijo antes la persona se
+ * acepta. Una frase sin modelo («… y 2 de 70x210») continúa el ítem anterior y hereda lo que no dice, igual
+ * que «otra igual» o «con su marco».
  */
 export function anclarFrases(
   items: SolicitudItem[],
@@ -507,12 +550,18 @@ export function anclarFrases(
   anteriores: string[] = [],
   /** Familia del modelo en el catálogo; sin ella, un ítem sin sección se trata como puerta. */
   familia: (modelo: string) => string | null = () => null,
+  /**
+   * Escuadrías («2X4») que el catálogo tiene para ese modelo y esa madera (null si aún no se sabe): «de N» solo es
+   * la escuadría 2xN si existe. Sin catálogo, las habituales.
+   */
+  escuadrias: (modelo: string, madera: string | null) => readonly string[] = () => ESCUADRIAS_HABITUALES,
 ) {
   const texto = plano(mensaje);
   const antes = anteriores.join(' \n ');
   const frases = items.map((item) => {
     const f = item.fuente ? plano(item.fuente) : '';
-    return f && texto.includes(f) ? f : null;
+    const tramo = f ? ubicarFrase(texto, f) : null;
+    return tramo ? texto.slice(...tramo) : null;
   });
   /** El mensaje sin las frases de los demás ítems (las que no contienen ni están contenidas en la propia). */
   const sinOtras = (i: number) =>
@@ -530,7 +579,10 @@ export function anclarFrases(
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     const frase = frases[i];
-    if (!frase) return item;
+    if (!frase) {
+      if (item.fuente && !previos.some((p) => ['modelo','madera','cantidad','ancho','alto','medida'].every((k) => p[k as keyof SolicitudItem] === item[k as keyof SolicitudItem]))) avisos.push(`No pude verificar el ítem ${i + 1} contra tu mensaje; revísalo.`);
+      return item;
+    }
     let resultado = item;
     const etiquetaItem = `el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
     // Lo que la frase dice sin ambigüedad corrige a la IA, pero a la vista: un cambio de producto, cantidad o
@@ -543,12 +595,14 @@ export function anclarFrases(
     // Lo que el ítem puede tomar de otro: continúa un ítem anterior, lo copia o es el marco de esas puertas.
     const continua = !modelosFrase.size || /\b(otr[oa]s?|igual(es)?|mism[oa]s?)\b/.test(frase);
     const delMarco = /\bmarcos?\b/.test(frase) && conSuMarco;
-    const respaldo = (campo: 'ancho' | 'alto', v: number, t: string) => cifraRespaldada(campo, v, cifrasDelTexto(t, false));
-    const deOtroItem = (campo: 'ancho' | 'alto', v: number) =>
+    // Con `fam`, la familia con que se leen las medidas del ítem: el largo de un accesorio llega a 6 m.
+    const respaldo = (campo: 'ancho' | 'alto', v: number, t: string, fam = 'PUERTA') =>
+      cifraRespaldada(campo, v, cifrasDelTexto(t, false), fam);
+    const deOtroItem = (campo: 'ancho' | 'alto', v: number, fam = 'PUERTA') =>
       !continua &&
-      !respaldo(campo, v, sinOtras(i)) &&
-      !(antes && respaldo(campo, v, antes)) &&
-      frases.some((f, j) => j !== i && !!f && respaldo(campo, v, f));
+      !respaldo(campo, v, sinOtras(i), fam) &&
+      !(antes && respaldo(campo, v, antes, fam)) &&
+      frases.some((f, j) => j !== i && !!f && respaldo(campo, v, f, fam));
 
     // Modelo: si la frase nombra modelos y la IA propuso otro del catálogo, gana el de la frase.
     if (item.modelo && modelosFrase.size && !conocida('modelo', item.modelo)) {
@@ -610,11 +664,21 @@ export function anclarFrases(
         );
       }
     }
+    const escritas = [...frase.matchAll(SECCION)].map((m) => normalizarMedida(m[0]));
+    // «6 marcos de 4»: en marcos y piezas T, «de N» es la escuadría 2xN si la frase no escribe la sección y esa
+    // escuadría existe para el modelo y la madera («6 marcos de 3» no es una 2x3).
+    const escuadria =
+      !escritas.length && ['MARCO', 'PIEZAS_T'].includes(familia(resultado.modelo ?? '') ?? '');
+    const existentes = new Set(
+      escuadria ? escuadrias(resultado.modelo ?? '', resultado.madera ?? null).map(normalizarMedida) : [],
+    );
+    const deEscuadria = [...frase.matchAll(DE_ESCUADRIA)].map((m) => `2X${m[1]}`).filter((m) => existentes.has(m));
+    // La frase sin esas escuadrías, para leer los largos: la cifra de «de 4» no es además un largo de 4 m.
+    const fraseLargos = deEscuadria.length
+      ? frase.replace(DE_ESCUADRIA, (dicho, n: string) => (existentes.has(`2X${n}`) ? ' ; ' : dicho))
+      : frase;
     const secciones = [
-      ...new Set([
-        ...[...frase.matchAll(SECCION)].map((m) => normalizarMedida(m[0])),
-        ...[...frase.matchAll(PULGADAS)].map((m) => `2X${m[1]}`),
-      ]),
+      ...new Set([...escritas, ...[...frase.matchAll(PULGADAS)].map((m) => `2X${m[1]}`), ...deEscuadria]),
     ];
     // Una sección que la conversación no dice (la IA leyó «Pillo» como una pilastra 6x1) no se cotiza: queda
     // pendiente, y el ítem vuelve a leerse como puerta si sus medidas son las de una.
@@ -623,7 +687,7 @@ export function anclarFrases(
       medidaPropuesta &&
       secciones.length !== 1 &&
       !previos.some((p) => p.medida && normalizarMedida(p.medida) === normalizarMedida(medidaPropuesta)) &&
-      ![texto, antes].some((t) => t && medidaRespaldada(medidaPropuesta, t))
+      ![texto, antes].some((t) => t && medidaRespaldada(medidaPropuesta, t, item.cantidad))
     ) {
       resultado = { ...resultado, medida: null };
       avisos.push(
@@ -632,6 +696,8 @@ export function anclarFrases(
     }
     const familiaItem = resultado.modelo ? familia(resultado.modelo) : null;
     const esPuerta = familiaItem ? familiaItem === 'PUERTA' : resultado.medida == null;
+    /** Familia con que se leen sus medidas (`familiaDeMedidas`): «360» es un largo de 3,6 m en un guardapolvo. */
+    const fam = esPuerta ? 'PUERTA' : (familiaItem ?? 'MOLDURA');
     const par = parMedidaPuerta(frase);
     // La sección escrita en la frase («marco 2x5 pino», «de 8 pulgadas») gana a otra que proponga la IA (30x70
     // de los finger) y completa la que dejó vacía.
@@ -722,18 +788,26 @@ export function anclarFrases(
     } else if (!delMarco && (resultado.alto == null || !conocida('alto', resultado.alto))) {
       // Largo de un accesorio: si la frase no lo respalda, se toma su única cifra suelta («5 marcos 2x8 para
       // puerta de 240» → 2,4 m; «marco de 8 pulgadas 2,2 m, 2 unidades» → 2,2 m). El marco de unas puertas
-      // («con su marco») toma el alto de ellas.
+      // («con su marco») toma el alto de ellas. La sección, las pulgadas y la escuadría «de N» no son largos.
       const alto = resultado.alto;
-      const sinSeccion = separado(frase).replace(SECCION, ' ').replace(PULGADAS, ' ');
-      if (!(alto != null && metros(alto) !== null && respaldo('alto', alto, sinSeccion))) {
-        const sueltas = medidasSueltas(frase, resultado.cantidad)
-          .map((n) => metros(n))
+      const sinSeccion = separado(fraseLargos).replace(SECCION, ' ').replace(PULGADAS, ' ');
+      if (!(alto != null && metros(alto, fam) !== null && respaldo('alto', alto, sinSeccion, fam))) {
+        const sueltas = medidasSueltas(fraseLargos, resultado.cantidad)
+          .map((n) => metros(n, fam))
           .filter((m): m is number => m !== null);
+        const escuadriaComoLargo =
+          alto != null ? deEscuadria.find((m) => cifraRespaldada('alto', alto, [Number(m.slice(2))], fam)) : undefined;
         if (sueltas.length === 1) resultado = { ...resultado, alto: sueltas[0] };
-        else if (alto != null && deOtroItem('alto', alto)) {
+        else if (alto != null && escuadriaComoLargo && !(antes && respaldo('alto', alto, antes, fam))) {
+          // «6 marcos de 4» leído con un largo de 4 m: el 4 ya es la escuadría.
           resultado = { ...resultado, alto: null };
           avisos.push(
-            `El asistente propuso el largo ${String(metros(alto) ?? alto).replace('.', ',')} m para ${etiquetaItem}, pero esa medida corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,
+            `El asistente usó la escuadría «${escuadriaComoLargo}» también como largo del ${etiquetaItem.slice(3)}: quedó pendiente para que lo confirmes.`,
+          );
+        } else if (alto != null && deOtroItem('alto', alto, fam)) {
+          resultado = { ...resultado, alto: null };
+          avisos.push(
+            `El asistente propuso el largo ${metrosAviso(alto, fam)} para ${etiquetaItem}, pero esa medida corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,
           );
         }
       }
@@ -742,16 +816,16 @@ export function anclarFrases(
     // la cantidad, escrita una vez, no se dijo.
     const alto = resultado.alto;
     if (alto != null && resultado.cantidad != null && !conocida('alto', alto)) {
-      const cifras = cifrasDelTexto(frase.replace(SECCION, ' '), false);
-      const respaldos = cifras.filter((c) => cifraRespaldada('alto', alto, [c]));
+      const cifras = cifrasDelTexto(fraseLargos.replace(SECCION, ' '), false);
+      const respaldos = cifras.filter((c) => cifraRespaldada('alto', alto, [c], fam));
       // «tres guardapolvos … de 3 m»: con la cantidad en palabras, el 3 escrito es el largo.
       const cuenta = (lista: number[]) => lista.filter((c) => c === resultado.cantidad).length;
-      const enPalabras = cuenta(cifrasDelTexto(frase)) > cuenta(cifrasDelTexto(frase, false));
+      const enPalabras = cuenta(cifrasDelTexto(fraseLargos)) > cuenta(cifrasDelTexto(fraseLargos, false));
       if (
         respaldos.length === 1 &&
         respaldos[0] === resultado.cantidad &&
         !enPalabras &&
-        !cifrasDelTexto(antes, false).some((c) => cifraRespaldada('alto', alto, [c]))
+        !cifrasDelTexto(antes, false).some((c) => cifraRespaldada('alto', alto, [c], fam))
       ) {
         resultado = { ...resultado, alto: null };
         avisos.push(
@@ -784,17 +858,21 @@ const CAMPOS_FRASE = [
 ] as const;
 type CampoFrase = (typeof CAMPOS_FRASE)[number][0];
 
-function mismoValor(campo: CampoFrase, a: string | number, b: string | number) {
+function mismoValor(campo: CampoFrase, a: string | number, b: string | number, familia: string) {
   if (campo === 'modelo' || campo === 'madera') return normalizar(String(a)) === normalizar(String(b));
   if (campo === 'medida') return normalizarMedida(String(a)) === normalizarMedida(String(b));
   if (campo === 'cantidad') return a === b;
-  const ma = metros(Number(a)),
-    mb = metros(Number(b));
-  return ma !== null && mb !== null && Math.abs(ma - mb) < 5e-4;
+  const ma = metros(Number(a), familia),
+    mb = metros(Number(b), familia);
+  return Number(a) === Number(b) || (ma !== null && mb !== null && Math.abs(ma - mb) < 5e-4);
 }
 
-const valorAviso = (campo: CampoFrase, v: string | number) =>
-  campo === 'ancho' || campo === 'alto' ? metrosAviso(Number(v)) : campo === 'cantidad' ? String(v) : `«${v}»`;
+const valorAviso = (campo: CampoFrase, v: string | number, familia: string) =>
+  campo === 'ancho' || campo === 'alto'
+    ? metrosAviso(Number(v), familia)
+    : campo === 'cantidad'
+      ? String(v)
+      : `«${v}»`;
 
 const etiquetaDe = (item: SolicitudItem, i: number) => `el ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
 const y = (partes: string[]) =>
@@ -804,11 +882,17 @@ const y = (partes: string[]) =>
  * Modo «avisar»: la lectura por frase (`anclarFrases`) no reemplaza la de la IA. Un solo aviso por ítem junta
  * los campos en que difieren, en palabras de quien cotiza: qué anoté y qué parece decir su mensaje.
  */
-export function avisosDeCampos(ia: SolicitudItem[], porFrase: SolicitudItem[]): string[] {
+export function avisosDeCampos(
+  ia: SolicitudItem[],
+  porFrase: SolicitudItem[],
+  /** Familia del modelo en el catálogo: las medidas se comparan y muestran con su rango (ver `familiaDeMedidas`). */
+  familia: (modelo: string) => string | null = () => null,
+): string[] {
   const avisos: string[] = [];
   ia.forEach((item, i) => {
     const leido = porFrase[i];
     if (!leido) return;
+    const fam = familiaDeMedidas(item, familia);
     const distintos: [string, string][] = [],
       faltan: string[] = [],
       sobran: string[] = [];
@@ -816,10 +900,10 @@ export function avisosDeCampos(ia: SolicitudItem[], porFrase: SolicitudItem[]): 
       const a = item[campo] ?? null,
         b = leido[campo] ?? null;
       if (a === null && b === null) continue;
-      if (a !== null && b !== null && mismoValor(campo, a, b)) continue;
-      if (a === null) faltan.push(`${nombre} ${valorAviso(campo, b!)}`);
-      else if (b === null) sobran.push(`${nombre} ${valorAviso(campo, a)}`);
-      else distintos.push([`${nombre} ${valorAviso(campo, a)}`, valorAviso(campo, b)]);
+      if (a !== null && b !== null && mismoValor(campo, a, b, fam)) continue;
+      if (a === null) faltan.push(`${nombre} ${valorAviso(campo, b!, fam)}`);
+      else if (b === null) sobran.push(`${nombre} ${valorAviso(campo, a, fam)}`);
+      else distintos.push([`${nombre} ${valorAviso(campo, a, fam)}`, valorAviso(campo, b, fam)]);
     }
     const partes = [
       ...(distintos.length

@@ -6,6 +6,7 @@ import { pesos } from '@/negocio/precios';
 import {
   buscarCiudades,
   calcularBulto,
+  claveTarifas,
   textoBulto,
   textoTarifa,
   type CiudadStarken,
@@ -61,10 +62,10 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
 
   const lineas = actual.montos.lineas;
   const bulto = useMemo(() => calcularBulto(lineas, estado?.configuracion.paquete), [lineas, estado]);
-  // Las tarifas valen para el bulto y el destino con que se pidieron: si cambia el pedido, el destino o la comuna
-  // del cliente, hay que volver a cotizar (antes quedaban a la vista tarifas de otra ciudad).
+  // Las tarifas valen para el pedido, el bulto y el destino con que se pidieron: si algo cambia, hay que volver a
+  // cotizar (antes quedaban a la vista tarifas de otra ciudad, o de otro pedido con el mismo bulto).
   const claveBulto = bulto.ok
-    ? JSON.stringify([bulto.bulto, actual.despacho?.destino ?? '', actual.cliente.comuna ?? ''])
+    ? claveTarifas(lineas, bulto.bulto, actual.despacho?.destino, actual.cliente.comuna)
     : '';
   const vigente = resultado && resultado.clave === claveBulto ? resultado.tarifas : null;
 
@@ -148,10 +149,11 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
         // Con la firma, el servidor reconoce que la tarifa salió de él para esta cotización y no venció.
         vence: t.vence,
         firma: t.firma,
+        huellaBulto: t.huellaBulto,
       },
     });
     if (ok) {
-      setAplicada(`Valor de despacho fijado en ${pesos(t.neto)} neto con la tarifa de Starken.`);
+      setAplicada(`Valor de despacho fijado en ${pesos(t.neto)} sin IVA con la tarifa de Starken.`);
       setResultado(null);
     }
   }
@@ -252,7 +254,7 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
             ))}
           </ul>
           <p className="muted">
-            Starken informa el valor con IVA; el despacho de la cotización se guarda neto.
+            Starken informa el valor con IVA; en la cotización el despacho se guarda sin IVA.
           </p>
         </div>
       )}

@@ -51,11 +51,12 @@ export function alExpirarSesion(fn: Oyente) {
   return () => void oyentesSesion.delete(fn);
 }
 function expirarSesion(): never {
-  // Se avisa en cada 401 (el aviso se reemplaza, no se apila); sin oyentes se va al login una vez.
+  // Se avisa en cada 401 (el aviso se reemplaza, no se apila); sin oyentes se va al login una vez, con el
+  // motivo para que el login explique por qué pide ingresar de nuevo.
   if (oyentesSesion.size) oyentesSesion.forEach((fn) => fn());
   else if (!redirigido && window.location.pathname !== '/login') {
     redirigido = true;
-    window.location.replace('/login');
+    window.location.replace('/login?motivo=sesion');
   }
   throw new ErrorSesion();
 }
@@ -132,6 +133,15 @@ export async function pedirArchivo(
   if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status), r.status);
   const nombre = r.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null;
   return { blob: await r.blob(), nombre };
+}
+
+/** Comprueba (HEAD, sin bajar el archivo) que un documento siga en el servidor; falso si responde 404. */
+export async function documentoDisponible(url: string): Promise<boolean> {
+  const r = await pedir(url, { method: 'HEAD', cache: 'no-store' });
+  if (r.status === 401) expirarSesion();
+  if (r.status === 404) return false;
+  if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status), r.status);
+  return true;
 }
 
 /** Entrega un archivo al navegador como descarga. */

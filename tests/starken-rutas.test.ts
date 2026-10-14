@@ -9,6 +9,7 @@ import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipo
 // inválidos; que el origen venga de la lista de Starken; y la ida y vuelta cotizar → aplicar con la tarifa firmada.
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -318,6 +319,9 @@ describe('ciudades y cotización de Starken', () => {
     try {
       const { Servicio } = await import('../src/servidor/servicio');
       const { Almacen } = await import('../src/servidor/almacen');
+      // La ruta cotiza con el catálogo vigente de la base, el mismo con que `editar` comprueba el pedido.
+      const { guardarCatalogo } = await import('../src/servidor/repositorio-catalogo');
+      guardarCatalogo(m.db, catalogo());
       const llm = {
         interpretar: vi.fn().mockResolvedValue({
           name: 'actualizar_cotizacion',
@@ -366,6 +370,7 @@ describe('ciudades y cotización de Starken', () => {
           neto: number;
           vence: string;
           firma: string;
+          huellaBulto: string;
         }[];
       };
       expect(r.estado).toBe('tarifas');
@@ -376,6 +381,7 @@ describe('ciudades y cotización de Starken', () => {
       ]);
       for (const t of r.tarifas) {
         expect(t.firma).toMatch(/^[\w-]{43}$/);
+        expect(t.huellaBulto).toMatch(/^[a-f0-9]{64}$/);
         expect(Date.parse(t.vence)).toBeGreaterThan(Date.now());
       }
 
@@ -390,6 +396,7 @@ describe('ciudades y cotización de Starken', () => {
         codigoCiudadDestino: r.destino.codigoCiudad,
         vence: domicilio.vence,
         firma: domicilio.firma,
+        huellaBulto: domicilio.huellaBulto,
       };
       const editar = (tarifaStarken: unknown) =>
         m.rutas.accion.POST(
@@ -408,6 +415,9 @@ describe('ciudades y cotización de Starken', () => {
       expect((await editar({ ...aplicada, firma: undefined })).status).toBe(400);
       expect((await editar({ ...aplicada, firma: 'x' })).status).toBe(400);
       expect((await editar({ ...aplicada, otro: 1 })).status).toBe(400);
+      // También la huella del pedido con que se cotizó.
+      expect((await editar({ ...aplicada, huellaBulto: undefined })).status).toBe(400);
+      expect((await editar({ ...aplicada, huellaBulto: 'x' })).status).toBe(400);
       // …y el servicio, que el costo sea el firmado.
       const aplicar = (tarifaStarken: typeof aplicada) =>
         servicio.ejecutar({
@@ -421,9 +431,11 @@ describe('ciudades y cotización de Starken', () => {
         'La tarifa de Starken no es válida para esta cotización',
       );
       expect(new Almacen().obtener(q.id)?.flete).toBe(0);
-      // La tarifa auténtica se aplica y queda en la actividad.
-      const editada = (await aplicar(aplicada)).cotizacion;
-      expect(editada.flete).toBe(85000);
+      // La tarifa auténtica, tal como la envía la pantalla, pasa la ruta, se aplica y queda en la actividad: los 400
+      // de arriba son por el campo alterado.
+      const aceptada = await editar(aplicada);
+      expect(aceptada.status).toBe(200);
+      expect(((await aceptada.json()) as { cotizacion: { flete: number } }).cotizacion.flete).toBe(85000);
       expect(
         new Almacen()
           .eventos(q.id)

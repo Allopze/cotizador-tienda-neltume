@@ -1,4 +1,5 @@
 'use client';
+import { rangoMedidas } from '@/negocio/limites';
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Familia, Producto } from '@/catalogo/tipos';
 import type { PrefillAlta } from '@/negocio/pendientes';
@@ -195,8 +196,8 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
       if (leerMetros(campos.anchoMin, 4) === null) faltan.anchoMin = 'Escribe el ancho mínimo.';
       if (leerMetros(campos.anchoMax, 4) === null) faltan.anchoMax = 'Escribe el ancho máximo.';
     } else if (!campos.medida.trim()) faltan.medida = 'Escribe la medida o escuadría.';
-    if (leerMetros(campos.largo, 10) === null) faltan.largo = puerta ? 'Escribe el alto.' : 'Escribe el largo.';
-    if (precio === null || !Number.isFinite(precio) || precio <= 0) faltan.precio = 'Escribe el precio base neto en pesos.';
+    if (leerMetros(campos.largo, rangoMedidas(campos.familia).max) === null) faltan.largo = puerta ? 'Escribe el alto.' : 'Escribe el largo.';
+    if (precio === null || !Number.isFinite(precio) || precio <= 0) faltan.precio = 'Escribe el precio base sin IVA, en pesos.';
     setErrores(faltan);
     const primero = Object.keys(faltan)[0];
     if (primero) {
@@ -220,7 +221,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
           medida: puerta ? null : campos.medida.trim() || null,
           anchoMin: puerta ? leerMetros(campos.anchoMin, 4) : null,
           anchoMax: puerta ? leerMetros(campos.anchoMax, 4) : null,
-          largo: leerMetros(campos.largo, 10),
+          largo: leerMetros(campos.largo, rangoMedidas(campos.familia).max),
           precioNeto: precio !== null && Number.isFinite(precio) && precio > 0 ? precio : null,
         },
       });
@@ -241,9 +242,9 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
       titulo: 'Agregar al catálogo',
       mensaje: (
         <p>
-          ¿Agregar «{propuesta.descripcion}» al catálogo con precio base neto{' '}
+          ¿Agregar «{propuesta.descripcion}» al catálogo con precio base sin IVA{' '}
           {pesos(propuesta.precioNeto)}? En las cotizaciones se mostrará a{' '}
-          {pesos(venta(propuesta.precioNeto))} (neto + {ajuste}).
+          {pesos(venta(propuesta.precioNeto))} (precio base + {ajuste}).
         </p>
       ),
       aceptar: 'Agregar al catálogo',
@@ -338,7 +339,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
       <p className="catalog-modal-intro">
         Completa los datos a mano o describe el producto y deja que el asistente llene el formulario. En ambos
         casos revisas la propuesta antes de guardarla.{' '}
-        <strong>Ingresa el precio base neto, no el de venta:</strong> las cotizaciones le suman {ajuste}{' '}
+        <strong>Ingresa el precio base sin IVA, no el de venta:</strong> las cotizaciones le suman {ajuste}{' '}
         automáticamente, igual que a los productos de la planilla.
       </p>
 
@@ -376,7 +377,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
                 ref={entrada}
                 value={mensaje}
                 onChange={(evento) => setMensaje(evento.target.value)}
-                placeholder="Ej.: puerta modelo Roble, en raulí, de 80 a 85 cm de ancho y 2,10 m de alto; precio neto $145.000"
+                placeholder="Ej.: puerta modelo Roble, en raulí, de 80 a 85 cm de ancho y 2,10 m de alto; precio $145.000 sin IVA"
                 rows={2}
                 maxLength={3000}
                 disabled={!!ocupado}
@@ -428,16 +429,19 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
             </>
           ) : (
             <>
-              {campo('medida', 'Medida o escuadría', { placeholder: 'Ej.: 2x4' })}
+              {campo('medida', 'Medida o escuadría', {
+                placeholder: 'Ej.: 2x4',
+                ayuda: 'Escuadría: grosor por ancho de la pieza.',
+              })}
               {campo('largo', 'Largo', {
                 placeholder: 'Ej.: 2,10',
                 ayuda: 'En metros (2,10) o centímetros (210).',
               })}
             </>
           )}
-          {campo('precio', 'Precio base neto', {
+          {campo('precio', 'Precio base sin IVA', {
             placeholder: 'Ej.: 145.000',
-            ayuda: 'Sin IVA y sin el margen de venta.',
+            ayuda: 'Costo de fábrica, sin la ganancia de venta.',
           })}
         </div>
         <div className="alta-acciones">
@@ -474,7 +478,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
               <dd>{etiquetaFamilia(propuesta.familia)}</dd>
             </div>
             <div>
-              <dt>Precio base neto</dt>
+              <dt>Precio base sin IVA</dt>
               <dd>{pesos(propuesta.precioNeto)}</dd>
             </div>
             <div>
@@ -489,7 +493,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
               ))}
             </ul>
           )}
-          <p className="catalog-price-note">Confirma que el precio neto y los atributos sean correctos.</p>
+          <p className="catalog-price-note">Confirma que el precio base sin IVA y los datos del producto sean correctos.</p>
           <button type="button" className="button primary" onClick={guardar} disabled={!!ocupado}>
             {ocupado === 'guardar' ? 'Guardando…' : 'Confirmar y guardar'}
           </button>

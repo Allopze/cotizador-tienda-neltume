@@ -1,10 +1,12 @@
 import { chromium, type Browser, type Page } from 'playwright';
-import { chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import type Database from 'better-sqlite3';
+import { copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { etiquetaDescuento } from '../negocio/descuento-cantidad';
 import type { Cotizacion, Despacho } from '../negocio/estado';
-import { CODIGO_FLETE, cantidadFlete, descripcionFlete, unitarioFlete } from '../negocio/estado';
+import { CODIGO_FLETE, cantidadFlete, descripcionFlete, sinTransportista, unitarioFlete } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import {
   ahorroLinea,
@@ -100,7 +102,7 @@ export interface DocumentoPdf {
 const fechaDocumento = (iso: string) =>
   new Date(iso).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
 
-export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
+export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.Database = abrirBaseDatos()) {
   const nota = doc.tipo === 'nota';
   const { numero, montos, fecha } = doc;
   const reglas = doc.reglas ?? q.reglas ?? REGLAS;
@@ -122,7 +124,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
         ],
         [
           ['Dirección de despacho', doc.despacho?.direccion ?? null],
-          ['Medio de transporte', doc.despacho?.transporte ?? null],
+          // Un «Otro» guardado antes de que se exigiera el nombre no se imprime.
+          ['Medio de transporte', sinTransportista(doc.despacho?.transporte) ? null : doc.despacho!.transporte!.trim()],
           ...si('Proyecto', c.proyecto),
         ],
       ]
@@ -169,7 +172,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf) {
   const validez = doc.vence
     ? `Cotización válida hasta el ${fechaChilena(doc.vence)} (${reglas.vigenciaDiasHabiles} días hábiles).`
     : `Cotización válida por ${reglas.vigenciaDiasHabiles} días hábiles.`;
-  const empresa = datosEmpresa(abrirBaseDatos());
+  const empresa = datosEmpresa(db);
   const logo = empresa.logoSvg
     ? Buffer.from(empresa.logoSvg, 'utf8')
     : await readFile(join(process.cwd(), 'public/logo-neltume.svg'));
@@ -285,6 +288,44 @@ function obtenerNavegador(plazoMs: number) {
   return navegador;
 }
 
+/** Causa original para el registro técnico: solo la primera línea, sin el registro de llamadas de Playwright. */
+const causa = (error: unknown) =>
+  (error instanceof Error ? error.message : String(error)).split('\n')[0].slice(0, 300);
+
+/**
+ * Comprueba que Chromium arranca y abre una página antes de reservar un número. Se llama fuera del
+ * bloqueo del estado y con plazo total: un Chromium colgado no deja esperando a nadie.
+ */
+export async function prepararPdf(plazoMs = PLAZO_PDF_MS) {
+  enUso++;
+  clearTimeout(cierreInactivo);
+  let temporizador: NodeJS.Timeout | undefined;
+  let fallo = false;
+  try {
+    await Promise.race([
+      // Si la página llega después del plazo, igual se cierra.
+      obtenerNavegador(plazoMs)
+        .then((browser) => browser.newPage())
+        .then((page) => page.close().catch(() => {})),
+      new Promise<never>((_, rechazar) => {
+        temporizador = setTimeout(
+          () => rechazar(new Error(`Chromium no abrió una página en ${plazoMs} ms.`)),
+          plazoMs,
+        );
+      }),
+    ]);
+  } catch (error) {
+    fallo = true;
+    throw new ErrorPdf(`No se pudo preparar Chromium antes de reservar el documento: ${causa(error)}`);
+  } finally {
+    clearTimeout(temporizador);
+    enUso--;
+    // Un navegador que no abre páginas no se reutiliza.
+    if (fallo && !enUso) await cerrarNavegadorPdf();
+    else if (!enUso) programarCierre();
+  }
+}
+
 /** Cierra el Chromium compartido (también al terminar los tests o al apagar el servidor). */
 export async function cerrarNavegadorPdf() {
   clearTimeout(cierreInactivo);
@@ -353,11 +394,15 @@ export async function generarPdf(directorio: string, archivo: string, html: stri
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'EEXIST')
         throw new ErrorPdf(`Ya existe ${archivo}; no se sobrescribe un documento emitido.`);
-      throw error;
+      if (['EXDEV', 'EPERM', 'ENOTSUP', 'EOPNOTSUPP'].includes((error as NodeJS.ErrnoException).code ?? ''))
+        await copyFile(temporal, join(carpeta, archivo), constants.COPYFILE_EXCL);
+      else throw error;
     }
   } catch (error) {
     fallo = !(error instanceof ErrorPdf && !vencido);
-    throw error;
+    throw error instanceof ErrorPdf
+      ? error
+      : new ErrorPdf(`Falló la generación de ${archivo}: ${causa(error)}`);
   } finally {
     clearTimeout(temporizador);
     enUso--;
@@ -365,7 +410,7 @@ export async function generarPdf(directorio: string, archivo: string, html: stri
     void tarea.catch(() => {}).finally(() => rm(temporal, { force: true }).catch(() => {}));
     await pagina?.close().catch(() => {});
     // Un navegador colgado o caído no se reutiliza.
-    if (fallo) await cerrarNavegadorPdf();
+    if (fallo && !enUso) await cerrarNavegadorPdf();
     else if (!enUso) programarCierre();
     await rm(temporal, { force: true });
   }

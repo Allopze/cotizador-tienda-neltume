@@ -1,3 +1,4 @@
+import { esSetDeMarco } from '../catalogo/escalones';
 import type { Producto } from '../catalogo/tipos';
 
 // Estimación del peso y las medidas embaladas de una unidad, para cotizar el despacho cuando la empresa no ha
@@ -127,9 +128,9 @@ export function estimarUnidad(
     return embalar({ espesor: lado, ancho: lado, largo: largoCm, kgMadera: m3 * densidad }, EMBALAJE.resto);
   }
   // Marcos y piezas T: kit de dos jambas y un dintel, de la escuadría en pulgadas, atados juntos.
-  const [a, b] = (leerSeccion(producto.medida) ?? SECCION_KIT_PULGADAS).map(
-    (p) => p * CM_POR_PULGADA * CEPILLADO,
-  );
+  const seccion = leerSeccion(producto.medida) ?? SECCION_KIT_PULGADAS;
+  const milimetros = esSetDeMarco(producto) || seccion.every((n) => n > 12);
+  const [a, b] = seccion.map((p) => milimetros ? p / 10 : p * CM_POR_PULGADA * CEPILLADO);
   const jamba = largoCm * SOBRELARGO_JAMBA;
   const metros = (JAMBAS_POR_KIT * jamba) / 100 + DINTEL_M;
   const m3 = (a / 100) * (b / 100) * metros;

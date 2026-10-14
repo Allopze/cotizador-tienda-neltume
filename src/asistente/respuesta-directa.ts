@@ -1,7 +1,14 @@
 import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { Cotizacion } from '../negocio/estado';
 import { preguntasPendientes, type PreguntaPendiente } from '../negocio/pendientes';
-import { cantidadesDichas, nombresDichos, PALABRAS_NUMERO, sinTildes, type ResolverNombre } from './anclaje';
+import {
+  cantidadesDichas,
+  familiaDeMedidas,
+  nombresDichos,
+  PALABRAS_NUMERO,
+  sinTildes,
+  type ResolverNombre,
+} from './anclaje';
 import type { ModificacionCotizacion } from './esquemas';
 
 /**
@@ -86,14 +93,22 @@ const UNIDAD = /\b(m|mt|mts|mtrs|metros?|cm|mm)\b/;
 const SECCION = /(?<![\d.,])\d{1,2}\s*[x×*]\s*\d{1,2}(?:[.,]\d)?(?![\d.,]*\d)/g;
 const NUMERO = /\d+(?:[.,]\d+)?/g;
 
-const respaldaOpcion = (p: PreguntaPendiente, m: number) =>
+const respaldaOpcion = (p: PreguntaPendiente, m: number, familia: string) =>
   p.opciones.some((o) => {
-    const valor = metros(Number(String(o.valor).replace(',', '.')));
+    const valor = metros(Number(String(o.valor).replace(',', '.')), familia);
     return valor !== null && Math.abs(valor - m) < 1e-6;
   });
 
-/** Valor de `campo` que dice el texto para la pregunta `p`, o null si no lo dice sin ambigüedad. */
-function leer(campo: Exclude<Campo, 'madera'>, texto: string, p: PreguntaPendiente): string | number | null {
+/**
+ * Valor de `campo` que dice el texto para la pregunta `p`, o null si no lo dice sin ambigüedad. Las medidas se
+ * leen con el rango de `familia`: el largo de un guardapolvo puede ser 3,6 m.
+ */
+function leer(
+  campo: Exclude<Campo, 'madera'>,
+  texto: string,
+  p: PreguntaPendiente,
+  familia: string,
+): string | number | null {
   const secciones = texto.match(SECCION) ?? [];
   const numeros = texto.replace(SECCION, ' ').match(NUMERO) ?? [];
   if (campo === 'medida') {
@@ -116,11 +131,11 @@ function leer(campo: Exclude<Campo, 'madera'>, texto: string, p: PreguntaPendien
   }
   if (numeros.length !== 1) return null;
   const n = Number(numeros[0].replace(',', '.'));
-  const m = metros(n);
+  const m = metros(n, familia);
   if (m === null) return null;
   // «3» sin unidad ni decimales puede ser una cantidad: solo vale si es una de las opciones.
-  if (n <= 10 && Number.isInteger(n) && !UNIDAD.test(texto) && !respaldaOpcion(p, m)) return null;
-  if (p.opciones.length) return respaldaOpcion(p, m) ? m : null;
+  if (n <= 10 && Number.isInteger(n) && !UNIDAD.test(texto) && !respaldaOpcion(p, m, familia)) return null;
+  if (p.opciones.length) return respaldaOpcion(p, m, familia) ? m : null;
   if (p.entrada && (m < p.entrada.min - 1e-9 || m > p.entrada.max + 1e-9)) return null;
   return m;
 }
@@ -129,6 +144,8 @@ export function respuestaDirecta(
   q: Pick<Cotizacion, 'solicitudes' | 'incompletos'>,
   mensaje: string,
   resolver: Resolver,
+  /** Familia del modelo en el catálogo; sin ella, un ítem con sección es un accesorio (ver `familiaDeMedidas`). */
+  familia: (modelo: string) => string | null = () => null,
 ): { name: 'modificar_cotizacion'; input: ModificacionCotizacion } | null {
   const texto = sinTildes(mensaje)
     .replace(/(\d)([a-z"])/g, '$1 $2')
@@ -160,7 +177,13 @@ export function respuestaDirecta(
   const lecturas = preguntas
     .filter((p) => p.campo !== 'madera' && (!pistas.length || pistas.includes(p.campo)))
     .flatMap((p) => {
-      const v = leer(p.campo as Exclude<Campo, 'madera'>, texto, p);
+      // El ancho es siempre de puerta; el largo, de la familia de sus ítems. Una pregunta compartida por ítems de
+      // distinta familia se lee con el rango de puerta, el más estrecho.
+      const familias = new Set(
+        p.indices.map((i) => familiaDeMedidas(q.solicitudes[i] ?? { modelo: null, medida: null }, familia)),
+      );
+      const fam = p.campo === 'ancho' || familias.size !== 1 ? 'PUERTA' : [...familias][0];
+      const v = leer(p.campo as Exclude<Campo, 'madera'>, texto, p, fam);
       return v === null ? [] : [{ p, v }];
     });
   if (lecturas.length !== 1) return null;

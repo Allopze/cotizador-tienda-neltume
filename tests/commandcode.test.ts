@@ -76,18 +76,64 @@ describe('Proveedor CommandCode', () => {
   it('conserva el modelo predeterminado y rechaza múltiples llamadas o respuesta truncada', async () => {
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
     vi.stubEnv('CMD_MODEL', undefined);
+    // El modelo por omisión responde en formato Chat Completions: la respuesta simulada debe tenerlo, o el null
+    // vendría del esquema y no de las llamadas múltiples o del truncado.
+    const chat = (llamadas: number, finish_reason = 'tool_calls') =>
+      Response.json({
+        choices: [
+          {
+            finish_reason,
+            message: {
+              tool_calls: Array.from({ length: llamadas }, () => ({
+                type: 'function',
+                function: { name: llamada.name, arguments: JSON.stringify(llamada.input) },
+              })),
+            },
+          },
+        ],
+      });
     const fetchMock = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(respuesta([llamada, llamada]))
-      .mockResolvedValueOnce(respuesta([llamada, llamada]))
-      .mockResolvedValueOnce(respuesta([llamada], 'max_tokens'))
-      .mockResolvedValueOnce(respuesta([llamada], 'max_tokens'));
+      .mockResolvedValueOnce(chat(2))
+      .mockResolvedValueOnce(chat(2))
+      .mockResolvedValueOnce(chat(1, 'length'))
+      .mockResolvedValueOnce(chat(1, 'length'))
+      .mockResolvedValueOnce(chat(1));
     vi.stubGlobal('fetch', fetchMock);
     // Cada respuesta inutilizable se reintenta una vez antes de rendirse.
     expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
     expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('claude-sonnet-5');
+    // La misma respuesta con una sola llamada completa sí sirve.
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toBe(
+      'https://api.commandcode.ai/provider/v1/chat/completions',
+    );
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).model).toBe('deepseek/deepseek-v4.1-flash');
+  });
+
+  it('con un modelo Claude también rechaza múltiples llamadas o respuesta truncada', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(respuesta([llamada, llamada]))
+      .mockResolvedValueOnce(respuesta([llamada, llamada]))
+      .mockResolvedValueOnce(respuesta([llamada], 'max_tokens'))
+      .mockResolvedValueOnce(respuesta([llamada], 'max_tokens'))
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
+    expect(await new CommandCodeLLM().interpretar(contexto)).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    expect(String(fetchMock.mock.calls[0][0])).toBe('https://api.commandcode.ai/provider/v1/messages');
   });
 
   it('reintenta una vez un límite o una caída momentánea del proveedor', async () => {
@@ -451,7 +497,7 @@ describe('Reintento con corrección', () => {
       .mockResolvedValueOnce(respuesta([indiceFuera]))
       .mockResolvedValueOnce(respuesta([llamada]));
     vi.stubGlobal('fetch', fetchMock);
-    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+    expect(await new CommandCodeLLM('claude-sonnet-5').interpretar(contexto)).toEqual({
       name: llamada.name,
       input: llamada.input,
     });
@@ -486,7 +532,7 @@ describe('Reintento con corrección', () => {
       .mockResolvedValueOnce(respuesta([productos]));
     vi.stubGlobal('fetch', fetchMock);
     const revisar = vi.fn(() => ({ correccion: 'Faltan los productos.', mensaje: '2 Molco lenga 80x200' }));
-    expect(await new CommandCodeLLM().interpretar(contexto, { revisar })).toEqual({
+    expect(await new CommandCodeLLM('claude-sonnet-5').interpretar(contexto, { revisar })).toEqual({
       name: 'modificar_cotizacion',
       input: { agregar: [molco], flete, cliente: { nombre: 'Verónica' } },
     });
@@ -502,7 +548,7 @@ describe('Reintento con corrección', () => {
         .mockResolvedValueOnce(respuesta([indiceFuera]))
         .mockResolvedValueOnce(Response.json({ error: 'caído' }, { status: 500 })),
     );
-    expect(await new CommandCodeLLM().interpretar(contexto)).toEqual({
+    expect(await new CommandCodeLLM('claude-sonnet-5').interpretar(contexto)).toEqual({
       name: indiceFuera.name,
       input: indiceFuera.input,
     });

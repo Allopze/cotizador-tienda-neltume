@@ -47,13 +47,24 @@ export async function analizarPlanilla(ruta: string, fuente: string, catalogo: R
   const importado = await importarPlanilla(ruta, catalogo.configuracion);
   importado.catalogo.fuente = fuente;
   const origen: OrigenCatalogo = importado.origen;
-  const cambios = compararCatalogo(catalogo.importados(origen), importado.catalogo.productos);
+  const actuales = catalogo.importados(origen);
+  const cambios = compararCatalogo(actuales, importado.catalogo.productos);
   const conteo = catalogo.conteoPorOrigen();
+  const editados = new Set(catalogo.edicionesManuales());
   const vista = {
     origen,
     etiquetaOrigen: ETIQUETA_ORIGEN[origen],
     sha256: importado.catalogo.sha256,
-    // Solo cuenta lo que cambia este origen: importar la otra planilla no invalida esta vista previa.
+    /**
+     * Versión de todo el catálogo, no solo de esta planilla (null si aún no hay). Es global: un alta o una
+     * edición manual, o importar la otra planilla, también invalidan esta vista previa y confirmar responde 409.
+     */
+    versionCatalogo: catalogo.version,
+    /** Productos de esta planilla editados a mano en la aplicación: la importación los reemplaza. */
+    edicionesManuales: actuales
+      .filter((p) => editados.has(p.codigo))
+      .map((p) => ({ codigo: p.codigo, descripcion: p.descripcion, precioNeto: p.precioNeto })),
+    // Última importación de esta planilla (redundante con la versión global, que ya cambia si se vuelve a importar).
     baseSha256: catalogo.metadataOrigen(origen)?.sha256 ?? null,
     fuente,
     totalProductos: importado.catalogo.productos.length,

@@ -1,7 +1,7 @@
 import type { Familia } from '../catalogo/tipos';
 import type { ProductoDespacho } from './envios';
 import { estimarUnidad } from './peso-estimado';
-import { pesos } from './precios';
+import { pesos, type MedidasSolicitadas } from './precios';
 
 // Lógica pura de la integración con Starken (sin red ni base de datos): la comparten el servidor, que
 // consulta las tarifas, y la interfaz, que muestra el bulto y decide si el botón se puede usar.
@@ -327,8 +327,51 @@ export interface TarifaStarken {
   neto: number;
 }
 
+/** Línea del pedido que se despacha: producto, cantidad y medidas pedidas. */
+export type LineaPedido = ProductoDespacho & Pick<MedidasSolicitadas, 'medidaSolicitada'>;
+/**
+ * El pedido de una tarifa como texto: lo que define el bulto en cada línea (producto con sus medidas, cantidad y
+ * medidas pedidas), sin importar el orden. El servidor firma su hash con la tarifa y la pantalla lo compara para
+ * saber si las tarifas a la vista siguen valiendo. (En un arreglo JSON, un campo ausente queda como null.)
+ */
+export const clavePedido = (lineas: readonly LineaPedido[]) =>
+  JSON.stringify(
+    lineas
+      .map(({ producto: p, ...l }) =>
+        JSON.stringify([
+          p.codigo,
+          p.familia,
+          p.tipo,
+          p.madera,
+          p.medida,
+          p.largo,
+          p.anchoMin,
+          p.anchoMax,
+          p.altoMin,
+          p.altoMax,
+          l.cantidad,
+          l.anchoSolicitado,
+          l.altoSolicitado,
+          l.medidaSolicitada,
+        ]),
+      )
+      .sort(),
+  );
+/**
+ * Clave con que la pantalla sabe si las tarifas a la vista siguen valiendo: cambia con el pedido (aunque el bulto
+ * quede igual, el servidor ya no aceptaría la tarifa), con el bulto, con el destino o con la comuna del cliente.
+ */
+export const claveTarifas = (
+  lineas: readonly LineaPedido[],
+  bulto: Bulto,
+  destino: string | null | undefined,
+  comuna: string | null | undefined,
+) => JSON.stringify([clavePedido(lineas), bulto, destino ?? '', comuna ?? '']);
+
 /** Tarifa con la firma del servidor: sin ella (o vencida, o de otra cotización) no se puede aplicar. */
 export interface TarifaStarkenFirmada extends TarifaStarken {
+  /** Hash del pedido con que se cotizó (ver `clavePedido`): si el pedido cambia, la tarifa ya no se aplica. */
+  huellaBulto: string;
   /** Vencimiento de la firma (ISO). */
   vence: string;
   firma: string;
@@ -336,6 +379,7 @@ export interface TarifaStarkenFirmada extends TarifaStarken {
 
 /** Tarifa elegida por la persona, que queda en la actividad de la cotización. */
 export interface TarifaStarkenAplicada {
+  huellaBulto: string;
   tipoEntrega: string;
   servicio?: string;
   dias: number;
@@ -349,18 +393,18 @@ export interface TarifaStarkenAplicada {
 
 const etiquetaEntrega = (t: string) => (t ? t.charAt(0).toUpperCase() + t.slice(1).toLowerCase() : t);
 
-/** «Domicilio · 2 días · $44.418 IVA incl. ($37.326 neto)». */
+/** «Domicilio · 2 días · $44.418 IVA incl. ($37.326 sin IVA)». */
 export function textoTarifa(
   t: Pick<TarifaStarken, 'tipoEntrega' | 'dias' | 'costoTotal'> & { servicio?: string },
 ) {
   const servicio =
     t.servicio && t.servicio.toUpperCase() !== 'NORMAL' ? ` ${etiquetaEntrega(t.servicio)}` : '';
   const dias = `${t.dias} ${t.dias === 1 ? 'día' : 'días'}`;
-  return `${etiquetaEntrega(t.tipoEntrega)}${servicio} · ${dias} · ${pesos(t.costoTotal)} IVA incl. (${pesos(netoDesdeIva(t.costoTotal))} neto)`;
+  return `${etiquetaEntrega(t.tipoEntrega)}${servicio} · ${dias} · ${pesos(t.costoTotal)} IVA incl. (${pesos(netoDesdeIva(t.costoTotal))} sin IVA)`;
 }
 
 /** Registro de actividad: «Tarifa Starken aplicada: Domicilio · 2 días · … · destino SAN CARLOS (ciudad 3)». */
-export const textoTarifaAplicada = (t: Omit<TarifaStarkenAplicada, 'vence' | 'firma'>) =>
+export const textoTarifaAplicada = (t: Omit<TarifaStarkenAplicada, 'vence' | 'firma' | 'huellaBulto'>) =>
   `Tarifa Starken aplicada: ${textoTarifa(t)} · destino ${t.ciudadDestino} (ciudad ${t.codigoCiudadDestino})`;
 
 // --- Formas de la API (las usan el servidor y la interfaz) ------------------------------------------------

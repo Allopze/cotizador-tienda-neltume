@@ -6,6 +6,7 @@ import { MAX_TRAMOS, problemaTramos, type ProblemaTramos } from '@/negocio/descu
 import { MARGEN_MAX } from '@/negocio/limites';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { SeccionAvanzada } from './avanzado';
 import { AccionesGuardar, SinPermiso, useAvisarCambios, useBorrador } from './borrador';
 
 interface Empresa {
@@ -320,19 +321,24 @@ const aPrecios = (r: Reglas): PreciosTexto => ({
 });
 const tramosNumericos = (p: PreciosTexto) =>
   p.tramos.map((t) => ({ desdePuertas: leerEntero(t.desde), porcentaje: leerCampo(t.porcentaje) }));
-/** Errores por campo (clave del campo → mensaje); los tramos se revisan aparte, con su propio aviso. */
+/**
+ * Errores por campo (clave del campo → mensaje), en el orden de la pantalla: primero el descuento máximo, a la
+ * vista, y después las ganancias y el IVA de «Avanzado». Los tramos se revisan aparte, con su propio aviso.
+ */
 function erroresPrecios(p: PreciosTexto) {
   const errores: Record<string, string> = {};
+  const maximo = errorPorcentaje(p.descuentoMaximo, 50);
+  if (maximo) errores.descuentoMaximo = maximo;
   for (const [clave] of ETIQUETAS_MARGEN) {
     const e = errorPorcentaje(p.margenes[clave] ?? '', MARGEN_MAX * 100);
     if (e) errores[`margen-${clave}`] = e;
   }
   const iva = errorPorcentaje(p.iva, 100);
   if (iva) errores.iva = iva;
-  const maximo = errorPorcentaje(p.descuentoMaximo, 100);
-  if (maximo) errores.descuentoMaximo = maximo;
   return errores;
 }
+/** Campos que viven en «Avanzado»: con un error ahí, el bloque se abre para mostrarlo. */
+const enAvanzado = (clave: string) => clave === 'iva' || clave.startsWith('margen-');
 
 export function PreciosDescuentos(props: PropsBloque) {
   return <ConNegocio negocio={props.negocio}>{(estado) => <FormularioPrecios {...props} estado={estado} />}</ConNegocio>;
@@ -348,6 +354,7 @@ function FormularioPrecios({ negocio, avisar, alCambiar, estado }: PropsBloque &
   const [avisoTramos, setAvisoTramos] = useState<ProblemaTramos | null>(null);
   const idBase = useId();
   const botonAgregar = useRef<HTMLButtonElement>(null);
+  const avanzado = useRef<HTMLDetailsElement>(null);
   useAvisarCambios(sucio, alCambiar);
 
   const editable = estado.puedeEditar;
@@ -390,6 +397,8 @@ function FormularioPrecios({ negocio, avisar, alCambiar, estado }: PropsBloque &
     const primero = Object.keys(enCampos)[0];
     if (primero) {
       setErrores(enCampos);
+      // Un error dentro de «Avanzado» plegado no se vería: se abre antes de llevar el foco.
+      if (avanzado.current && Object.keys(enCampos).some(enAvanzado)) avanzado.current.open = true;
       document.getElementById(idCampo(primero))?.focus();
       return;
     }
@@ -422,30 +431,8 @@ function FormularioPrecios({ negocio, avisar, alCambiar, estado }: PropsBloque &
         Estos valores se copian en cada cotización nueva. Cambiarlos no modifica las cotizaciones existentes.
       </p>
       {!editable && <SinPermiso />}
-      <h3 className="eyebrow">MÁRGENES POR CATEGORÍA</h3>
+      <h3 className="eyebrow">TOPE DE DESCUENTO</h3>
       <div className="usuario-form-grid">
-        {ETIQUETAS_MARGEN.map(([clave, etiqueta]) => (
-          <CampoCifra
-            key={clave}
-            id={idCampo(`margen-${clave}`)}
-            etiqueta={`${etiqueta} (%)`}
-            valor={borrador.margenes[clave] ?? ''}
-            cambiar={(valor) => cambiar({ ...borrador, margenes: { ...borrador.margenes, [clave]: valor } }, false)}
-            error={errores?.[`margen-${clave}`]}
-            disabled={desactivado}
-          />
-        ))}
-      </div>
-      <h3 className="eyebrow ajustes-subtitulo">IVA Y TOPE DE DESCUENTO</h3>
-      <div className="usuario-form-grid">
-        <CampoCifra
-          id={idCampo('iva')}
-          etiqueta="IVA (%)"
-          valor={borrador.iva}
-          cambiar={(iva) => cambiar({ ...borrador, iva }, false)}
-          error={errores?.iva}
-          disabled={desactivado}
-        />
         <CampoCifra
           id={idCampo('descuentoMaximo')}
           etiqueta="Descuento máximo (%)"
@@ -533,6 +520,45 @@ function FormularioPrecios({ negocio, avisar, alCambiar, estado }: PropsBloque &
           </p>
         )}
       </div>
+      <SeccionAvanzada
+        ref={avanzado}
+        titulo="IVA y ganancia por categoría"
+        advertencia={
+          <>
+            Cambian el precio de todas las cotizaciones nuevas. Un valor equivocado (por ejemplo, IVA 1,9 en vez de
+            19) deja mal cada precio que se cotice después. Cámbialos solo cuando Neltume lo haya decidido.
+          </>
+        }
+      >
+        <h3 className="eyebrow">GANANCIA SOBRE EL COSTO DE FÁBRICA</h3>
+        <p className="muted">
+          Porcentaje que se suma al costo de fábrica de cada producto para llegar al precio sin IVA de la cotización.
+        </p>
+        <div className="usuario-form-grid">
+          {ETIQUETAS_MARGEN.map(([clave, etiqueta]) => (
+            <CampoCifra
+              key={clave}
+              id={idCampo(`margen-${clave}`)}
+              etiqueta={`${etiqueta} (%)`}
+              valor={borrador.margenes[clave] ?? ''}
+              cambiar={(valor) => cambiar({ ...borrador, margenes: { ...borrador.margenes, [clave]: valor } }, false)}
+              error={errores?.[`margen-${clave}`]}
+              disabled={desactivado}
+            />
+          ))}
+        </div>
+        <h3 className="eyebrow ajustes-subtitulo">IVA</h3>
+        <div className="usuario-form-grid">
+          <CampoCifra
+            id={idCampo('iva')}
+            etiqueta="IVA (%)"
+            valor={borrador.iva}
+            cambiar={(iva) => cambiar({ ...borrador, iva }, false)}
+            error={errores?.iva}
+            disabled={desactivado}
+          />
+        </div>
+      </SeccionAvanzada>
       {!editable && error && <p className="catalog-error" role="alert">{error}</p>}
       {editable && (
         <AccionesGuardar

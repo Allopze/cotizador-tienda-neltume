@@ -55,7 +55,9 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await expect(page.getByRole('alert').filter({ hasText: 'Se cargó la versión actual' })).toBeVisible();
   await panel.locator('.quote-client-section > summary').click();
   await expect(panel.getByText('Casa Soto', { exact: true })).toBeVisible();
-  await guardarCampo(/^Editar unitario del flete/, 'Unitario del flete', '20000');
+  // Tras el conflicto, el campo sigue abierto con lo escrito: no se pierde (U5).
+  await expect(panel.getByLabel('Unitario del flete')).toHaveValue('20000');
+  await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(total).toHaveText(pesos(montos(5, { descuento: 10, flete: 20000 }).total));
   await guardarCampo(/^Editar cantidad del flete/, 'Cantidad del flete', '2');
   await expect(panel.locator('#linea-flete .celda-total')).toHaveText('$40.000');

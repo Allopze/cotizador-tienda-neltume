@@ -1,11 +1,35 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { AltaProducto } from '../src/app/alta-producto';
 import { PreguntasPendientes } from '../src/app/preguntas-pendientes';
-import { cambiosRespuesta, faltantesItem, preguntasPendientes, type PrefillAlta } from '../src/negocio/pendientes';
+import {
+  cambiosRespuesta,
+  faltantesItem,
+  fueraDeRegla,
+  preguntasPendientes,
+  type PrefillAlta,
+} from '../src/negocio/pendientes';
 import type { Rechazo } from '../src/catalogo/resolver';
-import type { Familia, SolicitudItem } from '../src/catalogo/tipos';
+import type { Catalogo, Familia, SolicitudItem } from '../src/catalogo/tipos';
+import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { ErrorUsuario, Servicio } from '../src/servidor/servicio';
+
+vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
+  generarPdf: vi.fn(async () => {}),
+  plantilla: vi.fn(async () => '<html/>'),
+}));
+const dirs: string[] = [];
+afterEach(async () => {
+  for (const dir of dirs.splice(0)) {
+    cerrarAlmacen(join(dir, 'cotizador.sqlite'));
+    await rm(dir, { recursive: true, force: true });
+  }
+});
 
 const item = (s: Partial<SolicitudItem>): SolicitudItem => ({
   modelo: 'Huilo Huilo',
@@ -333,5 +357,114 @@ describe('preguntas de los ítems pendientes', () => {
     };
     expect(faltantesItem(q, 0)).toBeNull();
     expect(faltantesItem(q, 1)).toEqual(['madera', 'alto']);
+  });
+});
+
+// servicio.ts (`recalcular`) deja pendiente con campo «precio» un ítem cuyo precio o descuento no cumple la regla.
+describe('ítem pendiente por precio o descuento fuera de regla', () => {
+  const PRECIO = 'El precio $40.000 queda fuera del rango permitido (−50 % a 500 % sobre el costo $100.000). Corrígelo o quita el ítem.';
+  const DESCUENTO = 'El descuento del ítem 2 no es válido o supera su precio unitario ($155.000). Ajusta o quita el descuento.';
+  const q = {
+    solicitudes: [
+      item({ modelo: 'MOLCO', madera: 'LENGA', precioUnitario: 40_000 }),
+      item({ madera: 'MARA', descuento: { tipo: 'monto', valor: 155_001 } }),
+    ],
+    incompletos: [
+      { indice: 0, rechazo: faltan(['precio']), pregunta: PRECIO },
+      { indice: 1, rechazo: faltan(['precio']), pregunta: DESCUENTO },
+    ],
+  };
+
+  it('explica el problema en vez de pedir una cantidad, y cada ítem lleva su propia explicación', () => {
+    const preguntas = preguntasPendientes(q);
+    expect(preguntas).toEqual([
+      expect.objectContaining({
+        indices: [0], campo: null, entrada: null, texto: 'Revisa el ítem 1 (Molco)', detalle: PRECIO,
+        opciones: [{ etiqueta: 'Quitar el precio fijado a mano', valor: 'precioUnitario' }],
+      }),
+      expect.objectContaining({
+        indices: [1], campo: null, entrada: null, texto: 'Revisa el ítem 2 (Huilo Huilo)', detalle: DESCUENTO,
+        opciones: [{ etiqueta: 'Quitar el descuento del ítem', valor: 'descuento' }],
+      }),
+    ]);
+    // La fila no dice «Falta: cantidad»: muestra la explicación.
+    expect(faltantesItem(q, 0)).toEqual([]);
+    expect(fueraDeRegla(q, 0)).toBe(PRECIO);
+    expect(fueraDeRegla(q, 1)).toBe(DESCUENTO);
+    expect(fueraDeRegla({ incompletos: [{ indice: 0, rechazo: faltan(['cantidad']), pregunta: '' }] }, 0)).toBeNull();
+    expect(fueraDeRegla(q, 2)).toBeNull();
+  });
+
+  it('un pedido especial con un descuento mayor que su precio solo ofrece quitar el descuento', () => {
+    // Su precio no está fijado a mano sobre el catálogo: es el dato de origen y no se puede quitar.
+    const especial = item({
+      modelo: 'Puerta doble', precioUnitario: 40_000, descuento: { tipo: 'monto', valor: 50_000 },
+      personalizado: { familia: 'PUERTA' },
+    });
+    const [p] = preguntasPendientes({
+      solicitudes: [especial],
+      incompletos: [{ indice: 0, rechazo: faltan(['precio']), pregunta: DESCUENTO }],
+    });
+    expect(p.opciones).toEqual([{ etiqueta: 'Quitar el descuento del ítem', valor: 'descuento' }]);
+  });
+
+  it('la tarjeta muestra la explicación y no ofrece un campo de cantidad', () => {
+    const html = renderToStaticMarkup(createElement(PreguntasPendientes, {
+      preguntas: preguntasPendientes(q), editable: true, asistente: false, guardando: null, responder: async () => true,
+    }));
+    expect(html).toContain('queda fuera del rango permitido');
+    expect(html).toContain('Ajusta o quita el descuento.');
+    expect(html).not.toContain('Cantidad');
+    expect(html).not.toContain('<input');
+    expect(html).toContain('Quitar el precio fijado a mano');
+  });
+
+  it('las opciones quitan lo fijado a mano con una edición directa', () => {
+    const [precio, descuento] = preguntasPendientes(q);
+    expect(cambiosRespuesta(precio, 'precioUnitario')).toEqual({ items: [{ indice: 0, cambios: { precioUnitario: null } }] });
+    expect(cambiosRespuesta(descuento, 'descuento')).toEqual({ items: [{ indice: 1, cambios: { descuento: null } }] });
+    expect(cambiosRespuesta(precio, 3)).toEqual({});
+    // Sin precio ni descuento fijados a mano no hay nada que quitar: queda solo la explicación.
+    const [solo] = preguntasPendientes({ solicitudes: [item({})], incompletos: [{ indice: 0, rechazo: faltan(['precio']), pregunta: PRECIO }] });
+    expect(solo.opciones).toEqual([]);
+  });
+
+  it('con el servidor: el pendiente que deja un precio o un descuento se resuelve con la opción de la tarjeta', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pendientes-'));
+    dirs.push(dir);
+    const catalogo: Catalogo = {
+      fuente: 'test.xlsx', sha256: 'catalogo-test', fecha: '2026-01-01T00:00:00.000Z',
+      productos: [{
+        codigo: 'HUI-M-3-A', modelo: 'Huilo Huilo', familia: 'PUERTA', tipo: 'PUERTA SÓLIDA', madera: 'MARA',
+        medida: '0,80 A 0,85', anchoMin: 0.8, anchoMax: 0.85, altoMin: 2.3, altoMax: 2.4, largo: 2.35,
+        precioNeto: 100_000, descripcion: 'HUILO HUILO MARA 0,80 A 0,85 MT X 2,30 A 2,40 MT', filaOrigen: 7,
+      }],
+    };
+    const cliente = { nombre: null, rut: null, giro: null, telefono: null, direccion: null, comuna: null, proyecto: null };
+    const solicitud = item({ madera: 'Mara', ancho: 0.82, alto: 2.35, cantidad: 1 });
+    const llm = { interpretar: vi.fn().mockResolvedValue({ name: 'actualizar_cotizacion', input: { items: [solicitud], cliente } }) };
+    const servicio = new Servicio(catalogo, llm, new Almacen(dir));
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara' })).cotizacion;
+    const editar = async (cambios: object) =>
+      (q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, ...cambios })).cotizacion);
+
+    for (const [cambios, valor] of [
+      [{ precioUnitario: 40_000 }, 'precioUnitario'],
+      [{ descuento: { tipo: 'monto', valor: 155_001 } }, 'descuento'],
+    ] as const) {
+      // Escrito en el detalle se rechaza; deshacer (o el chat) lo deja pendiente con la tarjeta.
+      await expect(editar({ items: [{ indice: 0, cambios }] })).rejects.toBeInstanceOf(ErrorUsuario);
+      q = (await servicio.ejecutar({
+        tipo: 'restaurar_items', id: q.id, actualizada: q.actualizada, items: [{ ...q.solicitudes[0], ...cambios }],
+      })).cotizacion;
+      expect(q.montos.lineas).toHaveLength(0);
+      const [p] = preguntasPendientes(q);
+      expect(p).toMatchObject({ campo: null, entrada: null, detalle: q.incompletos[0].pregunta, opciones: [{ valor }] });
+      expect(faltantesItem(q, 0)).toEqual([]);
+      expect(fueraDeRegla(q, 0)).toBe(q.incompletos[0].pregunta);
+      await editar(cambiosRespuesta(p, valor));
+      expect(q.incompletos).toEqual([]);
+      expect(q.montos.lineas[0].precioUnitario).toBe(155_000);
+    }
   });
 });

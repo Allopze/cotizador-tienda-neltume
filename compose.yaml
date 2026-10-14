@@ -30,13 +30,15 @@ services:
     mem_limit: ${NELTUME_MEMORIA:-1536m}
     memswap_limit: ${NELTUME_MEMORIA:-1536m}
     pids_limit: 512
+    # /api/salud sin sesión responde 200 si la base abre con el esquema esperado, la configuración de inicio de
+    # sesión es válida, hay espacio en el disco de datos y Chromium está instalado; si no, 503.
     healthcheck:
       test:
         [
           'CMD',
           'node',
           '-e',
-          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/api/salud').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 10s

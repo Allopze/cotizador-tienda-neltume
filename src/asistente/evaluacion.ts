@@ -17,6 +17,12 @@ const itemEsperado = z
     tipoMedida: z.enum(['hoja', 'vano']).nullable().optional(),
     /** Precio neto escrito por la persona; ausente es que no escribió ninguno (y la IA no debe inventarlo). */
     precioUnitario: z.number().int().nullable().optional(),
+    /** Descuento especial pedido por la persona; ausente es que no pidió ninguno (y la IA no debe inventarlo). */
+    descuento: z
+      .object({ tipo: z.enum(['porcentaje', 'monto']), valor: z.number().positive() })
+      .strict()
+      .nullable()
+      .optional(),
   })
   .strict();
 /** Línea de flete: valor neto de una unidad y unidades. */
@@ -62,6 +68,7 @@ export const CAMPOS_ITEM = [
   'cantidad',
   'tipoMedida',
   'precioUnitario',
+  'descuento',
 ] as const;
 type CampoItem = (typeof CAMPOS_ITEM)[number];
 
@@ -69,12 +76,20 @@ function igual(campo: CampoItem, esperado: unknown, obtenido: unknown) {
   const vacio = (v: unknown) => v === null || v === undefined || v === 'no_especificado';
   if (vacio(esperado) || vacio(obtenido)) return vacio(esperado) && vacio(obtenido);
   if (campo === 'ancho' || campo === 'alto') {
-    const a = metros(Number(esperado)),
-      b = metros(Number(obtenido));
-    return a !== null && b !== null && Math.abs(a - b) < 5e-4;
+    // El largo de un accesorio llega a 6 m: si como puerta no se lee, se compara con ese rango.
+    const comparar = (familia: string) => {
+      const a = metros(Number(esperado), familia),
+        b = metros(Number(obtenido), familia);
+      return a !== null && b !== null && Math.abs(a - b) < 5e-4;
+    };
+    return comparar('PUERTA') || (campo === 'alto' && comparar('MOLDURA'));
   }
   if (campo === 'medida') return normalizarMedida(String(esperado)) === normalizarMedida(String(obtenido));
   if (campo === 'cantidad' || campo === 'precioUnitario') return Number(esperado) === Number(obtenido);
+  if (campo === 'descuento') {
+    const [a, b] = [esperado, obtenido] as { tipo: string; valor: number }[];
+    return a.tipo === b.tipo && a.valor === b.valor;
+  }
   return normalizar(String(esperado)) === normalizar(String(obtenido));
 }
 

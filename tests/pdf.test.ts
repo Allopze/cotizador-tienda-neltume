@@ -1,36 +1,54 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { existsSync } from 'node:fs';
 import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clienteVacio, type Producto } from '../src/catalogo/tipos';
-import type { Cotizacion } from '../src/negocio/estado';
+import { anticipoMinimo, type Cotizacion } from '../src/negocio/estado';
 import { cotizar, descripcionLinea, montosVacios, REGLAS, type ReglasComerciales } from '../src/negocio/precios';
 import { cerrarBaseDatos } from '../src/servidor/base-datos';
+import { Almacen } from '../src/servidor/almacen';
+import { Servicio } from '../src/servidor/servicio';
 import { productoPersonalizado } from '../src/negocio/personalizados';
 
-const navegador = vi.hoisted(() => ({ demora: 0, cerrado: 0 }));
+const navegador = vi.hoisted(() => ({
+  demora: 0,
+  cerrado: 0,
+  /** newPage nunca responde, como un Chromium colgado. */
+  colgar: false,
+  /** Mensaje con que falla la impresión. */
+  falla: null as string | null,
+  /** Se espera antes de abrir cada página. */
+  alAbrir: null as (() => Promise<void>) | null,
+}));
 vi.mock('playwright', () => ({
   chromium: {
     launch: vi.fn(async () => ({
       on: () => {},
-      newPage: async () => ({
-        close: async () => {},
-        setDefaultTimeout: () => {},
-        route: async () => {},
-        setContent: async () => {},
-        pdf: async ({ path }: { path: string }) => {
-          await new Promise((r) => setTimeout(r, navegador.demora));
-          const { writeFile: escribir } = await import('node:fs/promises');
-          await escribir(path, '%PDF-1.4');
-        },
-      }),
+      newPage: async () => {
+        await navegador.alAbrir?.();
+        if (navegador.colgar) await new Promise(() => {});
+        return {
+          close: async () => {},
+          setDefaultTimeout: () => {},
+          route: async () => {},
+          setContent: async () => {},
+          pdf: async ({ path }: { path: string }) => {
+            await new Promise((r) => setTimeout(r, navegador.demora));
+            if (navegador.falla) throw new Error(navegador.falla);
+            const { writeFile: escribir } = await import('node:fs/promises');
+            await escribir(path, '%PDF-1.4');
+          },
+        };
+      },
       close: async () => {
         navegador.cerrado++;
       },
     })),
   },
 }));
-const { descripcionLegible, generarPdf, medidaPedida, plantilla } = await import('../src/servidor/pdf');
+const { descripcionLegible, generarPdf, medidaPedida, plantilla, prepararPdf } =
+  await import('../src/servidor/pdf');
 
 const puerta: Producto = {
   codigo: 'MOL-O-3-A',
@@ -75,7 +93,7 @@ const cotizacion = (): Cotizacion => ({
 });
 const dirs: string[] = [];
 afterEach(async () => {
-  navegador.demora = 0;
+  Object.assign(navegador, { demora: 0, colgar: false, falla: null, alAbrir: null });
   vi.unstubAllEnvs();
   for (const dir of dirs.splice(0)) {
     cerrarBaseDatos(join(dir, 'cotizador.sqlite'));
@@ -204,6 +222,21 @@ describe('Plantillas', () => {
     const anterior = await pdf({ descuentoManual: false }, REGLAS);
     expect(anterior).toMatch(/DESCUENTO 5 %\s+−\$/);
     for (const texto of [automatico, manual, anterior]) expect(texto).not.toMatch(/margen/i);
+  });
+
+  it('un transportista «Otro» guardado antes no se imprime', async () => {
+    await aislarBaseDatos();
+    const montos = cotizar([{ producto: puerta, cantidad: 1 }], { ajuste: 0, iva: 0.19 });
+    const html = await plantilla(cotizacion(), {
+      tipo: 'nota',
+      numero: 8,
+      montos,
+      fecha: '2026-09-28T12:00:00.000Z',
+      autor: 'Paulette',
+      despacho: { direccion: 'Los Carrera #450', transporte: ' otro ' },
+    });
+    expect(html).toContain('Dirección de despacho:</b> Los Carrera #450');
+    expect(html).not.toMatch(/Medio de transporte:<\/b>\s*otro/i);
   });
 
   it('la nota imprime giro, despacho, transporte y quién aprobó', async () => {
@@ -413,5 +446,141 @@ describe('generarPdf', () => {
     expect(navegador.cerrado).toBe(cerrados + 1);
     await new Promise((r) => setTimeout(r, 600));
     expect(await readdir(join(dir, 'pdf'))).toEqual([]);
+  });
+});
+
+describe('prepararPdf', () => {
+  it('corta la apertura de página de un Chromium colgado al vencer el plazo y lo descarta', async () => {
+    navegador.colgar = true;
+    const cerrados = navegador.cerrado;
+    await expect(prepararPdf(50)).rejects.toMatchObject({
+      codigo: 'pdf_no_disponible',
+      status: 503,
+      tecnico: expect.stringContaining('50 ms'),
+    });
+    expect(navegador.cerrado).toBe(cerrados + 1);
+  });
+
+  it('generarPdf conserva la causa del fallo en el registro técnico, sin el registro de llamadas', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-'));
+    dirs.push(dir);
+    navegador.falla = 'page.pdf: Target page, context or browser has been closed\nCall log:\n  - Juan Pérez';
+    await expect(generarPdf(dir, 'cotizacion-5.pdf', '<html/>')).rejects.toMatchObject({
+      codigo: 'pdf_no_disponible',
+      tecnico:
+        'Falló la generación de cotizacion-5.pdf: page.pdf: Target page, context or browser has been closed',
+    });
+  });
+});
+
+describe('PDF fuera del bloqueo del almacén', () => {
+  async function preparar() {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-bloqueo-'));
+    dirs.push(dir);
+    const almacen = new Almacen(dir);
+    const pedido = {
+      modelo: 'MOLCO',
+      madera: 'PINO OREGON',
+      ancho: 0.82,
+      alto: 2,
+      medida: null,
+      cantidad: 2,
+      tipoMedida: 'hoja',
+    };
+    const llm = {
+      interpretar: vi.fn().mockResolvedValue({
+        name: 'actualizar_cotizacion',
+        input: { items: [pedido], cliente: { ...clienteVacio(), nombre: 'Ana Soto' } },
+      }),
+    };
+    const catalogo = { fuente: 'test', sha256: 'test', fecha: '2026-01-01', productos: [puerta] };
+    const servicio = new Servicio(catalogo, llm, almacen, { nombre: 'Paula', email: 'paula@neltume.cl' });
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza MOLCO' })).cotizacion;
+    const intentar = (accion: Record<string, unknown>) =>
+      servicio.ejecutar({ ...accion, id: q.id, actualizada: q.actualizada } as never);
+    const ir = async (accion: Record<string, unknown>) => (q = (await intentar(accion)).cotizacion);
+    const bloqueado = () => existsSync(join(dir, '.estado.lock'));
+    // La sonda detecta el bloqueo cuando está tomado.
+    await almacen.transaccion(() => expect(bloqueado()).toBe(true));
+    const regenerados = () => almacen.eventos(q.id).filter((e) => e.detalle === 'PDF regenerado').length;
+    return { dir, almacen, intentar, ir, bloqueado, regenerados, actual: () => q };
+  }
+
+  it('emitir, generar la nota y regenerar un PDF abren Chromium con el almacén libre', async () => {
+    const t = await preparar();
+    const conBloqueo: boolean[] = [];
+    navegador.alAbrir = async () => {
+      conBloqueo.push(t.bloqueado());
+    };
+    await t.ir({ tipo: 'emitir' });
+    await t.ir({ tipo: 'aprobar' });
+    await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total), fecha: '2026-09-30' });
+    await t.ir({ tipo: 'generar_nota' });
+    const archivo = join(t.dir, 'pdf', t.actual().pdf!);
+    await rm(archivo);
+    await expect(t.intentar({ tipo: 'regenerar_pdf', documento: 'cotizacion' })).resolves.toMatchObject({
+      archivo: t.actual().pdf,
+    });
+    expect(existsSync(archivo)).toBe(true);
+    expect(t.regenerados()).toBe(1);
+    expect(conBloqueo.length).toBeGreaterThanOrEqual(5);
+    expect(conBloqueo).not.toContain(true);
+  });
+
+  it('si la cotización cambia mientras se comprueba Chromium, emitir responde 409 sin gastar el número', async () => {
+    const t = await preparar();
+    const antes = t.almacen.correlativos();
+    // Otra persona guarda mientras Chromium arranca: con el bloqueo tomado, esto quedaría esperando.
+    navegador.alAbrir = async () => {
+      navegador.alAbrir = null;
+      await t.ir({ tipo: 'comentario', texto: 'Llamar el lunes' });
+    };
+    await expect(t.intentar({ tipo: 'emitir' })).rejects.toMatchObject({
+      status: 409,
+      codigo: 'version_obsoleta',
+    });
+    expect(t.almacen.correlativos()).toEqual(antes);
+    await t.ir({ tipo: 'emitir' });
+    expect(t.actual().numero).toBe(antes.siguienteCotizacion);
+  });
+
+  it('si la cotización cambia mientras se regenera, conserva el PDF recuperado y registra el evento', async () => {
+    // Antes respondía 409 y borraba el PDF recién recuperado, aunque otra recuperación simultánea ya lo hubiera
+    // entregado (esa encuentra el archivo y lo devuelve sin imprimir). Es el documento emitido, impreso desde su
+    // snapshot: un comentario entretanto no lo invalida, así que queda y el evento se registra con la versión actual.
+    const t = await preparar();
+    await t.ir({ tipo: 'emitir' });
+    const archivo = join(t.dir, 'pdf', t.actual().pdf!);
+    await rm(archivo);
+    navegador.alAbrir = async () => {
+      navegador.alAbrir = null;
+      await t.ir({ tipo: 'comentario', texto: 'Pidió otra copia' });
+    };
+    const r = await t.intentar({ tipo: 'regenerar_pdf', documento: 'cotizacion' });
+    expect(r.archivo).toBe(t.actual().pdf);
+    expect(r.cotizacion.actualizada).toBe(t.actual().actualizada);
+    expect(existsSync(archivo)).toBe(true);
+    expect(t.regenerados()).toBe(1);
+    // Ya recuperado, se entrega sin volver a imprimirlo ni registrar otro evento.
+    await t.ir({ tipo: 'regenerar_pdf', documento: 'cotizacion' });
+    expect(existsSync(archivo)).toBe(true);
+    expect(t.regenerados()).toBe(1);
+  });
+
+  it('si entretanto ese PDF dejó de ser el documento de la cotización, responde 409 sin borrarlo', async () => {
+    const t = await preparar();
+    await t.ir({ tipo: 'emitir' });
+    const archivo = join(t.dir, 'pdf', t.actual().pdf!);
+    await rm(archivo);
+    navegador.alAbrir = async () => {
+      navegador.alAbrir = null;
+      await t.almacen.transaccion((u) => u.guardar({ ...u.obtener(t.actual().id)!, pdf: 'otro-documento.pdf' }));
+    };
+    await expect(t.intentar({ tipo: 'regenerar_pdf', documento: 'cotizacion' })).rejects.toMatchObject({
+      status: 409,
+      codigo: 'version_obsoleta',
+    });
+    expect(existsSync(archivo)).toBe(true);
+    expect(t.regenerados()).toBe(0);
   });
 });

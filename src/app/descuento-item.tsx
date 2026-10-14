@@ -1,5 +1,5 @@
 'use client';
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { DescuentoItem } from '@/catalogo/tipos';
 import type { Cotizacion } from '@/negocio/estado';
 import { conDosDecimales, leerPesos, leerPorcentaje } from '@/negocio/cifras';
@@ -25,6 +25,13 @@ const OPCIONES = [
 
 /** Lee el texto según el tipo: «15», «15,5 %» o «$5.000». Vacío es 0 (sin descuento). */
 const leer = (tipo: Tipo, texto: string) => (tipo === 'porcentaje' ? leerPorcentaje(texto) : leerPesos(texto));
+
+/** Descuento que se guarda con lo escrito (ya validado): vacío o 0 lo quita; un porcentaje lleva dos decimales. */
+export function descuentoEscrito(tipo: Tipo, texto: string): DescuentoItem | null {
+  const valor = leer(tipo, texto);
+  if (!valor) return null;
+  return { tipo, valor: tipo === 'porcentaje' ? Math.round(valor * 100) / 100 : valor };
+}
 
 /** Mensaje de error de un descuento escrito, o null si es válido. El monto nunca supera el precio unitario. */
 export function errorDescuentoItem(tipo: Tipo, texto: string, precioUnitario: number): string | null {
@@ -68,9 +75,17 @@ export function DescuentoLinea({
   const entrada = useRef<HTMLInputElement>(null);
   const enCurso = useRef(false);
   const guardado = actual.solicitudes[indice]?.descuento ?? null;
-  const [tipo, setTipo] = useState<Tipo>(guardado?.tipo ?? 'porcentaje');
+  /** Tipo elegido en el selector y aún sin guardar; null sigue al guardado (también si otra persona lo cambia). */
+  const [tipoElegido, setTipoElegido] = useState<Tipo | null>(null);
+  const tipo = tipoElegido ?? guardado?.tipo ?? 'porcentaje';
   const [error, setError] = useState('');
   const textoGuardado = guardado && guardado.tipo === tipo ? String(guardado.valor).replace('.', ',') : '';
+  // Lo guardado llega al campo solo si no se está escribiendo en él: al volver a la pestaña o cuando otra vendedora
+  // guarda, lo escrito no se pierde.
+  useEffect(() => {
+    const campo = entrada.current;
+    if (campo && document.activeElement !== campo) campo.value = textoGuardado;
+  }, [textoGuardado]);
 
   async function guardar(cambio: DescuentoItem | null) {
     // Enter y la salida del campo llegan juntas: una sola petición a la vez.
@@ -78,8 +93,10 @@ export function DescuentoLinea({
     enCurso.current = true;
     try {
       const ok = await editar({ items: [{ indice, cambios: { descuento: cambio } }] }, `item.${indice}.descuento`);
+      // Guardado: el tipo vuelve a seguir al descuento guardado.
+      if (ok) setTipoElegido(null);
       // El servidor lo rechazó (o se canceló): no se deja a la vista un valor que no quedó guardado.
-      if (!ok && entrada.current) entrada.current.value = textoGuardado;
+      else if (entrada.current) entrada.current.value = textoGuardado;
     } finally {
       enCurso.current = false;
     }
@@ -92,13 +109,13 @@ export function DescuentoLinea({
     const problema = errorDescuentoItem(tipo, texto, linea.precioUnitario);
     setError(problema ?? '');
     if (problema) return;
-    const valor = leer(tipo, texto);
-    if (!valor) {
+    const nuevo = descuentoEscrito(tipo, texto);
+    if (!nuevo) {
       if (guardado) void guardar(null);
       return;
     }
-    if (guardado?.tipo === tipo && Math.abs(guardado.valor - valor) < 0.001) return;
-    void guardar({ tipo, valor: tipo === 'porcentaje' ? Math.round(valor * 100) / 100 : valor });
+    if (guardado?.tipo === tipo && Math.abs(guardado.valor - nuevo.valor) < 0.001) return;
+    void guardar(nuevo);
   }
 
   const final = precioConDescuento(linea);
@@ -114,7 +131,8 @@ export function DescuentoLinea({
             <input
               id={`${id}-valor`}
               ref={entrada}
-              key={`${actual.actualizada}-${indice}-descuento-${tipo}`}
+              // Cambiar el tipo vuelve a mostrar lo guardado de ese tipo (vacío si no hay).
+              key={tipo}
               type="text"
               inputMode={tipo === 'porcentaje' ? 'decimal' : 'numeric'}
               placeholder="0"
@@ -143,7 +161,7 @@ export function DescuentoLinea({
             disabled={!editable}
             onChange={(valor) => {
               // Cambiar el tipo no guarda nada: el descuento vigente sigue hasta escribir el nuevo valor.
-              setTipo(valor as Tipo);
+              setTipoElegido(valor as Tipo);
               setError('');
               requestAnimationFrame(() => entrada.current?.focus());
             }}

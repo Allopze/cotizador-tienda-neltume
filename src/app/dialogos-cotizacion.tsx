@@ -128,9 +128,11 @@ interface DatosEmision {
   productos?: { nombre: string; medida: string | null }[];
   /** N° de la cotización que esta revisión reemplaza al emitirse. */
   reemplaza?: number | null;
+  /** Solo una cuenta administradora elige el número a mano (la API lo exige igual). */
+  numeroManual?: boolean;
 }
 
-/** Emisión: permite elegir un número nuevo solo por encima del último correlativo reservado. */
+/** Emisión: una cuenta administradora puede elegir un número nuevo por encima del último reservado. */
 export function useEmision() {
   const [pendiente, setPendiente] = useState<
     (DatosEmision & { resolver: (r: { numero: number | null } | null) => void }) | null
@@ -172,10 +174,12 @@ function FormEmision({
 }) {
   const [numero, setNumero] = useState('');
   const [error, setError] = useState('');
+  // «1.250» se lee como 1250: los puntos de miles no hacen inválido el número.
+  const escrito = datos.numeroManual ? numero.replace(/[.\s]/g, '') : '';
+  const valido = /^\d+$/.test(escrito) && Number(escrito) > 0;
   function enviar(e: FormEvent) {
     e.preventDefault();
-    const escrito = numero.trim();
-    if (escrito && (!/^\d+$/.test(escrito) || Number(escrito) <= 0)) {
+    if (escrito && !valido) {
       setError('El número debe ser un entero positivo.');
       return;
     }
@@ -204,32 +208,53 @@ function FormEmision({
         </p>
         {datos.reemplaza ? (
           <p>
-            Es una revisión: al emitirla, la cotización N° {datos.reemplaza} quedará <strong>Reemplazada</strong> y
-            su PDF se conserva.
+            Es una revisión: al emitirla, la cotización N° {datos.reemplaza} quedará <strong>Reemplazada</strong>
+            (se guarda para consultarla, pero ya no se podrá aprobar) y su PDF se conserva.
           </p>
         ) : null}
-        <p>Si dejas el número vacío se asignará el siguiente correlativo disponible.</p>
-        <p>También puedes indicar un número manual, pero debe ser mayor que el último número usado o reservado.</p>
+        {datos.numeroManual ? (
+          <>
+            <p>Si dejas el número vacío se asignará el siguiente número disponible.</p>
+            <p>
+              Un número a mano debe ser mayor que el último usado o reservado y no superarlo en más de 1.000.
+            </p>
+          </>
+        ) : (
+          <p>Se le asignará el siguiente número disponible.</p>
+        )}
+        {valido && (
+          // El salto no se deshace: los números intermedios no se vuelven a usar.
+          <p className="dialogo-advertencia" id="emision-salto">
+            Se emitirá como N° {Number(escrito).toLocaleString('es-CL')}: los números que se salten no se usarán
+            después y la siguiente cotización seguirá desde el {(Number(escrito) + 1).toLocaleString('es-CL')}.
+          </p>
+        )}
       </div>
-      <div className="dialogo-campos">
-        <label className="ia-field">
-          <span>Número de cotización (opcional)</span>
-          <input
-            type="number"
-            min={1}
-            max={1_000_000_000}
-            step={1}
-            value={numero}
-            onChange={(e) => {
-              setNumero(e.target.value);
-              setError('');
-            }}
-            placeholder="Siguiente disponible"
-            autoComplete="off"
-          />
-        </label>
-        {error && <p className="campo-error" role="alert">{error}</p>}
-      </div>
+      {datos.numeroManual && (
+        <div className="dialogo-campos">
+          <label className="ia-field">
+            <span>Número de cotización (opcional)</span>
+            <input
+              inputMode="numeric"
+              value={numero}
+              onChange={(e) => {
+                setNumero(e.target.value);
+                setError('');
+              }}
+              placeholder="Siguiente disponible"
+              autoComplete="off"
+              maxLength={13}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? 'emision-numero-error' : valido ? 'emision-salto' : undefined}
+            />
+          </label>
+          {error && (
+            <p className="campo-error" id="emision-numero-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
       <div className="dialogo-acciones">
         <button ref={cancelar} type="button" className="button secondary" onClick={() => responder(null)}>Cancelar</button>
         <button type="submit" className="button primary">Emitir y generar PDF</button>
@@ -396,6 +421,103 @@ function FormAnulacionPago({
         </button>
         <button type="submit" className="button peligro">
           Anular pago
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface DatosRetroceso {
+  /** Etiquetas del paso actual y del anterior («Despachada» → «Lista para despacho»). */
+  desde: string;
+  hasta: string;
+}
+/** Volver un paso de la operación: el motivo es obligatorio y queda en la actividad. */
+export function useRetroceso() {
+  const [pendiente, setPendiente] = useState<
+    (DatosRetroceso & { resolver: (r: { motivo: string } | null) => void }) | null
+  >(null);
+  const pedir = useCallback(
+    (datos: DatosRetroceso) =>
+      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ ...datos, resolver })),
+    [],
+  );
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const cerrar = (r: { motivo: string } | null) => {
+    pendiente?.resolver(r);
+    setPendiente(null);
+  };
+  const elemento = (
+    <Dialogo
+      abierto={!!pendiente}
+      alCerrar={() => cerrar(null)}
+      titulo="Volver al paso anterior"
+      eyebrow="OPERACIÓN"
+      className="dialogo-confirmacion"
+      focoInicial={campo}
+      alerta
+    >
+      {pendiente && <FormRetroceso datos={pendiente} responder={cerrar} campo={campo} />}
+    </Dialogo>
+  );
+  return [pedir, elemento] as const;
+}
+function FormRetroceso({
+  datos,
+  responder,
+  campo,
+}: {
+  datos: DatosRetroceso;
+  responder: (r: { motivo: string } | null) => void;
+  campo: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const [motivo, setMotivo] = useState('');
+  const [error, setError] = useState('');
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (motivo.trim()) responder({ motivo: motivo.trim() });
+        else {
+          setError('Escribe el motivo: queda registrado en la actividad.');
+          campo.current?.focus();
+        }
+      }}
+    >
+      <div className="dialogo-mensaje">
+        <p>
+          La operación vuelve de «{datos.desde}» a «{datos.hasta}». El cambio y su motivo quedan en la actividad.
+        </p>
+      </div>
+      <div className="dialogo-campos">
+        <label className="ia-field">
+          <span>Motivo</span>
+          <textarea
+            ref={campo}
+            value={motivo}
+            onChange={(e) => {
+              setMotivo(e.target.value);
+              setError('');
+            }}
+            maxLength={300}
+            rows={2}
+            placeholder="Ej. se marcó por error"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'retroceso-error' : undefined}
+          />
+        </label>
+        {error && (
+          <p className="campo-error" id="retroceso-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="dialogo-acciones">
+        <button type="button" className="button secondary" onClick={() => responder(null)}>
+          Cancelar
+        </button>
+        <button type="submit" className="button primary">
+          Volver al paso anterior
         </button>
       </div>
     </form>

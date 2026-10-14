@@ -20,16 +20,28 @@ export const SIN_CATALOGO = new Set<Rechazo['tipo']>([
  * cuenta para el descuento por cantidad.
  */
 export function familiaEspecial(
-  r: Rechazo,
+  r: Rechazo | null | undefined,
   s?: Pick<SolicitudItem, 'modelo' | 'ancho' | 'medida'>,
 ): Familia {
-  const conocida = 'familia' in r ? r.familia : undefined;
+  const conocida = r && 'familia' in r ? r.familia : undefined;
   if (conocida) return conocida;
   const nombre = (s?.modelo ?? '').toLowerCase();
   if (/\bmarcos?\b/.test(nombre)) return 'MARCO';
   if (/\bpiezas?\s*t\b/.test(nombre)) return 'PIEZAS_T';
   if (/guardapolvo|pilastra|endolado|moldura|cornisa|junquillo|tapajunta/.test(nombre)) return 'MOLDURA';
   return s && s.ancho == null && s.medida ? 'MOLDURA' : 'PUERTA';
+}
+
+/**
+ * Familia con que se leen y validan las medidas de un ítem (puertas hasta 3 m, accesorios hasta 6 m): la del pedido
+ * especial, la del producto con que se cotizó o, si está pendiente, la que dicen su rechazo y su nombre.
+ */
+export function familiaItem(
+  s: Pick<SolicitudItem, 'modelo' | 'ancho' | 'medida' | 'personalizado'>,
+  cotizado?: { familia: Familia } | null,
+  rechazo?: Rechazo | null,
+): Familia {
+  return s.personalizado?.familia ?? cotizado?.familia ?? familiaEspecial(rechazo, s);
 }
 
 /** Formatos admitidos como referencia del cliente y la extensión con que se guardan. */
@@ -76,8 +88,9 @@ export function productoPersonalizado(s: SolicitudItem, familia: Familia): Resol
     (s.cantidad === null || !Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000) && 'cantidad',
     !s.precioUnitario && 'precio',
   ].filter((c): c is string => !!c);
-  const ancho = s.ancho === null ? null : metros(s.ancho);
-  const alto = s.alto === null ? null : metros(s.alto);
+  // El ancho es de puerta (hasta 3 m); el largo de un accesorio especial llega a 6 m, como en el catálogo.
+  const ancho = s.ancho === null ? null : metros(s.ancho, 'PUERTA');
+  const alto = s.alto === null ? null : metros(s.alto, familia);
   if (s.ancho !== null && ancho === null) campos.push('ancho');
   if (s.alto !== null && alto === null) campos.push('alto');
   if (campos.length) return { ok: false, campos };

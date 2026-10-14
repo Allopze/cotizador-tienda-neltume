@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useEffectEvent, useState, type FormEvent } from 'react';
 import type { TipoAviso } from '../avisos';
 import { useConfirmacion } from '../dialogo';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
@@ -16,8 +16,45 @@ interface Usuario {
   activo: boolean;
 }
 
+interface CambioCuenta {
+  id: number;
+  fecha: string;
+  actor: string | null;
+  objetivo: string | null;
+  accion: string;
+}
+
+interface RespuestaCuentas {
+  usuarios: Usuario[];
+  actual: string;
+  cambios?: CambioCuenta[];
+}
+
+/** Lo emite «Crear cuenta» para que la lista y el registro de cambios se actualicen sin recargar. */
+export const EVENTO_CUENTAS = 'neltume:cuentas-cambiaron';
+
+const ACCIONES: Record<string, string> = {
+  crear: 'Creó la cuenta',
+  'crear-primera': 'Creó la primera cuenta',
+  editar: 'Editó la cuenta',
+  desactivar: 'Desactivó la cuenta',
+  activar: 'Activó la cuenta',
+  'restablecer-clave': 'Restableció la contraseña',
+};
+
+const fechaHora = (iso: string) =>
+  new Date(iso).toLocaleString('es-CL', {
+    timeZone: 'America/Santiago',
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
 export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number }) {
   const [usuarios, setUsuarios] = useState<Usuario[] | null>(null);
+  const [cambios, setCambios] = useState<CambioCuenta[]>([]);
   const [actual, setActual] = useState('');
   const [editando, setEditando] = useState<string | null>(null);
   const [nombre, setNombre] = useState('');
@@ -30,12 +67,19 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
   const [ocupado, setOcupado] = useState('');
   const [confirmar, dialogoConfirmacion] = useConfirmacion();
 
+  function aplicar(data: RespuestaCuentas) {
+    setUsuarios(data.usuarios);
+    setActual(data.actual);
+    setCambios(data.cambios ?? []);
+  }
+
   async function cargar() {
     setError('');
     try {
-      const data = await pedirJSON<{ usuarios: Usuario[]; actual: string }>('/api/usuarios', { cache: 'no-store' });
+      const data = await pedirJSON<RespuestaCuentas>('/api/usuarios', { cache: 'no-store' });
       setUsuarios(data.usuarios);
       setActual(data.actual);
+      setCambios(data.cambios ?? []);
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
     }
@@ -44,6 +88,15 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
     const tarea = window.setTimeout(() => void cargar(), 0);
     return () => window.clearTimeout(tarea);
   }, []);
+  // «Crear cuenta» avisa con un evento: la lista y el registro de cambios se recargan sin recargar la página.
+  const alCambiarCuentas = useEffectEvent(() => void cargar());
+  useEffect(() => {
+    const recargar = () => alCambiarCuentas();
+    window.addEventListener(EVENTO_CUENTAS, recargar);
+    return () => window.removeEventListener(EVENTO_CUENTAS, recargar);
+  }, []);
+
+  const adminsActivos = usuarios?.filter((u) => u.activo && u.rol === 'admin').length ?? 0;
 
   function cerrarClave() {
     setClaveId(null);
@@ -56,9 +109,7 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
     setOcupado(String(body.id));
     setError('');
     try {
-      const data = await pedirJSON<{ usuarios: Usuario[]; actual: string }>('/api/usuarios', { method: 'PATCH', json: body });
-      setUsuarios(data.usuarios);
-      setActual(data.actual);
+      aplicar(await pedirJSON<RespuestaCuentas>('/api/usuarios', { method: 'PATCH', json: body }));
       setEditando(null);
       cerrarClave();
       avisar('exito', mensaje, { clave: 'usuarios' });
@@ -108,6 +159,12 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
         Edita nombre y correo, activa o desactiva cuentas y restablece contraseñas. Las cuentas que se crean aquí
         tienen rol de administrador; las de rol estándar ven Ajustes en solo lectura.
       </p>
+      {usuarios !== null && adminsActivos < 2 && (
+        <p className="catalog-error" role="status">
+          Hay una sola cuenta administradora activa. Crea otra: si se olvida esta contraseña, otra administradora puede
+          restablecerla sin recurrir a la terminal del servidor.
+        </p>
+      )}
       {error && (
         <p className="catalog-error" role="alert">
           {error}{' '}
@@ -154,6 +211,31 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
             })}</tbody>
           </table>
         </div>
+      )}
+      {usuarios !== null && (
+        <>
+          <h3 className="eyebrow ajustes-subtitulo">REGISTRO DE CAMBIOS</h3>
+          <p className="catalog-modal-intro">
+            Los cambios de cuentas más recientes (hasta 50): quién creó, editó, desactivó, activó o restableció la
+            contraseña de qué cuenta.
+          </p>
+          {!cambios.length ? (
+            <p className="muted">Todavía no hay cambios registrados.</p>
+          ) : (
+            <div className="catalogo-lista">
+              <table>
+                <thead><tr><th>FECHA</th><th>QUIÉN</th><th>CAMBIO</th></tr></thead>
+                <tbody>{cambios.map((cambio) => (
+                  <tr key={cambio.id}>
+                    <td data-etiqueta="Fecha"><small>{fechaHora(cambio.fecha)}</small></td>
+                    <td data-etiqueta="Quién">{cambio.actor ?? '—'}</td>
+                    <td data-etiqueta="Cambio">{ACCIONES[cambio.accion] ?? cambio.accion}<small>{cambio.objetivo ?? ''}</small></td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+        </>
       )}
       {dialogoConfirmacion}
     </div>

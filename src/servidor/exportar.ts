@@ -1,8 +1,14 @@
-import { etiquetaEstado, type ResumenCotizacion } from '../negocio/estado';
+import { etiquetaEstado, etiquetaOperativo, type ResumenCotizacion } from '../negocio/estado';
 import { fechaLocal } from '../negocio/vigencia';
 
 /** Tope de filas por exportación: el listado completo de una operación interna cabe con holgura. */
 export const MAX_EXPORTACION = 5000;
+
+/**
+ * Saldo y facturación solo tienen sentido en una venta: una cotización aprobada. En un borrador, una emitida, una
+ * reemplazada o una anulada nadie debe ese total ni hay nada que facturar, así que esas celdas quedan vacías.
+ */
+const deVenta = <T>(q: ResumenCotizacion, valor: () => T) => (q.estado === 'aprobada' ? valor() : null);
 
 const COLUMNAS: [string, (q: ResumenCotizacion) => string | number | null][] = [
   ['N°', (q) => q.numero],
@@ -28,6 +34,10 @@ const COLUMNAS: [string, (q: ResumenCotizacion) => string | number | null][] = [
   ['Neto', (q) => q.neto],
   ['IVA', (q) => q.iva],
   ['Total', (q) => q.total],
+  ['Pagado', (q) => q.pagado ?? 0],
+  ['Saldo', (q) => deVenta(q, () => q.saldoPendiente ?? Math.max(0, q.total - (q.pagado ?? 0)))],
+  ['Operación', (q) => etiquetaOperativo[q.estadoOperativo ?? 'sin_pedido']],
+  ['Facturación', (q) => deVenta(q, () => (q.facturacion?.estado === 'facturada' ? 'Facturada' : 'Pendiente'))],
   ['Revisión de', (q) => q.origen],
   ['Reemplazada por', (q) => q.reemplazadaPor],
   ['Nota de pedido', (q) => (q.nota ? `${q.nota.numero}${q.nota.anulada ? ' (anulada)' : ''}` : null)],

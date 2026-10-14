@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { ErrorIA, errorProveedor } from '../asistente/errores';
-import { pregunta } from '../asistente/preguntas';
+import { MAX_OPCIONES } from '../asistente/preguntas';
 import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { fleteDelChat } from '../asistente/flete';
 import { salidaSchema } from '../asistente/esquemas';
@@ -13,11 +13,21 @@ import {
   anclarNombres,
   avisosDeCampos,
   avisosDePalabras,
+  cifrasDelTexto,
+  ESCUADRIAS_HABITUALES,
+  familiaDeMedidas,
   fraseDelMensaje,
   nombresDichos,
+  sinTildes,
   type ResolverNombre,
 } from '../asistente/anclaje';
-import { MONTO_BAJO, montoEscrito } from '../asistente/montos';
+import {
+  MONTO_BAJO,
+  montoEscrito,
+  montosDelTexto,
+  porcentajeEscrito,
+  textosSinPorcentajes,
+} from '../asistente/montos';
 import { fleteAlFinal, pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
 import { respuestaDirecta } from '../asistente/respuesta-directa';
 import { mapaCatalogo } from '../catalogo/mapa';
@@ -38,7 +48,14 @@ import {
   type Resolucion,
 } from '../catalogo/resolver';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
-import { clienteVacio, type Cliente, type Familia, type ReferenciaItem, type SolicitudItem } from '../catalogo/tipos';
+import {
+  clienteVacio,
+  type Cliente,
+  type DescuentoItem,
+  type Familia,
+  type ReferenciaItem,
+  type SolicitudItem,
+} from '../catalogo/tipos';
 import {
   familiaEspecial,
   mismasReferencias,
@@ -46,13 +63,14 @@ import {
   SIN_CATALOGO,
 } from '../negocio/personalizados';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
-import { ANTICIPO_TEXTO, MARGEN_MAX, MARGEN_MIN, RANGO_MARGEN } from '../negocio/limites';
+import { ANTICIPO_TEXTO, DESCUENTO_MAXIMO, MARGEN_MAX, MARGEN_MIN, RANGO_MARGEN, rangoMedidas } from '../negocio/limites';
 import { indicesMedidaSinTipo } from '../negocio/medidas';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
 import { contarPuertas, descuentoAutomatico, descuentoEsManual, textoPuertas } from '../negocio/descuento-cantidad';
 import {
   avisoProductoCambiado,
   claveMedida,
+  desdeIA,
   detectarTipoMedida,
   descartarDelProducto,
   fusionarItems,
@@ -79,6 +97,7 @@ import {
   type Mensaje,
 } from '../negocio/estado';
 import {
+  ahorroLinea,
   cotizar,
   descuentoItemValido,
   descuentoValido,
@@ -87,9 +106,9 @@ import {
   margenValido,
   montosVacios,
   pesos,
+  precioConDescuento,
   REGLAS,
   textoDescuentoItem,
-  type ItemPrecio,
   type Montos,
 } from '../negocio/precios';
 import { calcularVence, estaVencida, fechaChilena } from '../negocio/vigencia';
@@ -97,12 +116,13 @@ import { Almacen, type Unidad } from './almacen';
 import { sanearReferencias } from './archivos-referencia';
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
 import { prepararFeriados } from './feriados-sync';
-import { generarPdf, plantilla } from './pdf';
+import { generarPdf, plantilla, prepararPdf } from './pdf';
+import { itemsVigentes } from './items-vigentes';
 import { resolverReferencia, type OpcionCotizacion } from './referencias';
 import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { nombreCanonicoModelo } from '../catalogo/configuracion';
 import { esStarken, netoDesdeIva, textoTarifaAplicada, type TarifaStarkenAplicada } from '../negocio/starken';
-import { verificarTarifa } from './starken-firma';
+import { verificarTarifa, huellaBulto } from './starken-firma';
 
 export { ErrorUsuario };
 
@@ -127,6 +147,10 @@ export type Accion =
     }
   | { tipo: 'quitar'; id: string; actualizada: string; indice: number }
   | { tipo: 'reordenar'; id: string; actualizada: string; desde: number; hasta: number }
+  | { tipo: 'restaurar_borrador'; id: string; actualizada: string }
+  | { tipo: 'desaprobar'; id: string; actualizada: string }
+  | { tipo: 'regenerar_pdf'; id: string; actualizada: string; documento: 'cotizacion' | 'nota' }
+  | { tipo: 'retroceder_operacion'; id: string; actualizada: string; motivo: string }
   | { tipo: 'restaurar_items'; id: string; actualizada: string; items: SolicitudItem[] }
   | {
       tipo: 'agregar_producto';
@@ -250,12 +274,13 @@ export type CategoriaAviso = 'campo' | 'palabra' | 'cifras' | 'nombres' | 'noReg
 export interface DiagnosticoTurno {
   /** Herramienta de la IA; 'directa' si no se consultó; null si la respuesta no se pudo usar. */
   herramienta: string | null;
+  modelo?: string;
+  respaldo?: boolean;
   avisos: { categoria: CategoriaAviso; texto: string }[];
 }
 
-/** Resultado de la primera fase de emitir/aprobar: ya estaba hecho o número reservado. */
-type Preparado<T> =
-  { listo: Cotizacion } | ({ listo: null; copia: Cotizacion; numero: number; version: string } & T);
+/** Resultado de la primera fase de emitir/aprobar: ya estaba hecho o validado (el número se reserva después). */
+type Preparado<T> = { listo: Cotizacion } | ({ listo: null; copia: Cotizacion; version: string } & T);
 /** Emitir encontró montos distintos a los revisados: se guardaron en el borrador y se pide confirmar. */
 type PreciosCambiados = { listo: null; cambiados: { avisos: string[]; total: number; actualizada: string } };
 
@@ -267,6 +292,8 @@ const AYUDA_ESPECIAL =
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
 const TEXTO_MONETARIO =
   /\$\s*\d|\d[\d.,]*\s*(?:CLP|USD|pesos|%)|\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i;
+/** El mensaje habla del descuento de un producto («sin descuento», «descuéntale», «rebaja»), ya sin tildes. */
+const HABLA_DE_DESCUENTO = /\b(?:descuent|descont|rebaj)/;
 const SOLICITUD_APROBACION =
   /\b(?:aprueba|apruebe|aprobar|se aprob[oó]|haz(?:me)? (?:la )?nota|genera(?:r)? (?:la )?nota|prepara(?:r)? (?:la )?nota)(?![\p{L}\p{N}])/iu;
 const CAMPOS_CLIENTE: (keyof Cliente)[] = [
@@ -283,6 +310,102 @@ const CAMPOS_CLIENTE: (keyof Cliente)[] = [
 const marca = (anterior?: string) =>
   new Date(Math.max(Date.now(), anterior ? Date.parse(anterior) + 1 : 0)).toISOString();
 const decimal = (n: number) => n.toFixed(2).replace('.', ',');
+
+/** Palabras que confirman («sí», «ya», «correcto, ese») y las que pueden acompañarlas sin agregar nada. */
+const AFIRMA = new Set([
+  'si', 'sip', 'ok', 'okey', 'okay', 'ya', 'dale', 'correcto', 'exacto', 'claro', 'confirmo', 'confirmado',
+  'afirmativo', 'efectivamente', 'perfecto', 'listo', 'bueno', 'acuerdo', 'eso', 'ese', 'esa', 'asi', 'obvio',
+  'va',
+]);
+const ACOMPANA_AFIRMACION = new Set([
+  'es', 'de', 'el', 'la', 'mismo', 'misma', 'modelo', 'por', 'favor', 'porfa', 'gracias', 'nomas', 'cotiza',
+  'cotizala', 'cotizalo', 'cotizalas', 'cotizalos', 'po',
+]);
+/** Lo que desdice una confirmación («no», «es otra», «tampoco»). */
+const NIEGA = /^(?:no|nop|otr[oa]s?|tampoco|distint[oa]s?|diferentes?)$/;
+/**
+ * ¿El mensaje confirma lo que preguntó el asistente, sin un «no»? Vale «sí», «sii», «sí po», «👍» o un mensaje
+ * que parte confirmando («sí, pero que sean 3»): la confirmación respalda solo el nombre sugerido, y las cifras y
+ * los demás nombres siguen necesitando respaldo propio.
+ */
+function afirmacionBreve(mensaje: string) {
+  const texto = sinTildes(mensaje).replace(/👍[\u{1F3FB}-\u{1F3FF}]?/gu, ' si ');
+  const palabras = texto
+    .split(/[^a-zñ]+/)
+    .filter(Boolean)
+    // «siii» es «si»; «sipo», «si po».
+    .flatMap((p) => (p.replace(/(.)\1+$/, '$1') === 'sipo' ? ['si', 'po'] : [p.replace(/(.)\1+$/, '$1')]));
+  if (!palabras.length || palabras.some((p) => NIEGA.test(p))) return false;
+  return (
+    AFIRMA.has(palabras[0]) ||
+    (!/\d/.test(texto) &&
+      palabras.length <= 6 &&
+      palabras.some((p) => AFIRMA.has(p)) &&
+      palabras.every((p) => AFIRMA.has(p) || ACOMPANA_AFIRMACION.has(p)))
+  );
+}
+
+/** Orden con que se elige una opción de la lista («la primera», «la segunda opción»); -1 es «la última». */
+const ORDINALES = new Map(
+  Object.entries({
+    primer: 0, primera: 0, primero: 0, segunda: 1, segundo: 1, tercer: 2, tercera: 2, tercero: 2, cuarta: 3,
+    cuarto: 3, quinta: 4, quinto: 4, ultima: -1, ultimo: -1,
+  }),
+);
+/**
+ * «la primera» a la única pregunta pendiente con una lista de modelos o maderas («¿Qué madera necesitas para
+ * Molco? Opciones: Mara, Lenga.»): el ítem cuenta como si el borrador ya dijera esa opción. Con más de una
+ * lista, o una que no se muestra entera, el orden no dice cuál.
+ */
+function opcionElegida(mensaje: string, q: Cotizacion): SolicitudItem[] {
+  const palabras = sinTildes(mensaje).split(/[^a-zñ]+/).filter(Boolean);
+  const orden = palabras.filter((p) => ORDINALES.has(p));
+  if (
+    orden.length !== 1 ||
+    /\d/.test(mensaje) ||
+    !palabras.every((p) => ORDINALES.has(p) || p === 'opcion' || AFIRMA.has(p) || ACOMPANA_AFIRMACION.has(p))
+  )
+    return [];
+  const listas = q.incompletos.flatMap(({ indice, rechazo: r }) =>
+    r.tipo === 'faltan_datos'
+      ? r.campos.map((campo) => ({ indice, campo, opciones: r.disponibles[campo] ?? [] }))
+      : r.tipo === 'modelo_desconocido'
+        ? [{ indice, campo: 'modelo', opciones: r.disponibles }]
+        : (r.tipo === 'madera_desconocida' || r.tipo === 'madera_no_disponible') && r.disponibles.length
+          ? [{ indice, campo: 'madera', opciones: r.disponibles }]
+          : r.tipo === 'producto_ambiguo' || r.tipo === 'medida_no_disponible'
+            ? [{ indice, campo: 'medida', opciones: [] }]
+            : [],
+  );
+  const [lista] = listas;
+  if (listas.length !== 1 || (lista.campo !== 'modelo' && lista.campo !== 'madera')) return [];
+  const s = q.solicitudes[lista.indice];
+  const valor = lista.opciones.length <= MAX_OPCIONES ? lista.opciones.at(ORDINALES.get(orden[0])!) : undefined;
+  return s && valor ? [{ ...s, [lista.campo]: valor }] : [];
+}
+
+/**
+ * ¿La frase trae un monto en pesos («$900.000», «900 mil»)? Su cantidad y sus medidas no cuentan, tampoco como
+ * las lee montosDelTexto («0,83» → 1, «2.0» → 2000).
+ */
+function conMonto(frase: string) {
+  const cifras = cifrasDelTexto(frase, false).flatMap((c) => [c, Math.round(c), Math.round(c * 1000)]);
+  return montosDelTexto(frase).some((m) => !cifras.includes(m));
+}
+
+/**
+ * ¿Sobra el aviso «No pude verificar el ítem N»? Un ítem editado lleva la frase «pedido original · cambio», que
+ * no está entera en el mensaje; si la del cambio sí está, el ítem viene de este mensaje. Si conserva la frase de
+ * un ítem anterior, viene de un mensaje ya revisado: los valores nuevos los revisan anclarCifras y anclarNombres.
+ */
+function editadoEnElMensaje(aviso: string, items: SolicitudItem[], previos: SolicitudItem[], mensaje: string) {
+  const n = /^No pude verificar el ítem (\d+) /.exec(aviso);
+  const fuente = n ? items[Number(n[1]) - 1]?.fuente : null;
+  if (!fuente) return false;
+  if (previos.some((p) => p.fuente === fuente)) return true;
+  const partes = fuente.split(' · ');
+  return partes.length > 1 && fraseDelMensaje(partes.at(-1)!, mensaje);
+}
 
 /** «Medida especial 0,87 × 2,36 m: se cotiza con la referencia HUIL-M-4-E (0,90–0,95 × 2,40 m), …». */
 function avisoMedidaEspecial(r: Extract<Resolucion, { ok: true }>) {
@@ -375,7 +498,9 @@ function aplicarDespacho(base: Despacho | null | undefined, cambios: Partial<Des
   const cambiados: { campo: CampoDespacho; texto: string }[] = [];
   for (const [campo, etiqueta, largo] of CAMPOS_DESPACHO) {
     if (cambios[campo] === undefined) continue;
-    const nuevo = limpiarTexto(cambios[campo], largo);
+    const limpio = limpiarTexto(cambios[campo], largo);
+    // «Otro» solo dice que falta el nombre: no se guarda como transportista.
+    const nuevo = campo === 'transporte' && sinTransportista(limpio) ? null : limpio;
     if (nuevo === despacho[campo]) continue;
     cambiados.push({ campo, texto: `${etiqueta}: ${despacho[campo] ?? '—'} → ${nuevo ?? '—'}` });
     despacho[campo] = nuevo;
@@ -458,73 +583,29 @@ export class Servicio {
     const clave = (codigo: string, ancho: number | null, alto: number | null) => `${codigo}|${ancho}|${alto}`;
     const previas = new Set(q.montos.lineas.map((l) => clave(l.producto.codigo, l.anchoSolicitado, l.altoSolicitado)));
     const avisos: string[] = [];
-    const validos: ItemPrecio[] = [];
-    q.incompletos = [];
-    for (const [indice, s] of q.solicitudes.entries()) {
-      if (s.personalizado) {
-        // Fuera de catálogo: no se busca ni se normaliza contra el catálogo; vale el precio escrito.
-        const r = productoPersonalizado(s, s.personalizado.familia);
-        if (!r.ok) {
-          q.incompletos.push({
-            indice,
-            rechazo: { tipo: 'faltan_datos', campos: r.campos.filter((c) => c !== 'precio'), disponibles: {} },
-            pregunta: 'Completa el nombre, la madera, las medidas, la cantidad y el precio del producto personalizado.',
-          });
-          continue;
-        }
-        validos.push({
-          producto: r.producto,
-          cantidad: s.cantidad!,
-          indice,
-          anchoSolicitado: r.ancho,
-          altoSolicitado: r.alto,
-          medidaSolicitada: null,
-          precioUnitario: s.precioUnitario ?? null,
-          margen: null,
-          tipoMedida: s.tipoMedida ?? null,
-          observaciones: s.observaciones ?? null,
-          descripcionDocumento: s.descripcion ?? r.producto.descripcion,
-          descuento: s.descuento ?? null,
-        });
-        continue;
-      }
-      // Un marco «en Mara Enchapada» se guarda con la madera con que se cotiza, también si queda pendiente:
-      // el alta desde el pendiente y las preguntas parten de ella.
-      const madera = s.madera ? maderaDelCatalogo(this.catalogo, s.madera) : null,
-        efectiva = maderaEfectiva(this.catalogo, s);
-      if (madera && efectiva && efectiva !== madera) s.madera = efectiva;
-      const res = resolverItem(this.catalogo, s);
-      if (res.ok) {
-        if (res.coincidenciaModelo !== 'canonico') {
-          s.modeloOriginal ??= s.modelo;
-          s.coincidenciaModelo = res.coincidenciaModelo;
-        } else if (!s.modeloOriginal) {
-          s.coincidenciaModelo = 'canonico';
-        }
-        s.modelo = nombreCanonicoModelo(res.producto.modelo);
-        s.madera = res.producto.madera;
-        const k = clave(res.producto.codigo, res.anchoSolicitado, res.altoSolicitado);
-        if ((res.ajusteAncho === 'siguiente' || res.ajusteAlto === 'siguiente') && !previas.has(k)) {
-          avisos.push(avisoMedidaEspecial(res));
-          previas.add(k);
-        }
-        validos.push({
-          producto: { ...res.producto, modelo: nombreCanonicoModelo(res.producto.modelo) },
-          cantidad: res.cantidad,
-          indice,
-          anchoSolicitado: res.anchoSolicitado,
-          altoSolicitado: res.altoSolicitado,
-          medidaSolicitada: res.medidaSolicitada,
-          precioUnitario: s.precioUnitario ?? null,
-          margen: s.margen ?? null,
-          tipoMedida: s.tipoMedida ?? null,
-          observaciones: s.observaciones ?? null,
-          descripcionDocumento: s.descripcion ?? null,
-          descuento: s.descuento ?? null,
-        });
-      } else q.incompletos.push({ indice, rechazo: res.rechazo, pregunta: pregunta(res.rechazo, s.modelo) });
+    // La misma regla que el bulto de Starken (ver items-vigentes.ts). La normalización (modelo canónico, madera
+    // con que se cotiza) queda en la cotización, en los mismos objetos.
+    const vigentes = itemsVigentes(this.catalogo, q);
+    q.solicitudes.forEach((s, i) => Object.assign(s, vigentes.solicitudes[i]));
+    for (const res of vigentes.siguienteMedida) {
+      const k = clave(res.producto.codigo, res.anchoSolicitado, res.altoSolicitado);
+      if (previas.has(k)) continue;
+      avisos.push(avisoMedidaEspecial(res));
+      previas.add(k);
     }
+    const validos = vigentes.validos;
+    q.incompletos = vigentes.incompletos;
     const reglas = q.reglas ?? REGLAS;
+    if (q.estado === 'borrador' && reglas.descuentoMaximo > DESCUENTO_MAXIMO) {
+      q.reglas = { ...reglas, descuentoMaximo: DESCUENTO_MAXIMO,
+        descuentosPorCantidad: reglas.descuentosPorCantidad?.map((t) => ({ ...t, porcentaje: Math.min(t.porcentaje, DESCUENTO_MAXIMO) })) };
+      reglas.descuentoMaximo = DESCUENTO_MAXIMO;
+      avisos.push('El descuento máximo del borrador se ajustó a 50 %.');
+    }
+    if (q.descuento > reglas.descuentoMaximo) {
+      avisos.push(`Descuento ${q.descuento} % → ${reglas.descuentoMaximo} % por el máximo permitido.`);
+      q.descuento = reglas.descuentoMaximo;
+    }
     // El descuento por cantidad sigue a las puertas valorizadas (sin ellas no hay descuento); uno fijado a mano no se toca.
     if (!descuentoEsManual(q)) q.descuento = descuentoAutomatico(reglas, contarPuertas(validos));
     q.montos = validos.length
@@ -597,7 +678,7 @@ export class Servicio {
         normalizar(s.modelo ?? ''),
         normalizar(s.madera ?? ''),
         claveMedida(s.ancho),
-        claveMedida(s.alto),
+        claveMedida(s.alto, s.personalizado.familia),
         s.tipoMedida ?? '',
         s.descripcion ?? '',
         s.observaciones ?? '',
@@ -612,7 +693,7 @@ export class Servicio {
         r.producto.codigo,
         r.cantidad,
         claveMedida(s.ancho),
-        claveMedida(s.alto),
+        claveMedida(s.alto, r.producto.familia),
         r.medidaSolicitada ?? '',
         s.tipoMedida ?? '',
         s.descripcion ?? '',
@@ -625,7 +706,7 @@ export class Servicio {
       normalizar(s.modelo ?? ''),
       normalizar(s.madera ?? ''),
       claveMedida(s.ancho),
-      claveMedida(s.alto),
+      claveMedida(s.alto, familiaDeMedidas(s, (m) => this.familiaDe(m))),
       s.medida ? normalizarMedida(s.medida) : '',
       s.tipoMedida ?? '',
       s.descripcion ?? '',
@@ -713,7 +794,9 @@ export class Servicio {
   }
 
   private describir(s: SolicitudItem) {
-    const medida = (n: number | null) => (n === null ? null : decimal(metros(n) ?? n));
+    // Con el rango de su familia: el largo «360» de un guardapolvo es 3,60 m, no 0,36.
+    const familia = s.personalizado?.familia ?? familiaDeMedidas(s, (m) => this.familiaDe(m));
+    const medida = (n: number | null) => (n === null ? null : decimal(metros(n, familia) ?? n));
     const medidas = [s.medida ? normalizarMedida(s.medida) : medida(s.ancho), medida(s.alto)].filter(Boolean);
     const cantidad = s.cantidad === null ? '' : `${s.cantidad} × `;
     return `${cantidad}${s.modelo ?? 'producto por definir'}${s.madera ? ` ${s.madera}` : ''}${medidas.length ? ` ${medidas.join(' × ')}` : ''}${s.cantidad === null ? ' (sin cantidad)' : ''}`;
@@ -808,6 +891,69 @@ export class Servicio {
         return this.generarNotaPedido(accion);
       case 'pago':
         return this.registrarPago(accion);
+      case 'restaurar_borrador':
+        return this.almacen.transaccion((u) => {
+          const q = u.restaurarBorrador(accion.id, accion.actualizada);
+          // Sigue revisando su original solo si esta sigue emitida y sin otra revisión abierta: nunca dos.
+          const origen = q.origen;
+          q.origen = null;
+          const original = origen != null ? u.porNumero(origen) : null;
+          const avisos: string[] = [];
+          if (original?.estado === 'emitida' && !u.revisionAbierta(original)) q.origen = origen;
+          else if (origen != null) {
+            const aviso = `La cotización N° ${origen} ${original?.estado === 'emitida' ? 'ya tiene otra revisión en borrador' : 'ya no está vigente'}: este borrador sigue como cotización nueva.`;
+            q.historial.push({ rol: 'asistente', texto: aviso });
+            u.registrarEvento(q.id, 'desvinculada', this.autor, aviso);
+            avisos.push(aviso);
+          }
+          avisos.push(...this.recalcular(q)); u.guardar(q);
+          u.registrarEvento(q.id, 'modificada', this.autor, 'Borrador restaurado de la papelera');
+          return { cotizacion: q, avisos };
+        });
+      case 'regenerar_pdf': {
+        const { regenerarDocumento } = await import('./documentos');
+        // Se imprime fuera del bloqueo. El PDF recuperado no se borra nunca: es el documento emitido (su snapshot) y
+        // otra recuperación simultánea pudo entregarlo ya.
+        const q = await this.almacen.transaccion((u) => {
+          const q = this.obtener(u, accion.id);
+          this.verificarVersion(q, accion.actualizada);
+          return q;
+        });
+        const { archivo, regenerado, avisos } = await regenerarDocumento(this.almacen, q, accion.documento);
+        if (!regenerado) return { cotizacion: q, archivo, avisos };
+        return this.almacen.transaccion((u): Resultado => {
+          const actual = this.obtener(u, accion.id);
+          // Un cambio entretanto (un comentario, un pago) no lo invalida: sigue siendo el documento de la cotización y
+          // se registra con su versión actual. Si ya no es su documento, se pide recargar y el archivo queda.
+          const propio = (accion.documento === 'nota' ? actual.nota?.pdf : actual.pdf) === archivo;
+          if (!propio) throw new ErrorConflicto(VERSION_OBSOLETA);
+          u.registrarEvento(actual.id, 'modificada', this.autor, 'PDF regenerado');
+          return { cotizacion: actual, archivo, avisos };
+        });
+      }
+      case 'desaprobar':
+      case 'retroceder_operacion':
+        return this.almacen.transaccion((u) => {
+          const q = this.obtener(u, accion.id);
+          this.verificarVersion(q, accion.actualizada);
+          this.exigirAprobada(q);
+          if (accion.tipo === 'desaprobar') {
+            if (q.nota || q.pagos?.length || q.facturacion?.estado === 'facturada') throw new ErrorConflicto('Solo puedes quitar la aprobación sin nota, pagos ni factura.', 'estado_invalido');
+            q.estado = 'emitida'; q.estadoComercial = 'enviada'; q.aprobadaPor = null;
+          } else {
+            if (!accion.motivo.trim()) throw new ErrorUsuario('Indica el motivo del retroceso.');
+            const atras: Partial<Record<NonNullable<Cotizacion['estadoOperativo']>, NonNullable<Cotizacion['estadoOperativo']>>> = {
+              completada: 'despachada', despachada: 'lista_despacho', lista_despacho: 'pagada', pagada: 'en_produccion', saldo_pendiente: 'en_produccion', produccion_terminada: 'en_produccion', en_produccion: 'pedido_generado',
+            };
+            const previo = atras[q.estadoOperativo ?? 'sin_pedido'];
+            if (!previo) throw new ErrorConflicto('No hay un paso operativo anterior disponible.', 'estado_invalido');
+            q.estadoOperativo = previo;
+            this.estadoPorPagos(q);
+          }
+          q.actualizada = marca(q.actualizada); u.guardar(q);
+          u.registrarEvento(q.id, 'modificada', this.autor, accion.tipo === 'desaprobar' ? 'Aprobación retirada' : `Paso operativo anterior: ${accion.motivo}`);
+          return { cotizacion: q };
+        });
       case 'anular_pago':
         return this.anularPago(accion);
       case 'despacho':
@@ -879,7 +1025,7 @@ export class Servicio {
               texto: origen.numero ? `Duplicada de N° ${origen.numero}.` : 'Duplicada de un borrador.',
             },
           ];
-          this.recalcular(q);
+          const avisos = this.recalcular(q);
           u.guardar(q);
           u.registrarEvento(
             q.id,
@@ -890,7 +1036,7 @@ export class Servicio {
               ...cambioDescuento(descuentoDe(origen), q),
             ].join(' · '),
           );
-          return { cotizacion: q };
+          return { cotizacion: q, avisos };
         });
       case 'eliminar':
         return this.almacen.transaccion((u) => {
@@ -907,49 +1053,63 @@ export class Servicio {
       case 'anular':
         return this.almacen.transaccion((u) => {
           const q = this.obtener(u, accion.id);
+          // Un doble envío encuentra la cotización ya anulada: se devuelve igual, sin exigir la versión.
           if (q.estado === 'anulada') return { cotizacion: q };
-          if (q.estado !== 'emitida' && q.estado !== 'aprobada')
-            throw new ErrorConflicto(
-              q.estado === 'borrador'
-                ? 'Un borrador no se anula: elimínalo.'
-                : `La cotización N° ${q.numero} fue reemplazada y ya no está vigente.`,
-              'estado_invalido',
-            );
           this.verificarVersion(q, accion.actualizada);
-          const motivo = limpiarTexto(accion.motivo, 300);
-          const fecha = new Date().toISOString();
-          q.estado = 'anulada';
-          q.estadoComercial = 'rechazada';
-          q.anuladaPor = this.autor;
-          q.fechaAnulacion = fecha;
-          q.motivoAnulacion = motivo;
-          if (q.nota) q.nota.anulada = true;
-          // Una revisión en borrador de esta emitida ya no revisa nada: sigue como cotización nueva.
-          const avisos: string[] = [];
-          const revision = q.numero !== null ? u.revisionAbierta(q) : null;
-          if (revision) {
-            revision.origen = null;
-            revision.historial.push({
-              rol: 'asistente',
-              texto: `La cotización N° ${q.numero} se anuló. Este borrador sigue disponible como cotización nueva.`,
-            });
-            revision.actualizada = marca(revision.actualizada);
-            u.guardar(revision);
-            u.registrarEvento(revision.id, 'desvinculada', this.autor, `N° ${q.numero} anulada`);
-            avisos.push(
-              `El borrador de revisión de la N° ${q.numero} quedó como cotización nueva, sin relación con la anulada.`,
-            );
-          }
-          q.historial.push({
-            rol: 'asistente',
-            texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido N° ${q.nota.numero}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}.`,
-          });
-          q.actualizada = marca(q.actualizada);
-          u.guardar(q);
-          u.registrarEvento(q.id, 'anulada', this.autor, motivo);
-          return { cotizacion: q, ...(avisos.length ? { avisos } : {}) };
+          return this.anularInterna(q, u, limpiarTexto(accion.motivo, 300));
         });
     }
+  }
+
+  /** Anula una emitida o aprobada (también al rechazarla el cliente); una ya anulada se devuelve igual. */
+  private anularInterna(q: Cotizacion, u: Unidad, motivo: string | null): Resultado {
+    if (q.estado === 'anulada') return { cotizacion: q };
+    if (q.estado !== 'emitida' && q.estado !== 'aprobada')
+      throw new ErrorConflicto(
+        q.estado === 'borrador'
+          ? 'Un borrador no se anula: elimínalo.'
+          : `La cotización N° ${q.numero} fue reemplazada y ya no está vigente.`,
+        'estado_invalido',
+      );
+    if (
+      ['despachada', 'completada'].includes(q.estadoOperativo ?? '') ||
+      q.facturacion?.estado === 'facturada'
+    )
+      throw new ErrorConflicto(
+        'No se puede anular una cotización despachada, completada o facturada.',
+        'estado_invalido',
+      );
+    const fecha = new Date().toISOString();
+    q.estado = 'anulada';
+    q.estadoComercial = 'rechazada';
+    q.anuladaPor = this.autor;
+    q.fechaAnulacion = fecha;
+    q.motivoAnulacion = motivo;
+    if (q.nota) q.nota.anulada = true;
+    // Una revisión en borrador de esta emitida ya no revisa nada: sigue como cotización nueva.
+    const avisos: string[] = [];
+    const revision = q.numero !== null ? u.revisionAbierta(q) : null;
+    if (revision) {
+      revision.origen = null;
+      revision.historial.push({
+        rol: 'asistente',
+        texto: `La cotización N° ${q.numero} se anuló. Este borrador sigue disponible como cotización nueva.`,
+      });
+      revision.actualizada = marca(revision.actualizada);
+      u.guardar(revision);
+      u.registrarEvento(revision.id, 'desvinculada', this.autor, `N° ${q.numero} anulada`);
+      avisos.push(
+        `El borrador de revisión de la N° ${q.numero} quedó como cotización nueva, sin relación con la anulada.`,
+      );
+    }
+    q.historial.push({
+      rol: 'asistente',
+      texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido N° ${q.nota.numero}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}.`,
+    });
+    q.actualizada = marca(q.actualizada);
+    u.guardar(q);
+    u.registrarEvento(q.id, 'anulada', this.autor, motivo);
+    return { cotizacion: q, ...(avisos.length ? { avisos } : {}) };
   }
 
   /** Selección explícita del catálogo: precios, revisiones y cálculo permanecen en el servidor. */
@@ -1015,10 +1175,12 @@ export class Servicio {
         ...(d.referencias?.length ? { referencias: sanearReferencias(this.almacen.directorio, d.referencias) } : {}),
       };
       const r = productoPersonalizado(item, d.familia);
+      // El rango es el de su familia: una puerta hasta 3 m, un accesorio hasta 6 m de largo.
+      const rango = rangoMedidas(d.familia);
       if (!r.ok)
         throw new ErrorUsuario(
           r.campos.includes('ancho') || r.campos.includes('alto')
-            ? 'Revisa las medidas: escríbelas en metros, entre 0,3 y 3 (por ejemplo 0,80 × 2,10).'
+            ? `Revisa las medidas: escríbelas en metros, entre ${String(rango.min).replace('.', ',')} y ${rango.max} (por ejemplo ${d.familia === 'PUERTA' ? '0,80 × 2,10' : 'un largo de 3,60'}).`
             : 'Indica el nombre, la madera, la cantidad y el precio del producto personalizado.',
         );
       return this.agregarItem(u, accion, item);
@@ -1096,11 +1258,38 @@ export class Servicio {
     });
   }
 
+  /**
+   * Un precio o un descuento escrito en el detalle que queda fuera de regla se rechaza, con el campo abierto y
+   * el rango en pesos: el pendiente de `recalcular` es para lo que llega sin pasar por el campo (catálogo,
+   * deshacer, chat). Un ítem que ya estaba fuera de regla (`previa`, con el catálogo de hoy) se rechaza solo si
+   * la edición tocó su precio, margen o descuento: editar otro dato no lo empeora.
+   */
+  private rechazarFueraDeRegla(destino: Cotizacion, previa: Cotizacion, precioTocado: Set<number>) {
+    const dePrecio = (c: Cotizacion) =>
+      c.incompletos.filter((p) => p.rechazo.tipo === 'faltan_datos' && p.rechazo.campos.includes('precio'));
+    const ahora = dePrecio(destino);
+    if (!ahora.length) return;
+    this.recalcular(previa, false);
+    const ya = new Set(dePrecio(previa).map((p) => p.indice));
+    const p = ahora.find((p) => !ya.has(p.indice) || precioTocado.has(p.indice));
+    if (!p) return;
+    const s = destino.solicitudes[p.indice];
+    const r = s.precioUnitario && !s.personalizado ? resolverItem(this.catalogo, s) : null;
+    const costo = r?.ok ? r.producto.precioNeto : null;
+    if (costo && (s.precioUnitario! < costo * (1 + MARGEN_MIN) || s.precioUnitario! > costo * (1 + MARGEN_MAX)))
+      throw new ErrorUsuario(
+        `El precio unitario ${pesos(s.precioUnitario!)} del ítem ${p.indice + 1} queda fuera de la ganancia permitida sobre el costo de fábrica (${RANGO_MARGEN}): debe estar entre ${pesos(Math.ceil(costo * (1 + MARGEN_MIN)))} y ${pesos(Math.floor(costo * (1 + MARGEN_MAX)))}.`,
+      );
+    throw new ErrorUsuario(p.pregunta);
+  }
+
   private editar(accion: Extract<Accion, { tipo: 'editar' }>) {
     return this.almacen.transaccion((u): Resultado => {
       const q = this.obtener(u, accion.id);
       this.exigirEditable(q);
       this.verificarVersion(q, accion.actualizada);
+      // Para saber qué deja fuera de regla esta edición y qué ya lo estaba (ver `rechazarFueraDeRegla`).
+      const previa = structuredClone({ ...q, historial: [] });
       const solicitudes = structuredClone(q.solicitudes);
       for (const { indice, cantidad } of accion.cantidades ?? []) {
         if (!solicitudes[indice]) throw new ErrorNoEncontrado('No se encontró el ítem.');
@@ -1144,7 +1333,7 @@ export class Servicio {
           if (cambios.precioUnitario === null)
             throw new ErrorUsuario('Un producto personalizado necesita un precio unitario.');
           if (cambios.margen !== undefined && cambios.margen !== null)
-            throw new ErrorUsuario('Un producto personalizado no usa margen: cambia directamente su precio unitario.');
+            throw new ErrorUsuario('Un producto personalizado no usa ganancia: cambia directamente su precio unitario.');
           for (const campo of ['modelo', 'madera'] as const)
             if (cambios[campo] !== undefined && !textoCampo(campo, cambios[campo]))
               throw new ErrorUsuario(
@@ -1183,7 +1372,7 @@ export class Servicio {
         if (cambios.margen !== undefined) {
           const valor = cambios.margen;
           if (valor !== null && !margenValido(valor))
-            throw new ErrorUsuario(`El margen debe ser un porcentaje entre ${MARGEN_MIN * 100} % y ${MARGEN_MAX * 100} %, con hasta dos decimales.`);
+            throw new ErrorUsuario(`La ganancia debe ser un porcentaje entre ${MARGEN_MIN * 100} % y ${MARGEN_MAX * 100} %, con hasta dos decimales.`);
           // Guardado sin el error binario de un porcentaje dividido por 100 (0,07 llega como 0,07000000000000001).
           siguiente.margen = valor === null ? null : redondearMargen(valor);
           if (valor !== null) siguiente.precioUnitario = null;
@@ -1206,16 +1395,6 @@ export class Servicio {
           despues: this.producto(siguiente, anterior),
         });
         if (descartes) avisosItems.push(avisoProductoCambiado(cambio.indice + 1, descartes));
-        // Un precio escrito para un producto del catálogo debe quedar entre −50 % y 500 % sobre su costo de
-        // fábrica: fuera de eso el cálculo no lo acepta y la persona solo vería un error genérico.
-        if (siguiente.precioUnitario && !siguiente.personalizado) {
-          const r = resolverItem(this.catalogo, siguiente);
-          const costo = r.ok ? r.producto.precioNeto : null;
-          if (costo && (siguiente.precioUnitario < costo * (1 + MARGEN_MIN) || siguiente.precioUnitario > costo * (1 + MARGEN_MAX)))
-            throw new ErrorUsuario(
-              `El precio unitario ${pesos(siguiente.precioUnitario)} del ítem ${cambio.indice + 1} queda fuera del margen permitido sobre el costo de fábrica (${RANGO_MARGEN}): debe estar entre ${pesos(Math.ceil(costo * (1 + MARGEN_MIN)))} y ${pesos(Math.floor(costo * (1 + MARGEN_MAX)))}.`,
-            );
-        }
         solicitudes[cambio.indice] = siguiente;
       }
       const { cliente, avisos: avisosCliente } = accion.cliente
@@ -1248,7 +1427,7 @@ export class Servicio {
           throw new ErrorUsuario('La cantidad del flete debe ser un número entero entre 1 y 10.000.');
         const unitario = linea.unitario ?? unitarioFlete(q);
         if (!fleteValido(unitario))
-          throw new ErrorUsuario('El unitario del flete debe ser un monto neto entero en pesos, desde $0.');
+          throw new ErrorUsuario('El unitario del flete debe ser un monto entero en pesos sin IVA, desde $0.');
         fleteCantidad = cantidad;
         flete = cantidad * unitario;
         if (linea.descripcion !== undefined) fleteDescripcion = limpiarTexto(linea.descripcion, 300);
@@ -1259,12 +1438,12 @@ export class Servicio {
           `El descuento debe estar entre 0 % y ${reglas.descuentoMaximo} %, con hasta dos decimales.`,
         );
       if (!fleteValido(flete))
-        throw new ErrorUsuario('El flete debe ser un monto neto entero en pesos, desde $0.');
+        throw new ErrorUsuario('El flete debe ser un monto entero en pesos sin IVA, desde $0.');
       const margenAntes = q.margenCotizacion ?? null;
       const margenPedido = accion.margenCotizacion === undefined ? margenAntes : accion.margenCotizacion;
       if (margenPedido !== null && !margenValido(margenPedido))
         throw new ErrorUsuario(
-          `El margen especial de la cotización debe ser un porcentaje entre ${MARGEN_MIN * 100} % y ${MARGEN_MAX * 100} %, con hasta dos decimales.`,
+          `La ganancia especial de la cotización debe ser un porcentaje entre ${MARGEN_MIN * 100} % y ${MARGEN_MAX * 100} %, con hasta dos decimales.`,
         );
       const margenCotizacion = margenPedido === null ? null : redondearMargen(margenPedido);
       const extra = avisos.length ? { avisos } : {};
@@ -1274,7 +1453,7 @@ export class Servicio {
           ? q.observaciones
           : limpiarTexto(accion.observaciones, 2000);
       const despacho =
-        accion.despacho === undefined
+        accion.despacho === undefined || (accion.despacho !== null && !Object.keys(accion.despacho).length)
           ? q.despacho
           : accion.despacho === null
             ? null
@@ -1284,6 +1463,7 @@ export class Servicio {
         if (!esStarken(despacho?.transporte))
           throw new ErrorUsuario('Elige Starken como transportista antes de aplicar su tarifa.');
         // El navegador no es de fiar para el costo: la firma la dio este servidor para esta cotización.
+        // La firma va primero: una tarifa vencida o adulterada se explica así, aunque su huella tampoco calce.
         const firma = verificarTarifa(accion.id, tarifa);
         if (firma !== 'valida')
           throw new ErrorUsuario(
@@ -1291,9 +1471,14 @@ export class Servicio {
               ? 'La tarifa de Starken venció. Vuelve a cotizar el despacho.'
               : 'La tarifa de Starken no es válida para esta cotización. Vuelve a cotizar el despacho.',
           );
+        const paraTarifa = structuredClone(q);
+        paraTarifa.solicitudes = solicitudes;
+        this.recalcular(paraTarifa, false);
+        if (tarifa.huellaBulto !== huellaBulto(paraTarifa.montos.lineas))
+          throw new ErrorUsuario('El pedido cambió. Vuelve a cotizar el despacho.');
         if (flete !== netoDesdeIva(tarifa.costoTotal))
           throw new ErrorUsuario(
-            `El valor de despacho debe ser el neto de la tarifa elegida (${pesos(netoDesdeIva(tarifa.costoTotal))}).`,
+            `El valor de despacho debe ser el de la tarifa elegida sin IVA (${pesos(netoDesdeIva(tarifa.costoTotal))}).`,
           );
       }
       if (
@@ -1348,7 +1533,7 @@ export class Servicio {
           : []),
         ...(margenCotizacion !== margenAntes
           ? [
-              `Margen especial de la cotización: ${margenAntes === null ? ESTANDAR_CATEGORIA : margenTexto(margenAntes)} → ${margenCotizacion === null ? ESTANDAR_CATEGORIA : margenTexto(margenCotizacion)}`,
+              `Ganancia especial de la cotización: ${margenAntes === null ? ESTANDAR_CATEGORIA : margenTexto(margenAntes)} → ${margenCotizacion === null ? ESTANDAR_CATEGORIA : margenTexto(margenCotizacion)}`,
             ]
           : []),
         ...(observaciones !== destino.observaciones ? ['Observaciones actualizadas'] : []),
@@ -1363,14 +1548,14 @@ export class Servicio {
         if (cambio.cambios.margen !== undefined && margenLinea !== (anterior.margen ?? null)) {
           const linea = q.montos.lineas.find((l) => l.indice === cambio.indice);
           const margenAnterior = linea ? margenTexto(linea.margen ?? 0) : 'sin resolver';
-          const sinMargenPropio = margenCotizacion === null ? ESTANDAR_CATEGORIA : 'margen especial de la cotización';
+          const sinMargenPropio = margenCotizacion === null ? ESTANDAR_CATEGORIA : 'ganancia especial de la cotización';
           const margenNuevo = margenLinea === null ? sinMargenPropio : margenTexto(margenLinea);
-          extras.push(`Margen de ${this.describir(anterior)}: ${margenAnterior} → ${margenNuevo}`);
+          extras.push(`Ganancia de ${this.describir(anterior)}: ${margenAnterior} → ${margenNuevo}`);
         }
         if (cambio.cambios.referencias !== undefined && !mismasReferencias(anterior.referencias, solicitudes[cambio.indice].referencias))
           extras.push(textoReferencias(cambio.indice, anterior.referencias, solicitudes[cambio.indice].referencias));
         if (cambio.cambios.precioUnitario !== undefined && cambio.cambios.precioUnitario !== anterior.precioUnitario)
-          extras.push(`Precio cliente de ${this.describir(anterior)} actualizado${cambio.cambios.precioUnitario === null ? ' según margen aplicado' : ` a ${pesos(cambio.cambios.precioUnitario)}`}`);
+          extras.push(`Precio cliente de ${this.describir(anterior)} actualizado${cambio.cambios.precioUnitario === null ? ' según la ganancia aplicada' : ` a ${pesos(cambio.cambios.precioUnitario)}`}`);
         const descuentoItem = solicitudes[cambio.indice].descuento ?? null;
         if (cambio.cambios.descuento !== undefined && claveDescuento(anterior) !== claveDescuento(solicitudes[cambio.indice]))
           extras.push(
@@ -1386,12 +1571,14 @@ export class Servicio {
       destino.observaciones = observaciones;
       destino.despacho = despacho;
       const todos = [...avisos, ...this.recalcular(destino)];
-      // Un monto fijo nunca supera el precio unitario: tampoco si lo que bajó fue el precio (margen o precio a mano).
-      for (const l of destino.montos.lineas)
-        if (l.descuentoItem?.tipo === 'monto' && l.descuentoItem.valor > l.precioUnitario)
-          throw new ErrorUsuario(
-            `El descuento del ítem ${(l.indice ?? 0) + 1} (${pesos(l.descuentoItem.valor)} por unidad) supera su precio unitario (${pesos(l.precioUnitario)}). Ajusta o quita el descuento.`,
-          );
+      const precioTocado = new Set(
+        (accion.items ?? [])
+          .filter(({ cambios: c }) =>
+            [c.precioUnitario, c.margen, c.descuento, c.costoFabrica, c.personalizado].some((v) => v !== undefined),
+          )
+          .map((c) => c.indice),
+      );
+      this.rechazarFueraDeRegla(destino, previa, precioTocado);
       extras.unshift(...cambioDescuento(descuentoAntes, destino));
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
@@ -1400,7 +1587,10 @@ export class Servicio {
     });
   }
 
-  /** Reserva el número, genera el PDF fuera del bloqueo y confirma solo si nadie cambió la cotización. */
+  /**
+   * Valida, comprueba Chromium y recién entonces reserva el número; genera el PDF fuera del bloqueo y
+   * confirma solo si nadie cambió la cotización.
+   */
   private async emitir(accion: Extract<Accion, { tipo: 'emitir' }>): Promise<Resultado> {
     const preparado = await this.almacen.transaccion(
       (u): Preparado<{ avisos: string[] }> | PreciosCambiados => {
@@ -1442,9 +1632,7 @@ export class Servicio {
           );
           return { listo: null, cambiados: { avisos, total: q.montos.total, actualizada: q.actualizada } };
         }
-        // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número.
-        const numero = u.reservarCotizacion(accion.numero);
-        return { listo: null, copia, numero, avisos, version: q.actualizada };
+        return { listo: null, copia, avisos, version: q.actualizada };
       },
     );
     if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.pdf! };
@@ -1454,7 +1642,25 @@ export class Servicio {
         'precios_cambiaron',
         preparado.cambiados,
       );
-    const { copia, numero, avisos, version } = preparado;
+    const { copia, avisos, version } = preparado;
+    // Al reservar y al confirmar, lo revisado sigue vigente: nadie emitió ni cambió la cotización.
+    const vigente = (u: Unidad) => {
+      const q = this.obtener(u, accion.id);
+      if (q.pdf)
+        throw new ErrorConflicto(
+          `Otra persona emitió esta cotización mientras se generaba el PDF (N° ${q.numero}).`,
+        );
+      if (q.actualizada !== version) throw new ErrorConflicto(VERSION_OBSOLETA);
+      this.verificarSerieNoAprobada(q, u);
+      return q;
+    };
+    // Chromium se comprueba fuera del bloqueo y antes de reservar: si no arranca, el número no se gasta.
+    await prepararPdf();
+    // Reserva durable antes de generar: un fallo puede dejar un salto, jamás reutilizar un número.
+    const numero = await this.almacen.transaccion((u) => {
+      vigente(u);
+      return u.reservarCotizacion(accion.numero);
+    });
     // La vigencia cuenta días hábiles: antes se actualizan los feriados decretados (sin bloquear si no hay red).
     await prepararFeriados(this.almacen.baseDatos());
     const reglas = copia.reglas ?? REGLAS;
@@ -1462,10 +1668,9 @@ export class Servicio {
       fecha = new Date().toISOString(),
       vence = calcularVence(fecha, reglas.vigenciaDiasHabiles);
     const documento = { ...copia, numero, fechaEmision: fecha, vence, emitidaPor: this.autor };
-    await generarPdf(
-      this.almacen.directorio,
-      archivo,
-      await plantilla(documento, {
+    const html = await plantilla(
+      documento,
+      {
         tipo: 'cotizacion',
         numero,
         montos: copia.montos,
@@ -1474,17 +1679,13 @@ export class Servicio {
         autor: this.autor,
         reglas,
         observaciones: copia.observaciones,
-      }),
+      },
+      this.almacen.baseDatos(),
     );
+    await generarPdf(this.almacen.directorio, archivo, html);
     try {
       return await this.almacen.transaccion((u): Resultado => {
-        const q = this.obtener(u, accion.id);
-        if (q.pdf)
-          throw new ErrorConflicto(
-            `Otra persona emitió esta cotización mientras se generaba el PDF (N° ${q.numero}).`,
-          );
-        if (q.actualizada !== version) throw new ErrorConflicto(VERSION_OBSOLETA);
-        this.verificarSerieNoAprobada(q, u);
+        const q = vigente(u);
         q.montos = copia.montos;
         q.incompletos = [];
         q.numero = numero;
@@ -1508,6 +1709,7 @@ export class Servicio {
           }
         }
         u.guardar(q);
+        u.guardarDocumento(q.id, archivo, html);
         u.registrarEvento(q.id, 'emitida', this.autor, `N° ${numero}`);
         return { cotizacion: q, archivo, ...(avisos.length ? { avisos } : {}) };
       });
@@ -1548,6 +1750,13 @@ export class Servicio {
       q.actualizada = marca(q.actualizada);
       u.guardar(q);
       u.registrarEvento(q.id, 'aprobada', this.autor, `Aprobada por cliente · N° ${q.numero}`);
+      const revision = u.revisionAbierta(q);
+      if (revision) {
+        revision.origen = null; revision.actualizada = marca(revision.actualizada); u.guardar(revision);
+        const aviso = 'La revisión en borrador quedó como cotización nueva.';
+        revision.historial.push({ rol: 'asistente', texto: aviso });
+        u.registrarEvento(revision.id, 'desvinculada', this.autor, aviso);
+      }
       for (const otra of u.serie(q.id))
         if (otra.id !== q.id && otra.estado === 'emitida') {
           otra.estado = 'reemplazada';
@@ -1556,7 +1765,7 @@ export class Servicio {
           u.guardar(otra);
           u.registrarEvento(otra.id, 'reemplazada', this.autor, `Se aprobó la N° ${q.numero}`);
         }
-      return { cotizacion: q };
+      return { cotizacion: q, ...(revision ? { avisos: ['La revisión en borrador quedó como cotización nueva.'] } : {}) };
     });
   }
 
@@ -1650,13 +1859,8 @@ export class Servicio {
       if (q.estado !== 'emitida') throw new ErrorConflicto('El seguimiento comercial solo se cambia en una cotización emitida.', 'estado_invalido');
       if (q.estadoComercial === 'aprobada' || q.estadoComercial === 'vendida')
         throw new ErrorConflicto('La cotización ya fue aprobada por el cliente.', 'estado_invalido');
+      if (accion.estado === 'rechazada') return this.anularInterna(q, u, 'Rechazada por cliente');
       q.estadoComercial = accion.estado;
-      if (accion.estado === 'rechazada') {
-        q.estado = 'anulada';
-        q.anuladaPor = this.autor;
-        q.fechaAnulacion = new Date().toISOString();
-        q.motivoAnulacion = 'Rechazada por cliente';
-      }
       q.actualizada = marca(q.actualizada);
       u.guardar(q);
       u.registrarEvento(q.id, 'seguimiento', this.autor, `Estado comercial: ${etiquetaComercial[accion.estado]}`);
@@ -1668,7 +1872,7 @@ export class Servicio {
   private exigirValorDespachoFijo(q: Cotizacion, valor: number | null | undefined) {
     if (valor !== undefined && (valor ?? 0) !== q.flete)
       throw new ErrorConflicto(
-        `El valor del despacho (${pesos(q.flete)} neto) quedó fijo al emitir la cotización y no se puede cambiar. Crea una revisión para modificarlo.`,
+        `El valor del despacho (${pesos(q.flete)} sin IVA) quedó fijo al emitir la cotización y no se puede cambiar. Crea una revisión para modificarlo.`,
         'no_editable',
       );
   }
@@ -1859,7 +2063,6 @@ export class Servicio {
           margenes: Object.fromEntries(Object.keys(MARGENES_INICIALES).map((k) => [k, 0])) as typeof MARGENES_INICIALES,
         },
       );
-      const numero = u.reservarNota();
       const copia = structuredClone(q);
       const despacho: Despacho = q.despacho ?? { direccion: null, transporte: null };
       copia.despacho = {
@@ -1869,10 +2072,24 @@ export class Servicio {
         destino: despacho.destino ?? null,
         valor: q.flete,
       };
-      return { listo: null, copia, numero, montos, version: q.actualizada };
+      return { listo: null, copia, montos, version: q.actualizada };
     });
     if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.nota!.pdf };
-    const { copia, numero, montos, version } = preparado;
+    const { copia, montos, version } = preparado;
+    // Al reservar y al confirmar, lo revisado sigue vigente: nadie generó la nota ni cambió la cotización.
+    const vigente = (u: Unidad) => {
+      const q = this.obtener(u, accion.id);
+      if (q.nota) throw new ErrorConflicto(`Otra persona aprobó esta cotización (nota N° ${q.nota.numero}).`);
+      if (q.actualizada !== version || q.estado !== 'aprobada') throw new ErrorConflicto(VERSION_OBSOLETA);
+      this.verificarSerieNoAprobada(q, u);
+      return q;
+    };
+    // Igual que al emitir: Chromium se comprueba fuera del bloqueo y antes de gastar un número de nota.
+    await prepararPdf();
+    const numero = await this.almacen.transaccion((u) => {
+      vigente(u);
+      return u.reservarNota();
+    });
     const despacho: Despacho = copia.despacho ?? {
       direccion: null,
       transporte: null,
@@ -1880,10 +2097,9 @@ export class Servicio {
     };
     const archivo = `nota-pedido-${numero}.pdf`,
       fecha = new Date().toISOString();
-    await generarPdf(
-      this.almacen.directorio,
-      archivo,
-      await plantilla(copia, {
+    const html = await plantilla(
+      copia,
+      {
         tipo: 'nota',
         numero,
         montos,
@@ -1892,21 +2108,20 @@ export class Servicio {
         despacho,
         reglas: copia.reglas,
         observaciones: copia.observaciones,
-      }),
+      },
+      this.almacen.baseDatos(),
     );
+    await generarPdf(this.almacen.directorio, archivo, html);
     try {
       return await this.almacen.transaccion((u): Resultado => {
-        const q = this.obtener(u, accion.id);
-        if (q.nota)
-          throw new ErrorConflicto(`Otra persona aprobó esta cotización (nota N° ${q.nota.numero}).`);
-        if (q.actualizada !== version || q.estado !== 'aprobada') throw new ErrorConflicto(VERSION_OBSOLETA);
-        this.verificarSerieNoAprobada(q, u);
+        const q = vigente(u);
         q.despacho = despacho;
         const notaDespacho: Despacho = {
           direccion: despacho.direccion,
           transporte: despacho.transporte,
           ...(despacho.entregaComprometida ? { entregaComprometida: despacho.entregaComprometida } : {}),
-          destino: despacho.destino ?? null,
+          // Como al recargar desde SQLite: la nota trae el destino solo si lo hay.
+          ...(despacho.destino ? { destino: despacho.destino } : {}),
           valor: despacho.valor ?? q.flete,
         };
         q.nota = {
@@ -1926,6 +2141,7 @@ export class Servicio {
         });
         q.actualizada = marca(q.actualizada);
         u.guardar(q);
+        u.guardarDocumento(q.id, archivo, html);
         u.registrarEvento(q.id, 'nota_generada', this.autor, `Nota de pedido N° ${numero} · precio fábrica`);
         // Las demás emitidas de la serie ya no pueden aprobarse: una sola nota por pedido.
         for (const otra of u.serie(q.id))
@@ -1946,12 +2162,27 @@ export class Servicio {
 
   /** Familia de un modelo del catálogo (PUERTA, MARCO…); null si el catálogo no lo tiene. */
   private familiaDe(modelo: string) {
+    return this.productosDe(modelo)[0]?.familia ?? null;
+  }
+
+  private productosDe(modelo: string) {
     const clave = normalizar(modelo);
-    const productos =
-      'productos' in this.catalogo
-        ? this.catalogo.productos.filter((p) => normalizar(p.modelo) === clave)
-        : this.catalogo.productosDeModelo(clave);
-    return productos[0]?.familia ?? null;
+    return 'productos' in this.catalogo
+      ? this.catalogo.productos.filter((p) => normalizar(p.modelo) === clave)
+      : this.catalogo.productosDeModelo(clave);
+  }
+
+  /**
+   * Escuadrías 2xN («2X4») que el catálogo tiene para un modelo y, si la madera se sabe y la tiene, para esa madera
+   * (la de cotizar: un marco «en Mara Enchapada» es Pino Finger). Sin productos del modelo, las habituales.
+   */
+  private escuadriasDe(modelo: string, madera: string | null): string[] {
+    const productos = this.productosDe(modelo);
+    if (!productos.length) return [...ESCUADRIAS_HABITUALES];
+    const efectiva = madera ? maderaEfectiva(this.catalogo, { modelo, madera }) : null;
+    const conMadera = efectiva ? productos.filter((p) => p.madera === efectiva) : [];
+    const medidas = (conMadera.length ? conMadera : productos).map((p) => normalizarMedida(p.medida));
+    return [...new Set(medidas.filter((m) => /^2X\d+$/.test(m)))];
   }
 
   /**
@@ -2011,11 +2242,16 @@ export class Servicio {
     const reglas = q.reglas ?? REGLAS;
     const resultado = items.map((original, i): SolicitudItem => {
       const { precio, ...item } = original;
-      if (!precio?.valor) return item;
-      const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
-      // Al editar, la frase del ítem es «pedido original · cambio»: el precio está en la última parte. Vale la
-      // línea completa del mensaje que la contiene, por si la IA cortó la frase antes del precio.
+      // Al editar, la frase del ítem es «pedido original · cambio»: el precio está en la última parte.
       const frase = item.fuente?.split(' · ').at(-1) ?? null;
+      if (!precio?.valor) {
+        // Un total de varias unidades llega sin valor; sin un monto en la frase, la IA solo rellenó el campo.
+        if (precio?.valor === null && frase && conMonto(frase))
+          avisos.push(`Escribiste un precio total para el ítem ${i + 1}; indica el valor por unidad.`);
+        return item;
+      }
+      const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+      // Vale la línea completa del mensaje que contiene la frase, por si la IA la cortó antes del precio.
       const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
       const leido = montoEscrito(precio.valor, textos && lineas.length ? lineas : textos);
       if (!leido.ok) {
@@ -2033,7 +2269,7 @@ export class Servicio {
       }
       if (precio.iva === null)
         avisos.push(
-          `Tomé ${pesos(neto)} como precio neto (sin IVA) del ${etiqueta}. Si lo incluía, escribe «con IVA incluido».`,
+          `Tomé ${pesos(neto)} como precio sin IVA del ${etiqueta}. Si lo incluía, escribe «con IVA incluido».`,
         );
       if (neto < MONTO_BAJO)
         avisos.push(`El precio del ${etiqueta} quedó en ${pesos(neto)}: revisa si le faltan ceros.`);
@@ -2043,12 +2279,8 @@ export class Servicio {
       if (r.ok) {
         // Como un precio escrito en el detalle: entre −50 % y 500 % sobre el costo de fábrica.
         const margen = neto / r.producto.precioNeto - 1;
-        if (margen < MARGEN_MIN || margen > MARGEN_MAX) {
-          avisos.push(
-            `No apliqué el precio del ${etiqueta}: ${pesos(neto)} queda fuera del margen permitido sobre el costo de fábrica (${RANGO_MARGEN}). Revísalo o escríbelo en el detalle.`,
-          );
-          return item;
-        }
+        // Fuera del margen permitido se conserva: recalcular deja el ítem pendiente y su pregunta lo explica.
+        if (margen < MARGEN_MIN || margen > MARGEN_MAX) return conPrecio;
         const catalogo = cotizar(
           [
             {
@@ -2064,7 +2296,7 @@ export class Servicio {
         ).lineas[0].precioUnitario;
         if (catalogo !== neto)
           avisos.push(
-            `Usé el precio que indicaste para el ${etiqueta}: ${pesos(neto)} neto c/u; el de catálogo es ${pesos(catalogo)}.`,
+            `Usé el precio que indicaste para el ${etiqueta}: ${pesos(neto)} sin IVA c/u; el de catálogo es ${pesos(catalogo)}.`,
           );
         return conPrecio;
       }
@@ -2082,16 +2314,114 @@ export class Servicio {
       };
       const medidas = [especial.ancho, especial.alto]
         .filter((n): n is number => n !== null)
-        .map((n) => metrosTexto(metros(n) ?? n));
+        .map((n) => metrosTexto(metros(n, familia) ?? n));
       const nombre = [especial.modelo, especial.madera, medidas.length ? `${medidas.join(' × ')} m` : '']
         .filter(Boolean)
         .join(' ');
       avisos.push(
-        `«${nombre}» no está en el catálogo: lo cotizo como pedido especial a ${pesos(neto)} neto c/u, como lo indicaste.`,
+        `«${nombre}» no está en el catálogo: lo cotizo como pedido especial a ${pesos(neto)} sin IVA c/u, como lo indicaste.`,
       );
       return especial;
     });
     return { items: resultado, avisos };
+  }
+
+  /**
+   * Descuento especial que la persona pidió para un ítem en el chat («15 % de descuento a las Molco», «rebájale
+   * $20.000 c/u»). Como el precio escrito, su cifra debe estar en la línea del propio ítem (o en la conversación,
+   * si su frase no se ubica); un monto es por unidad y neto. Un null o un 0 lo quita solo si el mensaje habla de
+   * descuento: puede ser relleno de la IA. Sin `textos` (doble de prueba) no se ancla. Devuelve también los ítems
+   * cuyo descuento cambió, para confirmarlo con los precios ya calculados (ver `confirmarDescuentos`).
+   */
+  private descuentosEscritos(items: SolicitudItem[], mensaje: string, textos: string[] | null) {
+    const avisos: string[] = [];
+    /** Ítems cuyo descuento cambió, con el que tenían antes. */
+    const cambiados = new Map<number, DescuentoItem | null>();
+    const resultado = items.map(({ descuentoEscrito: pedido, ...item }, i): SolicitudItem => {
+      if (pedido === undefined) return item;
+      const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+      // Al editar, la frase del ítem es «pedido original · cambio»: el descuento está en la última parte.
+      const frase = item.fuente?.split(' · ').at(-1) ?? null;
+      const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
+      const hablaDeDescuento =
+        !textos || HABLA_DE_DESCUENTO.test(sinTildes(lineas.length ? lineas.join('\n') : mensaje));
+      if (pedido === null || pedido.valor === 0) {
+        if (!item.descuento || !hablaDeDescuento) return item;
+        cambiados.set(i, item.descuento);
+        const sinDescuento = { ...item };
+        delete sinDescuento.descuento;
+        return sinDescuento;
+      }
+      if (pedido.valor === null) {
+        if (hablaDeDescuento)
+          avisos.push(
+            `Indica cuánto descuento quieres para el ${etiqueta}: un porcentaje («15 % de descuento») o un monto por unidad («$20.000 de descuento c/u»).`,
+          );
+        return item;
+      }
+      const donde = textos && lineas.length ? lineas : textos;
+      let descuento: DescuentoItem;
+      if (pedido.tipo === 'porcentaje') {
+        if (!(pedido.valor > 0 && pedido.valor <= 100)) {
+          avisos.push(`No apliqué el descuento del ${etiqueta}: debe ser un porcentaje mayor que 0 % y hasta 100 %.`);
+          return item;
+        }
+        const valor = porcentajeEscrito(pedido.valor, donde);
+        if (valor === null) {
+          avisos.push(`No apliqué el descuento del ${etiqueta}: el porcentaje no aparece escrito en su línea del pedido.`);
+          return item;
+        }
+        descuento = { tipo: 'porcentaje', valor };
+      } else {
+        // «15 % de descuento» no respalda un descuento de $15.
+        const leido = montoEscrito(pedido.valor, textosSinPorcentajes(donde));
+        if (!leido.ok) {
+          avisos.push(
+            leido.ambiguo
+              ? `No apliqué el descuento del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «$20.000 de descuento c/u».`
+              : `No apliqué el descuento del ${etiqueta}: el monto no aparece escrito en su línea del pedido.`,
+          );
+          return item;
+        }
+        descuento = { tipo: 'monto', valor: leido.valor };
+      }
+      if (!descuentoItemValido(descuento)) {
+        avisos.push(
+          descuento.tipo === 'porcentaje'
+            ? `No apliqué el descuento del ${etiqueta}: el porcentaje admite hasta dos decimales.`
+            : `No apliqué el descuento del ${etiqueta}: debe ser un monto entero en pesos, hasta $100.000.000.`,
+        );
+        return item;
+      }
+      if (descuento.tipo === 'monto' && descuento.valor < MONTO_BAJO)
+        avisos.push(`El descuento del ${etiqueta} quedó en ${pesos(descuento.valor)} c/u: revisa si le faltan ceros.`);
+      const nuevo = { ...item, descuento };
+      if (claveDescuento(nuevo) !== claveDescuento(item)) cambiados.set(i, item.descuento ?? null);
+      return nuevo;
+    });
+    return { items: resultado, avisos, cambiados };
+  }
+
+  /**
+   * Lo que el chat confirma de cada descuento especial que aplicó o quitó: el precio original y el rebajado, como
+   * los verá el cliente. Un ítem pendiente lo explica su pregunta (también un monto mayor que su precio).
+   */
+  private confirmarDescuentos(q: Cotizacion, cambiados: Map<number, DescuentoItem | null>) {
+    return [...cambiados.keys()].sort((a, b) => a - b).flatMap((i) => {
+      const s = q.solicitudes[i];
+      if (!s) return [];
+      const linea = q.montos.lineas.find((l) => l.indice === i);
+      const etiqueta = `ítem ${i + 1}${s.modelo ? ` (${s.modelo})` : ''}`;
+      if (!s.descuento)
+        return [`Quité el descuento especial del ${etiqueta}${linea ? `: vuelve a ${pesos(linea.precioUnitario)} c/u` : ''}.`];
+      if (!linea)
+        return q.incompletos.some((p) => p.indice === i && p.rechazo.tipo === 'faltan_datos' && p.rechazo.campos.includes('precio'))
+          ? []
+          : [`Anoté un descuento especial de ${textoDescuentoItem(s.descuento)} para el ${etiqueta}: se aplica cuando el ítem esté completo.`];
+      return [
+        `Descuento especial de ${textoDescuentoItem(s.descuento)} en el ${etiqueta}: ${pesos(linea.precioUnitario)} → ${pesos(precioConDescuento(linea))} c/u${linea.cantidad > 1 ? ` (ahorro ${pesos(ahorroLinea(linea))})` : ''}.`,
+      ];
+    });
   }
 
   /**
@@ -2147,14 +2477,18 @@ export class Servicio {
       )
         return null;
       actualizarIndices.add(cambio.indice);
-      const siguiente = { ...items[cambio.indice], ...sanearTextos(cambio.cambios) };
-      // La frase del cambio se suma a la del pedido original: juntas explican de dónde sale el ítem.
+      const siguiente = { ...items[cambio.indice], ...desdeIA(cambio.cambios) };
+      // La frase del cambio se suma a la del pedido original: juntas explican de dónde sale el ítem. Si no
+      // caben, se recorta la anterior: la del cambio es la que se busca en el mensaje.
       if (cambio.cambios.fuente !== undefined) {
         const previa = items[cambio.indice].fuente ?? null,
           nueva = siguiente.fuente ?? null;
+        const recortada = previa?.slice(0, Math.max(0, 300 - (nueva?.length ?? 0) - 3)).trim();
         siguiente.fuente =
           previa && nueva && !previa.includes(nueva)
-            ? textoCampo('fuente', `${previa} · ${nueva}`)
+            ? recortada
+              ? textoCampo('fuente', `${recortada} · ${nueva}`)
+              : nueva
             : (previa ?? nueva);
       }
       if (cambio.cambios.modelo !== undefined) reiniciarOrigenModelo(siguiente);
@@ -2171,7 +2505,7 @@ export class Servicio {
       quitarIndices.add(indice);
     }
     for (const indice of [...quitarIndices].sort((a, b) => b - a)) items.splice(indice, 1);
-    items.push(...(cambios.agregar ?? []).map(sanearTextos));
+    items.push(...(cambios.agregar ?? []).map((s) => desdeIA(s)));
     if (items.length > 100) return null;
     return {
       items,
@@ -2226,13 +2560,15 @@ export class Servicio {
     // Sin borrador, el contexto de la conversación es el intercambio previo que no se guardó.
     const historialIA = nuevo ? (accion.contexto ?? []) : base.historial;
     const resolver = resolverNombres(this.catalogo);
+    // Familia del modelo que nombró la persona o la IA (también con un alias): fija el rango de sus medidas.
+    const familia = (modelo: string) => this.familiaDe(resolver.modelo(modelo) ?? modelo);
     // En modo «avisar» la lectura de la IA no se enmienda: sin atajos, sin reordenar el mensaje ni reintentos.
     const corrige = (this.llm.anclaje ?? 'corregir') === 'corregir';
     // Un dato suelto que responde la pregunta pendiente («lenga», «son 3») se aplica sin consultar a la IA,
     // igual que los botones. Los dobles de prueba (sin verificarCifras) siempre pasan por la IA.
     const directa =
       this.llm.verificarCifras && corrige && previo?.estado === 'borrador' && modo === 'cotizacion_nueva'
-        ? respuestaDirecta(base, accion.mensaje, resolver)
+        ? respuestaDirecta(base, accion.mensaje, resolver, familia)
         : null;
     let salida: unknown = directa;
     if (!directa)
@@ -2340,7 +2676,7 @@ export class Servicio {
         // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q.
         const { items, avisos: avisosFusion } = fusionarItems(
           q.solicitudes,
-          res.input.items.map(sanearTextos),
+          res.input.items.map((s) => desdeIA(s)),
           (s, pareja) => this.producto(s, pareja),
         );
         propuesta = {
@@ -2371,7 +2707,7 @@ export class Servicio {
         );
       }
       // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
-      const textosIA = [accion.mensaje, ...historialIA.map((m) => m.texto)];
+      const textosIA = [accion.mensaje, ...historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto)];
       const { linea: flete, avisos: avisosFlete } = fleteDelChat(
         res.name === 'modificar_cotizacion' ? res.input.flete : undefined,
         q,
@@ -2384,25 +2720,55 @@ export class Servicio {
           flete.fleteDescripcion !== (q.fleteDescripcion ?? null));
       propuesta.avisos.push(...avisosFlete);
       if (this.llm.verificarCifras && !directa) {
+        // «sí» a «¿Te refieres a X?» (lo que pide el prompt): el ítem cuenta como si el borrador ya dijera X.
+        // Respalda solo ese nombre; las cifras y los demás nombres siguen saliendo de lo que escribió la persona.
+        // «la primera» a una pregunta con opciones respalda igual esa opción.
+        const confirmados = [
+          ...(afirmacionBreve(accion.mensaje)
+            ? q.incompletos.flatMap(({ indice, rechazo }) => {
+                const s = q.solicitudes[indice];
+                if (rechazo.tipo !== 'modelo_posible' || !s) return [];
+                // Con la forma que usó la IA («HUILO HUILO») si el catálogo la lleva al mismo modelo.
+                const propio = propuesta.items[indice]?.modelo,
+                  sugerido = resolver.modelo(rechazo.sugerido);
+                const modelo =
+                  propio && sugerido && resolver.modelo(propio) === sugerido ? propio : rechazo.sugerido;
+                return [{ ...s, modelo }];
+              })
+            : []),
+          ...opcionElegida(accion.mensaje, q),
+        ];
+        const previos = [...q.solicitudes, ...confirmados];
         // Primero cada ítem contra su propia frase, para que no tome la madera o la cantidad de otro.
         const anteriores = historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto);
-        const leidoPorFrase = anclarFrases(propuesta.items, q.solicitudes, accion.mensaje, resolver, anteriores, (m) =>
-          this.familiaDe(resolver.modelo(m) ?? m),
+        const leidoPorFrase = anclarFrases(
+          propuesta.items,
+          previos,
+          accion.mensaje,
+          resolver,
+          anteriores,
+          familia,
+          (modelo, madera) => this.escuadriasDe(resolver.modelo(modelo) ?? modelo, madera),
+        );
+        const leidos = leidoPorFrase.avisos.filter(
+          (a) => !editadoEnElMensaje(a, propuesta.items, q.solicitudes, accion.mensaje),
         );
         const porFrase = corrige
           ? {
               ...leidoPorFrase,
-              avisos: leidoPorFrase.avisos.map((a) => marcar(a.startsWith('No reconocí') ? 'palabra' : 'campo', [a])[0]),
+              avisos: leidos.map((a) => marcar(a.startsWith('No reconocí') ? 'palabra' : 'campo', [a])[0]),
             }
           : {
               items: propuesta.items,
               avisos: [
-                ...marcar('campo', avisosDeCampos(propuesta.items, leidoPorFrase.items)),
+                // Sin corregir, la frase que no se ubicó se avisa igual: la lectura de la IA quedó sin revisar.
+                ...marcar('campo', leidos.filter((a) => a.startsWith('No pude verificar'))),
+                ...marcar('campo', avisosDeCampos(propuesta.items, leidoPorFrase.items, familia)),
                 ...marcar('palabra', avisosDePalabras(propuesta.items, accion.mensaje, resolver)),
               ],
             };
-        const anclado = anclarCifras(porFrase.items, q.solicitudes, textosIA);
-        const nombres = anclarNombres(anclado.items, q.solicitudes, textosIA, {
+        const anclado = anclarCifras(porFrase.items, previos, textosIA, familia);
+        const nombres = anclarNombres(anclado.items, previos, textosIA, {
           modelo: aliasModelosCatalogo(this.catalogo),
           madera: aliasMaderasCatalogo(this.catalogo),
         }, resolver);
@@ -2433,10 +2799,15 @@ export class Servicio {
         this.llm.verificarCifras && !directa ? textosIA : null,
         q,
       );
+      const conDescuentos = this.descuentosEscritos(
+        conPrecios.items,
+        accion.mensaje,
+        this.llm.verificarCifras && !directa ? textosIA : null,
+      );
       propuesta = {
         ...propuesta,
-        items: conPrecios.items,
-        avisos: [...propuesta.avisos, ...conPrecios.avisos],
+        items: conDescuentos.items,
+        avisos: [...propuesta.avisos, ...conPrecios.avisos, ...conDescuentos.avisos],
       };
       const { solicitudes, avisos: avisosItems } = this.sanearSolicitudes(propuesta.items, accion.mensaje);
       const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
@@ -2474,7 +2845,11 @@ export class Servicio {
           extrasFlete.push(`Descripción del flete: ${flete.fleteDescripcion ?? 'automática'}`);
         Object.assign(destino, flete);
       }
-      const todos = [...avisos, ...this.recalcular(destino)];
+      const todos = [
+        ...avisos,
+        ...this.recalcular(destino),
+        ...this.confirmarDescuentos(destino, conDescuentos.cambiados),
+      ];
       const exito =
         modo === 'modificacion_anterior'
           ? `Cotización actualizada${destino.origen ? ` como revisión de la N° ${destino.origen}` : ''}. Revisa el detalle y genera el PDF cuando esté listo.`
@@ -2483,32 +2858,41 @@ export class Servicio {
         destino,
         accion.mensaje,
         [
+          // Las preguntas se guardan primero para sobrevivir al recorte del historial.
+          ...destino.incompletos.map((i) => i.pregunta),
           ...todos,
           ...(extrasFlete.length
-            ? [`Flete: ${cantidadFlete(destino)} × ${descripcionFlete(destino)}, ${pesos(unitarioFlete(destino))} neto c/u.`]
+            ? [`Flete: ${cantidadFlete(destino)} × ${descripcionFlete(destino)}, ${pesos(unitarioFlete(destino))} sin IVA c/u.`]
             : []),
-          destino.incompletos.length
-            ? [
-                ...destino.incompletos.map((i) => i.pregunta),
-                // Lo que no existe en el catálogo se cotiza igual, con el precio que indique la persona.
-                ...(destino.incompletos.some(
+          // Lo que no existe en el catálogo se cotiza igual, con el precio que indique la persona.
+          ...(!destino.incompletos.length
+            ? [exito]
+            : destino.incompletos.some(
                   (i) => SIN_CATALOGO.has(i.rechazo.tipo) && !destino.solicitudes[i.indice]?.personalizado,
                 )
-                  ? [AYUDA_ESPECIAL]
-                  : []),
-              ].join('\n\n')
-            : exito,
+              ? [AYUDA_ESPECIAL]
+              : []),
         ].join('\n\n'),
       );
       u.guardar(destino);
       const cambios = this.cambios(antes, solicitudes, clienteAntes, cliente);
-      const detalle = textoCambios(cambios, [...cambioDescuento(descuentoAntes, destino), ...extrasFlete]);
+      const descuentosItems = [...conDescuentos.cambiados].map(([i, anterior]) => {
+        const s = destino.solicitudes[i];
+        return `Descuento especial de ${this.describir(s)}: ${anterior ? textoDescuentoItem(anterior) : 'sin descuento'} → ${s.descuento ? textoDescuentoItem(s.descuento) : 'sin descuento'}`;
+      });
+      const detalle = textoCambios(cambios, [
+        ...cambioDescuento(descuentoAntes, destino),
+        ...descuentosItems,
+        ...extrasFlete,
+      ]);
       if (destino === nuevo) u.registrarEvento(destino.id, 'creada', this.autor, detalle);
       else u.registrarEvento(destino.id, 'modificada', this.autor, detalle);
       return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
     });
     this.diagnostico?.({
       herramienta,
+      modelo: this.llm.modeloEfectivo,
+      respaldo: this.llm.usoRespaldo,
       avisos: (resultado.avisos ?? []).map((texto) => ({ categoria: categorias.get(texto) ?? 'otros', texto })),
     });
     return resultado;

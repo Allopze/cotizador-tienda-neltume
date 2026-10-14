@@ -135,3 +135,46 @@ describe('respuesta directa a una pregunta pendiente', () => {
     ).toBeNull();
   });
 });
+
+describe('respuesta directa al largo de un accesorio de más de 3 m', () => {
+  const guardapolvo = (largo: number): Producto => ({
+    codigo: `GUA-O-12X1-${largo}`,
+    modelo: 'GUARDAPOLVO',
+    familia: 'MOLDURA',
+    tipo: null,
+    madera: 'PINO OREGON',
+    medida: '12X1',
+    anchoMin: null,
+    anchoMax: null,
+    largo,
+    precioNeto: 5_000,
+    descripcion: 'GUARDAPOLVO',
+    filaOrigen: 3,
+  });
+  const conMolduras: Catalogo = { ...catalogo, productos: [...catalogo.productos, guardapolvo(2.4), guardapolvo(3.6)] };
+  const resolverMolduras = resolverNombres(conMolduras);
+  const familia = (modelo: string) => conMolduras.productos.find((p) => p.modelo === modelo)?.familia ?? null;
+  const solicitudes = [solicitud({ modelo: 'GUARDAPOLVO', madera: 'PINO OREGON', medida: '12x1', cantidad: 4 })];
+  const q = {
+    solicitudes,
+    incompletos: solicitudes.flatMap((s, indice) => {
+      const r = resolverItem(conMolduras, s);
+      return r.ok ? [] : [{ indice, rechazo: r.rechazo, pregunta: pregunta(r.rechazo, s.modelo) }];
+    }),
+  };
+  const largo = (mensaje: string, conFamilia = true) =>
+    respuestaDirecta(q, mensaje, resolverMolduras, conFamilia ? familia : undefined)?.input.items?.[0]?.cambios.alto ??
+    null;
+
+  it('«3,6» o «360 cm» responden el largo de 3,6 m, con o sin la familia del catálogo', () => {
+    expect(q.incompletos.map((p) => p.rechazo.tipo)).toEqual(['faltan_datos']);
+    for (const mensaje of ['3,6', '3,6 m', '360 cm', 'de 3.6 de largo']) {
+      expect(largo(mensaje), mensaje).toBe(3.6);
+      // Sin la familia, la sección del ítem dice que es un accesorio.
+      expect(largo(mensaje, false), mensaje).toBe(3.6);
+    }
+    expect(largo('2,4')).toBe(2.4);
+    // Un largo que no es una de las opciones va a la IA.
+    expect(largo('5 m')).toBeNull();
+  });
+});

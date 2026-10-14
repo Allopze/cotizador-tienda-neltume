@@ -5,12 +5,12 @@ import { negociar, type OpcionesPeticion } from './opciones-peticion';
 const respuestaSchema = z.object({
   choices: z.array(
     z.object({
-      finish_reason: z.string().nullable(),
+      finish_reason: z.string().nullish(),
       message: z.object({
         tool_calls: z
           .array(
             z.object({
-              type: z.literal('function'),
+              type: z.literal('function').nullish(),
               function: z.object({ name: z.string(), arguments: z.string() }),
             }),
           )
@@ -56,7 +56,7 @@ export async function interpretarChat(
   const choice = parsed.data.choices[0];
   const calls = choice.message.tool_calls;
   // Algunos backends compatibles informan 'stop' aun con una llamada forzada; 'length' sigue siendo truncado.
-  if (!['tool_calls', 'stop'].includes(choice.finish_reason ?? '') || calls?.length !== 1) return null;
+  if ((choice.finish_reason != null && !['tool_calls', 'stop'].includes(choice.finish_reason)) || calls?.length !== 1) return null;
   const name = calls[0].function.name;
   try {
     const input = JSON.parse(calls[0].function.arguments);

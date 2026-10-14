@@ -54,6 +54,7 @@ const tarifaStarkenSchema = z
     // La firma y su vencimiento los entrega el servidor con cada tarifa; se verifican antes de aplicarla.
     vence: z.iso.datetime(),
     firma: z.string().min(20).max(100),
+    huellaBulto: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .strict();
 /** Referencia ya subida con /api/referencias; el servicio comprueba que el archivo exista. */
@@ -97,7 +98,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       codigo: z.string().trim().min(1).max(80),
       cantidad: z.number().int().min(1).max(10000),
       ancho: z.number().finite().min(0.3).max(3).optional(),
-      alto: z.number().finite().min(0.3).max(3).optional(),
+      alto: z.number().finite().min(0.3).max(6).optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
     })
     .strict()
@@ -114,7 +115,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
           madera: z.string().trim().min(1).max(300),
           descripcion: texto(300),
           ancho: z.number().finite().min(0.3).max(3).nullable().optional(),
-          alto: z.number().finite().min(0.3).max(3).nullable().optional(),
+          alto: z.number().finite().min(0.3).max(6).nullable().optional(),
           tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
           cantidad: z.number().int().min(1).max(10000),
           precioUnitario: z.number().int().positive().max(100_000_000),
@@ -157,6 +158,10 @@ const accionSchema = z.discriminatedUnion('tipo', [
       indice: z.number().int().nonnegative(),
     })
     .strict(),
+  z.object({ tipo: z.literal('restaurar_borrador'), id: z.uuid(), actualizada: version }).strict(),
+  z.object({ tipo: z.literal('desaprobar'), id: z.uuid(), actualizada: version }).strict(),
+  z.object({ tipo: z.literal('regenerar_pdf'), id: z.uuid(), actualizada: version, documento: z.enum(['cotizacion', 'nota']) }).strict(),
+  z.object({ tipo: z.literal('retroceder_operacion'), id: z.uuid(), actualizada: version, motivo: z.string().trim().min(1).max(300) }).strict(),
   z.object({
     tipo: z.literal('reordenar'),
     id: z.uuid(),
@@ -293,6 +298,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
 ]);
 const fecha = z.iso.date();
 const listadoSchema = z.object({
+  vencenPronto: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  saldoPendiente: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   q: z.string().max(200).optional(),
   estado: z
     .string()
@@ -362,6 +369,13 @@ export async function GET(req: Request) {
         { headers: sinCache },
       );
     }
+    // Papelera del historial: borradores eliminados que se pueden restaurar con `restaurar_borrador`.
+    const papelera = url.searchParams.get('papelera');
+    if (papelera !== null) {
+      if (papelera !== '1')
+        return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
+      return Response.json({ borradores: almacen.papelera() }, { headers: sinCache });
+    }
     const filtros = listadoSchema.safeParse(Object.fromEntries(url.searchParams));
     if (!filtros.success)
       return Response.json({ error: 'Filtros inválidos.', codigo: 'solicitud_invalida' }, { status: 400 });
@@ -401,10 +415,14 @@ export async function POST(req: Request) {
   const parsed = accionSchema.safeParse(cuerpo.valor);
   if (!parsed.success)
     return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
+  if ((parsed.data.tipo === 'regenerar_pdf' || (parsed.data.tipo === 'emitir' && parsed.data.numero !== undefined)) && sesion.usuario.rol !== 'admin')
+    return Response.json({ error: 'Esta acción requiere una cuenta administradora.' }, { status: 403 });
   try {
     const catalogo = await cargarCatalogo();
     let llm: LLM;
-    if (modoFijo()) {
+    if (parsed.data.tipo !== 'chat') {
+      llm = { interpretar: async () => { throw new Error('Esta acción no utiliza el asistente.'); } };
+    } else if (modoFijo()) {
       const { LLMFijo } = await import('@/asistente/fijo');
       llm = new LLMFijo();
     } else llm = crearLLM();
@@ -415,10 +433,11 @@ export async function POST(req: Request) {
     const registrarTurno = (d: DiagnosticoTurno) => {
       const avisos: Record<string, number> = {};
       for (const a of d.avisos) avisos[a.categoria] = (avisos[a.categoria] ?? 0) + 1;
-      console.info('[asistente]', JSON.stringify({ herramienta: d.herramienta, avisos, ms: Date.now() - inicio }));
+      console.info('[asistente]', JSON.stringify({ herramienta: d.herramienta, modelo: d.modelo, respaldo: d.respaldo, avisos, ms: Date.now() - inicio }));
     };
     return Response.json(
-      await new Servicio(catalogo, llm, new Almacen(), { nombre, email }, registrarTurno).ejecutar(parsed.data),
+      { ...await new Servicio(catalogo, llm, new Almacen(), { nombre, email }, registrarTurno).ejecutar(parsed.data),
+        ...(parsed.data.tipo === 'chat' ? { diagnostico: { modelo: llm.modeloEfectivo ?? null, respaldo: llm.usoRespaldo ?? false, ms: Date.now() - inicio } } : {}) },
       {
         headers: sinCache,
       },
