@@ -82,7 +82,7 @@ async function principal() {
     for (const entrada of await readdir(join(raiz, ruta), { withFileTypes: true })) {
       if (entrada.name.startsWith('.')) continue;
       // Herramientas de desarrollo: importan tests/ o solo sirven para medir, no viajan a producción.
-      if (ruta === 'scripts' && ['preparar-e2e.ts', 'carga.ts'].includes(entrada.name)) continue;
+      if (ruta === 'scripts' && ['preparar-e2e.ts', 'carga.ts', 'carga-http.ts'].includes(entrada.name)) continue;
       const hija = join(ruta, entrada.name);
       if (entrada.isDirectory()) await carpeta(hija);
       else if (entrada.isFile()) await agregar(hija);
