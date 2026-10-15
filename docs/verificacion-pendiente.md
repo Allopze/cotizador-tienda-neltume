@@ -136,35 +136,35 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 
 - **Asistente:**
   - ~~responder un dato cuando faltan dos~~ (`4ae617d`);
-  - el rastro del modelo de respaldo, con el diagnóstico;
-  - preguntas antes que avisos;
+  - ~~el rastro del modelo de respaldo, con el diagnóstico~~ (`plan-rutas.test.ts`: registro `[asistente]` con modelo, respaldo y avisos por categoría, sin texto);
+  - ~~preguntas antes que avisos~~ (ya cubierta: `chat-fiabilidad.test.ts`, «la pregunta pendiente sobrevive al recorte»);
   - ~~«ambas de»~~ (`4ae617d`);
   - ~~«102 x 320»~~ (`4ae617d`);
   - ~~Riñihue~~ (`4ae617d`);
   - ~~«83x236cm»~~ (`4ae617d`).
 - **Servidor:**
-  - topes de descompresión del xlsx (`xlsx.ts:28-54`);
+  - ~~topes de descompresión del xlsx (`xlsx.ts:28-54`)~~ (`xlsx-descompresion.test.ts`: bordes, partes sin comprimir y parte que declara menos);
   - ~~restaurar un borrador conservando despacho y actividad~~ (`6c7a158`);
   - ~~fecha de pago y de factura~~ (`6c7a158`);
-  - disco bajo en `/api/salud`;
+  - ~~disco bajo en `/api/salud`~~ (`salud.test.ts`);
   - ~~doble emisión simultánea~~ (`6c7a158`);
-  - pares de acciones con el número ya reservado, `ErrorOcupado` y el bloqueo comprometido;
+  - ~~pares de acciones con el número ya reservado, `ErrorOcupado` y el bloqueo comprometido~~ (`16dc69f`, `fase6-servidor.test.ts`);
   - ~~importar mientras se emite~~ (`6c7a158`);
-  - emitir entre las 21:00 y las 23:59 de Chile;
-  - reimportar retirando un producto usado en borradores;
-  - caminos de error de `migrarJsonASqlite`;
-  - migración v5 con montos comparados al peso.
+  - ~~emitir entre las 21:00 y las 23:59 de Chile~~ (`16dc69f`, `fase6-servidor.test.ts`);
+  - ~~reimportar retirando un producto usado en borradores~~ (`16dc69f`, `fase6-servidor.test.ts`);
+  - ~~caminos de error de `migrarJsonASqlite`~~ (`16dc69f`, `sqlite.test.ts`);
+  - ~~migración v5 con montos comparados al peso~~ (`16dc69f`, `migracion-v5.test.ts`; se omite sin la copia privada de `data/respaldo-migracion/`).
 - **Pantalla:**
-  - el flujo de compartir (cancelado o rechazado);
-  - la primera cuenta;
-  - el registro de cambios y el aviso de una sola administradora;
-  - el destino que anuncia «volver un paso», incluida «completada».
+  - ~~el flujo de compartir (cancelado o rechazado)~~ (`pantalla-cuentas-compartir.test.ts`, lógica en `src/app/compartir.ts`);
+  - ~~la primera cuenta~~ (`pantalla-cuentas-compartir.test.ts`, validación en `login/mensajes.ts`);
+  - ~~el registro de cambios y el aviso de una sola administradora~~ (`pantalla-cuentas-compartir.test.ts`, `ajustes/cuentas.ts`);
+  - ~~el destino que anuncia «volver un paso», incluida «completada»~~ (`seguimiento-operacion.test.ts`: lo anunciado contra lo que aplica el servidor, con `retrocesoOperativo` compartido).
 - ~~**Asistente, edición:**~~ (`4ae617d`) una edición por chat con la frase parafraseada debe dar «No pude verificar»; hoy solo se prueba la cotización nueva.
 - **Corregir pruebas que pasan por la razón equivocada:**
   - ~~`starken.test.ts:1110` fija el mensaje confuso~~ (`6c7a158`: el mensaje queda solo con un pendiente a la vista; con el catálogo cambiado hay error propio);
   - ~~`seguimiento-operacion.test.ts:89` usa un pago anterior a la aprobación~~ (`6c7a158`);
-  - la de D1 espera 6,30 kg, fuera del rango de 8–15 kg del plan;
-  - la de regenerar compara el HTML y no el texto del PDF.
+  - ~~la de D1 espera 6,30 kg, fuera del rango de 8–15 kg del plan~~ (el rango del plan era a ojo; la geometría da ~6,3 kg. La prueba ya no fija la cifra del código: la deriva de las medidas y la compara con un kit 2X4);
+  - ~~la de regenerar compara el HTML y no el texto del PDF~~ (`16dc69f`, `pdf-texto.test.ts` con pdfjs-dist; se omite sin Chromium).
 
 **E2E (Chrome)**
 

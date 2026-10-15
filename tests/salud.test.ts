@@ -8,6 +8,17 @@ import { montarInstalacion, ORIGEN } from './sesion-prueba';
 // El arranque real de Chromium se simula: prepararPdf es lo que /api/salud usa para lanzarlo y abrir una página.
 const { prepararPdf } = vi.hoisted(() => ({ prepararPdf: vi.fn(async (plazo?: number): Promise<void> => void plazo) }));
 vi.mock('../src/servidor/pdf', () => ({ prepararPdf }));
+// El espacio libre del disco de datos se simula sobre statfsSync real: `libresMb` lo reemplaza y `error` lo hace fallar.
+const { espacio } = vi.hoisted(() => ({ espacio: { libresMb: null as number | null, error: null as string | null } }));
+vi.mock('node:fs', async (original) => {
+  const real = await original<typeof import('node:fs')>();
+  const statfsSync = ((ruta: string) => {
+    if (espacio.error) throw new Error(espacio.error);
+    const medido = real.statfsSync(ruta);
+    return espacio.libresMb === null ? medido : { ...medido, bsize: 4096, bavail: (espacio.libresMb * 1024 * 1024) / 4096 };
+  }) as typeof real.statfsSync;
+  return { ...real, statfsSync };
+});
 
 let desmontar: (() => Promise<void>) | undefined;
 afterEach(async () => {
@@ -15,6 +26,8 @@ afterEach(async () => {
   desmontar = undefined;
   prepararPdf.mockReset();
   prepararPdf.mockImplementation(async () => {});
+  espacio.libresMb = null;
+  espacio.error = null;
   vi.useRealTimers();
 });
 
@@ -198,5 +211,53 @@ describe('/api/salud', () => {
       new Date().toISOString(),
     );
     expect(await starken()).toMatchObject({ estado: 'ok', configurado: true, detalle: 'Starken está configurado.' });
+  });
+
+  it('con poco disco libre avisa bajo 2 GB y responde 503 bajo 256 MB; si no se puede medir, también 503', async () => {
+    const { consultar, cuenta } = await montar();
+    const admin = await cuenta('admin@neltume.test', 'admin');
+    const disco = async () => {
+      const respuesta = await consultar(admin.cookie);
+      const { ok, comprobaciones } = await respuesta.json();
+      return { status: respuesta.status, ok, disco: comprobaciones.disco };
+    };
+
+    espacio.libresMb = 2048;
+    expect(await disco()).toEqual({
+      status: 200,
+      ok: true,
+      disco: { estado: 'ok', detalle: '2048 MB libres en el disco de datos.', libresMb: 2048 },
+    });
+    // Bajo 2 GB es un aviso: el healthcheck sigue en verde.
+    espacio.libresMb = 2047;
+    expect(await disco()).toEqual({
+      status: 200,
+      ok: true,
+      disco: { estado: 'aviso', detalle: 'Quedan 2047 MB libres en el disco de datos.', libresMb: 2047 },
+    });
+    espacio.libresMb = 256;
+    expect((await disco()).disco.estado).toBe('aviso');
+    // Bajo 256 MB SQLite empieza a fallar al guardar: rojo, también para el healthcheck sin sesión.
+    espacio.libresMb = 255;
+    expect(await disco()).toEqual({
+      status: 503,
+      ok: false,
+      disco: {
+        estado: 'error',
+        detalle: 'Quedan 255 MB libres en el disco de datos: guardar y emitir pueden fallar.',
+        libresMb: 255,
+      },
+    });
+    const sinSesion = await consultar();
+    expect(sinSesion.status).toBe(503);
+    expect(await sinSesion.json()).toEqual({ ok: false });
+
+    espacio.libresMb = null;
+    espacio.error = 'EIO: i/o error, statfs';
+    expect(await disco()).toEqual({
+      status: 503,
+      ok: false,
+      disco: { estado: 'error', detalle: 'No se pudo leer el espacio libre: EIO: i/o error, statfs' },
+    });
   });
 });
