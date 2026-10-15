@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 // Corre después de flujo, gestion e historial (orden alfabético): el historial ya tiene varias filas.

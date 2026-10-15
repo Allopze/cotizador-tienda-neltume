@@ -81,8 +81,8 @@ async function principal() {
   const carpeta = async (ruta) => {
     for (const entrada of await readdir(join(raiz, ruta), { withFileTypes: true })) {
       if (entrada.name.startsWith('.')) continue;
-      // Este lanzador importa tests/, que no forma parte de la entrega de producción.
-      if (ruta === 'scripts' && entrada.name === 'preparar-e2e.ts') continue;
+      // Herramientas de desarrollo: importan tests/ o solo sirven para medir, no viajan a producción.
+      if (ruta === 'scripts' && ['preparar-e2e.ts', 'carga.ts'].includes(entrada.name)) continue;
       const hija = join(ruta, entrada.name);
       if (entrada.isDirectory()) await carpeta(hija);
       else if (entrada.isFile()) await agregar(hija);

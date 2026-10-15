@@ -6,17 +6,19 @@ Dockerfile, Compose, los scripts del servidor y un `.env` con un secreto nuevo. 
 dependencias y compila Next.js en el servidor, para usar módulos nativos de SQLite compatibles con su
 arquitectura. El manual para el uso diario está en `docs/manual-operativo.md`.
 
-Resumen de comandos en el servidor (desde la carpeta de instalación):
+Resumen de comandos en el servidor (desde la carpeta de instalación, `/srv/cotizador-neltume`):
 
-| Para…                        | Comando                                                             |
-| ---------------------------- | ------------------------------------------------------------------- |
-| Ver el estado                | `docker compose ps` y `docker compose logs --tail=100 cotizador`    |
-| Actualizar con un ZIP nuevo  | `sh scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip`      |
-| Actualizar desde una URL     | `sh scripts/actualizar.sh https://…/neltume-cotizador-<fecha>.zip`  |
-| Volver a la versión anterior | `sh scripts/actualizar.sh --volver`                                 |
-| Respaldar ahora              | `docker compose exec cotizador npm run respaldar`                   |
-| Restaurar un respaldo        | ver [Restaurar](#restaurar)                                         |
-| Ver el código de primer uso  | `docker compose logs cotizador \| grep -A2 "Código de un solo uso"` |
+| Para…                        | Comando                                                                   |
+| ---------------------------- | ------------------------------------------------------------------------- |
+| Ver el estado                | `docker compose ps` y `docker compose logs --tail=100 cotizador`          |
+| Actualizar con un ZIP nuevo  | `sh scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip`            |
+| Actualizar desde una URL     | `sh scripts/actualizar.sh https://…/neltume-cotizador-<fecha>.zip`        |
+| Volver a la versión anterior | `sh scripts/actualizar.sh --volver`                                       |
+| Respaldar ahora              | `docker compose exec cotizador npm run respaldar`                         |
+| Restaurar un respaldo        | ver [Restaurar](#restaurar)                                               |
+| Ver el código de primer uso  | `docker compose logs cotizador \| grep -A2 "Código de un solo uso"`       |
+| Sincronizar feriados         | `docker compose exec cotizador npm run feriados`                          |
+| Limpiar ahora (sin el cron)  | `docker compose exec cotizador npm run limpiar-borradores -- --confirmar` |
 
 ## Verificar y desplegar son pasos separados
 
@@ -98,12 +100,14 @@ del ZIP.
 ## Primera instalación en el servidor
 
 Necesitas Docker Engine con Docker Compose v2, `unzip`, `rsync` y acceso a internet para descargar la imagen,
-Chromium y las dependencias de npm. Usa una carpeta dedicada (la entrega por SSH usa `/srv/cotizador-neltume`;
-cualquiera sirve, pero los comandos de esta guía suponen que estás dentro de ella):
+Chromium y las dependencias de npm. Instala en **`/srv/cotizador-neltume`**: es la carpeta a la que sube
+`npm run deploy` por SSH (`--dir /srv/cotizador-neltume` en `package.json`), y todos los comandos de esta guía y del
+manual operativo la usan. Otra carpeta también sirve, pero entonces cambia la ruta en cada comando y no mezcles
+dos instalaciones (cada una tendría su propio `.env` y su `.version-anterior/`):
 
 ```sh
-sudo install -d -o "$(id -un)" -g "$(id -gn)" /opt/neltume-cotizador
-cd /opt/neltume-cotizador
+sudo install -d -o "$(id -un)" -g "$(id -gn)" /srv/cotizador-neltume
+cd /srv/cotizador-neltume
 unzip /ruta/neltume-cotizador-<fecha>.zip
 ```
 
@@ -136,8 +140,17 @@ las variables nuevas de la aplicación llegan con la entrega, que ya trae el `co
 ### Proxy HTTPS e IP de cada persona
 
 Configura el proxy inverso HTTPS de tu servidor (por ejemplo, Nginx, Caddy o Cloudflare Tunnel) para enviar
-ese dominio a `http://127.0.0.1:<NELTUME_PORT>` (3000 por omisión; 3010 con `npm run deploy`), conservando el
-encabezado `Host` público. La aplicación requiere HTTPS en producción. Compose publica el puerto en
+ese dominio a `http://127.0.0.1:<NELTUME_PORT>`, conservando el encabezado `Host` público. El puerto lo fija el
+`.env` del servidor:
+
+| Instalación                               | `NELTUME_PORT`               | El proxy apunta a       |
+| ----------------------------------------- | ---------------------------- | ----------------------- |
+| Producción con `npm run deploy` (por SSH) | 3010                         | `http://127.0.0.1:3010` |
+| ZIP de `npm run deploy:zip`               | 3000 (o el de `--port`)      | `http://127.0.0.1:3000` |
+| Desarrollo (`npm run dev`, `npm start`)   | — (siempre 3000, sin Docker) | —                       |
+
+Dentro del contenedor la app escucha siempre en el 3000: el túnel de Cloudflare propio (`http://cotizador:3000`) y el
+healthcheck no cambian con `NELTUME_PORT`. La aplicación requiere HTTPS en producción. Compose publica el puerto en
 `127.0.0.1`; si tu proxy corre en otro contenedor o equipo, ajusta `NELTUME_BIND_IP` o la red de Docker.
 
 El límite de intentos de inicio de sesión se cuenta por IP, y la IP se toma **solo** de la cabecera que pone
@@ -192,7 +205,7 @@ docker compose exec cotizador npm run usuarios -- crear admin@tudominio.cl Admin
 ### Rescate: la única administradora olvidó su contraseña
 
 ```sh
-cd /opt/neltume-cotizador
+cd /srv/cotizador-neltume
 docker compose exec cotizador npm run usuarios -- restablecer-clave persona@tudominio.cl
 # escribe la contraseña nueva cuando la pida; se cierran sus sesiones abiertas
 ```
@@ -210,7 +223,7 @@ Para importar por terminal, monta la planilla de solo lectura en un contenedor d
 terminar y no deja copias de la planilla dentro del servicio):
 
 ```sh
-cd /opt/neltume-cotizador
+cd /srv/cotizador-neltume
 docker compose run --rm --no-deps -v /ruta/COTIZADOR_2026.xlsx:/planillas/COTIZADOR_2026.xlsx:ro \
   cotizador npm run importar -- /planillas/COTIZADOR_2026.xlsx
 ```
@@ -220,14 +233,19 @@ La importación por terminal respeta los nombres y alias editados en **Catálogo
 `config/catalogo.json` solo suma los modelos y maderas que la base todavía no tiene. El reporte queda en el volumen
 de datos (`data/reporte-importacion.md`, o `data/reporte-importacion-enchapadas.md`), también cuando la importación
 se rechaza; si la planilla trae menos del 90 % de los productos y la reducción es intencional, agrega `--forzar` al
-final del comando.
+final del comando. Al terminar dice si el catálogo quedó guardado o no.
+
+La planilla debe ser un `.xlsx` sin contraseña de apertura: un libro protegido o un `.xls` antiguo se rechazan con
+un mensaje que lo dice (guárdalo sin contraseña, o como `.xlsx`, y repite). Una importación nunca deja el catálogo
+a medias. Si una planilla nueva resultó equivocada, **Catálogo → Importar → Volver a la planilla anterior** la
+deshace desde la aplicación, mientras nadie haya cambiado el catálogo después.
 
 ## Actualizar
 
 Copia el ZIP nuevo al servidor y, desde cualquier carpeta:
 
 ```sh
-sh /opt/neltume-cotizador/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
+sh /srv/cotizador-neltume/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
 ```
 
 Si el ZIP está publicado en una dirección HTTPS (por ejemplo, un enlace de descarga directa), puedes pasar la URL
@@ -235,7 +253,7 @@ en lugar del archivo; el script lo descarga con `curl` a una carpeta temporal y 
 antes de tocar nada:
 
 ```sh
-sh /opt/neltume-cotizador/scripts/actualizar.sh https://descargas.tudominio.cl/neltume-cotizador-<fecha>.zip
+sh /srv/cotizador-neltume/scripts/actualizar.sh https://descargas.tudominio.cl/neltume-cotizador-<fecha>.zip
 ```
 
 Solo acepta `https://` (la entrega es código que se instala en el servidor). Una descarga cortada o una página de
@@ -256,7 +274,7 @@ El script:
 Si la versión nueva no pasa el chequeo, el script lo dice y muestra cómo volver:
 
 ```sh
-sh /opt/neltume-cotizador/scripts/actualizar.sh --volver
+sh /srv/cotizador-neltume/scripts/actualizar.sh --volver
 ```
 
 `--volver` detiene el cotizador, restaura los datos del respaldo tomado justo antes de actualizar (los cambios
@@ -270,7 +288,7 @@ e indícale la carpeta de instalación:
 
 ```sh
 unzip -p /ruta/neltume-cotizador-<fecha>.zip scripts/actualizar.sh > /tmp/actualizar.sh
-sh /tmp/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip --dir /opt/neltume-cotizador
+sh /tmp/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip --dir /srv/cotizador-neltume
 ```
 
 Conserva `name: neltume-cotizador` en Compose para reutilizar los mismos volúmenes. El arranque aplica las
@@ -298,13 +316,13 @@ sudo install -d -o "$(id -un)" -g "$(id -gn)" -m 700 /mnt/respaldos/neltume
 y agrega el cron con `crontab -e`, con un usuario que pueda usar Docker (todos los días a las 21:30):
 
 ```cron
-30 21 * * * sh /opt/neltume-cotizador/scripts/respaldo-diario.sh /mnt/respaldos/neltume >> "$HOME/neltume-respaldo.log" 2>&1
+30 21 * * * sh /srv/cotizador-neltume/scripts/respaldo-diario.sh /mnt/respaldos/neltume >> "$HOME/neltume-respaldo.log" 2>&1
 ```
 
 Lo mismo a mano, por partes:
 
 ```sh
-cd /opt/neltume-cotizador
+cd /srv/cotizador-neltume
 docker compose exec -T cotizador npm run respaldar
 docker compose exec -T cotizador npm run limpiar-borradores -- --confirmar
 docker compose cp cotizador:/app/respaldos/cotizador-<fecha> /mnt/respaldos/neltume/
@@ -341,7 +359,7 @@ permisos restringidos (`700`) y fuera de carpetas compartidas.
 Restaura siempre una carpeta completa `cotizador-<fecha>`: base, PDF y referencias del mismo respaldo.
 
 ```sh
-cd /opt/neltume-cotizador
+cd /srv/cotizador-neltume
 docker compose stop
 docker compose run --rm cotizador npm run restaurar -- /app/respaldos/cotizador-<fecha>
 docker compose up -d
@@ -352,20 +370,59 @@ verifica la copia con `integrity_check` antes de tocar nada, borra los `-wal`/`-
 deja lo que había en `/app/data/antes-de-restaurar-<fecha>/` para poder deshacer (bórralo cuando compruebes que
 todo está bien). Si algo falla a mitad de camino, devuelve los datos a como estaban.
 
-Para restaurar un respaldo que está en el otro disco, cópialo primero al volumen:
+Para restaurar un respaldo que está en el otro disco, cópialo primero al volumen de respaldos y restáuralo desde
+ahí:
 
 ```sh
+cd /srv/cotizador-neltume
 docker compose stop
-docker compose run --rm -v /mnt/respaldos/neltume:/respaldo-externo:ro cotizador \
-  npm run restaurar -- /respaldo-externo/cotizador-<fecha>
+docker compose run --rm --no-deps --user root -v /mnt/respaldos/neltume:/respaldo-externo:ro cotizador \
+  sh -c 'cp -a /respaldo-externo/cotizador-<fecha> /app/respaldos/ && chown -R node:node /app/respaldos/cotizador-<fecha>'
+docker compose run --rm cotizador npm run restaurar -- /app/respaldos/cotizador-<fecha>
 docker compose up -d
 ```
+
+¿Por qué en dos pasos? El cotizador corre como el usuario `node` del contenedor (uid 1000), y la carpeta del otro
+disco es del usuario del servidor que corre el cron, con permisos `700`. Si ese usuario no tiene el uid 1000 (lo
+normal: compruébalo con `id -u`), el contenedor no puede leer la carpeta montada y `npm run restaurar` falla por
+permisos. El primer comando copia como `root` (que sí puede leerla) y deja la copia a nombre de `node`; el segundo
+restaura como siempre. Si `/app/respaldos/cotizador-<fecha>` ya existe (el respaldo todavía no rotó del volumen),
+sáltate el primer comando. No cambies los permisos de la carpeta del otro disco para esto: los respaldos son
+confidenciales.
 
 En Docker, la configuración del catálogo vive en la base (Ajustes); el archivo `config/catalogo.json` que el
 respaldo trae se restaura solo dentro del contenedor temporal y no hace falta.
 
 **Prueba trimestral:** en un servidor de prueba (o con otro `name:` en Compose), restaura el último respaldo,
 entra, abre una cotización emitida y descarga su PDF. Si funciona, el respaldo sirve.
+
+## Feriados
+
+El vencimiento de las cotizaciones cuenta días hábiles sin los feriados **nacionales** de Chile. La aplicación
+calcula los legales sola y, una vez al día (al emitir), sincroniza los decretados por única vez desde
+`api.boostr.cl`. Los regionales no se cuentan. Sin internet se usan las reglas calculadas y lo último que se
+sincronizó.
+
+- Para sincronizar ahora y ver lo guardado (por ejemplo, tras un feriado nuevo decretado):
+
+  ```sh
+  docker compose exec cotizador npm run feriados
+  ```
+
+  Muestra, por año, cuándo se sincronizó y el último error, y la lista de feriados.
+
+- Si el servidor no tiene salida a internet, desactiva la sincronización con `NELTUME_FERIADOS_SYNC=0` en el `.env`
+  y aplica con `docker compose up -d` (Compose ya pasa esa variable al cotizador). `/api/salud` muestra la última
+  sincronización.
+
+## Limpieza de datos
+
+`npm run limpiar-borradores -- --confirmar`, que corre cada noche dentro de `scripts/respaldo-diario.sh`, es lo único
+que evita que los datos crezcan sin límite (ver la lista en [Respaldo diario y limpieza](#respaldo-diario-y-limpieza)).
+Sin el cron, la papelera del Historial no se vacía nunca aunque la pantalla diga «se guardan 30 días». Lo que **no**
+borra nadie: las cotizaciones con número y sus PDF originales, los respaldos del otro disco más allá de los 30
+últimos (los borra el mismo script) y las carpetas `data/antes-de-restaurar-<fecha>/` que deja una restauración:
+bórralas a mano cuando compruebes que todo está bien.
 
 ## Estado del sistema
 

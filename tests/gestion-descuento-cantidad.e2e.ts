@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { guardarConfiguracionNegocio, leerConfiguracionNegocio } from '../src/servidor/configuracion-negocio';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';

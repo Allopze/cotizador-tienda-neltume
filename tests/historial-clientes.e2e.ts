@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 // Fase 4 del plan: directorio de clientes, filtros del historial por seguimiento, operación y vendedora, plazo de

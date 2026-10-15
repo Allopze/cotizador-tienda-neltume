@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { leerConfiguracionStarken } from '../src/servidor/starken-configuracion';
 import { DIR_E2E, iniciarSesion, USUARIO_E2E } from './login-e2e';

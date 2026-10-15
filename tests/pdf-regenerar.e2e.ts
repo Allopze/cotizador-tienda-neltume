@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { access, rm } from 'node:fs/promises';
 import { ADMIN_E2E, DIR_E2E, iniciarSesion } from './login-e2e';
 import { resolverMedidasAntesDeEmitir } from './medidas-e2e';

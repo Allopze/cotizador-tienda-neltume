@@ -1,9 +1,9 @@
 #!/bin/sh
 # Tarea diaria del servidor (cron del host): respalda, limpia y copia el respaldo a otro disco.
 #
-# Uso: sh /opt/neltume-cotizador/scripts/respaldo-diario.sh <carpeta-en-otro-disco> [cantidad-a-conservar]
+# Uso: sh /srv/cotizador-neltume/scripts/respaldo-diario.sh <carpeta-en-otro-disco> [cantidad-a-conservar]
 # Ejemplo de crontab (crontab -e, con un usuario que pueda usar docker), todos los días a las 21:30:
-#   30 21 * * * sh /opt/neltume-cotizador/scripts/respaldo-diario.sh /mnt/respaldos/neltume >> "$HOME/neltume-respaldo.log" 2>&1
+#   30 21 * * * sh /srv/cotizador-neltume/scripts/respaldo-diario.sh /mnt/respaldos/neltume >> "$HOME/neltume-respaldo.log" 2>&1
 #
 # 1. npm run respaldar dentro del contenedor (base, PDF, referencias y configuración; conserva los 30 últimos).
 # 2. npm run limpiar-borradores -- --confirmar (borradores vacíos abandonados, papelera vieja, referencias huérfanas).

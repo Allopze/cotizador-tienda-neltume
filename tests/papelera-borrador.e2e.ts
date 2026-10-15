@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 // No emite nada: no mueve los correlativos que esperan otras pruebas, y al final el borrador vuelve a la papelera.

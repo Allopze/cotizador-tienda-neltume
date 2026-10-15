@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { pesos } from '../src/negocio/precios';
 import { iniciarSesion } from './login-e2e';
 import { resolverMedidasAntesDeEmitir } from './medidas-e2e';

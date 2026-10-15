@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { CLAVE_E2E, iniciarSesion, USUARIO_E2E } from './login-e2e';
 
 test('redirige a login y protege las APIs y los documentos hasta autenticar', async ({ page }) => {

@@ -229,6 +229,29 @@ export function leerAbierta(): string | null {
   }
 }
 
+// Aviso del servidor para mostrar al abrir una cotización en el cotizador tras cambiar de pantalla (p. ej. «Duplicar»
+// desde el historial recorta el descuento al máximo vigente): la pantalla que lo recibió se va antes de mostrarlo.
+const CLAVE_AVISO_AL_ABRIR = 'neltume:aviso-al-abrir';
+export function dejarAvisoAlAbrir(id: string, texto: string) {
+  try {
+    sessionStorage.setItem(CLAVE_AVISO_AL_ABRIR, JSON.stringify({ id, texto }));
+  } catch {
+    // Sin almacenamiento: el aviso queda en la actividad de la cotización.
+  }
+}
+/** Devuelve (y borra) el aviso pendiente si es de esta cotización. */
+export function tomarAvisoAlAbrir(id: string): string | null {
+  try {
+    const crudo = sessionStorage.getItem(CLAVE_AVISO_AL_ABRIR);
+    if (!crudo) return null;
+    sessionStorage.removeItem(CLAVE_AVISO_AL_ABRIR);
+    const aviso = JSON.parse(crudo) as { id?: unknown; texto?: unknown };
+    return aviso.id === id && typeof aviso.texto === 'string' ? aviso.texto : null;
+  } catch {
+    return null;
+  }
+}
+
 /** `conCotizacion`: guarda también la cotización abierta aunque no haya texto (vencimiento de sesión). */
 export function guardarBorrador(b: Borrador, conCotizacion = false) {
   try {

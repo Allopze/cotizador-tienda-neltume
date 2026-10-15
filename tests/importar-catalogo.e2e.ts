@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures-e2e';
 import { join } from 'node:path';
 import type Database from 'better-sqlite3';
 import { abrirBaseDatos } from '../src/servidor/base-datos';

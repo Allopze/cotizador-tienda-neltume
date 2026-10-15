@@ -70,6 +70,8 @@ describe('jerga técnica en pantalla', () => {
     /se guarda neto/,
     /\} neto`/,
     /Vista técnica \(JSON\)/,
+    // Todas las cuentas son administradoras: no hay un rol estándar que explicar.
+    /rol estándar|Estándar/,
   ];
   it.each(PROHIBIDOS_INTERFAZ.map((r) => [String(r), r] as const))('src/app no muestra %s', (_, prohibido) => {
     expect(coincidencias(interfaz, prohibido)).toEqual([]);

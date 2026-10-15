@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures-e2e';
 import { ADMIN_E2E, iniciarSesion } from './login-e2e';
 
 // Las dos papeleras (borradores en Historial, productos agregados a mano en Catálogo → Gestionar), los filtros

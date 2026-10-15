@@ -1,4 +1,4 @@
-import { test, expect, type Download } from '@playwright/test';
+import { test, expect, type Download } from './fixtures-e2e';
 import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { Almacen } from '../src/servidor/almacen';

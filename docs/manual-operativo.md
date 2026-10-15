@@ -1,9 +1,10 @@
 # Manual operativo del cotizador Neltume
 
-Este manual es para quien cuida el cotizador en el día a día: entrar, manejar las cuentas, la clave de IA,
-Starken, los respaldos y las actualizaciones. No hace falta saber programar. Donde aparece un comando, se
-escribe en la terminal del servidor, dentro de la carpeta de instalación (por ejemplo `/opt/neltume-cotizador`
-o `/srv/cotizador-neltume`). Los detalles técnicos están en `docker/LEEME.md`.
+Este manual es para quien usa y cuida el cotizador en el día a día: las vendedoras (punto 10, «Trabajo
+diario») y la administradora (entrar, cuentas, clave de IA, Starken, respaldos y actualizaciones). No hace falta
+saber programar. Donde aparece un comando, se escribe en la terminal del servidor, dentro de la carpeta de
+instalación, que es `/srv/cotizador-neltume` (la misma a la que sube las versiones nuevas quien desarrolla). Los
+detalles técnicos están en `docker/LEEME.md`.
 
 ## 1. Entrar
 
@@ -13,6 +14,13 @@ o `/srv/cotizador-neltume`). Los detalles técnicos están en `docker/LEEME.md`.
 
 La sesión dura 12 horas. Si se cierra mientras trabajabas, vuelve a entrar: el borrador se conserva.
 Después de varios intentos fallidos el ingreso se bloquea unos minutos; espera y vuelve a intentar.
+
+### Tus sesiones abiertas
+
+En **Ajustes → Mi cuenta → Sesiones abiertas** ves en qué equipos y navegadores está abierta tu cuenta, con la
+fecha en que entraste y cuándo vence. **Cerrar sesión** cierra la de un equipo (por ejemplo, el computador de la
+oficina que olvidaste cerrar) y **Cerrar las demás** cierra todas menos la que estás usando. Si ves un equipo que no
+reconoces, ciérralo y cambia tu contraseña.
 
 ### La primera vez
 
@@ -36,9 +44,14 @@ Todo se hace en **Ajustes → Usuarios** (solo lo ven las cuentas administradora
 - **Desactivar una cuenta** (por ejemplo, alguien deja la empresa): botón **Desactivar**. Se cierran sus
   sesiones y no puede volver a entrar; sus cotizaciones se conservan. **Activar** la habilita de nuevo.
   Nadie puede desactivar su propia cuenta ni la última administradora activa.
-- **Editar** cambia el nombre o el correo.
-- **Registro de cambios:** al final de la página se ven los últimos 50 cambios de cuentas: quién creó,
-  editó, desactivó, activó o restableció la contraseña de qué cuenta, y cuándo.
+- **Editar** cambia el nombre o el correo. Para cambiar el correo o restablecer la contraseña de una cuenta, el
+  cotizador pide **tu propia contraseña** (la de quien hace el cambio): así nadie puede tomar otra cuenta desde un
+  computador que quedó abierto.
+- **Registro de cambios:** al final de la página se ven los últimos 50 movimientos de cuentas: quién creó,
+  editó, desactivó, activó o restableció la contraseña de qué cuenta, y también cada **inicio de sesión**, correcto
+  o fallido, con el equipo y la IP (nunca la contraseña). Muchos fallidos seguidos en una cuenta pueden ser alguien
+  probando contraseñas: avisa a quien administra el servidor.
+- Una cuenta desactivada que intenta entrar ve el mismo mensaje que con una contraseña incorrecta.
 
 ### Regla: siempre dos administradoras
 
@@ -55,7 +68,7 @@ Usuarios avisa cuando queda una sola.
   mostrarla en pantalla):
 
   ```sh
-  cd /opt/neltume-cotizador
+  cd /srv/cotizador-neltume
   docker compose exec cotizador npm run usuarios -- restablecer-clave persona@tudominio.cl
   # escribe la contraseña nueva cuando la pida y pulsa Enter
   ```
@@ -73,6 +86,11 @@ El asistente del chat usa CommandCode. En **Ajustes → Asistente**:
 
 Si el cotizador dice que la clave «ya no se puede leer», es porque cambió el secreto del servidor: vuelve a
 pegar la clave en Ajustes.
+
+**¿Qué modelo respondió?** En **Ajustes → Asistente → Avanzado**, «Última respuesta del chat» dice qué modelo
+contestó el último mensaje que enviaste desde esa pestaña, si fue el **modelo de respaldo** y cuánto tardó. Si
+responde una y otra vez el respaldo, el modelo principal está fallando (sin saldo, caído o retirado): usa **Probar
+modelo** o avisa a quien desarrolla. No muestra el texto de la conversación.
 
 ## 4. Starken
 
@@ -99,6 +117,9 @@ referencias que suben los clientes.
   ```
 
 - Se conservan los últimos 30. Para saber cuándo fue el último, mira el estado (punto 8).
+- **Sin el cron, nada se limpia solo:** la papelera del Historial dice que guarda los borradores 30 días, pero
+  quien los borra pasado ese plazo es la tarea nocturna. Si no está instalada, límpiala a mano de vez en cuando:
+  `docker compose exec cotizador npm run limpiar-borradores -- --confirmar`.
 - **Los respaldos son confidenciales:** contienen sesiones abiertas y la clave de IA cifrada. No los copies a
   carpetas compartidas ni los envíes por correo.
 
@@ -108,7 +129,7 @@ referencias que suben los clientes.
 se borran: quedan apartados para poder deshacer).
 
 ```sh
-cd /opt/neltume-cotizador
+cd /srv/cotizador-neltume
 docker compose stop
 docker compose run --rm cotizador npm run restaurar -- /app/respaldos/cotizador-<fecha>
 docker compose up -d
@@ -127,14 +148,14 @@ abrir una cotización emitida y descargar su PDF.
 Quien desarrolla entrega un archivo `neltume-cotizador-<fecha>.zip`. Cópialo al servidor y ejecuta:
 
 ```sh
-sh /opt/neltume-cotizador/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
+sh /srv/cotizador-neltume/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
 ```
 
 Si en vez del archivo te envían un enlace de descarga directa que empieza con `https://`, puedes pasar el enlace
 y el script lo descarga solo:
 
 ```sh
-sh /opt/neltume-cotizador/scripts/actualizar.sh https://descargas.tudominio.cl/neltume-cotizador-<fecha>.zip
+sh /srv/cotizador-neltume/scripts/actualizar.sh https://descargas.tudominio.cl/neltume-cotizador-<fecha>.zip
 ```
 
 El script respalda primero, conserva la configuración (`.env`) y los respaldos, guarda la versión actual (con una
@@ -145,7 +166,7 @@ algo falla:
 - **La versión nueva no pasó el chequeo:** vuelve a la anterior con
 
   ```sh
-  sh /opt/neltume-cotizador/scripts/actualizar.sh --volver
+  sh /srv/cotizador-neltume/scripts/actualizar.sh --volver
   ```
 
   y escribe `VOLVER` cuando lo pida. Restaura los datos del respaldo tomado justo antes de actualizar (funciona
@@ -164,19 +185,77 @@ algo falla:
 
 ## 9. Si pasa X, haz Y
 
-| Si pasa…                                            | Haz…                                                                                                                                                                                            |
-| --------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Alguien olvidó su contraseña                        | Otra administradora: Ajustes → Usuarios → Restablecer clave. Si no hay otra, las tres líneas del punto 2.                                                                                       |
-| Alguien deja la empresa                             | Ajustes → Usuarios → Desactivar su cuenta. Sus cotizaciones se conservan.                                                                                                                       |
-| Queda una sola administradora                       | Crea otra ahora mismo en Ajustes → Usuarios.                                                                                                                                                    |
-| «Demasiados intentos» al entrar                     | Espera 15 minutos y vuelve a intentar con cuidado. Si se repite sin motivo, avisa a quien administra el servidor (puede ser el proxy, ver LEEME).                                               |
-| El asistente no responde o dice que falta la clave  | Ajustes → Asistente: guarda la clave de nuevo. Mientras tanto se puede cotizar a mano.                                                                                                          |
-| «La clave de IA ya no se puede leer»                | Ajustes → Asistente: pega otra vez la clave API.                                                                                                                                                |
-| El botón de Starken está desactivado                | Revisa las credenciales de Starken en `.env` y la ciudad de origen en Ajustes → Starken; mientras, escribe el despacho a mano.                                                                  |
-| No se genera el PDF                                 | Reintenta en un minuto. Si sigue, mira `/api/salud` (Chromium) y `docker compose logs --tail=100 cotizador`, y avisa a quien desarrolla.                                                        |
-| `/api/salud` dice poco espacio en disco             | Borra respaldos antiguos de otros discos o carpetas `antes-de-restaurar-…` ya revisadas; si sigue, amplía el disco.                                                                             |
-| `/api/salud` dice que el último respaldo es antiguo | Revisa el cron y su registro (`$HOME/neltume-respaldo.log`); mientras, respalda a mano (punto 5).                                                                                               |
-| El sitio no abre                                    | En el servidor: `docker compose ps` y `docker compose logs --tail=100 cotizador`. Si el registro dice «No se inicia el cotizador», corrige `.env` como indica y ejecuta `docker compose up -d`. |
-| Se borró o dañó información                         | No sigas trabajando; restaura el último respaldo bueno (punto 6).                                                                                                                               |
-| Una actualización dejó algo funcionando mal         | `sh scripts/actualizar.sh --volver` (punto 7) y avisa a quien desarrolla.                                                                                                                       |
-| El cotizador no tiene cuentas (instalación nueva)   | Crea la primera con el código del registro del servidor (punto 1).                                                                                                                              |
+| Si pasa…                                                            | Haz…                                                                                                                                                                                            |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Alguien olvidó su contraseña                                        | Otra administradora: Ajustes → Usuarios → Restablecer clave. Si no hay otra, las tres líneas del punto 2.                                                                                       |
+| Alguien deja la empresa                                             | Ajustes → Usuarios → Desactivar su cuenta. Sus cotizaciones se conservan.                                                                                                                       |
+| Queda una sola administradora                                       | Crea otra ahora mismo en Ajustes → Usuarios.                                                                                                                                                    |
+| «Demasiados intentos» al entrar                                     | Espera 15 minutos y vuelve a intentar con cuidado. Si se repite sin motivo, avisa a quien administra el servidor (puede ser el proxy, ver LEEME).                                               |
+| El asistente no responde o dice que falta la clave                  | Ajustes → Asistente: guarda la clave de nuevo. Mientras tanto se puede cotizar a mano.                                                                                                          |
+| «La clave de IA ya no se puede leer»                                | Ajustes → Asistente: pega otra vez la clave API.                                                                                                                                                |
+| El botón de Starken está desactivado                                | Revisa las credenciales de Starken en `.env` y la ciudad de origen en Ajustes → Starken; mientras, escribe el despacho a mano.                                                                  |
+| No se genera el PDF                                                 | Reintenta en un minuto. Si sigue, mira `/api/salud` (Chromium) y `docker compose logs --tail=100 cotizador`, y avisa a quien desarrolla.                                                        |
+| `/api/salud` dice poco espacio en disco                             | Borra respaldos antiguos de otros discos o carpetas `antes-de-restaurar-…` ya revisadas; si sigue, amplía el disco.                                                                             |
+| `/api/salud` dice que el último respaldo es antiguo                 | Revisa el cron y su registro (`$HOME/neltume-respaldo.log`); mientras, respalda a mano (punto 5).                                                                                               |
+| El sitio no abre                                                    | En el servidor: `docker compose ps` y `docker compose logs --tail=100 cotizador`. Si el registro dice «No se inicia el cotizador», corrige `.env` como indica y ejecuta `docker compose up -d`. |
+| Se borró o dañó información                                         | No sigas trabajando; restaura el último respaldo bueno (punto 6).                                                                                                                               |
+| Una actualización dejó algo funcionando mal                         | `sh scripts/actualizar.sh --volver` (punto 7) y avisa a quien desarrolla.                                                                                                                       |
+| El cotizador no tiene cuentas (instalación nueva)                   | Crea la primera con el código del registro del servidor (punto 1).                                                                                                                              |
+| «Ya se está generando el PDF de esta cotización»                    | Otra pestaña o un doble toque ya la está emitiendo. Espera unos segundos y recarga: el número no se gastó dos veces.                                                                            |
+| «Anular» aparece gris                                               | La cotización ya está despachada, completada o facturada. Pasa el cursor (o toca) para ver el motivo. Para anular una facturada, primero vuelve la facturación a pendiente.                     |
+| El catálogo importado quedó mal                                     | Catálogo → Importar → **Volver a la planilla anterior** (funciona mientras nadie cambie el catálogo después).                                                                                   |
+| «El archivo está protegido con contraseña» o «Excel antiguo (.xls)» | Abre la planilla en Excel, quítale la contraseña de apertura o guárdala como `.xlsx`, y vuelve a importarla.                                                                                    |
+| Un equipo desconocido en Mi cuenta → Sesiones abiertas              | Ciérralo con **Cerrar sesión** y cambia tu contraseña.                                                                                                                                          |
+| Muchos inicios de sesión fallidos en el registro                    | Puede ser alguien probando contraseñas: cambia la de esa cuenta y avisa a quien administra el servidor.                                                                                         |
+
+## 10. Trabajo diario: lo que conviene saber
+
+Esto es para las vendedoras y la administradora. La guía **«Cómo funciona»** (menú de tu cuenta → Cómo
+funciona) explica el recorrido completo de una cotización; aquí van las reglas que más sorprenden.
+
+### Emitir y anular
+
+- **Una emisión a la vez.** Mientras se genera el PDF de una cotización (o su nota de pedido), un segundo «Emitir»
+  de la misma cotización, desde otra pestaña o por un doble toque, responde «Ya se está generando…» y no gasta otro
+  número. Espera unos segundos y recarga.
+- **Número manual** (solo administradoras): el diálogo muestra el último número usado y el máximo que se puede
+  elegir (hasta 1.000 por encima).
+- **Anular tiene límites.** Una cotización despachada, completada o facturada ya no se puede anular: el botón
+  aparece desactivado y dice por qué. Si tiene pagos, el diálogo avisa cuánto se pagó: **anular no devuelve el
+  dinero**, solo deja anotado el monto en la actividad.
+- **Deshacer aprobación** devuelve una aprobada a «Emitida» solo si todavía no tiene nota de pedido, pagos ni
+  factura. **Volver al paso anterior** retrocede un paso de la operación y pide un motivo.
+
+### Pagos y facturas
+
+- La fecha de un pago o de una factura va **desde el día de la aprobación hasta hoy** (hora de Chile). El
+  calendario no deja elegir otra. Si no eliges fecha, queda la de hoy.
+
+### Avisos que no bloquean
+
+- **Precio bajo el costo:** si escribes un precio menor que el costo de fábrica, el cotizador lo acepta pero avisa
+  «queda bajo el costo de fábrica» y lo anota en la actividad. Revisa que sea a propósito.
+- **Medida de vano:** si pides una puerta «en vano» y el ancho cae justo al inicio de un tramo del catálogo, el
+  cotizador avisa que la hoja real (más angosta que el vano) probablemente es del tramo anterior, más barato.
+  Se cobra lo pedido; tú decides si corregir la medida.
+- **Ancho y alto al revés:** «Molco de 210 x 80» queda pendiente y ofrece **Intercambiar** las medidas.
+
+### Historial, clientes y papelera
+
+- **Filtros:** además de los estados, «Vencen pronto» y «Con saldo pendiente», el Historial filtra por
+  **Seguimiento**, **Operación** y **Vendedora**.
+- **Clientes:** el botón **Clientes** del Historial abre el directorio de clientes de todas las cotizaciones, con
+  búsqueda por nombre o RUT y sus cotizaciones (cada una se abre con un toque).
+- **Exportar a Excel (CSV):** un archivo admite 5.000 cotizaciones. Si el listado filtrado tiene más, el cotizador
+  ofrece descargarlo **por partes** (parte 1, parte 2…) en vez de cortarlo; también puedes acotar las fechas.
+- **Papelera:** un borrador eliminado queda en Historial → Papelera **30 días**; ahí se busca y se restaura con
+  su despacho y su actividad. Pasado ese plazo se borra para siempre.
+
+### Catálogo
+
+- **Importar:** la vista previa separa los productos cuyo cambio es **solo la descripción** de los que cambian de
+  precio. Una planilla con contraseña de apertura o un `.xls` antiguo se rechazan con un mensaje claro.
+- **Volver a la planilla anterior:** tras importar, **Catálogo → Importar** ofrece volver atrás, también después de
+  recargar la página, mientras nadie haya cambiado el catálogo.
+- **Medidas en Agregar producto y Gestionar:** se escriben como en el detalle: «80 cm», «2100 mm», «3600 mm» o
+  «3,6» (metros).

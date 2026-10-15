@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 test('agrega al catálogo desde un pendiente con el formulario completado y cotiza el ítem', async ({ page }) => {

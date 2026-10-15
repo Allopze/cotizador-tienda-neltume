@@ -1,4 +1,4 @@
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 import { resolve } from 'node:path';
 import { chromiumPath } from './src/servidor/chromium';
 const dataE2E = resolve(process.env.NELTUME_E2E_DIR ?? 'data/test-e2e');
@@ -14,9 +14,18 @@ export default defineConfig({
   timeout: 60000,
   // La aceptación emite cotizaciones y notas: corre al final para no mover los correlativos que otras
   // pruebas esperan (la primera cotización es la 323 y la primera nota, la 1).
+  // «webkit-iphone» repite las pruebas del teléfono en WebKit (Safari) con el iPhone 13; requiere
+  // `npx playwright install webkit`. «primer-uso» aparta por un momento las cuentas: corre al final de todo.
   projects: [
-    { name: 'flujos', testMatch: '**/*.e2e.ts', testIgnore: '**/aceptacion.e2e.ts' },
+    { name: 'flujos', testMatch: '**/*.e2e.ts', testIgnore: ['**/aceptacion.e2e.ts', '**/primer-uso.e2e.ts'] },
     { name: 'aceptacion', testMatch: '**/aceptacion.e2e.ts', dependencies: ['flujos'] },
+    {
+      name: 'webkit-iphone',
+      testMatch: '**/movil.e2e.ts',
+      dependencies: ['aceptacion'],
+      use: { ...devices['iPhone 13'], launchOptions: {} },
+    },
+    { name: 'primer-uso', testMatch: '**/primer-uso.e2e.ts', dependencies: ['aceptacion', 'webkit-iphone'] },
   ],
   use: {
     baseURL: 'http://127.0.0.1:3100',

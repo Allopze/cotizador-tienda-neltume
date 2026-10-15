@@ -61,6 +61,7 @@ import {
   guardarBorrador,
   leerAbierta,
   leerBorrador,
+  tomarAvisoAlAbrir,
   mensajeDe,
   pedirArchivo,
   pedirJSON,
@@ -285,6 +286,8 @@ export function Cotizador({
           const q = await leerDetalle(id, control.signal);
           setActual(q);
           if (q.estado === 'aprobada') setVistaMobile('cotizacion');
+          const aviso = abrirId && !control.signal.aborted ? tomarAvisoAlAbrir(q.id) : null;
+          if (aviso) avisar('info', aviso);
         }
         if (abrirId) setEnfocar((n) => n + 1);
       })
@@ -469,7 +472,8 @@ export function Cotizador({
       return;
     }
     if (codigo === 'version_obsoleta') {
-      avisar('error', `${mensajeDe(e)} Se cargó la versión actual: revísala y vuelve a intentarlo.`, {
+      // Un solo mensaje: el del servidor ya pide revisar y reintentar, y aquí se dice además que se recargó.
+      avisar('error', 'La cotización cambió mientras la tenías abierta. Se cargó la versión actual: revísala y vuelve a intentarlo.', {
         clave: 'operacion',
       });
     } else avisar('error', mensajeDe(e), { clave: 'operacion' });

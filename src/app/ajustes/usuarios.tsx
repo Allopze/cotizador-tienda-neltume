@@ -199,7 +199,7 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
     <div className="usuarios-admin">
       <p className="catalog-modal-intro">
         Edita nombre y correo, activa o desactiva cuentas y restablece contraseñas. Las cuentas que se crean aquí
-        tienen rol de administrador; las de rol estándar ven Ajustes en solo lectura.
+        son todas administradoras: pueden cotizar y cambiar Ajustes. Mantén siempre al menos dos activas.
       </p>
       {usuarios !== null && adminsActivos < 2 && (
         <p className="catalog-warning" role="status">
@@ -258,7 +258,7 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
                     </form>
                   )}
                 </td>
-                <td data-etiqueta="Estado"><span className={`status ${usuario.activo ? 'aprobada' : 'anulada'}`}>{usuario.activo ? 'Activa' : 'Desactivada'}</span><small>{usuario.rol === 'admin' ? 'Administrador' : 'Estándar'}{usuario.id === actual ? ' · Tu cuenta' : ''}</small></td>
+                <td data-etiqueta="Estado"><span className={`status ${usuario.activo ? 'aprobada' : 'anulada'}`}>{usuario.activo ? 'Activa' : 'Desactivada'}</span><small>{usuario.rol === 'admin' ? 'Administradora' : 'Sin permisos de administración'}{usuario.id === actual ? ' · Tu cuenta' : ''}</small></td>
                 <td className="celda-acciones">
                   {editandoEsta ? <><button type="submit" form={`editar-${usuario.id}`} className="button primary small" disabled={ocupado === usuario.id}>Guardar</button><button type="button" className="button secondary small" onClick={cerrarEdicion} disabled={!!ocupado}>Cancelar</button></> : <button type="button" className="button secondary small" onClick={() => { cerrarEdicion(); cerrarClave(); setEditando(usuario.id); setNombre(usuario.nombre); setEmail(usuario.email); }} disabled={!!ocupado}>Editar</button>}
                   {!claveEsta && <button type="button" className="button secondary small" onClick={() => { cerrarClave(); cerrarEdicion(); setClaveId(usuario.id); }} disabled={!!ocupado}>Restablecer clave</button>}

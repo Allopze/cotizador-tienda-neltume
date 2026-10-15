@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 test('agregar un producto a mano en la misma pantalla que el alta asistida', async ({ page }) => {

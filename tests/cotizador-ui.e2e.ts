@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 async function agregarPuerta(page: Page, cantidad = 3, ancho = '0.8') {

@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures-e2e';
 import { digitoVerificador } from '../src/negocio/cliente';
 import { iniciarSesion } from './login-e2e';
 
@@ -70,20 +70,40 @@ test('una moldura de 3,6 m se ve y se edita con el rango de 6 m de los accesorio
 
 test('una moldura de más de 3 m del catálogo se agrega y muestra su largo', async ({ page }) => {
   await iniciarSesion(page);
-  const { productos } = await (await page.request.get('/api/catalogo?familia=MOLDURA')).json();
-  const larga = (productos as { codigo: string; largo: number }[]).find((p) => p.largo > 3 && p.largo <= 6);
-  test.skip(!larga, 'La planilla de prueba no tiene molduras de más de 3 m.');
+  // La planilla de prueba no trae molduras de más de 3 m: se agrega una al catálogo por la API, como el alta manual.
+  type Producto = { codigo: string; familia: string; modelo: string; largo: number };
+  const molduras = async () =>
+    ((await (await page.request.get('/api/catalogo?familia=MOLDURA')).json()).productos as Producto[]).filter(
+      (p) => p.modelo.toUpperCase() === 'CORNISA LARGA E2E',
+    );
+  if (!(await molduras()).length) {
+    const propuesta = await page.request.post('/api/catalogo', {
+      data: {
+        tipo: 'manual',
+        producto: {
+          modelo: 'Cornisa Larga E2E', familia: 'MOLDURA', madera: 'Roble', tipo: null, medida: '20x70 mm',
+          anchoMin: null, anchoMax: null, largo: 3.6, precioNeto: 12000,
+        },
+      },
+    });
+    expect(propuesta.ok(), await propuesta.text()).toBe(true);
+    const { id } = (await propuesta.json()) as { id: string };
+    const confirmada = await page.request.post('/api/catalogo', { data: { tipo: 'confirmar', id } });
+    expect(confirmada.ok(), await confirmada.text()).toBe(true);
+  }
+  const [larga] = await molduras();
+  expect(larga.largo).toBe(3.6);
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
-  await dialogo.getByLabel('Busca por modelo, madera o código').fill(larga!.codigo);
+  await dialogo.getByLabel('Busca por modelo, madera o código').fill(larga.codigo);
   await dialogo.locator('.producto-resultados button').first().click();
   await dialogo.getByRole('button', { name: 'Agregar al pedido' }).click();
   await expect(dialogo).toHaveCount(0);
   const panel = page.getByLabel('Cotización en curso');
-  await expect(panel.getByText(larga!.codigo, { exact: true })).toBeVisible();
+  await expect(panel.getByText(larga.codigo, { exact: true })).toBeVisible();
+  await expect(panel.getByText('Incompleto · no suma al total')).toHaveCount(0);
   await panel.locator('.item-details > summary').first().click();
-  const texto = larga!.largo.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
-  await expect(panel.getByRole('button', { name: /^Editar alto \/ largo \(m\)/ })).toHaveText(new RegExp(texto));
+  await expect(panel.getByRole('button', { name: /^Editar alto \/ largo \(m\)/ })).toHaveText(/3,60/);
 });
 
 test('ancho y alto aceptan coma, punto, centímetros y milímetros, y avisan en vez de guardar vacío', async ({ page }) => {

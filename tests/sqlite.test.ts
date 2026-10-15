@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -327,5 +327,132 @@ describe('Persistencia SQLite', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe('migrarJsonASqlite · caminos de error', () => {
+  /** Carpeta con los JSON escritos; `migrar` corre la migración sobre ellos. */
+  async function conJson(catalogo: unknown, estado?: unknown) {
+    const dir = await temp();
+    const rutas = {
+      rutaDb: join(dir, 'cotizador.sqlite'),
+      catalogo: join(dir, 'catalogo.json'),
+      estado: join(dir, 'estado.json'),
+      directorioRespaldo: join(dir, 'respaldo'),
+    };
+    if (catalogo !== undefined)
+      await writeFile(rutas.catalogo, typeof catalogo === 'string' ? catalogo : JSON.stringify(catalogo));
+    if (estado !== undefined)
+      await writeFile(rutas.estado, typeof estado === 'string' ? estado : JSON.stringify(estado));
+    return { dir, rutas, migrar: () => migrarJsonASqlite(rutas) };
+  }
+  /** Tras un fallo: los JSON siguen en su lugar, no hay base publicada ni copias a medio hacer. */
+  async function intacta({ dir, rutas }: Awaited<ReturnType<typeof conJson>>, conEstado = true) {
+    await expect(readFile(rutas.catalogo)).resolves.toBeTruthy();
+    if (conEstado) await expect(readFile(rutas.estado)).resolves.toBeTruthy();
+    await expect(readFile(rutas.rutaDb)).rejects.toThrow();
+    const archivos = await readdir(dir);
+    expect(archivos.some((n) => n.includes('.migrando'))).toBe(false);
+    expect(archivos).not.toContain('respaldo');
+  }
+  const conCotizaciones = (cambiar: (estado: Estado) => void) => {
+    const estado = estadoFixture();
+    cambiar(estado);
+    return estado;
+  };
+
+  it('sin catálogo JSON pide importar y no crea la base', async () => {
+    const t = await conJson(undefined, estadoFixture());
+    await expect(t.migrar()).rejects.toThrow(/No se encontró .*catalogo\.json\. Ejecuta npm run importar/);
+    await expect(readFile(t.rutas.rutaDb)).rejects.toThrow();
+  });
+
+  it.each([
+    ['catálogo con JSON roto', '{roto', estadoFixture(), /JSON del catálogo no es válido/],
+    ['catálogo fuera del esquema', { fuente: 'x', productos: 'no' }, estadoFixture(), /catálogo no cumple el esquema/],
+    ['estado fuera del esquema', catalogoFixture(), { cotizaciones: 'no' }, /estado no cumple el esquema/],
+    [
+      'id duplicado',
+      catalogoFixture(),
+      conCotizaciones((e) => (e.cotizaciones[1].id = e.cotizaciones[0].id)),
+      /id duplicado \(cotizacion-emitida\)/,
+    ],
+    [
+      'número de cotización duplicado',
+      catalogoFixture(),
+      conCotizaciones((e) => {
+        e.cotizaciones[1].numero = 323;
+        e.cotizaciones[1].origen = null;
+      }),
+      /número de cotización 323 está duplicado/,
+    ],
+    [
+      'origen inexistente',
+      catalogoFixture(),
+      conCotizaciones((e) => (e.cotizaciones[1].origen = 999)),
+      /cotización de origen 999 no existe/,
+    ],
+    [
+      'correlativo de cotización atrasado',
+      catalogoFixture(),
+      conCotizaciones((e) => (e.siguienteCotizacion = 323)),
+      /correlativo siguiente de cotización no supera/,
+    ],
+    [
+      'correlativo de nota atrasado',
+      catalogoFixture(),
+      conCotizaciones((e) => (e.siguienteNota = 1)),
+      /correlativo siguiente de nota no supera/,
+    ],
+  ])('%s: falla con un mensaje claro y no toca nada', async (_caso, catalogo, estado, mensaje) => {
+    const t = await conJson(catalogo, estado);
+    await expect(t.migrar()).rejects.toThrow(mensaje);
+    await intacta(t);
+  });
+
+  it('con el estado bloqueado (el cotizador corriendo) no migra', async () => {
+    const t = await conJson(catalogoFixture(), estadoFixture());
+    await mkdir(join(t.dir, '.estado.lock'));
+    await expect(t.migrar()).rejects.toThrow(/No se pudo bloquear el estado\. Detén el cotizador/);
+    await intacta(t);
+  });
+
+  it('una base existente sin la marca de la migración no se toca', async () => {
+    const t = await conJson(catalogoFixture(), estadoFixture());
+    const db = abrirBaseDatos(t.rutas.rutaDb, { cachear: false, permitirJsonLegado: true });
+    guardarCatalogo(db, catalogoFixture());
+    db.close();
+    const contenido = () => {
+      const lectura = abrirBaseDatos(t.rutas.rutaDb, { cachear: false, permitirJsonLegado: true });
+      try {
+        return {
+          productos: new RepositorioCatalogoSqlite(lectura).todos(),
+          cotizaciones: lectura.prepare('SELECT COUNT(*) AS n FROM cotizaciones').get(),
+          migraciones: lectura.prepare('SELECT * FROM migraciones_datos').all(),
+        };
+      } finally {
+        lectura.close();
+      }
+    };
+    const antes = contenido();
+    await expect(t.migrar()).rejects.toThrow(/no contiene una migración JSON reconocida; no se modificó/);
+    // Abrirla solo cambia el modo del diario (WAL); los datos quedan iguales.
+    expect(contenido()).toEqual(antes);
+    expect(antes.migraciones).toEqual([]);
+    await expect(readFile(t.rutas.catalogo)).resolves.toBeTruthy();
+    await expect(readFile(t.rutas.estado)).resolves.toBeTruthy();
+  });
+
+  it('si un JSON cambió después de migrarse, conserva la base y los dos archivos', async () => {
+    const t = await conJson(catalogoFixture(), estadoFixture());
+    await t.migrar();
+    // Alguien vuelve a dejar los JSON (uno distinto del migrado).
+    await writeFile(t.rutas.catalogo, JSON.stringify(catalogoFixture()));
+    await writeFile(t.rutas.estado, JSON.stringify(conCotizaciones((e) => (e.siguienteNota = 5))));
+    await expect(t.migrar()).rejects.toThrow(/JSON del estado cambió después de migrarse; se conservaron ambos/);
+    await expect(readFile(t.rutas.catalogo)).resolves.toBeTruthy();
+    await expect(readFile(t.rutas.estado)).resolves.toBeTruthy();
+    expect((await new Almacen(t.dir, t.rutas.rutaDb).leer()).siguienteNota).toBe(2);
+    cerrarBaseDatos(t.rutas.rutaDb);
   });
 });

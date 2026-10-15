@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strToU8, zipSync } from 'fflate';
 
-export type Celdas = Record<string, string | number>;
+/** Celda de error («#N/A») o con fórmula, con o sin el valor que Excel guardó al calcularla. */
+export type CeldaEspecial = { error: string } | { formula: string; valor?: number };
+export type Celdas = Record<string, string | number | CeldaEspecial>;
 /** Nombre de hoja → celdas por referencia («B3»). */
 export type Hojas = Record<string, Celdas>;
 
@@ -14,12 +16,14 @@ const indice = (col: string) => [...col].reduce((n, c) => n * 26 + c.charCodeAt(
 export function xlsxBytes(hojas: Hojas) {
   const nombres = Object.keys(hojas);
   const textos: string[] = [];
+  const indices = new Map<string, number>();
   const compartido = (s: string) => {
-    const i = textos.indexOf(s);
-    return i >= 0 ? i : textos.push(s) - 1;
+    let i = indices.get(s);
+    if (i === undefined) indices.set(s, (i = textos.push(s) - 1));
+    return i;
   };
   const hoja = (celdas: Celdas) => {
-    const filas = new Map<number, [string, string | number][]>();
+    const filas = new Map<number, [string, Celdas[string]][]>();
     for (const [ref, valor] of Object.entries(celdas)) {
       const fila = Number(ref.replace(/[A-Z]/g, ''));
       filas.set(fila, [...(filas.get(fila) ?? []), [ref, valor]]);
@@ -32,7 +36,11 @@ export function xlsxBytes(hojas: Hojas) {
           .map(([ref, v]) =>
             typeof v === 'number'
               ? `<c r="${ref}"><v>${v}</v></c>`
-              : `<c r="${ref}" t="s"><v>${compartido(v)}</v></c>`,
+              : typeof v === 'string'
+                ? `<c r="${ref}" t="s"><v>${compartido(v)}</v></c>`
+                : 'error' in v
+                  ? `<c r="${ref}" t="e"><v>${esc(v.error)}</v></c>`
+                  : `<c r="${ref}"><f>${esc(v.formula)}</f>${v.valor === undefined ? '' : `<v>${v.valor}</v>`}</c>`,
           )
           .join('');
         return `<row r="${fila}">${celdasFila}</row>`;

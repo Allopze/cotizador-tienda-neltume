@@ -7,8 +7,9 @@ alertas externas, favoritos, precios masivos, 2FA y deshacer completo del chat.
 
 ## Seguimiento
 
-Estado al 14 de octubre de 2026: las cinco fases están implementadas en el código (sin commitear todavía) y
-cubiertas por pruebas automáticas. Lo que no se puede dar por hecho desde desarrollo está en
+Estado al 14 de octubre de 2026: las cinco fases están en el commit `008450b` («fiabilidad del cotizador, fases
+1–5») y cubiertas por pruebas automáticas. Lo que quedó pendiente de ellas se cerró después en cuatro fases más
+(ver «Lo pendiente (14-oct)»). Lo que no se puede dar por hecho desde desarrollo está en
 «Verificación operativa pendiente».
 
 - [x] Fase 1: cálculos, validaciones recuperables, aislamiento de IA, Chromium y dependencias.
@@ -48,7 +49,8 @@ cubiertas por pruebas automáticas. Lo que no se puede dar por hecho desde desar
   - Pruebas: `tests/plan-fase3.test.ts`, `pdf-regenerar.e2e.ts`, `operacion-pasos.e2e.ts`,
     `starken.test.ts`, `persistencia-v22.test.ts`.
 - [x] Fase 4: edición, ayuda, compartir, clientes, historial, papelera e importaciones.
-  - Medidas como texto con `leerMedida` en todos los campos (4.1); borrador del chat conservado y
+  - Medidas como texto con `leerMedida` en los campos del detalle (4.1; Catálogo → Agregar producto y Gestionar
+    seguían con `leerMetros` hasta `8152198`); borrador del chat conservado y
     navegación bloqueada mientras responde la IA (4.2); lo escrito no se pierde al recargar (4.3);
     confirmación en cada paso de la operación (4.4).
   - Jerga (4.5): en pantalla, «ganancia» en vez de margen; «Costo de fábrica $X · Precio al cliente $Y»;
@@ -85,6 +87,55 @@ cubiertas por pruebas automáticas. Lo que no se puede dar por hecho desde desar
   - Pruebas: `tests/restaurar.test.ts`, `scripts-servidor.test.ts`, `salud.test.ts`,
     `primer-arranque.test.ts`, `usuarios-rutas.test.ts`, `subidas-logo.test.ts`.
 
+## Lo pendiente (14-oct)
+
+El 14 de octubre se revisó lo que faltaba tras `008450b` (inventario en `docs/verificacion-pendiente.md`, sin
+seguimiento en Git) y se cerró en fases. Cada una pasó typecheck, lint, pruebas unitarias, E2E (dos corridas) y
+`next build`, sin corridas de IA de pago.
+
+- [x] Fase 1 · `6c7a158` · emisión, anulación, fechas y papelera.
+  - Una emisión a la vez por cotización y nota (`emisiones_en_curso`, esquema 23): la segunda responde 409 «ocupado»
+    sin reservar número.
+  - Aviso no bloqueante para un precio bajo el costo de fábrica; rango de precio en un solo lugar (`rangoPrecio`).
+  - Restaurar un borrador conserva destino, valor del despacho y actividad.
+  - `puedeAnular` compartido: «Anular» deshabilitado con motivo tras despacho o factura; el diálogo y la actividad
+    informan lo pagado.
+  - Pagos y facturas con fecha de Chile por omisión, sin fechas futuras ni anteriores a la aprobación.
+  - Catálogo importado y restaurado con el bloqueo del almacén, también por terminal; dos confirmaciones de la misma
+    vista previa ya no se pisan; avisos de ediciones directas en la Actividad; error propio de Starken cuando el
+    catálogo cambió; se retira `produccion_terminada`.
+- [x] Fase 2 · `8152198` · medidas, importación y catálogo.
+  - Una sola regla de familia (`familiaItem`) y un solo lector de medidas (`leerMedida`) también en Agregar producto y
+    Gestionar; textos de rango únicos (`errorMedida`).
+  - Escuadría con unidad o invertida, plurales de modelos, ancho/alto invertidos con «Intercambiar» y aviso de vano.
+  - Importación: «solo cambió la descripción» aparte; `npm run importar` conserva los alias de pantalla y escribe el
+    reporte aunque bloquee; «Volver a la planilla anterior» sobrevive a recargar; Excel con contraseña o `.xls` con
+    mensaje claro; sets de marco enchapados largos, códigos en cm, feriados solo nacionales y `migrar:sqlite` con
+    nombres canónicos.
+- [x] Fase 3 · `4ae617d` · anclaje y evaluación del asistente.
+  - «83x236cm», «ambas de 73x240», «102 x 320» y «despacho a Riñihue para 3 pallets» se leen bien; «escuadría» se
+    explica.
+  - Cuerpo de un 4xx de la IA en el registro; Ajustes → Asistente → Avanzado muestra el último modelo, si fue el
+    respaldo y la latencia.
+  - 13 casos nuevos en `evals/cotizacion.json`, casos con avisos y pendientes; `evaluar:ia` guarda informes en
+    `data/test-evaluar-ia/`; `evaluar:regresion` exige 0 errores silenciosos y ≤ 5 % de falsas alarmas; el deploy
+    advierte con `--sin-ia`.
+- [x] Fase 4 · `4e8d048` · seguridad, operación y mantenimiento de datos.
+  - `/api/logo` con sesión y SVG validado con lista permitida (`svg-seguro.ts`); cambiar correo o clave de una cuenta
+    pide la contraseña propia; cuenta desactivada = clave incorrecta; registro de inicios de sesión; sesiones en
+    «Mi cuenta»; mensajes de formulario propios; 522/523/524 con mensaje.
+  - Compose con variables explícitas (el token del túnel no llega al cotizador), `cloudflared` con versión fija, build
+    con `--pull`, `.next-e2e` fuera del contexto; el deploy renueva `.version-anterior/`; `actualizar.sh` acepta URL.
+  - Limpieza de snapshots, copias anuladas, auditoría de más de un año, lock y temporales; respaldo diario con
+    `--link-dest`; `/api/salud` lanza Chromium e informa Starken.
+  - CSV por partes, papelera paginada con plazo, número manual con último número y tope, filtros de seguimiento,
+    operación y vendedora, pantalla de clientes, accesibilidad del encabezado.
+- [x] Fase 5 · documentación (sin commit todavía): README, `docker/LEEME.md`, este documento,
+      `docs/manual-operativo.md`, `docs/reglas-negocio.md` y `.env.example` al día; rutas unificadas en
+      `/srv/cotizador-neltume`.
+- [ ] Fases 6–9: pruebas que faltan, gasto e instalación (IA de pago, Docker), servidor y personas, decisiones de
+      Neltume y del equipo, y mantenibilidad. Ver `docs/verificacion-pendiente.md`.
+
 ## Verificación operativa pendiente
 
 Nada de esto se puede dar por hecho desde desarrollo:
@@ -94,14 +145,23 @@ Nada de esto se puede dar por hecho desde desarrollo:
 - [ ] Probar `scripts/actualizar.sh` y `scripts/actualizar.sh --volver` con Docker real, con un ZIP de
       `npm run deploy:zip`.
 - [ ] Hacer una restauración real dentro de Docker siguiendo `docker/LEEME.md → Restaurar`.
-- [ ] Confirmar en el servidor que el healthcheck nuevo de Compose (`/api/salud`) marca el contenedor como
-      sano y que el proxy no lo bloquea.
+- [ ] Confirmar en el servidor que el healthcheck nuevo de Compose (`/api/salud`, que ahora lanza Chromium) marca el
+      contenedor como sano, y que el proxy no lo bloquea y reenvía `NELTUME_IP_HEADER` y `Content-Length`.
+- [ ] Primer `npm run deploy` observado con los commits del 14 de octubre (lo corre el usuario): migración al
+      esquema 23, `.version-anterior/` renovado y `cloudflared` con la versión fija.
+- [ ] Ensayar con Docker la receta nueva de restaurar desde el otro disco (`--user root` y `chown`) y
+      `actualizar.sh` con una URL `https://`.
+- [ ] Migrar una copia de la base de producción y ensayar la vuelta atrás.
+- [ ] Observar las líneas `[asistente]` en producción dos semanas y comparar el costo estimado de la IA con el cobro
+      real de CommandCode.
 - [ ] Prueba en teléfonos reales (iPhone y Android): compartir el PDF, pantallas de 390 px, la guía
       «Cómo funciona» y la sección «Avanzado».
 - [ ] Aceptación con Paula y Paulette: recorrer el guion de cinco minutos del README sin ayuda y revisar
-      los textos nuevos (ganancia, sin IVA, «Lo escribiste como…») y la guía.
-- [ ] Evaluación de IA de pago al cierre de la fase 2 (`npm run evaluar:regresion` y
-      `npm run paridad:excel-ia -- --casos 60 --semilla 2`), con presupuesto confirmado antes de correrla.
+      los textos nuevos (ganancia, sin IVA, «Lo escribiste como…»), la guía y el punto 10 del manual operativo
+      (emisión ocupada, anular bloqueado, fechas de pago, avisos de costo y de vano, clientes, papelera).
+- [ ] Evaluación de IA de pago al cierre de la fase 2 (`npm run evaluar:regresion`, ahora con los 13 casos nuevos y
+      los umbrales de silenciosos y falsas alarmas, y `npm run paridad:excel-ia -- --casos 60 --semilla 2`), con
+      presupuesto confirmado antes de correrla.
 - [ ] Decisiones de Neltume todavía abiertas (sección 3 de `revision-2026-10-11.md`):
   - Ganancia de los marcos sólidos en Mara o Raulí: hoy 25 %, como accesorios; Oregón 85 % y Lenga 55 %
     (decisión 1, marcada «por confirmar» en `docs/reglas-negocio.md`).

@@ -2,9 +2,9 @@
 # Actualiza el cotizador en el servidor con un ZIP de entrega (npm run deploy:zip), sin el equipo del desarrollador.
 #
 # Uso (desde cualquier carpeta):
-#   sh /opt/neltume-cotizador/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
-#   sh /opt/neltume-cotizador/scripts/actualizar.sh https://servidor/neltume-cotizador-<fecha>.zip
-#   sh /opt/neltume-cotizador/scripts/actualizar.sh --volver       vuelve a la versión anterior
+#   sh /srv/cotizador-neltume/scripts/actualizar.sh /ruta/neltume-cotizador-<fecha>.zip
+#   sh /srv/cotizador-neltume/scripts/actualizar.sh https://servidor/neltume-cotizador-<fecha>.zip
+#   sh /srv/cotizador-neltume/scripts/actualizar.sh --volver       vuelve a la versión anterior
 # La instalación es la carpeta que contiene este script (scripts/..); otra se indica con --dir <carpeta>.
 #
 # 1. Revisa la entrega en una carpeta temporal (con una URL https://, primero la descarga con curl).
@@ -58,7 +58,7 @@ fi
 [ -d "$instalacion" ] || fallar "no existe la carpeta de instalación $instalacion."
 instalacion="$(cd "$instalacion" && pwd)"
 if [ ! -f "$instalacion/compose.yaml" ] || [ ! -f "$instalacion/.env" ]; then
-  fallar "no encuentro una instalación del cotizador en $instalacion (faltan compose.yaml o .env). Indícala con --dir /opt/neltume-cotizador."
+  fallar "no encuentro una instalación del cotizador en $instalacion (faltan compose.yaml o .env). Indícala con --dir /srv/cotizador-neltume."
 fi
 anterior="$instalacion/.version-anterior"
 

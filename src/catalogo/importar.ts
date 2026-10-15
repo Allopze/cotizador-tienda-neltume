@@ -153,6 +153,8 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       !maderaConfigurada ||
       !maderaPorNombreHoja.has(normalizarCatalogo(maderaConfigurada)) ||
       (!(p.altoMin !== undefined && p.altoMax !== undefined && p.altoMin !== p.altoMax) && !codigoCalculado(p)) ||
+      // P vacía, en #N/A o con texto da NaN y NaN nunca es «> 0,01»: sin este chequeo pasaba como consistente.
+      !Number.isFinite(conIva) ||
       Math.abs(conIva - bruto * 1.19) > 0.01
     ) {
       incidencias.push({

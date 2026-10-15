@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 test('un pedido fuera de catálogo queda pendiente y se cotiza como especial con el precio indicado', async ({

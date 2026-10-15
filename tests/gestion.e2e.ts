@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
@@ -53,6 +53,8 @@ test('edición directa, conflicto de versión, duplicar, eliminar y anular', asy
   await panel.getByLabel('Unitario del flete').fill('20000');
   await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Se cargó la versión actual' })).toBeVisible();
+  // El aviso no repite «revisa y vuelve a intentarlo» dos veces.
+  await expect(page.getByRole('alert').filter({ hasText: 'Se cargó la versión actual' })).not.toContainText('Revisa el detalle actualizado');
   await panel.locator('.quote-client-section > summary').click();
   await expect(panel.getByText('Casa Soto', { exact: true })).toBeVisible();
   // Tras el conflicto, el campo sigue abierto con lo escrito: no se pierde (U5).

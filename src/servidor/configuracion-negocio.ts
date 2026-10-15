@@ -42,9 +42,18 @@ export const configuracionNegocioSchema = z
     reglas: z
       .object({
         ajuste: z.number().finite().min(AJUSTE_MIN).max(AJUSTE_MAX),
-        iva: z.number().finite().min(0).max(1),
-        vigenciaDiasHabiles: z.number().int().min(0).max(365),
-        descuentoMaximo: z.number().finite().min(0).max(DESCUENTO_MAXIMO),
+        // Mensajes propios: la API los devuelve tal cual y el genérico de zod llega en inglés («Too big: …»).
+        iva: z.number().finite().min(0, 'El IVA no puede ser negativo.').max(1, 'El IVA no puede superar 100 %.'),
+        vigenciaDiasHabiles: z
+          .number()
+          .int('La vigencia debe ser un número entero de días hábiles.')
+          .min(0, 'La vigencia no puede ser negativa.')
+          .max(365, 'La vigencia no puede superar 365 días hábiles.'),
+        descuentoMaximo: z
+          .number()
+          .finite()
+          .min(0, 'El descuento máximo no puede ser negativo.')
+          .max(DESCUENTO_MAXIMO, `El descuento máximo no puede superar ${DESCUENTO_MAXIMO} %.`),
         // Vacío por omisión: una configuración guardada antes de esta regla no aplica descuento por cantidad.
         // Se guardan de menor a mayor umbral; la validación (umbrales distintos, porcentaje hasta el máximo)
         // se hace abajo porque depende de `descuentoMaximo`.
