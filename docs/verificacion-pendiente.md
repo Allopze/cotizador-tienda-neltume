@@ -168,33 +168,33 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 
 **E2E (Chrome)**
 
-- **Operación:**
-  - pago con decimales y aviso a 390 px;
-  - doble toque en Emitir y en Registrar pago;
-  - que los diálogos de confirmación de la nota y de los pasos de producción quepan a 390 px en modo táctil (hoy solo se prueba «Volver al paso anterior», con puntero fino);
-  - mensajes en pantalla de los errores que antes eran 500: sin Chromium, descuento sobre 50, copia recortada y tarifa vieja.
-- **Pantallas y anchos:**
-  - Historial con filas a 320, 360 y 390 en modo táctil;
-  - scroll anidado del chat;
-  - pestañas de Ajustes en móvil;
-  - Ajustes → Starken en móvil;
-  - teléfono en horizontal;
-  - barrido de anchos 320, 360, 412, 640 y 768;
-  - papelera, Avanzado, primera cuenta y registro de cambios a 390 px.
-- **Sesión y cambios sin guardar:**
-  - aviso al salir con cambios sin guardar;
-  - sesión vencida fuera del cotizador;
-  - lo escrito en cantidad, flete, descuento y ganancia cuando otra persona guarda.
-- **Catálogo:** la moldura de más de 3 m tomada del catálogo; hoy se omite y debería crearse por API.
+- ~~**Operación:**~~
+  - ~~pago con decimales y aviso a 390 px~~ (`16dc69f`, `movil.e2e.ts`);
+  - ~~doble toque en Emitir y en Registrar pago~~ (`toque-doble.e2e.ts`: una sola emisión y un solo pago, con la llamada demorada);
+  - ~~que los diálogos de confirmación de la nota y de los pasos de producción quepan a 390 px en modo táctil~~ (`16dc69f`, `movil.e2e.ts`);
+  - ~~mensajes en pantalla de los errores que antes eran 500: sin Chromium, descuento sobre 50, copia recortada y tarifa vieja~~ (`16dc69f`: `mensajes-error.e2e.ts` y, contra el build, `sin-chromium.prod.ts`).
+- ~~**Pantallas y anchos:**~~ (`16dc69f`: `movil.e2e.ts` y `primer-uso.e2e.ts`)
+  - ~~Historial con filas a 320, 360 y 390 en modo táctil~~;
+  - ~~scroll anidado del chat~~;
+  - ~~pestañas de Ajustes en móvil~~;
+  - ~~Ajustes → Starken en móvil~~;
+  - ~~teléfono en horizontal~~;
+  - ~~barrido de anchos 320, 360, 412, 640 y 768~~;
+  - ~~papelera, Avanzado, primera cuenta y registro de cambios a 390 px~~.
+- ~~**Sesión y cambios sin guardar:**~~ (`16dc69f`: `sesion.e2e.ts`)
+  - ~~aviso al salir con cambios sin guardar~~;
+  - ~~sesión vencida fuera del cotizador~~;
+  - ~~lo escrito en cantidad, flete, descuento y ganancia cuando otra persona guarda~~.
+- ~~**Catálogo:** la moldura de más de 3 m tomada del catálogo~~ (`16dc69f`: `edicion-detalle.e2e.ts` la crea por la API).
 - **Revisión transversal:**
-  - revisión visual de los PDF;
-  - errores de consola e hidratación en toda la suite;
-  - axe (WCAG) en todas las pantallas;
-  - VoiceOver;
-  - idioma de la validación nativa;
-  - aproximar el PC de la oficina.
-- **Contra el build de producción:** E2E sobre `next build` + `next start`.
-- **Otros navegadores:** WebKit y Firefox para los campos que siguen numéricos; requiere `npx playwright install webkit firefox`, gratis.
+  - revisión visual de los PDF (a mano; `pdf-largo.e2e.ts` deja el PDF de 25 ítems en PNG para mirarlo);
+  - ~~errores de consola e hidratación en toda la suite~~ (`16dc69f`: `fixtures-e2e.ts`);
+  - ~~axe (WCAG) en todas las pantallas~~ (`16dc69f`: `accesibilidad.e2e.ts`);
+  - VoiceOver (a mano);
+  - ~~idioma de la validación nativa~~ (`campos-numericos.e2e.ts`: la cantidad editable dejaba la burbuja del navegador en su idioma; ahora el mensaje propio en español);
+  - aproximar el PC de la oficina (a mano).
+- ~~**Contra el build de producción:** E2E sobre `next build` + `next start`~~ (`16dc69f`: `playwright.prod.config.ts`, toda la E2E de Chrome).
+- **Otros navegadores:** ~~WebKit~~ (proyecto `webkit`, `campos-numericos.e2e.ts`, con el navegador en inglés) y Firefox para los campos que siguen numéricos. Firefox queda opcional (`NELTUME_E2E_FIREFOX=1`): el Firefox 155 de Playwright 1.63 no arranca en macOS 27 («Could not find profile folder»).
 
 **Importación y paridad**
 
