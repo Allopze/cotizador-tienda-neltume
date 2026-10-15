@@ -16,15 +16,29 @@ export interface CotizacionApi {
 export const rut = (cuerpo: string) =>
   `${cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}-${digitoVerificador(cuerpo)}`;
 
+/**
+ * Reintenta una vez si la conexión reutilizada ya estaba cerrada: `next dev` cierra las conexiones inactivas a los
+ * ~5 s y una petición que sale justo entonces termina en «socket hang up» sin llegar a la app. Un error del
+ * servidor (4xx/5xx) no se reintenta.
+ */
+async function sinConexionCerrada<T>(peticion: () => Promise<T>): Promise<T> {
+  try {
+    return await peticion();
+  } catch (error) {
+    if (!/socket hang up|ECONNRESET/.test(error instanceof Error ? error.message : '')) throw error;
+    return peticion();
+  }
+}
+
 /** POST /api/accion; falla la prueba con el mensaje del servidor si no responde 2xx. */
 export async function accion(request: APIRequestContext, data: Record<string, unknown>): Promise<CotizacionApi> {
-  const r = await request.post('/api/accion', { data });
+  const r = await sinConexionCerrada(() => request.post('/api/accion', { data }));
   expect(r.ok(), `${String(data.tipo)}: ${r.status()} ${r.ok() ? '' : await r.text()}`).toBe(true);
   return ((await r.json()) as { cotizacion: CotizacionApi }).cotizacion;
 }
 
 export async function leer(request: APIRequestContext, id: string): Promise<CotizacionApi> {
-  const r = await request.get(`/api/accion?id=${encodeURIComponent(id)}`);
+  const r = await sinConexionCerrada(() => request.get(`/api/accion?id=${encodeURIComponent(id)}`));
   expect(r.ok()).toBe(true);
   return ((await r.json()) as { cotizacion: CotizacionApi }).cotizacion;
 }
