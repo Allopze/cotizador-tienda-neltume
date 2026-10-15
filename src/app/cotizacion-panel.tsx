@@ -117,10 +117,13 @@ export const descripcionItem = (q: Cotizacion, i: number) => {
       'Producto por definir',
   );
 };
-/** Descripción que arma el sistema para el ítem, sin la escrita a mano; null si el ítem aún no se valoriza. */
+/**
+ * Descripción que arma el sistema para el ítem, sin la escrita a mano. Un ítem pendiente se muestra con su modelo;
+ * null si aún no tiene modelo.
+ */
 function descripcionGenerada(q: Cotizacion, i: number) {
   const { linea } = lineaDe(q, i);
-  if (!linea) return null;
+  if (!linea) return q.solicitudes[i]?.modelo || null;
   // Un personalizado se describe con su nombre y madera (servicio.ts, `recalcular`).
   return esPersonalizado(q.solicitudes[i])
     ? linea.producto.descripcion
@@ -1061,9 +1064,10 @@ export function CotizacionPanel({
                                   <CampoEditable
                                     className="item-campo item-campo-descripcion"
                                     etiqueta="Descripción para el documento"
-                                    // Abre con el texto que se ve para retocarlo; un ítem pendiente aún no tiene descripción.
-                                    valor={s.descripcion ?? (linea ? descripcion : '')}
-                                    mostrar={s.descripcion || descripcion}
+                                    // Abre con el texto que se ve para retocarlo, también en un ítem pendiente (su
+                                    // modelo); sin modelo aún no hay descripción y se ve como campo vacío.
+                                    valor={s.descripcion || (linea || s.modelo ? descripcion : '')}
+                                    vacio="Agregar descripción"
                                     editable={editable}
                                     discreto
                                     cursorAlFinal
@@ -1221,6 +1225,7 @@ export function CotizacionPanel({
                                     }
                                     editable={editable}
                                     discreto
+                                    cursorAlFinal
                                     maxLength={LARGO_OBSERVACION_ITEM}
                                     guardando={guardando === `item.${i}.observaciones`}
                                     guardar={(v) =>

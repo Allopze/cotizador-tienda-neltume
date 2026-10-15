@@ -1,10 +1,11 @@
-import { test, expect, type Page } from './fixtures-e2e';
+import { test, expect, type Locator, type Page } from './fixtures-e2e';
 import { digitoVerificador } from '../src/negocio/cliente';
 import { iniciarSesion } from './login-e2e';
 
 // Edición en el detalle de la cotización: largos de accesorios hasta 6 m, medidas escritas como se escriben
-// (coma, punto, «cm», «mm»), lo escrito que no se pierde al llegar otra versión, el autocompletar del cliente y el
-// transportista «Otro» que no se guarda hasta escribir su nombre.
+// (coma, punto, «cm», «mm»), lo escrito que no se pierde al llegar otra versión, la descripción y la observación
+// del producto que se abren con su texto para retocarlo, el autocompletar del cliente y el transportista «Otro» que
+// no se guarda hasta escribir su nombre.
 
 const rut = (cuerpo: string) => `${cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}-${digitoVerificador(cuerpo)}`;
 
@@ -283,4 +284,51 @@ test('transportista: la lista se lee al abrir Despacho y «Otro» no se guarda h
   await expect(despacho).toContainText('Fletes Araucanía');
   expect(await leer()).toBe('Fletes Araucanía');
   await page.unroute('**/api/configuracion-negocio');
+});
+
+test('la descripción y la observación del producto se abren con su texto para retocarlo, también en un pendiente', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await iniciarSesion(page);
+  const panel = page.getByLabel('Cotización en curso');
+  await page.getByLabel('Escribe tu pedido').fill('3 Huilo Huilo oregón 80×210 para Juan Pérez, Temuco');
+  await page.getByRole('button', { name: 'Enviar mensaje' }).click();
+  await expect(panel.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
+  await panel.getByLabel(/^Editar detalles del ítem 1:/).click();
+  const editor = panel.getByRole('group', { name: 'Datos editables del ítem 1', exact: true });
+  const seleccion = (campo: Locator) =>
+    campo.evaluate((c: HTMLInputElement) => [c.selectionStart, c.selectionEnd]);
+
+  // Pendiente por la madera: la descripción que se ve es el modelo, y el campo abría vacío.
+  await guardarCampo(page, /^Editar madera/, 'Madera', '');
+  await expect(panel.getByText('Incompleto · no suma al total')).toBeVisible();
+  const botonDescripcion = editor.getByRole('button', { name: /^Editar descripción para el documento/ });
+  await expect(botonDescripcion).toHaveText(/^Huilo Huilo/);
+  await botonDescripcion.click();
+  const descripcion = editor.getByLabel('Descripción para el documento', { exact: true });
+  await expect(descripcion).toHaveValue('Huilo Huilo');
+  await expect(descripcion).toBeFocused();
+  await expect.poll(() => seleccion(descripcion)).toEqual([11, 11]);
+  await page.keyboard.type(' doble hoja');
+  await editor.getByRole('button', { name: 'Guardar', exact: true }).click();
+  await expect(
+    editor.getByRole('button', { name: 'Editar descripción para el documento: Huilo Huilo doble hoja', exact: true }),
+  ).toBeVisible();
+
+  // La observación tampoco se borra al abrirla: lo que se escribe se agrega al final de lo que había.
+  await guardarCampo(page, /^Editar observación del producto/, 'Observación del producto', 'Confirmar sentido de apertura');
+  const botonObservacion = editor.getByRole('button', {
+    name: 'Editar observación del producto: Confirmar sentido de apertura',
+    exact: true,
+  });
+  await botonObservacion.click();
+  const observacion = editor.getByLabel('Observación del producto', { exact: true });
+  await expect(observacion).toHaveValue('Confirmar sentido de apertura');
+  await expect(observacion).toBeFocused();
+  await expect.poll(() => seleccion(observacion)).toEqual([29, 29]);
+  await page.keyboard.type(' (izquierda)');
+  await expect(observacion).toHaveValue('Confirmar sentido de apertura (izquierda)');
+  await editor.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(botonObservacion).toBeFocused();
 });

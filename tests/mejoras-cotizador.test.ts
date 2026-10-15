@@ -10,7 +10,7 @@ import { dimensionesEnMilimetros } from '../src/negocio/medidas';
 import { detectarTipoMedida } from '../src/negocio/items';
 import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
-import { descripcionAGuardar } from '../src/app/cotizacion-panel';
+import { descripcionAGuardar, descripcionItem } from '../src/app/cotizacion-panel';
 import { nombreProducto } from '../src/app/formato';
 
 vi.mock('../src/servidor/pdf', () => ({
@@ -206,6 +206,22 @@ describe('descripción de documento y observaciones de línea', () => {
       items: [{ indice: 0, cambios: { ancho: 0.92 } }] })).cotizacion;
     expect(q.montos.lineas[0].producto.codigo).toBe('HUI-M-3-B');
     expect(nombreProducto(descripcionLinea(q.montos.lineas[0]))).toBe('Huilo Huilo Mara 0,92 m × 2,36 m');
+  });
+
+  it('un ítem pendiente se describe con su modelo, y guardar ese mismo texto tampoco fija la descripción', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-mejoras-'));
+    dirs.push(dir);
+    // Sin madera queda pendiente: el panel lo muestra con su modelo y el campo abre con ese texto.
+    const solicitud: SolicitudItem = { modelo: 'Huilo Huilo', madera: null, ancho: 83.5, alto: 236, medida: null, cantidad: 1 };
+    const cliente = { nombre: null, rut: null, giro: null, telefono: null, direccion: null, comuna: null, proyecto: null };
+    const llm = { interpretar: vi.fn().mockResolvedValue({ name: 'actualizar_cotizacion', input: { items: [solicitud], cliente } }) };
+    const servicio = new Servicio(catalogo, llm, new Almacen(dir));
+    const q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza una Huilo Huilo' })).cotizacion;
+    expect(q.incompletos.map((p) => p.indice)).toEqual([0]);
+    expect(descripcionItem(q, 0)).toBe('Huilo Huilo');
+    // Al completarlo, el documento lleva la descripción del producto; lo escrito a mano sí se guarda.
+    for (const texto of ['Huilo Huilo', ' Huilo Huilo ', '']) expect(descripcionAGuardar(q, 0, texto)).toBeNull();
+    expect(descripcionAGuardar(q, 0, 'Huilo Huilo doble hoja')).toBe('Huilo Huilo doble hoja');
   });
 });
 
