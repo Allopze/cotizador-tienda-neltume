@@ -10,6 +10,9 @@
 //   npm run evaluar:ia -- --anclaje corregir,avisar  compara los modos del anclaje por frase (ver ModoAnclaje)
 //   npm run evaluar:ia -- --max-silenciosos 0    sale con error si algún error de lectura no tuvo aviso
 //   npm run evaluar:ia -- --max-falsas 0.05      sale con error si más del 5 % de las corridas perfectas avisó algo
+//   npm run evaluar:ia -- --ia-perfecta          sin IA ni gasto: una IA simulada que responde la lectura esperada
+//                                                de cada caso (src/asistente/perfecto.ts); lo que no sea 100 % sin
+//                                                falsas alarmas lo pone el servidor (anclaje, avisos, pendientes)
 //
 // Cada modelo (y modo de anclaje) deja su informe en data/test-evaluar-ia/<fecha>-<modelo>.json y .md: el resumen,
 // los avisos y las diferencias de cada caso, para compararlo con otra corrida sin volver a pagarla.
@@ -22,6 +25,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { CommandCodeLLM, type ModoAnclaje } from '../src/asistente/llm';
+import { LLMPerfecto } from '../src/asistente/perfecto';
 import { avisosDeRevision, casosSchema, resumen, type CasoEvaluacion } from '../src/asistente/evaluacion';
 import {
   armarInforme,
@@ -49,6 +53,7 @@ const { values } = parseArgs({
     'max-silenciosos': { type: 'string' },
     'max-falsas': { type: 'string' },
     salida: { type: 'string', default: 'data/test-evaluar-ia' },
+    'ia-perfecta': { type: 'boolean' },
   },
 });
 const umbrales = {
@@ -60,12 +65,17 @@ const casos = casosSchema
   .parse(JSON.parse(await readFile(values.casos!, 'utf8')))
   .filter((c) => !values.caso?.length || values.caso.includes(c.id));
 if (!casos.length) throw new Error('Ningún caso coincide con --caso.');
-const clave = leerClaveCommandCode();
-if (!clave) throw new Error('Falta la clave de CommandCode: configúrala en Ajustes o en CMD_API_KEY.');
-const modelos = values.modelos
-  ?.split(',')
-  .map((m) => m.trim())
-  .filter(Boolean) ?? [leerAjustesIA().commandcode.modelo];
+const perfecta = values['ia-perfecta'] === true;
+const clave = perfecta ? '' : leerClaveCommandCode();
+if (!perfecta && !clave)
+  throw new Error('Falta la clave de CommandCode: configúrala en Ajustes o en CMD_API_KEY.');
+if (perfecta && values.modelos) throw new Error('--ia-perfecta no admite --modelos.');
+const modelos = perfecta
+  ? [new LLMPerfecto(casos[0]).modeloEfectivo]
+  : (values.modelos
+      ?.split(',')
+      .map((m) => m.trim())
+      .filter(Boolean) ?? [leerAjustesIA().commandcode.modelo]);
 const modos = (values.anclaje ?? new CommandCodeLLM().anclaje).split(',').map((m) => m.trim());
 for (const m of modos)
   if (m !== 'corregir' && m !== 'avisar') throw new Error(`--anclaje: «${m}» no es corregir ni avisar.`);
@@ -73,7 +83,11 @@ const catalogo = await cargarCatalogo();
 const repeticiones = Math.max(1, Math.floor(Number(values.repeticiones)) || 1);
 
 const correr = (caso: CasoEvaluacion, modelo: string, anclaje: ModoAnclaje) =>
-  correrCaso(caso, new CommandCodeLLM(modelo, clave, { anclaje }), catalogo);
+  correrCaso(
+    caso,
+    perfecta ? new LLMPerfecto(caso, anclaje) : new CommandCodeLLM(modelo, clave, { anclaje }),
+    catalogo,
+  );
 
 // Consumo de cada corrida, leído del `usage` de cada respuesta del proveedor sin tocar la aplicación.
 const consumo = { llamadas: 0, entrada: 0, salida: 0 };
@@ -93,9 +107,11 @@ globalThis.fetch = async (...args: Parameters<typeof fetch>) => {
   }
   return respuesta;
 };
-const tarifas = await obtenerCatalogoCommandCode()
-  .then((c) => c.modelos)
-  .catch(() => []);
+const tarifas = perfecta
+  ? []
+  : await obtenerCatalogoCommandCode()
+      .then((c) => c.modelos)
+      .catch(() => []);
 
 /** Corre en paralelo acotado: el proveedor limita las solicitudes simultáneas. */
 async function enParalelo<T, R>(lista: T[], limite: number, f: (x: T) => Promise<R>) {

@@ -4,6 +4,7 @@ import type { TipoAviso } from '../avisos';
 import { useConfirmacion } from '../dialogo';
 import { correoValido, useErrorCampo } from '../error-campo';
 import { codigoDe, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { faltaOtraAdministradora, fechaHoraCuenta, textoAccionCuenta } from './cuentas';
 
 // Mismos límites que Better Auth (minPasswordLength / maxPasswordLength en autenticacion-config).
 const MINIMO = 8,
@@ -33,27 +34,6 @@ interface RespuestaCuentas {
 
 /** Lo emite «Crear cuenta» para que la lista y el registro de cambios se actualicen sin recargar. */
 export const EVENTO_CUENTAS = 'neltume:cuentas-cambiaron';
-
-const ACCIONES: Record<string, string> = {
-  crear: 'Creó la cuenta',
-  'crear-primera': 'Creó la primera cuenta',
-  editar: 'Editó la cuenta',
-  desactivar: 'Desactivó la cuenta',
-  activar: 'Activó la cuenta',
-  'restablecer-clave': 'Restableció la contraseña',
-  'inicio-sesion': 'Inició sesión',
-  'inicio-sesion-fallido': 'Intento fallido de inicio de sesión',
-};
-
-const fechaHora = (iso: string) =>
-  new Date(iso).toLocaleString('es-CL', {
-    timeZone: 'America/Santiago',
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 
 export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number }) {
   const [usuarios, setUsuarios] = useState<Usuario[] | null>(null);
@@ -102,7 +82,6 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
     return () => window.removeEventListener(EVENTO_CUENTAS, recargar);
   }, []);
 
-  const adminsActivos = usuarios?.filter((u) => u.activo && u.rol === 'admin').length ?? 0;
 
   function cerrarClave() {
     setClaveId(null);
@@ -201,7 +180,7 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
         Edita nombre y correo, activa o desactiva cuentas y restablece contraseñas. Las cuentas que se crean aquí
         son todas administradoras: pueden cotizar y cambiar Ajustes. Mantén siempre al menos dos activas.
       </p>
-      {usuarios !== null && adminsActivos < 2 && (
+      {usuarios !== null && faltaOtraAdministradora(usuarios) && (
         <p className="catalog-warning" role="status">
           Hay una sola cuenta administradora activa. Crea otra: si se olvida esta contraseña, otra administradora puede
           restablecerla sin recurrir a la terminal del servidor.
@@ -285,9 +264,9 @@ export function GestionUsuarios({ avisar }: { avisar: (tipo: TipoAviso, texto: s
                 <thead><tr><th>FECHA</th><th>QUIÉN</th><th>CAMBIO</th></tr></thead>
                 <tbody>{cambios.map((cambio) => (
                   <tr key={cambio.id}>
-                    <td data-etiqueta="Fecha"><small>{fechaHora(cambio.fecha)}</small></td>
+                    <td data-etiqueta="Fecha"><small>{fechaHoraCuenta(cambio.fecha)}</small></td>
                     <td data-etiqueta="Quién">{cambio.actor ?? '—'}</td>
-                    <td data-etiqueta="Cambio">{ACCIONES[cambio.accion] ?? cambio.accion}<small>{cambio.objetivo ?? ''}</small></td>
+                    <td data-etiqueta="Cambio">{textoAccionCuenta(cambio.accion)}<small>{cambio.objetivo ?? ''}</small></td>
                   </tr>
                 ))}</tbody>
               </table>

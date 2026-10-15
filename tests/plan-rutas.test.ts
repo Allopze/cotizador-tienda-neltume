@@ -347,4 +347,102 @@ describe('#38 · diagnóstico del chat (I5)', () => {
       m.cerrar();
     }
   });
+
+  it('el rastro del turno en el registro lleva el modelo de respaldo y los avisos por categoría, sin el texto', async () => {
+    const m = await montar();
+    try {
+      m.ia.guardarClaveCommandCode('sk-de-prueba', m.db);
+      m.ia.guardarAjustesIA({ commandcode: { modelo: 'deepseek/mal-escrito', respaldo: 'Qwen/Qwen3.7-Flash' } }, m.db);
+      const MENSAJE = 'cotiza 2 molco pino oregon de 82x200 para Ana Soto';
+      const pedido = {
+        agregar: [
+          {
+            modelo: 'MOLCO',
+            madera: 'PINO OREGON',
+            ancho: 0.82,
+            alto: 2,
+            medida: null,
+            cantidad: 3,
+            tipoMedida: 'hoja',
+            fuente: '2 molco pino oregon de 82x200',
+          },
+        ],
+      };
+      const herramienta = (modelo: string) =>
+        Response.json({
+          model: modelo,
+          choices: [
+            {
+              finish_reason: 'tool_calls',
+              message: {
+                tool_calls: [
+                  { type: 'function', function: { name: 'modificar_cotizacion', arguments: JSON.stringify(pedido) } },
+                ],
+              },
+            },
+          ],
+        });
+      const modelos: string[] = [];
+      vi.stubGlobal(
+        'fetch',
+        vi.fn<typeof fetch>(async (_url, opciones) => {
+          const { model } = JSON.parse(String(opciones?.body)) as { model: string };
+          modelos.push(model);
+          if (model === 'deepseek/mal-escrito')
+            return new Response('{"error":{"message":"No endpoints found for deepseek/mal-escrito."}}', { status: 404 });
+          return herramienta(model);
+        }),
+      );
+      vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+      const turno = () => {
+        const llamadas = info.mock.calls.filter(([etiqueta]) => etiqueta === '[asistente]');
+        expect(llamadas).toHaveLength(1);
+        info.mockClear();
+        return String(llamadas[0][1]);
+      };
+
+      const r = await m.accion.POST(
+        m.peticion('/api/accion', { cookie: m.usuario, cuerpo: { tipo: 'chat', mensaje: MENSAJE } }),
+      );
+      expect(r.status).toBe(200);
+      const cuerpo = (await r.json()) as {
+        cotizacion: Cotizacion;
+        avisos: string[];
+        diagnostico: { modelo: string; respaldo: boolean; ms: number };
+      };
+      // La IA de respaldo propone una cantidad que el mensaje no dice: queda pendiente con un aviso de cifras.
+      expect(cuerpo.cotizacion.incompletos).toHaveLength(1);
+      expect(cuerpo.avisos).toEqual([expect.stringMatching(/propuso la cantidad 3/)]);
+      expect(modelos).toEqual(['deepseek/mal-escrito', 'Qwen/Qwen3.7-Flash']);
+      const registro = turno();
+      expect(JSON.parse(registro)).toEqual({
+        herramienta: 'modificar_cotizacion',
+        modelo: 'Qwen/Qwen3.7-Flash',
+        respaldo: true,
+        avisos: { cifras: 1 },
+        ms: expect.any(Number),
+      });
+      // El registro y la respuesta dicen lo mismo del modelo.
+      expect(cuerpo.diagnostico).toMatchObject({ modelo: 'Qwen/Qwen3.7-Flash', respaldo: true });
+      // Solo conteos: nada de lo que escribió la persona ni del cliente.
+      expect(registro).not.toMatch(/molco|Ana Soto|82x200|propuso/i);
+
+      // Con el principal sano, el rastro dice que respondió el principal, sin respaldo.
+      m.ia.guardarAjustesIA({ commandcode: { modelo: 'deepseek/sano', respaldo: 'Qwen/Qwen3.7-Flash' } }, m.db);
+      modelos.length = 0;
+      const sano = await m.accion.POST(
+        m.peticion('/api/accion', { cookie: m.usuario, cuerpo: { tipo: 'chat', mensaje: MENSAJE } }),
+      );
+      expect(sano.status).toBe(200);
+      expect(modelos).toEqual(['deepseek/sano']);
+      expect(JSON.parse(turno())).toMatchObject({ modelo: 'deepseek/sano', respaldo: false });
+      expect(((await sano.json()) as { diagnostico: unknown }).diagnostico).toMatchObject({
+        modelo: 'deepseek/sano',
+        respaldo: false,
+      });
+    } finally {
+      m.cerrar();
+    }
+  });
 });

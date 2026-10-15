@@ -278,8 +278,14 @@ export function CampoEditable({
     'aria-describedby': error ? `${id}-error` : undefined,
     onKeyDown: teclado,
   } as const;
+  // `noValidate`: el rango (min/max) lo explica `validar` con su mensaje en español junto al campo; sin esto el
+  // navegador bloqueaba el envío con su propia burbuja, en el idioma del navegador y con otro texto.
   return (
-    <form className={`campo editando ${sugerir ? 'con-sugerencias ' : ''}${className ?? ''}`} onSubmit={enviar}>
+    <form
+      className={`campo editando ${sugerir ? 'con-sugerencias ' : ''}${className ?? ''}`}
+      onSubmit={enviar}
+      noValidate
+    >
       <label htmlFor={id} className={etiquetaOculta ? 'sr-only' : 'campo-etiqueta'}>
         {etiqueta}
       </label>

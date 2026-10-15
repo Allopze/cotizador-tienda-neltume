@@ -71,6 +71,10 @@ test('sesión vencida en Historial: vuelve al login con el motivo y la pantalla 
   const { vencer } = await sesionPropia(page, USUARIO_E2E);
   await page.goto('/historial');
   await expect(page.getByRole('heading', { name: 'Historial', level: 1 })).toBeVisible();
+  // Que terminen las lecturas de la carga: si una sale con la sesión ya vencida, la pantalla se va al login antes de
+  // que la prueba escriba (pasaba de vez en cuando con la suite completa).
+  await page.waitForLoadState('networkidle');
+  await expect(page.getByLabel('Buscar cotizaciones')).toBeEditable();
   await vencer();
   await page.getByLabel('Buscar cotizaciones').fill('cualquier cliente');
   await expect(page).toHaveURL(/\/login\?motivo=sesion&desde=historial$/);

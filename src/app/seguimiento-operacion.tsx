@@ -6,7 +6,7 @@ import {
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
-  PASO_ANTERIOR,
+  retrocesoOperativo,
   rangoFechaOperacion,
   sinTransportista,
   type Cotizacion,
@@ -106,10 +106,10 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   }
   const operar = (paso: string, titulo: string, efecto: string, aceptar: string) =>
     void confirmarPaso(titulo, efecto, aceptar, { tipo: 'operacion', paso });
-  const previo = aprobada ? PASO_ANTERIOR[operacionActual] : undefined;
+  const previo = retrocesoOperativo(actual);
   async function volverAtras() {
     if (!previo || ocupado) return;
-    const r = await pedirRetroceso({ desde: etiquetaOperativo[operacionActual], hasta: etiquetaOperativo[previo] });
+    const r = await pedirRetroceso({ desde: previo.desde, hasta: previo.hasta });
     if (r) await flujo({ tipo: 'retroceder_operacion', motivo: r.motivo });
   }
   // Mismas condiciones que `desaprobar` en el servidor: sin nota, pagos ni factura.

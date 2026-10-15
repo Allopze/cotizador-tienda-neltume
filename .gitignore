@@ -33,3 +33,6 @@ Transcripcion_Neltume.docx
 # Carpetas que una instalación del servidor conserva al actualizar.
 .version-anterior/
 compose.override.yaml
+
+# Copias de trabajo de los agentes de Claude Code
+.claude/worktrees/

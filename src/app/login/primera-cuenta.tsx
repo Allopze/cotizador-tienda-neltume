@@ -2,12 +2,16 @@
 
 import { useState, type FormEvent } from 'react';
 import Image from 'next/image';
-import { correoValido, useErrorCampo } from '../error-campo';
-import { campoDelError, type CampoPrimeraCuenta as Campo } from './mensajes';
+import { useErrorCampo } from '../error-campo';
+import {
+  campoDelError,
+  CLAVE_PRIMERA_CUENTA,
+  validarPrimeraCuenta,
+  type CampoPrimeraCuenta as Campo,
+} from './mensajes';
 import { ErrorSolicitud, MENSAJES, pedirJSON } from '../solicitud';
 
-const MINIMO = 8;
-const MAXIMO = 128;
+const { minimo: MINIMO, maximo: MAXIMO } = CLAVE_PRIMERA_CUENTA;
 
 /**
  * Se muestra en lugar del inicio de sesión mientras la base no tiene ninguna cuenta. Pide el código de un solo uso
@@ -25,13 +29,8 @@ export function PrimeraCuenta() {
   async function crear(evento: FormEvent<HTMLFormElement>) {
     evento.preventDefault();
     if (ocupado) return;
-    if (!codigo.trim()) return errores.fallar('codigo', 'Pega el código que aparece en el registro del servidor.');
-    if (!nombre.trim()) return errores.fallar('nombre', 'Escribe tu nombre.');
-    if (!email.trim()) return errores.fallar('correo', 'Escribe tu correo electrónico.');
-    if (!correoValido(email)) return errores.fallar('correo', 'Revisa el correo: debe tener la forma nombre@dominio.cl.');
-    if (password.length < MINIMO || password.length > MAXIMO)
-      return errores.fallar('clave', `La contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
-    if (password !== repetida) return errores.fallar('repetida', 'La confirmación no coincide con la contraseña.');
+    const problema = validarPrimeraCuenta({ codigo, nombre, email, password, repetida });
+    if (problema) return errores.fallar(problema.campo, problema.mensaje);
     setOcupado(true);
     errores.limpiar();
     try {

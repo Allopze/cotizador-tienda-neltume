@@ -12,11 +12,15 @@ export * from '@playwright/test';
  *   que falta, 503 sin Chromium). La interfaz las explica con su propio mensaje, que las pruebas revisan.
  * - «net::ERR_ABORTED» / «ERR_CONNECTION_REFUSED»: navegaciones o descargas interrumpidas al cambiar de página o al
  *   cerrar el contexto.
+ * - «Fetch API cannot load … due to access control checks.»: así anota WebKit (proyecto «webkit-iphone») una lectura
+ *   que la navegación canceló, lo mismo que Chrome llama «net::ERR_ABORTED»; la app ya la descarta (`.catch`), pero
+ *   WebKit la informa igual como error de la página. Aparece de vez en cuando, según cuánto tarda la lectura.
  */
 const IGNORADOS_SIEMPRE: RegExp[] = [
   /^Failed to load resource: the server responded with a status of [45]\d\d/,
   /net::ERR_ABORTED/,
   /net::ERR_CONNECTION_REFUSED/,
+  /due to access control checks\.$/,
 ];
 
 interface Opciones {

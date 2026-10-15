@@ -21,6 +21,7 @@ import { Encabezado } from './encabezado';
 import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
+import { falloCompartir } from './compartir';
 import { PreguntasPendientes } from './preguntas-pendientes';
 import { preguntasPendientes } from '@/negocio/pendientes';
 import { AgregarProducto } from './agregar-producto';
@@ -732,15 +733,13 @@ export function Cotizador({
     try {
       await navigator.share({ files: [pdf], title: pdf.name });
     } catch (e) {
-      const nombre = e instanceof DOMException ? e.name : '';
-      // AbortError: la persona cerró la hoja. NotAllowedError: la descarga consumió el toque; se pide otro.
-      if (nombre === 'AbortError') return;
-      if (nombre === 'NotAllowedError' && !listo)
-        avisar('info', 'El PDF está listo para compartir.', {
+      const respuesta = falloCompartir(e, !!listo);
+      if (respuesta.tipo === 'otro_toque')
+        avisar('info', respuesta.texto, {
           clave: 'descarga',
           accion: { etiqueta: 'Compartir', fn: () => void compartir(archivo) },
         });
-      else avisar('error', 'No se pudo compartir el PDF. Descárgalo y envíalo desde tus archivos.', { clave: 'descarga' });
+      else if (respuesta.tipo === 'error') avisar('error', respuesta.texto, { clave: 'descarga' });
     }
   }
   const accionesDocumentos: AccionesDocumentos = {

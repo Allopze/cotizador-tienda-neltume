@@ -12,5 +12,7 @@ export default defineConfig([
     'next-env.d.ts',
     'test-results/**',
     'playwright-report/**',
+    // Copias de trabajo de los agentes de Claude Code.
+    '.claude/**',
   ]),
 ]);
