@@ -75,7 +75,7 @@ const MONTOS_EN_PESOS = /\$\s*\d[\d.,]*|(?<![\d.,])\d[\d.,]*\s*(?:millon(?:es)?|
  */
 const PORCENTAJES = /(?<![\d.,])\d+(?:[.,]\d+)?\s*(?:%|por\s*ciento|porciento)|\b[a-zñ]+(?:\s+y\s+[a-zñ]+)?\s+por\s*ciento/g;
 export const sinPorcentajes = (t: string) => t.replace(PORCENTAJES, ' ; ');
-export const sinMontos = (t: string) => sinPorcentajes(t).replace(MONTOS_EN_PESOS, ' ; ');
+const sinMontos = (t: string) => sinPorcentajes(t).replace(MONTOS_EN_PESOS, ' ; ');
 
 /**
  * Cifras que aparecen en el texto, en dígitos («80», «2,10», «10.000») y, con `palabras`, también escritas
@@ -107,13 +107,13 @@ export function cifrasDelTexto(texto: string, palabras = true): number[] {
 }
 
 type CampoCifra = 'cantidad' | 'ancho' | 'alto';
-export const CAMPOS_CIFRA: readonly CampoCifra[] = ['cantidad', 'ancho', 'alto'];
+const CAMPOS_CIFRA: readonly CampoCifra[] = ['cantidad', 'ancho', 'alto'];
 
 /**
  * ¿La cifra aparece en el texto? Las medidas se comparan en metros, con el rango de la familia del ítem
  * (`metros`): «80» respalda un ancho de 0,8 y, en un guardapolvo, «360» un largo de 3,6.
  */
-export function cifraRespaldada(campo: CampoCifra, valor: number, cifras: number[], familia = 'PUERTA') {
+function cifraRespaldada(campo: CampoCifra, valor: number, cifras: number[], familia = 'PUERTA') {
   if (campo === 'cantidad') return cifras.some((c) => c === valor);
   const objetivo = metros(valor, familia);
   return cifras.some((c) => {
@@ -437,7 +437,7 @@ export function cantidadesDichas(frase: string): number[] {
  * Cantidad escrita justo antes del modelo del ítem («7 unidades y 1 TOLTEN» → 1 para la Tolten; «un par de
  * ancacomoe» → 2): la señal más clara cuando la IA corta mal las frases de un pedido largo.
  */
-export function cantidadAntesDelModelo(frase: string, modelo: string): number | null {
+function cantidadAntesDelModelo(frase: string, modelo: string): number | null {
   const t = sinTildes(frase);
   const nombre = sinTildes(modelo).trim();
   const i = t.indexOf(nombre);

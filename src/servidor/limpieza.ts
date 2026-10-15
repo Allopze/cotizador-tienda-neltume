@@ -11,9 +11,9 @@ const DIA_MS = 86_400_000;
 /** La auditoría de cuentas se conserva un año. */
 export const DIAS_AUDITORIA = 365;
 /** proper-lockfile renueva data/.estado.lock cada 15 s: uno sin tocar hace 10 minutos quedó de un proceso caído. */
-export const LOCK_VENCIDO_MS = 10 * 60_000;
+const LOCK_VENCIDO_MS = 10 * 60_000;
 /** Un PDF temporal vive lo que dura una impresión (máx. 30 s): uno de más de una hora quedó de un proceso caído. */
-export const TEMPORAL_VENCIDO_MS = 60 * 60_000;
+const TEMPORAL_VENCIDO_MS = 60 * 60_000;
 /** `.<uuid>.pdf`: el archivo temporal de generarPdf antes de enlazarlo con su nombre definitivo. */
 const TEMPORAL_PDF = /^\.[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$/;
 

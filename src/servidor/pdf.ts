@@ -31,7 +31,7 @@ import { abrirBaseDatos } from './base-datos';
 import { ErrorPdf } from './errores';
 
 /** Plazo total para lanzar Chromium, cargar la plantilla e imprimir. */
-export const PLAZO_PDF_MS = 30_000;
+const PLAZO_PDF_MS = 30_000;
 
 const esc = (s: unknown) =>
   String(s ?? '').replace(
@@ -277,7 +277,7 @@ const MAX_LOGOS_RECORDADOS = 16;
 const logosRecordados = new Map<string, Buffer>();
 
 /** SVG del logo vigente: el de la configuración del negocio o el publicado. */
-export async function logoVigente(db: Database.Database = abrirBaseDatos()): Promise<Buffer> {
+async function logoVigente(db: Database.Database = abrirBaseDatos()): Promise<Buffer> {
   const svg = datosEmpresa(db).logoSvg;
   return svg ? Buffer.from(svg, 'utf8') : readFile(join(process.cwd(), 'public/logo-neltume.svg'));
 }

@@ -9,7 +9,7 @@ import type { Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
 import { SeguimientoOperacion } from '../src/app/seguimiento-operacion';
-import { ContextoDocumentos, Documento } from '../src/app/panel-totales';
+import { Documento } from '../src/app/panel-totales';
 
 // La pantalla ofrece «Volver al paso anterior» y «Deshacer aprobación» exactamente cuando el servidor los acepta
 // (plan 4.4 sobre 3.6): el mapa de pasos del cliente no puede desfasarse del de servicio.ts.
@@ -147,23 +147,23 @@ describe('seguimiento de la operación: caminos de vuelta', () => {
 
 describe('documentos de la cotización', () => {
   it('«Compartir» no se dibuja en el servidor ni al hidratar: aparece recién en un navegador que lo admite', () => {
-    const doc = createElement(Documento, {
+    const props = {
       nombre: 'PDF de la cotización',
       archivo: 'cotizacion-325.pdf',
       descargando: null,
       descargar: () => {},
-    });
+    };
+    const doc = createElement(Documento, props);
     const conAcciones = renderToStaticMarkup(
-      createElement(
-        ContextoDocumentos,
-        { value: { ver: () => true, compartir: () => {}, compartible: 'cotizacion-325.pdf' } },
-        doc,
-      ),
+      createElement(Documento, {
+        ...props,
+        acciones: { ver: () => true, compartir: () => {}, compartible: 'cotizacion-325.pdf' },
+      }),
     );
     expect(conAcciones).toContain('href="/api/documento/cotizacion-325.pdf?ver=1"');
     expect(conAcciones).toContain('Descargar');
     expect(conAcciones).not.toContain('Compartir');
-    // Sin el contexto (otras pantallas), el enlace «Ver» funciona igual.
+    // Sin las acciones (otras pantallas), el enlace «Ver» funciona igual.
     expect(renderToStaticMarkup(doc)).toContain('target="_blank"');
   });
 });

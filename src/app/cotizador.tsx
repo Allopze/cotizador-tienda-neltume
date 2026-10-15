@@ -26,7 +26,7 @@ import { preguntasPendientes } from '@/negocio/pendientes';
 import { AgregarProducto } from './agregar-producto';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAnulacionPago, useAprobacion, useEmision } from './dialogos-cotizacion';
-import { ContextoDocumentos, type AccionesDocumentos } from './panel-totales';
+import type { AccionesDocumentos } from './panel-totales';
 import type {
   CambiosEdicion,
   Despacho as CambiosDespacho,
@@ -1721,21 +1721,20 @@ export function Cotizador({
             )}
           </div>
         </section>
-        <ContextoDocumentos value={accionesDocumentos}>
-          <CotizacionPanel
-            asistente={configurado}
-            actual={actual}
-            enCurso={enCurso}
-            guardando={guardando}
-            descargando={descargando}
-            acciones={acciones}
-            tituloRef={titulo}
-            agregarProducto={() => setAgregandoProducto(true)}
-            mostrarCotizacion={() => setVistaMobile('cotizacion')}
-            cargando={cargando}
-            cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
-          />
-        </ContextoDocumentos>
+        <CotizacionPanel
+          asistente={configurado}
+          actual={actual}
+          enCurso={enCurso}
+          guardando={guardando}
+          descargando={descargando}
+          acciones={acciones}
+          documentos={accionesDocumentos}
+          tituloRef={titulo}
+          agregarProducto={() => setAgregandoProducto(true)}
+          mostrarCotizacion={() => setVistaMobile('cotizacion')}
+          cargando={cargando}
+          cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
+        />
       </main>
       <footer className="site-footer">
         <span>

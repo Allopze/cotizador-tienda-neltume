@@ -72,6 +72,18 @@ export const etiquetaOperativo: Record<EstadoOperativo, string> = {
   despachada: 'Despachada',
   completada: 'Completada',
 };
+/**
+ * Paso anterior de cada estado operativo: el que aplica `retroceder_operacion` en el servidor y el que anuncia
+ * «Volver al paso anterior» en la pantalla. Sin nota de pedido, o recién generada, no hay paso anterior.
+ */
+export const PASO_ANTERIOR: Partial<Record<EstadoOperativo, EstadoOperativo>> = {
+  completada: 'despachada',
+  despachada: 'lista_despacho',
+  lista_despacho: 'pagada',
+  pagada: 'en_produccion',
+  saldo_pendiente: 'en_produccion',
+  en_produccion: 'pedido_generado',
+};
 export interface Pago {
   id: string;
   fecha: string;

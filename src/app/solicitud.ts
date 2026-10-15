@@ -15,7 +15,7 @@ export class ErrorSolicitud extends Error {
   }
 }
 /** La sesión venció: el aviso global ya se mostró; quien llama no debe pintar otro error. */
-export class ErrorSesion extends ErrorSolicitud {
+class ErrorSesion extends ErrorSolicitud {
   constructor() {
     super('Tu sesión expiró. Vuelve a ingresar.', 401, 'sesion');
     this.name = 'ErrorSesion';

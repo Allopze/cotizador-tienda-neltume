@@ -14,8 +14,6 @@ import {
 } from './configuracion';
 import { rangoMedidas } from '../negocio/limites';
 export const normalizar = normalizarCatalogo;
-/** Rango físico admisible para el ancho y el alto de una puerta, en metros; los accesorios usan `rangoMedidas`. */
-export const RANGO_METROS = rangoMedidas('PUERTA');
 /**
  * Convierte a metros según la familia (`rangoMedidas`): hasta 10 se asume metros; sobre eso, centímetros hasta
  * el tope de la familia (300 en puertas, 600 en accesorios) y milímetros hasta mil veces el tope. Devuelve null

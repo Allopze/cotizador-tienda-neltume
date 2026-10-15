@@ -1,0 +1,984 @@
+// Orquestación de un mensaje del chat: consulta a la IA fuera del bloqueo, revisa su lectura contra lo que escribió
+// la persona (anclaje de frases, cifras y nombres; precios y descuentos escritos) y aplica el resultado en una
+// transacción. Lo que necesita del servicio (abrir una revisión, recalcular, comparar versiones) llega en
+// `ContextoChat`: `Servicio` es la única fachada pública.
+import { ErrorIA, errorProveedor } from '../asistente/errores';
+import { MAX_OPCIONES } from '../asistente/preguntas';
+import type { ModificacionCotizacion } from '../asistente/esquemas';
+import { fleteDelChat } from '../asistente/flete';
+import { salidaSchema } from '../asistente/esquemas';
+import { contextoSeguro, type LLM } from '../asistente/llm';
+import {
+  anclarCifras,
+  anclarFrases,
+  anclarNombres,
+  avisosDeCampos,
+  avisosDePalabras,
+  cifrasDelTexto,
+  ESCUADRIAS_HABITUALES,
+  fraseDelMensaje,
+  nombresDichos,
+  sinTildes,
+  type ResolverNombre,
+} from '../asistente/anclaje';
+import {
+  MONTO_BAJO,
+  montoEscrito,
+  montosDelTexto,
+  porcentajeEscrito,
+  textosSinPorcentajes,
+} from '../asistente/montos';
+import { fleteAlFinal, pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
+import { respuestaDirecta } from '../asistente/respuesta-directa';
+import { mapaCatalogo } from '../catalogo/mapa';
+import { nombreCanonicoModelo } from '../catalogo/configuracion';
+import { metrosTexto } from '../catalogo/escalones';
+import {
+  aliasMaderasCatalogo,
+  aliasModelosCatalogo,
+  maderaDelCatalogo,
+  maderaEfectiva,
+  maderasCatalogo,
+  metros,
+  modeloDelCatalogo,
+  modelosCatalogo,
+  normalizar,
+  normalizarMedida,
+  resolverItem,
+  resolverNombres,
+  type CatalogoConsultable,
+} from '../catalogo/resolver';
+import type { Cliente, DescuentoItem, Familia, Producto, SolicitudItem } from '../catalogo/tipos';
+import { sanearCliente } from '../negocio/cliente';
+import {
+  cantidadFlete,
+  descripcionFlete,
+  unitarioFlete,
+  type Cotizacion,
+} from '../negocio/estado';
+import {
+  avisoProductoCambiado,
+  desdeIA,
+  descartarDelProducto,
+  detectarTipoMedida,
+  fusionarItems,
+  reiniciarOrigenModelo,
+  textoCampo,
+  type Descartes,
+  type ProductoItem,
+} from '../negocio/items';
+import { ANTICIPO_TEXTO, MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
+import { familiaItem, SIN_CATALOGO } from '../negocio/personalizados';
+import {
+  ahorroLinea,
+  cotizar,
+  descuentoItemValido,
+  pesos,
+  precioConDescuento,
+  REGLAS,
+  textoDescuentoItem,
+} from '../negocio/precios';
+import { estaVencida, fechaChilena } from '../negocio/vigencia';
+import type { Accion, CambiosCotizacion, CategoriaAviso, DiagnosticoTurno, Resultado } from './acciones';
+import type { Almacen, Unidad } from './almacen';
+import { cambioDescuento, claveDescuento, descuentoDe, marca, textoCambios } from './edicion';
+import { ErrorConflicto, ErrorNoEncontrado, VERSION_OBSOLETA } from './errores';
+import { resolverReferencia } from './referencias';
+
+/** Lo que el chat usa del servicio: su catálogo, la IA, el almacén y las reglas de edición de la cotización. */
+export interface ContextoChat {
+  catalogo: CatalogoConsultable;
+  llm: LLM;
+  almacen: Almacen;
+  autor: string | null;
+  /** Recibe cada mensaje del chat ya guardado; no cambia lo que se responde. */
+  diagnostico?: (d: DiagnosticoTurno) => void;
+  nueva(): Cotizacion;
+  obtener(u: Unidad, id: string): Cotizacion;
+  exigirEditable(q: Cotizacion): void;
+  abrirEdicion(q: Cotizacion, u: Unidad): Cotizacion;
+  /** Recalcula montos y pendientes; devuelve los avisos y las solicitudes normalizadas, que asigna quien llama. */
+  recalcular(q: Cotizacion): { avisos: string[]; solicitudes: SolicitudItem[] };
+  producto(s: SolicitudItem, pareja?: SolicitudItem): ProductoItem;
+  familiaDe(modelo: string): Familia | null;
+  productosDe(modelo: string): Producto[];
+  sinCambios(q: Cotizacion, solicitudes: SolicitudItem[], cliente: Cliente): boolean;
+  cambios(antes: SolicitudItem[], despues: SolicitudItem[], clienteAntes: Cliente, clienteDespues: Cliente): CambiosCotizacion | undefined;
+  describir(s: SolicitudItem): string;
+}
+
+const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
+const PEDIDO_SIN_REGISTRAR =
+  'No agregué productos y tu mensaje parece un pedido. Escríbelo de nuevo con modelo, madera, medidas y cantidad.';
+const AYUDA_ESPECIAL =
+  'Si es un pedido especial, escribe su precio (por ejemplo «la de 1,90 a $450.000 + IVA») o usa «Cotizar como especial» en el detalle.';
+// Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
+const TEXTO_MONETARIO =
+  /\$\s*\d|\d[\d.,]*\s*(?:CLP|USD|pesos|%)|\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i;
+/** El mensaje habla del descuento de un producto («sin descuento», «descuéntale», «rebaja»), ya sin tildes. */
+const HABLA_DE_DESCUENTO = /\b(?:descuent|descont|rebaj)/;
+const SOLICITUD_APROBACION =
+  /\b(?:aprueba|apruebe|aprobar|se aprob[oó]|haz(?:me)? (?:la )?nota|genera(?:r)? (?:la )?nota|prepara(?:r)? (?:la )?nota)(?![\p{L}\p{N}])/iu;
+
+/** Palabras que confirman («sí», «ya», «correcto, ese») y las que pueden acompañarlas sin agregar nada. */
+const AFIRMA = new Set([
+  'si', 'sip', 'ok', 'okey', 'okay', 'ya', 'dale', 'correcto', 'exacto', 'claro', 'confirmo', 'confirmado',
+  'afirmativo', 'efectivamente', 'perfecto', 'listo', 'bueno', 'acuerdo', 'eso', 'ese', 'esa', 'asi', 'obvio',
+  'va',
+]);
+const ACOMPANA_AFIRMACION = new Set([
+  'es', 'de', 'el', 'la', 'mismo', 'misma', 'modelo', 'por', 'favor', 'porfa', 'gracias', 'nomas', 'cotiza',
+  'cotizala', 'cotizalo', 'cotizalas', 'cotizalos', 'po',
+]);
+/** Lo que desdice una confirmación («no», «es otra», «tampoco»). */
+const NIEGA = /^(?:no|nop|otr[oa]s?|tampoco|distint[oa]s?|diferentes?)$/;
+/**
+ * ¿El mensaje confirma lo que preguntó el asistente, sin un «no»? Vale «sí», «sii», «sí po», «👍» o un mensaje
+ * que parte confirmando («sí, pero que sean 3»): la confirmación respalda solo el nombre sugerido, y las cifras y
+ * los demás nombres siguen necesitando respaldo propio.
+ */
+function afirmacionBreve(mensaje: string) {
+  const texto = sinTildes(mensaje).replace(/👍[\u{1F3FB}-\u{1F3FF}]?/gu, ' si ');
+  const palabras = texto
+    .split(/[^a-zñ]+/)
+    .filter(Boolean)
+    // «siii» es «si»; «sipo», «si po».
+    .flatMap((p) => (p.replace(/(.)\1+$/, '$1') === 'sipo' ? ['si', 'po'] : [p.replace(/(.)\1+$/, '$1')]));
+  if (!palabras.length || palabras.some((p) => NIEGA.test(p))) return false;
+  return (
+    AFIRMA.has(palabras[0]) ||
+    (!/\d/.test(texto) &&
+      palabras.length <= 6 &&
+      palabras.some((p) => AFIRMA.has(p)) &&
+      palabras.every((p) => AFIRMA.has(p) || ACOMPANA_AFIRMACION.has(p)))
+  );
+}
+
+/** Orden con que se elige una opción de la lista («la primera», «la segunda opción»); -1 es «la última». */
+const ORDINALES = new Map(
+  Object.entries({
+    primer: 0, primera: 0, primero: 0, segunda: 1, segundo: 1, tercer: 2, tercera: 2, tercero: 2, cuarta: 3,
+    cuarto: 3, quinta: 4, quinto: 4, ultima: -1, ultimo: -1,
+  }),
+);
+/**
+ * «la primera» a la única pregunta pendiente con una lista de modelos o maderas («¿Qué madera necesitas para
+ * Molco? Opciones: Mara, Lenga.»): el ítem cuenta como si el borrador ya dijera esa opción. Con más de una
+ * lista, o una que no se muestra entera, el orden no dice cuál.
+ */
+function opcionElegida(mensaje: string, q: Cotizacion): SolicitudItem[] {
+  const palabras = sinTildes(mensaje).split(/[^a-zñ]+/).filter(Boolean);
+  const orden = palabras.filter((p) => ORDINALES.has(p));
+  if (
+    orden.length !== 1 ||
+    /\d/.test(mensaje) ||
+    !palabras.every((p) => ORDINALES.has(p) || p === 'opcion' || AFIRMA.has(p) || ACOMPANA_AFIRMACION.has(p))
+  )
+    return [];
+  const listas = q.incompletos.flatMap(({ indice, rechazo: r }) =>
+    r.tipo === 'faltan_datos'
+      ? r.campos.map((campo) => ({ indice, campo, opciones: r.disponibles[campo] ?? [] }))
+      : r.tipo === 'modelo_desconocido'
+        ? [{ indice, campo: 'modelo', opciones: r.disponibles }]
+        : (r.tipo === 'madera_desconocida' || r.tipo === 'madera_no_disponible') && r.disponibles.length
+          ? [{ indice, campo: 'madera', opciones: r.disponibles }]
+          : r.tipo === 'producto_ambiguo' || r.tipo === 'medida_no_disponible'
+            ? [{ indice, campo: 'medida', opciones: [] }]
+            : [],
+  );
+  const [lista] = listas;
+  if (listas.length !== 1 || (lista.campo !== 'modelo' && lista.campo !== 'madera')) return [];
+  const s = q.solicitudes[lista.indice];
+  const valor = lista.opciones.length <= MAX_OPCIONES ? lista.opciones.at(ORDINALES.get(orden[0])!) : undefined;
+  return s && valor ? [{ ...s, [lista.campo]: valor }] : [];
+}
+
+/**
+ * ¿La frase trae un monto en pesos («$900.000», «900 mil»)? Su cantidad y sus medidas no cuentan, tampoco como
+ * las lee montosDelTexto («0,83» → 1, «2.0» → 2000).
+ */
+function conMonto(frase: string) {
+  const cifras = cifrasDelTexto(frase, false).flatMap((c) => [c, Math.round(c), Math.round(c * 1000)]);
+  return montosDelTexto(frase).some((m) => !cifras.includes(m));
+}
+
+/**
+ * ¿Sobra el aviso «No pude verificar el ítem N»? Un ítem editado lleva la frase «pedido original · cambio», que
+ * no está entera en el mensaje; si la del cambio sí está, el ítem viene de este mensaje. Si conserva la frase de
+ * un ítem anterior, viene de un mensaje ya revisado: los valores nuevos los revisan anclarCifras y anclarNombres.
+ */
+function editadoEnElMensaje(aviso: string, items: SolicitudItem[], previos: SolicitudItem[], mensaje: string) {
+  const n = /^No pude verificar el ítem (\d+) /.exec(aviso);
+  const fuente = n ? items[Number(n[1]) - 1]?.fuente : null;
+  if (!fuente) return false;
+  if (previos.some((p) => p.fuente === fuente)) return true;
+  const partes = fuente.split(' · ');
+  return partes.length > 1 && fraseDelMensaje(partes.at(-1)!, mensaje);
+}
+
+/** Solo un borrador cambia de versión con el historial: así no se invalidan selecciones de otras personas. */
+function registrar(q: Cotizacion, usuario: string, asistente: string) {
+  q.historial.push({ rol: 'usuario', texto: usuario }, { rol: 'asistente', texto: asistente });
+  if (q.estado === 'borrador') q.actualizada = marca(q.actualizada);
+}
+
+/** Cantidades no enteras o fuera de rango del modelo quedan pendientes, con aviso. */
+function sanearSolicitudes(items: SolicitudItem[], mensaje?: string) {
+  const avisos: string[] = [];
+  const solicitudes = items.map((s) => {
+    const tipoMedida = detectarTipoMedida(s.fuente) ?? (items.length === 1 ? detectarTipoMedida(mensaje) : null);
+    if (tipoMedida) s = { ...s, tipoMedida };
+    if (s.cantidad === null || (Number.isInteger(s.cantidad) && s.cantidad >= 1 && s.cantidad <= 10000))
+      return s;
+    avisos.push(
+      `La cantidad ${String(s.cantidad).replace('.', ',')} de ${s.modelo ?? 'un ítem'} no es válida: indica un entero entre 1 y 10.000.`,
+    );
+    return { ...s, cantidad: null };
+  });
+  return { solicitudes, avisos };
+}
+
+/**
+ * Escuadrías 2xN («2X4») que el catálogo tiene para un modelo y, si la madera se sabe y la tiene, para esa madera
+ * (la de cotizar: un marco «en Mara Enchapada» es Pino Finger). Sin productos del modelo, las habituales.
+ */
+function escuadriasDe(ctx: ContextoChat, modelo: string, madera: string | null): string[] {
+  const productos = ctx.productosDe(modelo);
+  if (!productos.length) return [...ESCUADRIAS_HABITUALES];
+  const efectiva = madera ? maderaEfectiva(ctx.catalogo, { modelo, madera }) : null;
+  const conMadera = efectiva ? productos.filter((p) => p.madera === efectiva) : [];
+  const medidas = (conMadera.length ? conMadera : productos).map((p) => normalizarMedida(p.medida));
+  return [...new Set(medidas.filter((m) => /^2X\d+$/.test(m)))];
+}
+
+/**
+ * Corrección para la IA si su respuesta deja fuera pedidos del mensaje o pregunta por el chat lo que debía
+ * registrar como ítem pendiente; null si la respuesta sirve.
+ */
+function revisarSalida(
+  ctx: ContextoChat,
+  salida: unknown,
+  mensaje: string,
+  base: Cotizacion,
+  modo: 'cotizacion_nueva' | 'modificacion_anterior',
+  resolver: Record<'modelo' | 'madera', ResolverNombre>,
+): string | { correccion: string; mensaje: string } | null {
+  const parsed = salidaSchema.safeParse(salida);
+  if (!parsed.success) return null;
+  const res = parsed.data;
+  if (res.name === 'modificar_cotizacion') {
+    const faltan = pedidosOmitidos(ctx, res.input, mensaje, base, resolver);
+    if (!faltan.length) return null;
+    const correccion = `Tu respuesta anterior no registró estos pedidos del mensaje: ${faltan.map((f) => `«${f}»`).join(', ')}. Responde de nuevo con modificar_cotizacion e incluye en agregar todos los ítems del mensaje (también los que ya habías registrado), cada uno con su propia fuente.`;
+    // Con un flete en el mensaje, el modelo a veces registra solo el flete y ningún producto, y repite el error
+    // al corregirlo: el reintento va sin la línea del flete, que ya quedó registrado y se conserva.
+    const acotado = res.input.flete && !res.input.agregar?.length ? sinLineasDeFlete(mensaje) : mensaje;
+    return acotado !== mensaje && acotado.trim()
+      ? { correccion: `El flete ya quedó registrado; ahora faltan los productos. ${correccion}`, mensaje: acotado }
+      : correccion;
+  }
+  if (res.name === 'responder' && pedidoSinRegistrar(mensaje, base, modo, resolver))
+    return 'El mensaje pide productos: regístralos con modificar_cotizacion y deja en null lo que no se dijo; el sistema pregunta lo que falta con botones. No uses responder para pedir datos de un ítem.';
+  return null;
+}
+
+/**
+ * ¿El mensaje pide productos que el borrador aún no tiene? Sirve para saber si una respuesta sin cambios
+ * (`responder`) dejó un pedido sin registrar.
+ */
+function pedidoSinRegistrar(
+  mensaje: string,
+  base: Cotizacion,
+  modo: 'cotizacion_nueva' | 'modificacion_anterior',
+  resolver: Record<'modelo' | 'madera', ResolverNombre>,
+) {
+  if (modo !== 'cotizacion_nueva' || !pareceUnPedido(mensaje, resolver)) return false;
+  const enBorrador = new Set(base.solicitudes.flatMap((s) => (s.modelo ? [normalizar(s.modelo)] : [])));
+  return [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()].some((m) => !enBorrador.has(m));
+}
+
+/**
+ * Precio que la persona escribió para un ítem en el chat. Debe estar en la frase del propio ítem (o en la
+ * conversación, si su frase no se ubica): así no toma el de otro producto ni el del flete. Se guarda neto.
+ * Un producto del catálogo pasa a ese precio y se avisa cuál era el de catálogo; uno que no existe (modelo,
+ * madera o medida) pasa a ser un pedido especial con ese precio. Sin `textos` (doble de prueba) el monto no
+ * se ancla.
+ */
+function preciosEscritos(ctx: ContextoChat, items: SolicitudItem[], mensaje: string, textos: string[] | null, q: Cotizacion) {
+  const avisos: string[] = [];
+  const reglas = q.reglas ?? REGLAS;
+  const resultado = items.map((original, i): SolicitudItem => {
+    const { precio, ...item } = original;
+    // Al editar, la frase del ítem es «pedido original · cambio»: el precio está en la última parte.
+    const frase = item.fuente?.split(' · ').at(-1) ?? null;
+    if (!precio?.valor) {
+      // Un total de varias unidades llega sin valor; sin un monto en la frase, la IA solo rellenó el campo.
+      if (precio?.valor === null && frase && conMonto(frase))
+        avisos.push(`Escribiste un precio total para el ítem ${i + 1}; indica el valor por unidad.`);
+      return item;
+    }
+    const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+    // Vale la línea completa del mensaje que contiene la frase, por si la IA la cortó antes del precio.
+    const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
+    const leido = montoEscrito(precio.valor, textos && lineas.length ? lineas : textos);
+    if (!leido.ok) {
+      avisos.push(
+        leido.ambiguo
+          ? `No apliqué el precio del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «a $450.000 + IVA».`
+          : `No apliqué el precio del ${etiqueta}: no aparece escrito en su línea del pedido.`,
+      );
+      return item;
+    }
+    const neto = Math.round(precio.iva === 'incluido' ? leido.valor / (1 + reglas.iva) : leido.valor);
+    if (!Number.isSafeInteger(neto) || neto <= 0 || neto > 100_000_000) {
+      avisos.push(`No apliqué el precio del ${etiqueta}: debe ser un monto entre $1 y $100.000.000.`);
+      return item;
+    }
+    if (precio.iva === null)
+      avisos.push(
+        `Tomé ${pesos(neto)} como precio sin IVA del ${etiqueta}. Si lo incluía, escribe «con IVA incluido».`,
+      );
+    if (neto < MONTO_BAJO)
+      avisos.push(`El precio del ${etiqueta} quedó en ${pesos(neto)}: revisa si le faltan ceros.`);
+    const conPrecio: SolicitudItem = { ...item, precioUnitario: neto, margen: null };
+    if (item.personalizado) return conPrecio;
+    const r = resolverItem(ctx.catalogo, conPrecio);
+    if (r.ok) {
+      // Como un precio escrito en el detalle: entre −50 % y 500 % sobre el costo de fábrica.
+      const margen = neto / r.producto.precioNeto - 1;
+      // Fuera del margen permitido se conserva: recalcular deja el ítem pendiente y su pregunta lo explica.
+      if (margen < MARGEN_MIN || margen > MARGEN_MAX) return conPrecio;
+      const catalogo = cotizar(
+        [
+          {
+            producto: r.producto,
+            cantidad: 1,
+            anchoSolicitado: r.anchoSolicitado,
+            altoSolicitado: r.altoSolicitado,
+            medidaSolicitada: r.medidaSolicitada,
+          },
+        ],
+        reglas,
+        { margenCotizacion: q.margenCotizacion ?? null },
+      ).lineas[0].precioUnitario;
+      if (catalogo !== neto)
+        avisos.push(
+          `Usé el precio que indicaste para el ${etiqueta}: ${pesos(neto)} sin IVA c/u; el de catálogo es ${pesos(catalogo)}.`,
+        );
+      return conPrecio;
+    }
+    // Si faltan datos (madera, cantidad), el precio queda en el ítem hasta saber si existe en el catálogo.
+    if (!SIN_CATALOGO.has(r.rechazo.tipo) || !item.modelo) return conPrecio;
+    const familia = familiaItem(item, null, r.rechazo, (m) => ctx.familiaDe(m));
+    const especial: SolicitudItem = {
+      ...conPrecio,
+      modelo:
+        r.rechazo.tipo === 'modelo_desconocido'
+          ? item.modelo
+          : nombreCanonicoModelo(modeloDelCatalogo(ctx.catalogo, item.modelo).modelo),
+      madera: item.madera ? (maderaDelCatalogo(ctx.catalogo, item.madera) ?? item.madera) : null,
+      personalizado: { familia },
+    };
+    const medidas = [especial.ancho, especial.alto]
+      .filter((n): n is number => n !== null)
+      .map((n) => metrosTexto(metros(n, familia) ?? n));
+    const nombre = [especial.modelo, especial.madera, medidas.length ? `${medidas.join(' × ')} m` : '']
+      .filter(Boolean)
+      .join(' ');
+    avisos.push(
+      `«${nombre}» no está en el catálogo: lo cotizo como pedido especial a ${pesos(neto)} sin IVA c/u, como lo indicaste.`,
+    );
+    return especial;
+  });
+  return { items: resultado, avisos };
+}
+
+/**
+ * Descuento especial que la persona pidió para un ítem en el chat («15 % de descuento a las Molco», «rebájale
+ * $20.000 c/u»). Como el precio escrito, su cifra debe estar en la línea del propio ítem (o en la conversación,
+ * si su frase no se ubica); un monto es por unidad y neto. Un null o un 0 lo quita solo si el mensaje habla de
+ * descuento: puede ser relleno de la IA. Sin `textos` (doble de prueba) no se ancla. Devuelve también los ítems
+ * cuyo descuento cambió, para confirmarlo con los precios ya calculados (ver `confirmarDescuentos`).
+ */
+function descuentosEscritos(items: SolicitudItem[], mensaje: string, textos: string[] | null) {
+  const avisos: string[] = [];
+  /** Ítems cuyo descuento cambió, con el que tenían antes. */
+  const cambiados = new Map<number, DescuentoItem | null>();
+  const resultado = items.map(({ descuentoEscrito: pedido, ...item }, i): SolicitudItem => {
+    if (pedido === undefined) return item;
+    const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
+    // Al editar, la frase del ítem es «pedido original · cambio»: el descuento está en la última parte.
+    const frase = item.fuente?.split(' · ').at(-1) ?? null;
+    const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
+    const hablaDeDescuento =
+      !textos || HABLA_DE_DESCUENTO.test(sinTildes(lineas.length ? lineas.join('\n') : mensaje));
+    if (pedido === null || pedido.valor === 0) {
+      if (!item.descuento || !hablaDeDescuento) return item;
+      cambiados.set(i, item.descuento);
+      const sinDescuento = { ...item };
+      delete sinDescuento.descuento;
+      return sinDescuento;
+    }
+    if (pedido.valor === null) {
+      if (hablaDeDescuento)
+        avisos.push(
+          `Indica cuánto descuento quieres para el ${etiqueta}: un porcentaje («15 % de descuento») o un monto por unidad («$20.000 de descuento c/u»).`,
+        );
+      return item;
+    }
+    const donde = textos && lineas.length ? lineas : textos;
+    let descuento: DescuentoItem;
+    if (pedido.tipo === 'porcentaje') {
+      if (!(pedido.valor > 0 && pedido.valor <= 100)) {
+        avisos.push(`No apliqué el descuento del ${etiqueta}: debe ser un porcentaje mayor que 0 % y hasta 100 %.`);
+        return item;
+      }
+      const valor = porcentajeEscrito(pedido.valor, donde);
+      if (valor === null) {
+        avisos.push(`No apliqué el descuento del ${etiqueta}: el porcentaje no aparece escrito en su línea del pedido.`);
+        return item;
+      }
+      descuento = { tipo: 'porcentaje', valor };
+    } else {
+      // «15 % de descuento» no respalda un descuento de $15.
+      const leido = montoEscrito(pedido.valor, textosSinPorcentajes(donde));
+      if (!leido.ok) {
+        avisos.push(
+          leido.ambiguo
+            ? `No apliqué el descuento del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «$20.000 de descuento c/u».`
+            : `No apliqué el descuento del ${etiqueta}: el monto no aparece escrito en su línea del pedido.`,
+        );
+        return item;
+      }
+      descuento = { tipo: 'monto', valor: leido.valor };
+    }
+    if (!descuentoItemValido(descuento)) {
+      avisos.push(
+        descuento.tipo === 'porcentaje'
+          ? `No apliqué el descuento del ${etiqueta}: el porcentaje admite hasta dos decimales.`
+          : `No apliqué el descuento del ${etiqueta}: debe ser un monto entero en pesos, hasta $100.000.000.`,
+      );
+      return item;
+    }
+    if (descuento.tipo === 'monto' && descuento.valor < MONTO_BAJO)
+      avisos.push(`El descuento del ${etiqueta} quedó en ${pesos(descuento.valor)} c/u: revisa si le faltan ceros.`);
+    const nuevo = { ...item, descuento };
+    if (claveDescuento(nuevo) !== claveDescuento(item)) cambiados.set(i, item.descuento ?? null);
+    return nuevo;
+  });
+  return { items: resultado, avisos, cambiados };
+}
+
+/**
+ * Lo que el chat confirma de cada descuento especial que aplicó o quitó: el precio original y el rebajado, como
+ * los verá el cliente. Un ítem pendiente lo explica su pregunta (también un monto mayor que su precio).
+ */
+function confirmarDescuentos(q: Cotizacion, cambiados: Map<number, DescuentoItem | null>) {
+  return [...cambiados.keys()].sort((a, b) => a - b).flatMap((i) => {
+    const s = q.solicitudes[i];
+    if (!s) return [];
+    const linea = q.montos.lineas.find((l) => l.indice === i);
+    const etiqueta = `ítem ${i + 1}${s.modelo ? ` (${s.modelo})` : ''}`;
+    if (!s.descuento)
+      return [`Quité el descuento especial del ${etiqueta}${linea ? `: vuelve a ${pesos(linea.precioUnitario)} c/u` : ''}.`];
+    if (!linea)
+      return q.incompletos.some((p) => p.indice === i && p.rechazo.tipo === 'faltan_datos' && p.rechazo.campos.includes('precio'))
+        ? []
+        : [`Anoté un descuento especial de ${textoDescuentoItem(s.descuento)} para el ${etiqueta}: se aplica cuando el ítem esté completo.`];
+    return [
+      `Descuento especial de ${textoDescuentoItem(s.descuento)} en el ${etiqueta}: ${pesos(linea.precioUnitario)} → ${pesos(precioConDescuento(linea))} c/u${linea.cantidad > 1 ? ` (ahorro ${pesos(ahorroLinea(linea))})` : ''}.`,
+    ];
+  });
+}
+
+/**
+ * Trozos del mensaje que piden productos y no quedaron en ningún ítem nuevo. Solo se revisa cuando la IA
+ * agrega ítems (o el borrador está vacío): una edición o un «saca los marcos» no tiene por qué cubrirlo.
+ */
+function pedidosOmitidos(
+  ctx: ContextoChat,
+  cambios: ModificacionCotizacion,
+  mensaje: string,
+  base: Cotizacion,
+  resolver: Record<'modelo' | 'madera', ResolverNombre>,
+): string[] {
+  if (cambios.items?.length || cambios.quitar?.length) return [];
+  if (!cambios.agregar?.length && base.solicitudes.length) return [];
+  const frases = (cambios.agregar ?? []).map((s) => s.fuente?.trim() ?? '');
+  // Sin la frase de cada ítem no se puede saber qué parte del mensaje cubre.
+  if (frases.some((f) => !f)) return [];
+  const cliente = { ...base.cliente, ...(cambios.cliente ?? {}) };
+  const otros = [
+    ...base.solicitudes.map((s) => s.fuente ?? ''),
+    ...Object.values(cliente).filter((v): v is string => typeof v === 'string'),
+  ];
+  const faltan = pedidosSinRegistrar(mensaje, frases, otros, resolver, { conFlete: !!cambios.flete }) ?? [];
+  // «… con su marco 2x5» suele quedar dentro de la frase de la puerta: si no hay ningún marco, falta.
+  const conMarco = /\bcon\s+(?:sus?\s+)?marcos?\b[^,.;\n]*/i.exec(mensaje);
+  const hayMarco = [...(cambios.agregar ?? []), ...base.solicitudes].some(
+    (s) => !!s.modelo && ctx.familiaDe(resolver.modelo(s.modelo) ?? s.modelo) === 'MARCO',
+  );
+  if (conMarco && !hayMarco) faltan.push(conMarco[0].trim());
+  return faltan;
+}
+
+function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: ModificacionCotizacion) {
+  const items = structuredClone(base.solicitudes);
+  const descartados: [SolicitudItem, Descartes][] = [];
+  const actualizar = cambios.items ?? [];
+  const quitar = cambios.quitar ?? [];
+  const actualizarIndices = new Set<number>();
+  const quitarIndices = new Set<number>();
+  if (
+    !actualizar.length &&
+    !quitar.length &&
+    !cambios.agregar?.length &&
+    !Object.keys(cambios.cliente ?? {}).length &&
+    cambios.flete === undefined
+  )
+    return null;
+  for (const cambio of actualizar) {
+    if (
+      cambio.indice >= items.length ||
+      actualizarIndices.has(cambio.indice) ||
+      !Object.keys(cambio.cambios).length
+    )
+      return null;
+    actualizarIndices.add(cambio.indice);
+    const siguiente = { ...items[cambio.indice], ...desdeIA(cambio.cambios) };
+    // La frase del cambio se suma a la del pedido original: juntas explican de dónde sale el ítem. Si no
+    // caben, se recorta la anterior: la del cambio es la que se busca en el mensaje.
+    if (cambio.cambios.fuente !== undefined) {
+      const previa = items[cambio.indice].fuente ?? null,
+        nueva = siguiente.fuente ?? null;
+      const recortada = previa?.slice(0, Math.max(0, 300 - (nueva?.length ?? 0) - 3)).trim();
+      siguiente.fuente =
+        previa && nueva && !previa.includes(nueva)
+          ? recortada
+            ? textoCampo('fuente', `${recortada} · ${nueva}`)
+            : nueva
+          : (previa ?? nueva);
+    }
+    if (cambio.cambios.modelo !== undefined) reiniciarOrigenModelo(siguiente);
+    const anterior = items[cambio.indice];
+    const descartes = descartarDelProducto(anterior, siguiente, {
+      antes: ctx.producto(anterior, siguiente),
+      despues: ctx.producto(siguiente, anterior),
+    });
+    if (descartes) descartados.push([siguiente, descartes]);
+    items[cambio.indice] = siguiente;
+  }
+  for (const indice of quitar) {
+    if (indice >= items.length || quitarIndices.has(indice) || actualizarIndices.has(indice)) return null;
+    quitarIndices.add(indice);
+  }
+  for (const indice of [...quitarIndices].sort((a, b) => b - a)) items.splice(indice, 1);
+  items.push(...(cambios.agregar ?? []).map((s) => desdeIA(s)));
+  if (items.length > 100) return null;
+  return {
+    items,
+    cliente: { ...base.cliente, ...(cambios.cliente ?? {}) },
+    avisos: descartados.map(([d, descartes]) => avisoProductoCambiado(items.indexOf(d) + 1, descartes)),
+  };
+}
+
+export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { tipo: 'chat' }>): Promise<Resultado> {
+  // La IA puede tardar hasta el plazo configurado: se consulta sin retener el bloqueo del estado,
+  // para no dejar esperando (ni fallar) las acciones de otra persona.
+  const conversacion = accion.id ? ctx.almacen.obtener(accion.id) : null;
+  if (accion.id && !conversacion) throw new ErrorNoEncontrado();
+  if (!accion.id && accion.nuevoId) verificarNoProcesado(ctx.almacen, accion.nuevoId);
+  if (conversacion && accion.actualizada !== undefined && accion.actualizada !== conversacion.actualizada)
+    throw new ErrorConflicto(VERSION_OBSOLETA);
+  let previo: Cotizacion | null = null;
+  let modo: 'cotizacion_nueva' | 'modificacion_anterior' = 'cotizacion_nueva';
+  if (accion.objetivoId) {
+    previo = ctx.almacen.obtener(accion.objetivoId);
+    if (!previo) throw new ErrorNoEncontrado('No se encontró la cotización seleccionada.');
+    if (!accion.objetivoActualizada || accion.objetivoActualizada !== previo.actualizada)
+      throw new ErrorConflicto(
+        'La cotización cambió. Elige nuevamente la cotización que quieres modificar.',
+      );
+    modo = 'modificacion_anterior';
+  } else {
+    const referencia = SOLICITUD_APROBACION.test(accion.mensaje)
+      ? { tipo: 'ninguna' as const }
+      : resolverReferencia(accion.mensaje, ctx.almacen.candidatas(), conversacion?.id);
+    if (referencia.tipo === 'inexistente')
+      throw new ErrorNoEncontrado(
+        `No existe la cotización N° ${referencia.numero}. Revisa el número o búscala en el historial; no se aplicó ningún cambio.`,
+      );
+    if (referencia.tipo === 'multiples') {
+      const contexto = conversacion ?? ctx.almacen.obtener(referencia.opciones[0].id);
+      if (!contexto) throw new ErrorNoEncontrado('No se encontró la cotización seleccionada.');
+      return { cotizacion: contexto, seleccion: referencia.opciones };
+    }
+    if (referencia.tipo === 'unica') {
+      previo = ctx.almacen.obtener(referencia.cotizacion.id);
+      if (!previo) throw new ErrorNoEncontrado();
+      modo = 'modificacion_anterior';
+    } else previo = conversacion;
+  }
+  if (previo) ctx.exigirEditable(previo);
+  // M4: si la emitida ya tiene una revisión abierta, el cambio se aplica sobre esa revisión.
+  if (previo?.estado === 'emitida') previo = ctx.almacen.revisionAbierta(previo) ?? previo;
+  // M1: el borrador nuevo se escribe recién con la respuesta de la IA; si falla, no queda nada.
+  const nuevo = previo ? null : { ...ctx.nueva(), ...(accion.nuevoId ? { id: accion.nuevoId } : {}) };
+  const base = previo ?? nuevo!;
+  // Sin borrador, el contexto de la conversación es el intercambio previo que no se guardó.
+  const historialIA = nuevo ? (accion.contexto ?? []) : base.historial;
+  const resolver = resolverNombres(ctx.catalogo);
+  // Familia del modelo que nombró la persona o la IA (también con un alias): fija el rango de sus medidas.
+  const familia = (modelo: string) => ctx.familiaDe(resolver.modelo(modelo) ?? modelo);
+  // En modo «avisar» la lectura de la IA no se enmienda: sin atajos, sin reordenar el mensaje ni reintentos.
+  const corrige = (ctx.llm.anclaje ?? 'corregir') === 'corregir';
+  // Un dato suelto que responde la pregunta pendiente («lenga», «son 3») se aplica sin consultar a la IA,
+  // igual que los botones. Los dobles de prueba (sin verificarCifras) siempre pasan por la IA.
+  const directa =
+    ctx.llm.verificarCifras && corrige && previo?.estado === 'borrador' && modo === 'cotizacion_nueva'
+      ? respuestaDirecta(base, accion.mensaje, resolver, familia)
+      : null;
+  let salida: unknown = directa;
+  if (!directa)
+    try {
+      salida = await ctx.llm.interpretar(
+        contextoSeguro(
+          corrige ? fleteAlFinal(accion.mensaje) : accion.mensaje,
+          base.solicitudes,
+          base.cliente,
+          modelosCatalogo(ctx.catalogo),
+          maderasCatalogo(ctx.catalogo),
+          historialIA,
+          modo,
+          modo === 'modificacion_anterior'
+            ? { numero: base.numero ?? base.origen ?? null, estado: base.estado }
+            : null,
+          {
+            modelos: aliasModelosCatalogo(ctx.catalogo),
+            maderas: aliasMaderasCatalogo(ctx.catalogo),
+            catalogo: mapaCatalogo(ctx.catalogo),
+          },
+        ),
+        ctx.llm.verificarCifras && corrige
+          ? { revisar: (s) => revisarSalida(ctx, s, accion.mensaje, base, modo, resolver) }
+          : {},
+      );
+    } catch (error) {
+      if (error instanceof ErrorIA) throw error;
+      throw errorProveedor();
+    }
+  // Para el diagnóstico: la herramienta que usó la IA y de dónde salió cada aviso (sin marca, `otros`).
+  let herramienta: string | null = directa ? 'directa' : null;
+  const categorias = new Map<string, CategoriaAviso>();
+  const marcar = (categoria: CategoriaAviso, avisos: string[]) => {
+    for (const texto of avisos) categorias.set(texto, categoria);
+    return avisos;
+  };
+  const resultado = await ctx.almacen.transaccion((u): Resultado => {
+    let q: Cotizacion;
+    if (nuevo) {
+      // Se guarda recién si el mensaje trae un pedido o datos del cliente (ver `efimera`).
+      if (u.obtener(nuevo.id)) throw errorProcesado(nuevo.id);
+      q = nuevo;
+    } else {
+      q = ctx.obtener(u, base.id);
+      // Control optimista: la respuesta se calculó sobre la versión leída antes de consultar a la IA.
+      if (q.actualizada !== base.actualizada)
+        throw new ErrorConflicto(
+          'La cotización cambió mientras se procesaba tu mensaje. Revisa el detalle y vuelve a enviarlo.',
+        );
+      ctx.exigirEditable(q);
+    }
+    const responder = (texto: string, extra: Omit<Resultado, 'cotizacion'> = {}): Resultado => {
+      registrar(q, accion.mensaje, texto);
+      if (q === nuevo) return { cotizacion: q, ...extra, efimera: true };
+      u.guardar(q);
+      return { cotizacion: q, ...extra };
+    };
+    const parsed = salidaSchema.safeParse(salida);
+    if (!parsed.success) return responder(NO_ENTENDI);
+    const res = parsed.data;
+    if (!directa) herramienta = res.name;
+    if (res.name === 'aprobar_cotizacion') {
+      const numero = res.input.numero;
+      const objetivo = u.porNumero(numero);
+      if (!objetivo) return responder(`No existe la cotización N° ${numero}. Genera primero su PDF.`);
+      if (objetivo.estado === 'anulada')
+        return responder(
+          `La cotización N° ${numero} está anulada${objetivo.nota ? `, junto con su nota de pedido N° ${objetivo.nota.numero},` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+        );
+      if (objetivo.nota)
+        return responder(
+          `La cotización N° ${numero} ya está aprobada con la nota de pedido N° ${objetivo.nota.numero}.`,
+          { archivo: objetivo.nota.pdf },
+        );
+      if (objetivo.estado !== 'emitida')
+        return responder(
+          objetivo.estado === 'borrador'
+            ? `La cotización N° ${numero} todavía no se emite. Genera y revisa su PDF antes de aprobarla.`
+            : `La cotización N° ${numero} está ${objetivo.estado} y no se puede aprobar.`,
+        );
+      const aprobada = u.serie(objetivo.id).find((s) => s.estado === 'aprobada');
+      if (aprobada)
+        return responder(
+          `La cotización N° ${aprobada.numero} de la misma serie ya fue aprobada; no se puede aprobar la N° ${numero}.`,
+        );
+      const vencida = estaVencida(objetivo.vence);
+      const texto = `¿Confirmas que el cliente aprobó la cotización N° ${numero}? Se registrará la aprobación; la nota de pedido estará disponible al registrar al menos ${ANTICIPO_TEXTO} de pago.${vencida ? ` Atención: venció el ${fechaChilena(objetivo.vence!)}.` : ''}`;
+      const resultado = responder(texto);
+      return {
+        ...resultado,
+        confirmar: {
+          id: objetivo.id,
+          numero,
+          // Si el objetivo es la misma conversación, el historial no cambia su versión (sigue emitida).
+          actualizada: objetivo.actualizada,
+          vence: objetivo.vence,
+          vencida,
+        },
+      };
+    }
+    let propuesta: { items: SolicitudItem[]; cliente: Partial<Cliente>; avisos: string[] };
+    if (res.name === 'actualizar_cotizacion') {
+      if (modo === 'modificacion_anterior') return responder(NO_ENTENDI);
+      // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q.
+      const { items, avisos: avisosFusion } = fusionarItems(
+        q.solicitudes,
+        res.input.items.map((s) => desdeIA(s)),
+        (s, pareja) => ctx.producto(s, pareja),
+      );
+      propuesta = {
+        items,
+        avisos: avisosFusion,
+        cliente: {
+          ...res.input.cliente,
+          giro: res.input.cliente.giro === undefined ? q.cliente.giro : res.input.cliente.giro,
+        },
+      };
+    } else if (res.name === 'modificar_cotizacion') {
+      // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
+      const aplicado = aplicarModificacion(ctx, q, res.input);
+      if (!aplicado) return responder(NO_ENTENDI);
+      propuesta = aplicado;
+    } else {
+      // Sin el reintento de «corregir», un pedido respondido con texto no puede pasar en silencio.
+      const sinRegistrar =
+        ctx.llm.verificarCifras && !corrige && pedidoSinRegistrar(accion.mensaje, base, modo, resolver)
+          ? marcar('responder', [PEDIDO_SIN_REGISTRAR])
+          : [];
+      // No deja pasar montos inventados ni texto monetario desde el modelo.
+      return responder(
+        TEXTO_MONETARIO.test(res.input.texto)
+          ? 'Puedo ayudarte con modelos, maderas, medidas, cantidades y datos del cliente. Los montos se muestran en la cotización.'
+          : res.input.texto,
+        sinRegistrar.length ? { avisos: sinRegistrar } : {},
+      );
+    }
+    // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
+    const textosIA = [accion.mensaje, ...historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto)];
+    const { linea: flete, avisos: avisosFlete } = fleteDelChat(
+      res.name === 'modificar_cotizacion' ? res.input.flete : undefined,
+      q,
+      { textos: ctx.llm.verificarCifras && !directa ? textosIA : null, iva: (q.reglas ?? REGLAS).iva },
+    );
+    const cambiaFlete =
+      !!flete &&
+      (flete.flete !== q.flete ||
+        flete.fleteCantidad !== cantidadFlete(q) ||
+        flete.fleteDescripcion !== (q.fleteDescripcion ?? null));
+    propuesta.avisos.push(...avisosFlete);
+    if (ctx.llm.verificarCifras && !directa) {
+      // «sí» a «¿Te refieres a X?» (lo que pide el prompt): el ítem cuenta como si el borrador ya dijera X.
+      // Respalda solo ese nombre; las cifras y los demás nombres siguen saliendo de lo que escribió la persona.
+      // «la primera» a una pregunta con opciones respalda igual esa opción.
+      const confirmados = [
+        ...(afirmacionBreve(accion.mensaje)
+          ? q.incompletos.flatMap(({ indice, rechazo }) => {
+              const s = q.solicitudes[indice];
+              if (rechazo.tipo !== 'modelo_posible' || !s) return [];
+              // Con la forma que usó la IA («HUILO HUILO») si el catálogo la lleva al mismo modelo.
+              const propio = propuesta.items[indice]?.modelo,
+                sugerido = resolver.modelo(rechazo.sugerido);
+              const modelo =
+                propio && sugerido && resolver.modelo(propio) === sugerido ? propio : rechazo.sugerido;
+              return [{ ...s, modelo }];
+            })
+          : []),
+        ...opcionElegida(accion.mensaje, q),
+      ];
+      const previos = [...q.solicitudes, ...confirmados];
+      // Primero cada ítem contra su propia frase, para que no tome la madera o la cantidad de otro.
+      const anteriores = historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto);
+      const leidoPorFrase = anclarFrases(
+        propuesta.items,
+        previos,
+        accion.mensaje,
+        resolver,
+        anteriores,
+        familia,
+        (modelo, madera) => escuadriasDe(ctx, resolver.modelo(modelo) ?? modelo, madera),
+      );
+      const leidos = leidoPorFrase.avisos.filter(
+        (a) => !editadoEnElMensaje(a, propuesta.items, q.solicitudes, accion.mensaje),
+      );
+      const porFrase = corrige
+        ? {
+            ...leidoPorFrase,
+            avisos: leidos.map((a) => marcar(a.startsWith('No reconocí') ? 'palabra' : 'campo', [a])[0]),
+          }
+        : {
+            items: propuesta.items,
+            avisos: [
+              // Sin corregir, la frase que no se ubicó se avisa igual: la lectura de la IA quedó sin revisar.
+              ...marcar('campo', leidos.filter((a) => a.startsWith('No pude verificar'))),
+              ...marcar('campo', avisosDeCampos(propuesta.items, leidoPorFrase.items, familia)),
+              ...marcar('palabra', avisosDePalabras(propuesta.items, accion.mensaje, resolver)),
+            ],
+          };
+      const anclado = anclarCifras(porFrase.items, previos, textosIA, familia);
+      const nombres = anclarNombres(anclado.items, previos, textosIA, {
+        modelo: aliasModelosCatalogo(ctx.catalogo),
+        madera: aliasMaderasCatalogo(ctx.catalogo),
+      }, resolver);
+      propuesta = {
+        ...propuesta,
+        items: nombres.items,
+        avisos: [
+          ...propuesta.avisos,
+          ...porFrase.avisos,
+          ...marcar('cifras', anclado.avisos),
+          ...marcar('nombres', nombres.avisos),
+        ],
+      };
+      // Lo que la IA no registró ni tras la corrección se avisa: la cotización no debe verse completa.
+      if (res.name === 'modificar_cotizacion') {
+        const faltan = pedidosOmitidos(ctx, res.input, accion.mensaje, base, resolver);
+        if (faltan.length)
+          propuesta.avisos.push(
+            ...marcar('noRegistre', [
+              `No registré: ${faltan.map((f) => `«${f}»`).join(', ')}. Revisa si falta y escríbelo de nuevo.`,
+            ]),
+          );
+      }
+    }
+    const conPrecios = preciosEscritos(
+      ctx,
+      propuesta.items,
+      accion.mensaje,
+      ctx.llm.verificarCifras && !directa ? textosIA : null,
+      q,
+    );
+    const conDescuentos = descuentosEscritos(
+      conPrecios.items,
+      accion.mensaje,
+      ctx.llm.verificarCifras && !directa ? textosIA : null,
+    );
+    propuesta = {
+      ...propuesta,
+      items: conDescuentos.items,
+      avisos: [...propuesta.avisos, ...conPrecios.avisos, ...conDescuentos.avisos],
+    };
+    const { solicitudes, avisos: avisosItems } = sanearSolicitudes(propuesta.items, accion.mensaje);
+    const { cliente, avisos: avisosCliente } = sanearCliente(propuesta.cliente);
+    const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];
+    const extra = avisos.length ? { avisos } : {};
+    if (q === nuevo && !solicitudes.length && !cambiaFlete && Object.values(cliente).every((v) => v === null))
+      return responder(
+        'Cuéntame qué necesitas cotizar: modelo, madera, medidas y cantidad. También puedes agregar los datos del cliente.',
+        extra,
+      );
+    if (
+      ctx.sinCambios(q, solicitudes, cliente) &&
+      !cambiaFlete &&
+      (q.estado !== 'borrador' || modo === 'modificacion_anterior')
+    )
+      return responder(
+        [
+          ...avisos,
+          `No hay cambios respecto de la cotización N° ${q.numero ?? q.origen ?? 'en borrador'}.`,
+        ].join('\n\n'),
+        extra,
+      );
+    const antes = q.solicitudes,
+      clienteAntes = q.cliente;
+    const destino = ctx.abrirEdicion(q, u);
+    const descuentoAntes = descuentoDe(destino);
+    destino.solicitudes = solicitudes;
+    destino.cliente = cliente;
+    const extrasFlete: string[] = [];
+    if (flete && cambiaFlete) {
+      if (flete.flete !== destino.flete) extrasFlete.push(`Flete ${pesos(destino.flete)} → ${pesos(flete.flete)}`);
+      if (flete.fleteCantidad !== cantidadFlete(destino))
+        extrasFlete.push(`Cantidad del flete: ${cantidadFlete(destino)} → ${flete.fleteCantidad}`);
+      if (flete.fleteDescripcion !== (destino.fleteDescripcion ?? null))
+        extrasFlete.push(`Descripción del flete: ${flete.fleteDescripcion ?? 'automática'}`);
+      Object.assign(destino, flete);
+    }
+    const recalculo = ctx.recalcular(destino);
+    destino.solicitudes = recalculo.solicitudes;
+    const todos = [
+      ...avisos,
+      ...recalculo.avisos,
+      ...confirmarDescuentos(destino, conDescuentos.cambiados),
+    ];
+    const exito =
+      modo === 'modificacion_anterior'
+        ? `Cotización actualizada${destino.origen ? ` como revisión de la N° ${destino.origen}` : ''}. Revisa el detalle y genera el PDF cuando esté listo.`
+        : 'Cotización actualizada. Revisa el detalle y genera el PDF cuando esté listo.';
+    registrar(
+      destino,
+      accion.mensaje,
+      [
+        // Las preguntas se guardan primero para sobrevivir al recorte del historial.
+        ...destino.incompletos.map((i) => i.pregunta),
+        ...todos,
+        ...(extrasFlete.length
+          ? [`Flete: ${cantidadFlete(destino)} × ${descripcionFlete(destino)}, ${pesos(unitarioFlete(destino))} sin IVA c/u.`]
+          : []),
+        // Lo que no existe en el catálogo se cotiza igual, con el precio que indique la persona.
+        ...(!destino.incompletos.length
+          ? [exito]
+          : destino.incompletos.some(
+                (i) => SIN_CATALOGO.has(i.rechazo.tipo) && !destino.solicitudes[i.indice]?.personalizado,
+              )
+            ? [AYUDA_ESPECIAL]
+            : []),
+      ].join('\n\n'),
+    );
+    u.guardar(destino);
+    // Los ítems de `destino`, ya normalizados por `recalcular` (modelo canónico, madera con que se cotiza).
+    const cambios = ctx.cambios(antes, destino.solicitudes, clienteAntes, cliente);
+    const descuentosItems = [...conDescuentos.cambiados].map(([i, anterior]) => {
+      const s = destino.solicitudes[i];
+      return `Descuento especial de ${ctx.describir(s)}: ${anterior ? textoDescuentoItem(anterior) : 'sin descuento'} → ${s.descuento ? textoDescuentoItem(s.descuento) : 'sin descuento'}`;
+    });
+    const detalle = textoCambios(cambios, [
+      ...cambioDescuento(descuentoAntes, destino),
+      ...descuentosItems,
+      ...extrasFlete,
+    ]);
+    if (destino === nuevo) u.registrarEvento(destino.id, 'creada', ctx.autor, detalle);
+    else u.registrarEvento(destino.id, 'modificada', ctx.autor, detalle);
+    return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}), ...(cambios ? { cambios } : {}) };
+  });
+  ctx.diagnostico?.({
+    herramienta,
+    modelo: ctx.llm.modeloEfectivo,
+    respaldo: ctx.llm.usoRespaldo,
+    avisos: (resultado.avisos ?? []).map((texto) => ({ categoria: categorias.get(texto) ?? 'otros', texto })),
+  });
+  return resultado;
+}
+
+function errorProcesado(id: string) {
+  return new ErrorConflicto(
+    'Tu mensaje anterior ya se había procesado. Se abrió la cotización resultante.',
+    'mensaje_procesado',
+    { id },
+  );
+}
+
+/** Un reenvío tras cancelar la espera no crea un segundo borrador con el mismo pedido. */
+function verificarNoProcesado(almacen: Almacen, id: string) {
+  if (almacen.obtener(id)) throw errorProcesado(id);
+}

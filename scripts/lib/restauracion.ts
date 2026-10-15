@@ -3,6 +3,7 @@ import { closeSync, constants, fsyncSync, openSync } from 'node:fs';
 import { chmod, copyFile, cp, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { ARCHIVO_REFERENCIA } from '../../src/negocio/personalizados';
+import { LOCK_ESTADO_VIGENTE_MS } from '../../src/servidor/almacen';
 import { carpetaReferencias } from '../../src/servidor/archivos-referencia';
 import { directorioDatos, rutaBaseDatos, VERSION_ESQUEMA } from '../../src/servidor/base-datos';
 
@@ -17,9 +18,6 @@ export class ErrorRestauracion extends Error {
     this.name = 'ErrorRestauracion';
   }
 }
-
-/** proper-lockfile renueva data/.estado.lock cada 15 s y lo considera abandonado a los 30 s (almacen.ts). */
-const LOCK_VIGENTE_MS = 30_000;
 
 export interface ResultadoRestauracion {
   carpeta: string;
@@ -47,7 +45,7 @@ const existe = (ruta: string) =>
 const archivosDe = async (carpeta: string) => ((await existe(carpeta)) ? (await readdir(carpeta)).length : 0);
 
 /** Revisa que la copia sea una base sana del cotizador y que esta versión pueda abrirla. */
-export function verificarCopia(ruta: string) {
+function verificarCopia(ruta: string) {
   let db: Database.Database | undefined;
   try {
     db = new Database(ruta, { readonly: true, fileMustExist: true });
@@ -81,12 +79,12 @@ export function verificarCopia(ruta: string) {
  * pedir el bloqueo exclusivo sin espera falla de inmediato si el cotizador corre (también en otro contenedor que use
  * el mismo volumen). Al cerrar, la conexión exclusiva vuelca el -wal en la base y lo borra.
  */
-export async function exigirServidorDetenido(datos: string, rutaDb: string, ahora = new Date()) {
+async function exigirServidorDetenido(datos: string, rutaDb: string, ahora = new Date()) {
   const detenlo =
     'Detén el cotizador antes de restaurar (con Docker: docker compose stop) y vuelve a ejecutar este comando.';
   const lock = join(datos, '.estado.lock');
   const infoLock = await stat(lock).catch(() => null);
-  if (infoLock && ahora.getTime() - infoLock.mtimeMs < LOCK_VIGENTE_MS)
+  if (infoLock && ahora.getTime() - infoLock.mtimeMs < LOCK_ESTADO_VIGENTE_MS)
     throw new ErrorRestauracion(`El cotizador está guardando cambios en este momento. ${detenlo}`);
   if (!(await existe(rutaDb))) return;
   let db: Database.Database | undefined;

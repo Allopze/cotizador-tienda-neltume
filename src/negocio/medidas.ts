@@ -37,7 +37,7 @@ export function dimensionesEnMilimetros(ancho: number | null, alto: number | nul
  * Cuánto sobre el inicio del tramo cobrado puede quedar un vano antes de avisar: 5 cm, lo que suele separar el
  * vano (el hueco del muro) de la hoja que se fabrica para él. Ver docs/reglas-negocio.md.
  */
-export const MARGEN_VANO = 0.05;
+const MARGEN_VANO = 0.05;
 const metrosAviso = (n: number) =>
   n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
 const tramoAviso = ({ min, max }: { min: number; max: number }) =>

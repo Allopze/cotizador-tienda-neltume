@@ -33,7 +33,7 @@ export class ErrorStarken extends Error {
 }
 
 export const MENSAJE_NO_CONFIGURADO = 'Starken no está configurado';
-export const TIMEOUT_STARKEN_MS = 10_000;
+const TIMEOUT_STARKEN_MS = 10_000;
 export const TTL_CIUDADES_MS = 24 * 60 * 60 * 1000;
 
 export interface EntornoStarken {

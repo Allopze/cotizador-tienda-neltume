@@ -73,6 +73,14 @@ if command -v flock >/dev/null 2>&1; then
   flock -n 9 || fallar 'ya hay otra actualización o despliegue del cotizador en curso.'
 fi
 
+# Carpeta del respaldo según la salida de `npm run respaldar -- --json` (una línea JSON con "carpeta").
+carpetaRespaldo() {
+  c="$(printf '%s\n' "$1" | sed -n 's/^{.*"carpeta":"\([^"]*\)".*}$/\1/p' | tail -n 1)"
+  # Un contenedor con la versión anterior a --json lo ignora y escribe el texto «Respaldo en <carpeta>: …».
+  [ -n "$c" ] || c="$(printf '%s\n' "$1" | sed -n 's/^Respaldo en \([^:]*\):.*/\1/p' | tail -n 1)"
+  printf '%s' "$c"
+}
+
 # Código de la aplicación: todo menos la configuración y los datos propios del servidor. Compara por contenido
 # (--checksum): un archivo distinto con el mismo tamaño y la misma hora no se saltaría.
 sincronizar() {
@@ -153,12 +161,12 @@ done
 
 printf '▶ Respaldando los datos antes de actualizar…\n'
 if [ -n "$(docker compose ps --status running -q cotizador 2>/dev/null)" ]; then
-  salida="$(docker compose exec -T cotizador npm run --silent respaldar)" || fallar 'no se pudo respaldar; no se actualizó nada.'
+  salida="$(docker compose exec -T cotizador npm run --silent respaldar -- --json)" || fallar 'no se pudo respaldar; no se actualizó nada.'
 else
-  salida="$(docker compose run --rm -T cotizador npm run --silent respaldar)" || fallar 'no se pudo respaldar; no se actualizó nada.'
+  salida="$(docker compose run --rm -T cotizador npm run --silent respaldar -- --json)" || fallar 'no se pudo respaldar; no se actualizó nada.'
 fi
 printf '%s\n' "$salida"
-respaldo="$(printf '%s\n' "$salida" | sed -n 's/^Respaldo en \([^:]*\):.*/\1/p' | tail -n 1)"
+respaldo="$(carpetaRespaldo "$salida")"
 [ -n "$respaldo" ] || fallar 'no se encontró la carpeta del respaldo en la salida de npm run respaldar; no se actualizó nada.'
 
 printf '▶ Guardando el código actual en %s…\n' "$anterior"

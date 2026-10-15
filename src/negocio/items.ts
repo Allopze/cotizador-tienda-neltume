@@ -1,5 +1,6 @@
 import { metros, normalizarMedida } from '../catalogo/resolver';
 import type { DescuentoEscrito, SolicitudItem } from '../catalogo/tipos';
+import { LARGO_OBSERVACION_ITEM } from './limites';
 import type { TipoMedida } from './medidas';
 
 /** Modelo y madera normalizados para comparar; vacío si el ítem no los trae. */
@@ -15,7 +16,7 @@ const MAX_TEXTO = {
   madera: 300,
   medida: 300,
   descripcion: 300,
-  observaciones: 1000,
+  observaciones: LARGO_OBSERVACION_ITEM,
   fuente: 300,
 } as const;
 

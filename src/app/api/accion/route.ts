@@ -4,7 +4,7 @@ import { Servicio, type DiagnosticoTurno } from '@/servidor/servicio';
 import { Almacen, DIAS_PAPELERA, type FiltrosListado } from '@/servidor/almacen';
 import { csvCotizaciones, MAX_EXPORTACION, partesExportacion } from '@/servidor/exportar';
 import { fechaLocal } from '@/negocio/vigencia';
-import { MARGEN_MAX, MARGEN_MIN, rangoMedidas } from '@/negocio/limites';
+import { LARGO_OBSERVACION_ITEM, MARGEN_MAX, MARGEN_MIN, rangoMedidas } from '@/negocio/limites';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { leerJson } from '@/servidor/cuerpo';
@@ -96,7 +96,7 @@ const solicitudRestaurarSchema = z.object({
   margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
   descripcion: texto(300),
-  observaciones: texto(1000),
+  observaciones: texto(LARGO_OBSERVACION_ITEM),
   modeloOriginal: texto(300),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: texto(300),
@@ -135,7 +135,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
           tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).optional(),
           cantidad: z.number().int().min(1).max(10000),
           precioUnitario: z.number().int().positive().max(100_000_000),
-          observaciones: texto(1000),
+          observaciones: texto(LARGO_OBSERVACION_ITEM),
           referencias: referenciasSchema.optional(),
         })
         .strict(),
@@ -248,7 +248,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
                   margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
                   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
                   descripcion: texto(300),
-                  observaciones: texto(1000),
+                  observaciones: texto(LARGO_OBSERVACION_ITEM),
                   referencias: referenciasSchema.optional(),
                   // Monto 0 o null quitan el descuento; el servidor valida rangos y decimales con mensajes propios.
                   descuento: z

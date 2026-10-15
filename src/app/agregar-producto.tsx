@@ -6,6 +6,7 @@ import { leerPesos } from '@/negocio/cifras';
 import { pesos } from '@/negocio/precios';
 import type { ProductoConsulta, ProductoElegido, ProductoPersonalizadoElegido } from './contrato';
 import { Dialogo } from './dialogo';
+import { LARGO_OBSERVACION_ITEM } from '@/negocio/limites';
 import { decimalCampo, errorMedida, leerMedida, nombreProducto } from './formato';
 import { ReferenciasItem } from './referencias-item';
 import { SelectorDesplegable } from './selector-desplegable';
@@ -462,7 +463,7 @@ function FormPersonalizado({
         {campo('descripcion', 'Descripción para el documento · opcional', {
           placeholder: 'Ej.: Puerta sólida de roble según fotografía adjunta',
         })}
-        {campo('observaciones', 'Observaciones · opcional', { maxLength: 1000 })}
+        {campo('observaciones', 'Observaciones · opcional', { maxLength: LARGO_OBSERVACION_ITEM })}
       </div>
       <ReferenciasItem
         referencias={referencias}

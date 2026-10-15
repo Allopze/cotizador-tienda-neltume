@@ -24,7 +24,7 @@ function errorArchivo(archivo: File) {
   return null;
 }
 
-export async function subirReferencia(archivo: File) {
+async function subirReferencia(archivo: File) {
   const error = errorArchivo(archivo);
   if (error) throw new Error(error);
   const cuerpo = new FormData();

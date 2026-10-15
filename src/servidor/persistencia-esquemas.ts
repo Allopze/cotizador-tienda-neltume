@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { descuentoEsManual, MAX_DESDE_PUERTAS } from '../negocio/descuento-cantidad';
 import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
-import { MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
+import { LARGO_OBSERVACION_ITEM, MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
 import { leerEstadoOperativo } from '../negocio/estado';
 
 const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
@@ -48,7 +48,7 @@ const solicitudSchema = z.object({
   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
   medidaPorDefecto: z.boolean().optional(),
   descripcion: z.string().max(300).nullable().optional(),
-  observaciones: z.string().max(1000).nullable().optional(),
+  observaciones: z.string().max(LARGO_OBSERVACION_ITEM).nullable().optional(),
   modeloOriginal: z.string().max(300).nullable().optional(),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: z.string().max(300).nullable().optional(),
@@ -97,7 +97,7 @@ const montosSchema = z.object({
       precioCliente: z.number().int().optional(),
       margenPersonalizado: z.boolean().optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
-      observaciones: z.string().max(1000).nullable().optional(),
+      observaciones: z.string().max(LARGO_OBSERVACION_ITEM).nullable().optional(),
       descripcionDocumento: z.string().max(300).nullable().optional(),
       total: z.number().int(),
       precioUnitarioPersonalizado: z.number().int().positive().max(100_000_000).nullable().optional(),

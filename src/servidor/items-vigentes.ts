@@ -42,7 +42,7 @@ export interface ItemsVigentes {
 
 /**
  * Qué ítems se valorizan con el catálogo vigente y cuáles quedan pendientes. Es una sola regla para el cálculo de
- * la cotización (`Servicio.recalcular`) y para el bulto que se cotiza en Starken (`starken-servicio.ts`): así la
+ * la cotización (`Servicio.calcular`) y para el bulto que se cotiza en Starken (`starken-servicio.ts`): así la
  * huella que se firma con la tarifa es la que se comprueba al aplicarla, y las dos no pueden divergir. No cambia
  * la cotización.
  */

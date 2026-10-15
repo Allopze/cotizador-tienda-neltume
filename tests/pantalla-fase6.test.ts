@@ -17,8 +17,9 @@ function mapa(archivo: string, marca: string) {
 }
 
 describe('«Volver al paso anterior»', () => {
-  const pantalla = mapa('src/app/seguimiento-operacion.tsx', 'const ANTERIOR');
-  const servidor = mapa('src/servidor/servicio.ts', 'const atras');
+  // La pantalla y el servidor comparten el mapa de src/negocio/estado.ts.
+  const pantalla = mapa('src/negocio/estado.ts', 'const PASO_ANTERIOR');
+  const servidor = mapa('src/negocio/estado.ts', 'const PASO_ANTERIOR');
 
   it('la pantalla anuncia el mismo destino que aplica el servidor', () => {
     expect(Object.keys(pantalla).length).toBeGreaterThanOrEqual(6);

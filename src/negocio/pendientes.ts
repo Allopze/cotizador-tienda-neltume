@@ -52,7 +52,7 @@ export interface PreguntaPendiente {
 }
 
 /** Valor de la opción que intercambia el ancho y el alto de una puerta (ver `cambiosRespuesta`). */
-export const INTERCAMBIAR = 'intercambiar';
+const INTERCAMBIAR = 'intercambiar';
 
 export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
   modelo: 'Modelo',
@@ -64,7 +64,7 @@ export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
 };
 
 /** Qué es una escuadría, en palabras de quien cotiza: el mismo texto de ayuda de la pantalla de Catálogo. */
-export const EXPLICA_ESCUADRIA = 'Escuadría: grosor por ancho de la pieza.';
+const EXPLICA_ESCUADRIA = 'Escuadría: grosor por ancho de la pieza.';
 
 const CANTIDAD = { min: 1, max: 10000, paso: 1, unidad: null } as const;
 /** Familia con que se lee cada dimensión: el ancho es siempre de puerta; el alto o largo, de su familia. */

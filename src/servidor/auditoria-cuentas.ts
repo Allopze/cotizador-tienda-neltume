@@ -28,7 +28,7 @@ export interface CambioCuenta {
 
 export const ACTOR_TERMINAL = 'terminal';
 export const ACTOR_PRIMER_ARRANQUE = 'primer arranque';
-export const LIMITE_CAMBIOS_CUENTAS = 50;
+const LIMITE_CAMBIOS_CUENTAS = 50;
 
 /** Registra un cambio ya hecho. Si el registro falla se anota en el servidor: el cambio de la cuenta no se revierte. */
 export function registrarCambioCuenta(

@@ -76,7 +76,7 @@ export interface ConfiguracionCatalogo {
  * «Huilo Huilo en Mara» es la puerta sólida y «enchapada en Mara» es MARA ENCHAPADA. «Pino finger» nunca es
  * PINO OREGON (cuyo alias «pino» solo vale sin «finger»: los alias se comparan enteros).
  */
-export const MADERAS_ENCHAPADAS: MaderaConfigurada[] = [
+const MADERAS_ENCHAPADAS: MaderaConfigurada[] = [
   { nombre: 'PREPINTADA', codigo: 'PP', alias: ['PREPINTADO', 'PREPINTADAS', 'PREPINTADOS'] },
   {
     nombre: 'MARA ENCHAPADA',
@@ -326,7 +326,7 @@ export function conMaderasEnchapadas(configuracion: ConfiguracionCatalogo): Conf
  * Claves en singular de una clave de `normalizarCatalogo`: sin la «s» final y, si termina en «es», también sin ella
  * («MARCOS» → «MARCO»; «PANELES» → «PANELE», «PANEL»). Claves cortas no se tocan.
  */
-export function singularesCatalogo(clave: string) {
+function singularesCatalogo(clave: string) {
   return [
     ...(clave.length > 3 && clave.endsWith('S') ? [clave.slice(0, -1)] : []),
     ...(clave.length > 4 && clave.endsWith('ES') ? [clave.slice(0, -2)] : []),

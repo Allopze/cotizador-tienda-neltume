@@ -135,7 +135,7 @@ export interface ClienteDirectorio extends ClienteAnterior {
 }
 
 /** Clientes por página del directorio. */
-export const POR_PAGINA_DIRECTORIO = 30;
+const POR_PAGINA_DIRECTORIO = 30;
 /** Cotizaciones que se muestran por cliente; el resto se busca en el Historial. */
 export const MAX_COTIZACIONES_CLIENTE = 10;
 

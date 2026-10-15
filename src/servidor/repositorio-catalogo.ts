@@ -167,7 +167,7 @@ const claveProducto = (producto: Pick<Producto, 'modelo' | 'madera' | 'medida' |
   `${normalizar(producto.modelo)}|${normalizar(producto.madera)}|${normalizarMedida(producto.medida)}|${Math.round(producto.largo * 1_000_000)}`;
 
 /** Una importación que deja menos de esta fracción de los productos anteriores de su origen exige `forzar`. */
-export const MINIMO_PRODUCTOS_CONSERVADOS = 0.9;
+const MINIMO_PRODUCTOS_CONSERVADOS = 0.9;
 
 /**
  * Posición global de un producto al listar: primero la planilla principal, luego las demás planillas y al
@@ -294,9 +294,11 @@ export function guardarCatalogo(
         )
         .all(origen) as EdicionManual[];
       const previo: CopiaPlanilla = { ...meta, origen, productos: repo.importados(origen), ediciones };
+      // La columna `version` queda vacía: volver atrás se valida con la versión vigente y la fecha de la última
+      // importación (`deshacerImportacion`), no con la que tenía el catálogo antes de importar.
       db.prepare(
-        'INSERT INTO catalogo_anterior VALUES (?, ?, ?) ON CONFLICT(origen) DO UPDATE SET contenido=excluded.contenido, version=excluded.version',
-      ).run(origen, JSON.stringify(previo), repo.version ?? '');
+        "INSERT INTO catalogo_anterior VALUES (?, ?, '') ON CONFLICT(origen) DO UPDATE SET contenido=excluded.contenido, version=''",
+      ).run(origen, JSON.stringify(previo));
     } else {
       // Sin productos previos no hay a qué volver: una copia de antes ya no corresponde a esta importación.
       db.prepare('DELETE FROM catalogo_anterior WHERE origen = ?').run(origen);

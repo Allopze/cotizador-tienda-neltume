@@ -279,11 +279,7 @@ export function CampoEditable({
     onKeyDown: teclado,
   } as const;
   return (
-    <form
-      className={`campo editando ${className ?? ''}`}
-      onSubmit={enviar}
-      style={sugerir ? { position: 'relative' } : undefined}
-    >
+    <form className={`campo editando ${sugerir ? 'con-sugerencias ' : ''}${className ?? ''}`} onSubmit={enviar}>
       <label htmlFor={id} className={etiquetaOculta ? 'sr-only' : 'campo-etiqueta'}>
         {etiqueta}
       </label>

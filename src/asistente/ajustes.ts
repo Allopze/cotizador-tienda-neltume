@@ -32,10 +32,6 @@ export function ajustesPredeterminados(modeloCommandCode?: string): AjustesIA {
   return { commandcode: { modelo: modeloCommandCode?.trim() || MODELO_COMMANDCODE_PREDETERMINADO } };
 }
 
-export function nombreModeloActivo(a: AjustesIA): string {
-  return a.commandcode.modelo;
-}
-
 /** Modelo de respaldo vigente; null si no hay o si es el mismo modelo principal. */
 export function modeloRespaldo(a: AjustesIA): string | null {
   const respaldo = a.commandcode.respaldo === undefined ? MODELO_RESPALDO_PREDETERMINADO : a.commandcode.respaldo;

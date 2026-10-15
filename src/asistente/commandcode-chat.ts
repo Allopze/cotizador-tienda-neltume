@@ -70,7 +70,7 @@ export async function interpretarChat(
  * Texto de un rechazo 4xx para el registro del servidor (errorProveedor guarda sus primeros 300 caracteres). Si el
  * proveedor repitiera la clave en el cuerpo, se oculta; un cuerpo ilegible no impide informar el error.
  */
-export async function cuerpoRechazo(response: Response, apiKey: string): Promise<string | undefined> {
+async function cuerpoRechazo(response: Response, apiKey: string): Promise<string | undefined> {
   if (response.status < 400 || response.status >= 500) return undefined;
   try {
     const texto = await response.text();

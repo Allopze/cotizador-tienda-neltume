@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState, type DragEvent, type FormEvent } from 'react';
+import { pesos } from '@/negocio/precios';
 import { useConfirmacion } from '../dialogo';
 import { fechaCorta, plural } from '../formato';
 import { codigoDe, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
@@ -54,7 +55,6 @@ type Deshacer = PlanillaAnterior & { importada: string; versionCatalogo: string 
 
 const MAXIMO_MB = 20;
 const cantidad = (n: number) => new Intl.NumberFormat('es-CL').format(n);
-const pesos = (n: number) => '$' + new Intl.NumberFormat('es-CL', { maximumFractionDigits: 0 }).format(n);
 const tamano = (bytes: number) =>
   bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toLocaleString('es-CL', { maximumFractionDigits: 1 })} MB`;
 /** Diferencia de precio: «+4,2 %», «−1 %». */

@@ -310,30 +310,31 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 
 ## 10. Mantenibilidad
 
-- **`servicio.ts` (2.913 líneas):**
-  - «reemplazar serie» está duplicado;
-  - `pagado = reduce(...)` se repite cuatro veces;
-  - `recalcular` sigue mutando `solicitudes`.
-- **Reglas duplicadas que pueden divergir:**
-  - pasos anteriores de la operación (`seguimiento-operacion.tsx:23-31` frente a `servicio.ts:945-947`);
-  - ~~familia del ítem (defecto 10)~~ (`8152198`);
-  - ~~`leerMetros` frente a `leerMedida`~~ (`8152198`);
-  - ~~el rango del precio en `items-vigentes.ts:128-134` frente a `precios.ts:221-234`~~ (`6c7a158`, `rangoPrecio`);
-  - ~~topes 0,3/3/6 escritos a mano en la ruta~~ (`8152198`, `rangoMedidas`);
-  - ~~el texto del rango en tres lugares~~ (`8152198`, `errorMedida`);
-  - `LOCK_VIGENTE_MS` frente a `stale: 30000`;
-  - el `sed` sobre «Respaldo en…» en dos scripts.
+Cerrado en la fase 9 (commit de refactor), salvo lo indicado:
+
+- ~~`servicio.ts` de 2.913 líneas~~: queda en 1.755, con `acciones.ts` (tipos de la API), `edicion.ts` (`aplicarCambiosItems`, `aplicarFlete`, `aplicarDespacho`, `textoActividad`) y `chat.ts` (`procesarChat`).
+  - ~~«reemplazar serie» duplicado~~: `reemplazarSerie`.
+  - ~~`pagado = reduce(...)` cuatro veces~~: `totalPagado` de `estado.ts`.
+  - ~~`recalcular` muta `solicitudes`~~: `calcular(q)` es puro y `recalcular` devuelve las solicitudes normalizadas.
+- **Reglas duplicadas:**
+  - ~~pasos anteriores de la operación~~: `PASO_ANTERIOR` en `estado.ts`, usado por servidor y pantalla.
+  - ~~familia del ítem (defecto 10)~~ (`8152198`).
+  - ~~`leerMetros` frente a `leerMedida`~~ (`8152198`).
+  - ~~rango del precio duplicado~~ (`6c7a158`, `rangoPrecio`).
+  - ~~topes 0,3/3/6 a mano~~ y ~~texto del rango en tres lugares~~ (`8152198`).
+  - ~~`LOCK_VIGENTE_MS` frente a `stale: 30000`~~: `LOCK_ESTADO_VIGENTE_MS` en `almacen.ts`.
+  - ~~`sed` sobre «Respaldo en…»~~: `npm run respaldar -- --json`; los scripts conservan la lectura del texto mientras haya contenedores viejos.
 - **Exports y datos sin uso:**
-  - exports solo para pruebas o sin uso (`RANGO_METROS`, `lineasVigentes`, `descripcionGenerada`, `rangoCampoMedida`, `sinMontos`, `cifraRespaldada`, entre otros);
-  - la columna `catalogo_anterior.version`, que nunca se lee;
-  - ~~el rechazo `medida_implausible` sin `familia`~~ (`8152198`).
+  - ~~exports sin uso~~: unos 8 borrados y unos 70 dejaron de exportarse; quedan exportados solo los que usan las pruebas.
+  - ~~`catalogo_anterior.version`~~: ya no se escribe (la columna queda, sin migración).
+  - ~~`medida_implausible` sin `familia`~~ (`8152198`).
 - **Pantalla y estilos:**
-  - `ContextoDocumentos` en vez de props;
-  - estilo en línea en `campo-editable.tsx:285`;
-  - tres formateadores de pesos;
-  - observación del ítem con 500 o 1000 caracteres según la pantalla;
-  - nueve hojas CSS con `tactil.css` e `!important`.
-- **Repositorio:** siete ramas ya fusionadas sin borrar.
+  - ~~`ContextoDocumentos`~~: props.
+  - ~~estilo en línea en `campo-editable.tsx`~~: clase `con-sugerencias`.
+  - ~~tres formateadores de pesos~~: `pesos` de `precios.ts`.
+  - ~~observación de 500 o 1000~~: `LARGO_OBSERVACION_ITEM = 1000` en todas partes.
+  - `tactil.css`: se quitaron reglas redundantes. Se conserva el `!important` de 16 px y 44 px en campos, porque hay selectores con clase que los bajarían (zoom en iOS y blancos chicos); queda documentado en la hoja. Los dos `color: var(--warm-text) !important` de `cotizacion.css` siguen pendientes de una revisión visual.
+- **Repositorio:** siete ramas ya fusionadas sin borrar. **Pendiente de tu confirmación.**
 
 ## 11. Excluido por alcance
 

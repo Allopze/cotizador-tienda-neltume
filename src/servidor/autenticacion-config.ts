@@ -36,7 +36,7 @@ const produccion = () => process.env.NODE_ENV === 'production';
  *   pocos intentos fallidos de cualquiera (5 en 15 minutos) bloquean el inicio de sesión de todas por un rato.
  *   El límite por correo (MAX_FALLOS_POR_CORREO) sigue aplicándose a cada cuenta.
  */
-export const CABECERAS_IP_CLIENTE = ['cf-connecting-ip', 'x-real-ip', 'x-forwarded-for', 'ninguna'] as const;
+const CABECERAS_IP_CLIENTE = ['cf-connecting-ip', 'x-real-ip', 'x-forwarded-for', 'ninguna'] as const;
 export type CabeceraIpCliente = (typeof CABECERAS_IP_CLIENTE)[number];
 
 export function cabeceraIpCliente(valor = process.env.NELTUME_IP_HEADER): CabeceraIpCliente {
@@ -51,7 +51,7 @@ export function cabeceraIpCliente(valor = process.env.NELTUME_IP_HEADER): Cabece
 // Las cuentas se gestionan desde rutas propias y scripts/usuarios.ts; el plugin admin no se expone por HTTP.
 export const esRutaAdminAuth = (pathname: string) => /^\/api\/auth\/+admin(\/|$)/i.test(pathname);
 
-export function secretoAutenticacion() {
+function secretoAutenticacion() {
   const secreto = process.env.BETTER_AUTH_SECRET || '';
   // En producción validarConfiguracionAutenticacion() rechaza cada solicitud sin secreto; aquí no se
   // lanza para que `next build` pueda evaluar los módulos sin variables de ejecución.
@@ -177,7 +177,7 @@ function hooksInicioSesion(database: Database.Database) {
   };
 }
 
-export function opcionesAutenticacion(
+function opcionesAutenticacion(
   database: Database.Database,
 ): BetterAuthOptions & { plugins: ReturnType<typeof admin>[] } {
   const baseURL = process.env.BETTER_AUTH_URL || 'http://127.0.0.1:3000';

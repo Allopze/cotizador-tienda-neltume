@@ -74,7 +74,7 @@ export const parametrosVacios = (): ParametrosPaquete => ({
 });
 const positivo = (n: number | null | undefined): n is number =>
   typeof n === 'number' && Number.isFinite(n) && n > 0;
-export const parametrosCompletos = (p: Partial<ParametrosFamilia> | undefined) =>
+const parametrosCompletos = (p: Partial<ParametrosFamilia> | undefined) =>
   positivo(p?.kg) && positivo(p?.espesorCm);
 
 /**

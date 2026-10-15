@@ -34,7 +34,7 @@ const fleteEsperado = z
  * Categorías de los avisos al evaluar: las del servicio (`CategoriaAviso`) más `precio` y `flete`, que el servicio
  * deja en `otros`. Ver `categoriaEvaluada`.
  */
-export const CATEGORIAS_AVISO = [
+const CATEGORIAS_AVISO = [
   'campo',
   'palabra',
   'cifras',

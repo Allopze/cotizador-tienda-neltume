@@ -4,7 +4,10 @@
 @media (pointer: coarse) {
   /* Todos los campos, no una lista: cada formulario nuevo quedaba fuera y hacía zoom al tocarlo. Con
      !important porque es un piso de accesibilidad: selectores con clase (.workflow-comment textarea,
-     .composer textarea…) le ganaban a esta regla de elemento y volvían a 12–14px y 36px. */
+     .composer textarea…) le ganaban a esta regla de elemento y volvían a 12–14px y 36px. Hoy siguen haciéndolo,
+     sin !important, .manual-editor y .pendiente-entrada (--fs-sm), .item-select-field (34px) y .workflow-payment /
+     .workflow-comment (38px), entre otros: no se puede quitar. Cubre también los campos de .campo,
+     .pendiente-entrada e .history-fechas, que por eso no se repiten en la lista de 44px de abajo. */
   input:not([type='checkbox']):not([type='radio']):not([type='range']):not([type='file']):not(
       [type='hidden']
     ),
@@ -38,11 +41,7 @@
   .campo-editar,
   .campo-guardar,
   .campo-cancelar,
-  .history-duplicar,
-  .campo input,
-  .pendiente-entrada input,
-  .pendiente-entrada select,
-  .history-fechas input {
+  .history-duplicar {
     min-height: 44px;
   }
   .config-quitar {

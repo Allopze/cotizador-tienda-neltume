@@ -14,7 +14,7 @@ export class ErrorIA extends Error {
   }
 }
 /** Caracteres del cuerpo de un rechazo 4xx que se guardan para el registro del servidor. */
-export const LARGO_CUERPO_TECNICO = 300;
+const LARGO_CUERPO_TECNICO = 300;
 
 /**
  * Detalle técnico de un rechazo 4xx: el estado y el comienzo del cuerpo (que suele nombrar el modelo o la opción

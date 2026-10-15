@@ -33,8 +33,13 @@ echo "$*" >> "$FALSO_LOG"
 case "$*" in
   "compose version") exit 0 ;;
   "compose ps --status running -q cotizador") [ "\${FALSO_CORRIENDO:-1}" = 1 ] && echo abc123 ; exit 0 ;;
-  *"npm run --silent respaldar")
+  *"npm run --silent respaldar"*)
     [ "\${FALSO_RESPALDO:-0}" = 0 ] || exit 1
+    # Un contenedor anterior a --json (FALSO_RESPALDO_TEXTO=1) lo ignora y escribe el texto para personas.
+    case "$*" in
+      *" --json") [ "\${FALSO_RESPALDO_TEXTO:-0}" = 0 ] &&
+        echo '{"carpeta":"${RESPALDO}","cotizaciones":3,"pdf":1,"referencias":0}' && exit 0 ;;
+    esac
     echo "Respaldo en ${RESPALDO}: 3 cotizaciones, 1 PDF, 0 referencias del cliente." ;;
   "compose build"*) exit "\${FALSO_BUILD:-0}" ;;
   "compose up"*) exit "\${FALSO_UP:-0}" ;;
@@ -288,7 +293,7 @@ describe('scripts/actualizar.sh', () => {
     const { actualizar, zip, llamadas } = await instalacion();
     const r = actualizar([zip], { FALSO_CORRIENDO: '0' });
     expect(r.status, r.stderr).toBe(0);
-    expect(llamadas()).toContain('compose run --rm -T cotizador npm run --silent respaldar');
+    expect(llamadas()).toContain('compose run --rm -T cotizador npm run --silent respaldar -- --json');
   });
 
   it('si la imagen no se construye deja los archivos como estaban', async () => {
@@ -375,7 +380,7 @@ describe('scripts/respaldo-diario.sh', () => {
     expect(r.status, r.stderr).toBe(0);
     const nombre = RESPALDO.split('/').at(-1)!;
     expect(llamadas()).toEqual([
-      'compose exec -T cotizador npm run --silent respaldar',
+      'compose exec -T cotizador npm run --silent respaldar -- --json',
       'compose exec -T cotizador npm run --silent limpiar-borradores -- --confirmar',
       `compose cp cotizador:${RESPALDO} ${destino}/.entrante-${nombre}/`,
     ]);
@@ -385,6 +390,19 @@ describe('scripts/respaldo-diario.sh', () => {
       'cotizador-2026-10-14T21-00-00-000Z',
     ]);
     expect(readFileSync(join(destino, nombre, 'pdf/cotizacion-1.pdf'), 'utf8')).toBe('pdf emitido');
+  });
+
+  it('lee la carpeta de la línea JSON y, de un contenedor anterior a --json, del texto «Respaldo en …»', async () => {
+    const { correr, inst, directorio: dir } = await instalacion();
+    const nombre = RESPALDO.split('/').at(-1)!;
+    for (const [env, destino] of [
+      [{}, join(dir, 'disco-json')],
+      [{ FALSO_RESPALDO_TEXTO: '1' }, join(dir, 'disco-texto')],
+    ] as const) {
+      const r = correr([join(inst, 'scripts/respaldo-diario.sh'), destino], env);
+      expect(r.status, r.stderr).toBe(0);
+      expect(readFileSync(join(destino, nombre, 'pdf/cotizacion-1.pdf'), 'utf8')).toBe('pdf emitido');
+    }
   });
 
   it('enlaza con la copia anterior lo que no cambió (rsync --link-dest): los PDF no se duplican', async () => {

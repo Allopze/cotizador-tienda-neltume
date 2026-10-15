@@ -93,7 +93,7 @@ export interface ConfiguracionNegocio {
 
 const leerEntorno = (clave: string) => process.env[clave]?.trim() || null;
 
-export const CORREO_PREDETERMINADO_NEGOCIO = 'neltume.co@gmail.com';
+const CORREO_PREDETERMINADO_NEGOCIO = 'neltume.co@gmail.com';
 
 export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
   return {

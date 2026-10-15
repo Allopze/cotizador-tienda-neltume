@@ -2,6 +2,8 @@
 // pantalla. Sin dependencias, para que también los importe el navegador. Ver docs/reglas-negocio.md.
 
 export const DESCUENTO_MAXIMO = 50;
+/** Largo máximo de la observación de un ítem: el mismo en todas las pantallas, la API, el asistente y la base. */
+export const LARGO_OBSERVACION_ITEM = 1000;
 export const rangoMedidas = (familia: string) => ({ min: 0.3, max: familia === 'PUERTA' ? 3 : 6 });
 
 /** Dimensión de un ítem: el ancho es de puerta; el alto o largo, de la familia del producto. */

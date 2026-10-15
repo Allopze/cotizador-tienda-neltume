@@ -30,6 +30,14 @@ case "$conservar" in
 esac
 [ "$conservar" -ge 1 ] || fallar 'la cantidad a conservar debe ser al menos 1.'
 
+# Carpeta del respaldo según la salida de `npm run respaldar -- --json` (una línea JSON con "carpeta").
+carpetaRespaldo() {
+  c="$(printf '%s\n' "$1" | sed -n 's/^{.*"carpeta":"\([^"]*\)".*}$/\1/p' | tail -n 1)"
+  # Un contenedor con la versión anterior a --json lo ignora y escribe el texto «Respaldo en <carpeta>: …».
+  [ -n "$c" ] || c="$(printf '%s\n' "$1" | sed -n 's/^Respaldo en \([^:]*\):.*/\1/p' | tail -n 1)"
+  printf '%s' "$c"
+}
+
 instalacion="$(cd "$(dirname "$0")/.." && pwd)"
 [ -f "$instalacion/compose.yaml" ] || fallar "no encuentro compose.yaml en $instalacion."
 command -v rsync >/dev/null 2>&1 || fallar 'falta el comando rsync en el servidor.'
@@ -40,9 +48,9 @@ case "$destino/" in
 esac
 
 cd "$instalacion"
-salida="$(docker compose exec -T cotizador npm run --silent respaldar)" || fallar 'no se pudo respaldar.'
+salida="$(docker compose exec -T cotizador npm run --silent respaldar -- --json)" || fallar 'no se pudo respaldar.'
 printf '%s\n' "$salida"
-carpeta="$(printf '%s\n' "$salida" | sed -n 's/^Respaldo en \([^:]*\):.*/\1/p' | tail -n 1)"
+carpeta="$(carpetaRespaldo "$salida")"
 [ -n "$carpeta" ] || fallar 'no se encontró la carpeta del respaldo en la salida de npm run respaldar.'
 
 # Un fallo de la limpieza no invalida el respaldo: se informa y se sigue con la copia.

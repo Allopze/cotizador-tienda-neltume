@@ -197,7 +197,7 @@ describe('medidas especiales por escalones del catálogo', () => {
     expect(elegido(accesorio('Marco', '2x4', 2.45))).toEqual(['MAR-M-2X4-F', null, 'siguiente']);
     // La regla es solo de marcos: las piezas T bajo su kit menor siguen sin precio.
     expect(accesorio('Piezas T', '2x4', 2.45)).toMatchObject(noDisponible('alto'));
-    // Sobre 3 m ya es una medida implausible (RANGO_METROS): tampoco tiene precio.
+    // Sobre 3 m no hay kit mayor: tampoco tiene precio.
     expect(accesorio('Marco', '2x4', 3.1)).toMatchObject({
       ok: false,
       rechazo: { tipo: 'medida_no_disponible', campo: 'alto' },

@@ -6,10 +6,10 @@ import {
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
+  PASO_ANTERIOR,
   rangoFechaOperacion,
   sinTransportista,
   type Cotizacion,
-  type EstadoOperativo,
 } from '@/negocio/estado';
 import { leerPesos } from '@/negocio/cifras';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
@@ -19,16 +19,6 @@ import { useConfirmacion } from './dialogo';
 import { useRetroceso } from './dialogos-cotizacion';
 import { fechaLarga, numeroCotizacion } from './formato';
 import { SelectorDesplegable } from './selector-desplegable';
-
-/** Paso anterior de cada estado operativo; el mismo mapa que aplica `retroceder_operacion` en servicio.ts. */
-const ANTERIOR: Partial<Record<EstadoOperativo, EstadoOperativo>> = {
-  completada: 'despachada',
-  despachada: 'lista_despacho',
-  lista_despacho: 'pagada',
-  pagada: 'en_produccion',
-  saldo_pendiente: 'en_produccion',
-  en_produccion: 'pedido_generado',
-};
 
 interface Props {
   actual: Cotizacion;
@@ -116,7 +106,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   }
   const operar = (paso: string, titulo: string, efecto: string, aceptar: string) =>
     void confirmarPaso(titulo, efecto, aceptar, { tipo: 'operacion', paso });
-  const previo = aprobada ? ANTERIOR[operacionActual] : undefined;
+  const previo = aprobada ? PASO_ANTERIOR[operacionActual] : undefined;
   async function volverAtras() {
     if (!previo || ocupado) return;
     const r = await pedirRetroceso({ desde: etiquetaOperativo[operacionActual], hasta: etiquetaOperativo[previo] });

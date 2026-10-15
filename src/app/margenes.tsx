@@ -23,7 +23,7 @@ const ORIGEN: Record<OrigenMargen, string> = {
 };
 
 /** «Ganancia estándar: 55 % · Ganancia aplicada: 42 % — cambiada a mano en esta línea». Márgenes en fracción. */
-export const textoMargen = (estandar: number, aplicado: number, origen: OrigenMargen) =>
+const textoMargen = (estandar: number, aplicado: number, origen: OrigenMargen) =>
   `Ganancia estándar: ${porcentaje(margenAPorcentaje(estandar))} · Ganancia aplicada: ${porcentaje(margenAPorcentaje(aplicado))}${ORIGEN[origen]}`;
 
 /** Lo que dice una línea de su margen cuando no se puede editar (cotización aprobada o anulada). */

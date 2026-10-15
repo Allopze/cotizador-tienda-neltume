@@ -5,9 +5,11 @@ import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from 
 import { carpetaReferencias } from '../src/servidor/archivos-referencia';
 import { ARCHIVO_REFERENCIA } from '../src/negocio/personalizados';
 
-// Uso: npm run respaldar -- [--destino ruta] [--conservar 30]
+// Uso: npm run respaldar -- [--destino ruta] [--conservar 30] [--json]
 // Copia en caliente la base (API de respaldo de SQLite, segura con el servidor en marcha), los PDF
 // emitidos, las referencias del cliente de cada ítem y config/catalogo.json a <destino>/<fecha>/. Conviene que el destino esté en otro disco.
+// Con --json el resultado sale en una sola línea JSON ({"carpeta", "cotizaciones", "pdf", "referencias"}): es lo que
+// leen respaldo-diario.sh, actualizar.sh y el despliegue para saber qué carpeta copiar; sin él, un texto para personas.
 const args = process.argv.slice(2);
 const valor = (nombre: string) => {
   const i = args.indexOf(nombre);
@@ -15,6 +17,7 @@ const valor = (nombre: string) => {
 };
 const destino = resolve(valor('--destino') ?? process.env.NELTUME_RESPALDO_DIR ?? 'respaldos');
 const conservar = Number(valor('--conservar') ?? 30);
+const json = args.includes('--json');
 const PREFIJO = 'cotizador-';
 
 async function main() {
@@ -78,7 +81,9 @@ async function main() {
     await rm(join(destino, vieja), { recursive: true, force: true });
 
   console.log(
-    `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF, ${archivosReferencia} referencias del cliente.`,
+    json
+      ? JSON.stringify({ carpeta, cotizaciones, pdf: documentos, referencias: archivosReferencia })
+      : `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF, ${archivosReferencia} referencias del cliente.`,
   );
 }
 

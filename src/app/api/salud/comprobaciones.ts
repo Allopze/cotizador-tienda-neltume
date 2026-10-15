@@ -23,18 +23,18 @@ export interface Comprobacion {
 
 const MB = 1024 * 1024;
 /** Bajo este espacio libre SQLite empieza a fallar al guardar: el healthcheck se pone en rojo. */
-export const ESPACIO_CRITICO = 256 * MB;
+const ESPACIO_CRITICO = 256 * MB;
 /** Bajo este, aviso: conviene limpiar o ampliar antes de llegar al crítico. */
-export const ESPACIO_AVISO = 2048 * MB;
+const ESPACIO_AVISO = 2048 * MB;
 const HORA = 60 * 60 * 1000;
 /** El respaldo es diario: más de dos días sin uno indica que el cron dejó de correr. */
-export const RESPALDO_VENCIDO_MS = 48 * HORA;
+const RESPALDO_VENCIDO_MS = 48 * HORA;
 /** Los feriados se sincronizan a diario; una semana sin lograrlo merece revisarse. */
-export const FERIADOS_VENCIDOS_MS = 7 * 24 * HORA;
+const FERIADOS_VENCIDOS_MS = 7 * 24 * HORA;
 
 const textoError = (error: unknown) => (error instanceof Error ? error.message : String(error)).slice(0, 300);
 
-export function comprobarBase(): Comprobacion {
+function comprobarBase(): Comprobacion {
   try {
     const db = abrirBaseDatos();
     db.prepare('SELECT 1').get();
@@ -52,7 +52,7 @@ export function comprobarBase(): Comprobacion {
   }
 }
 
-export function comprobarAutenticacion(): Comprobacion {
+function comprobarAutenticacion(): Comprobacion {
   try {
     validarConfiguracionAutenticacion();
     return { estado: 'ok', detalle: 'La configuración de inicio de sesión es válida.' };
@@ -61,7 +61,7 @@ export function comprobarAutenticacion(): Comprobacion {
   }
 }
 
-export function comprobarDisco(directorio = directorioDatos()): Comprobacion {
+function comprobarDisco(directorio = directorioDatos()): Comprobacion {
   try {
     const { bavail, bsize } = statfsSync(directorio);
     const libres = bavail * bsize;
@@ -81,13 +81,13 @@ export function comprobarDisco(directorio = directorioDatos()): Comprobacion {
 }
 
 /** Plazo para que Chromium arranque y abra una página: menos que el timeout del healthcheck de Compose (10 s). */
-export const PLAZO_CHROMIUM_SALUD_MS = 8_000;
+const PLAZO_CHROMIUM_SALUD_MS = 8_000;
 /**
  * Lanzar Chromium cuesta un par de segundos y memoria: el healthcheck corre cada 30 s, así que un arranque exitoso se
  * recuerda 10 minutos. Una falla se recuerda solo 1 minuto, para que se note pronto cuando se corrige.
  */
-export const CHROMIUM_OK_VIGENTE_MS = 10 * 60 * 1000;
-export const CHROMIUM_FALLA_VIGENTE_MS = 60 * 1000;
+const CHROMIUM_OK_VIGENTE_MS = 10 * 60 * 1000;
+const CHROMIUM_FALLA_VIGENTE_MS = 60 * 1000;
 
 interface ArranqueChromium {
   ruta: string;
@@ -97,12 +97,6 @@ interface ArranqueChromium {
 }
 let ultimoArranque: ArranqueChromium | null = null;
 let arranqueEnCurso: Promise<ArranqueChromium> | null = null;
-
-/** Solo pruebas: olvida el último arranque de Chromium comprobado. */
-export function olvidarArranqueChromium() {
-  ultimoArranque = null;
-  arranqueEnCurso = null;
-}
 
 /** Arranca Chromium de verdad (el mismo navegador compartido de los PDF) y abre una página, con plazo corto. */
 async function arrancarChromium(ruta: string, ahora: number): Promise<ArranqueChromium> {
@@ -134,7 +128,7 @@ async function arrancarChromium(ruta: string, ahora: number): Promise<ArranqueCh
  * una actualización que no lo arranca no pasa `docker compose up --wait`). El arranque se comprueba como mucho cada
  * 10 minutos (ver CHROMIUM_OK_VIGENTE_MS).
  */
-export async function comprobarChromium(ahora = Date.now()): Promise<Comprobacion> {
+async function comprobarChromium(ahora = Date.now()): Promise<Comprobacion> {
   const ruta = chromiumPath();
   if (!ruta) return { estado: 'error', detalle: 'No se encontró Chromium: no se pueden generar los PDF.' };
   try {
@@ -158,7 +152,7 @@ export async function comprobarChromium(ahora = Date.now()): Promise<Comprobacio
  * Despacho con Starken: es opcional, así que sin configurar no es un aviso. Solo dice si hay credenciales completas
  * y ciudad de origen; nunca las muestra ni llama a Starken.
  */
-export function comprobarStarken(): Comprobacion {
+function comprobarStarken(): Comprobacion {
   const credenciales = leerEntornoStarken() !== null;
   const algunaVariable = Object.keys(process.env).some((k) => k.startsWith('STARKEN_') && process.env[k]?.trim());
   let origen = false;
@@ -185,7 +179,7 @@ export function comprobarStarken(): Comprobacion {
   return { estado: 'ok', detalle: 'Starken está configurado.', configurado: true };
 }
 
-export function comprobarIA(): Comprobacion {
+function comprobarIA(): Comprobacion {
   try {
     const { configurada, fuente } = estadoClaveCommandCode();
     if (configurada) return { estado: 'ok', detalle: 'La clave de IA está configurada y se puede leer.', fuente };
@@ -202,7 +196,7 @@ export function comprobarIA(): Comprobacion {
   }
 }
 
-export function comprobarFeriados(ahora = new Date()): Comprobacion {
+function comprobarFeriados(ahora = new Date()): Comprobacion {
   if (!sincronizacionActiva())
     return { estado: 'ok', detalle: 'Sincronización de feriados desactivada (NELTUME_FERIADOS_SYNC=0).' };
   try {
@@ -242,7 +236,7 @@ function fechaRespaldo(directorio: string, nombre: string) {
   return Number.isNaN(fecha) ? statSync(join(directorio, nombre)).mtimeMs : fecha;
 }
 
-export function comprobarRespaldo(ahora = new Date()): Comprobacion {
+function comprobarRespaldo(ahora = new Date()): Comprobacion {
   const directorio = resolve(/* turbopackIgnore: true */ process.env.NELTUME_RESPALDO_DIR ?? 'respaldos');
   try {
     const carpetas = readdirSync(directorio, { withFileTypes: true })

@@ -241,7 +241,7 @@ function FormEmision({
           </div>
         )}
         <p>
-          Total a emitir: <strong>{new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(datos.total)}</strong> (IVA incluido).
+          Total a emitir: <strong>{pesos(datos.total)}</strong> (IVA incluido).
         </p>
         {datos.reemplaza ? (
           <p>

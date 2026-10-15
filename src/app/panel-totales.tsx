@@ -1,5 +1,5 @@
 'use client';
-import { createContext, use, useSyncExternalStore } from 'react';
+import { useSyncExternalStore } from 'react';
 import type { Cotizacion } from '@/negocio/estado';
 import { conDosDecimales, leerPorcentaje } from '@/negocio/cifras';
 import {
@@ -159,7 +159,6 @@ export interface AccionesDocumentos {
   /** Solo el PDF de la cotización se comparte; la nota de pedido es para fábrica. */
   compartible: string | null;
 }
-export const ContextoDocumentos = createContext<AccionesDocumentos | null>(null);
 
 let compartirArchivos: boolean | null = null;
 /** Si el navegador comparte archivos (Web Share API con `files`): en general, teléfonos y tabletas. */
@@ -184,6 +183,7 @@ export function Documento({
   etiqueta = 'Descargar cotización',
   anulado,
   descripcion = nombre,
+  acciones,
 }: {
   nombre: string;
   /** Cómo se nombra el documento para lectores de pantalla («Ver cotización N° 325…»). */
@@ -193,8 +193,9 @@ export function Documento({
   descargar: (archivo: string) => void;
   etiqueta?: string;
   anulado?: boolean;
+  /** Las del cotizador; sin ellas (otras pantallas), «Ver» sigue el enlace normal y no se ofrece «Compartir». */
+  acciones?: AccionesDocumentos | null;
 }) {
-  const acciones = use(ContextoDocumentos);
   // Falso en el servidor y al hidratar: el botón aparece recién en el navegador que lo admite.
   const puedeCompartir = useSyncExternalStore(sinSuscripcion, admiteCompartir, () => false);
   return (

@@ -15,6 +15,7 @@ import {
 import { conDescuentoItem, descripcionLinea, pesos, precioConDescuento, textoDescuentoItem } from '@/negocio/precios';
 import { metros } from '@/catalogo/resolver';
 import { leerPesos } from '@/negocio/cifras';
+import { LARGO_OBSERVACION_ITEM } from '@/negocio/limites';
 import { esStarken } from '@/negocio/starken';
 import { CampoEditable, type SugerenciaCampo } from './campo-editable';
 import { CotizarStarken } from './cotizar-starken';
@@ -54,7 +55,7 @@ import { DescuentoLinea, descuentoEscrito, errorDescuentoItem, textoDescuentoLin
 import { esPersonalizado, familiaEspecial, familiaItem, SIN_CATALOGO } from '@/negocio/personalizados';
 import { ReferenciasItem } from './referencias-item';
 import { MenuAcciones } from './menu-acciones';
-import { Documento, Totales } from './panel-totales';
+import { Documento, Totales, type AccionesDocumentos } from './panel-totales';
 import { SelectorDesplegable } from './selector-desplegable';
 import { SeguimientoOperacion } from './seguimiento-operacion';
 import { esSilencioso, pedirJSON } from './solicitud';
@@ -90,6 +91,8 @@ interface Props {
   guardando: string | null;
   descargando: string | null;
   acciones: AccionesPanel;
+  /** Ver y compartir los PDF de la cotización (`Documento`). */
+  documentos?: AccionesDocumentos | null;
   tituloRef: RefObject<HTMLHeadingElement | null>;
   agregarProducto: () => void;
   cambioVisual: { indices: number[]; total: boolean; texto: string } | null;
@@ -97,7 +100,7 @@ interface Props {
   cargando: boolean;
 }
 /** Línea valorizada que corresponde al ítem i (los incompletos no tienen línea). */
-export function lineaDe(q: Cotizacion, i: number) {
+function lineaDe(q: Cotizacion, i: number) {
   const pendiente = q.incompletos.find((p) => p.indice === i);
   if (pendiente) return { pendiente, linea: null };
   const porIndice = q.montos.lineas.find((l) => l.indice === i);
@@ -115,7 +118,7 @@ export const descripcionItem = (q: Cotizacion, i: number) => {
   );
 };
 /** Descripción que arma el sistema para el ítem, sin la escrita a mano; null si el ítem aún no se valoriza. */
-export function descripcionGenerada(q: Cotizacion, i: number) {
+function descripcionGenerada(q: Cotizacion, i: number) {
   const { linea } = lineaDe(q, i);
   if (!linea) return null;
   // Un personalizado se describe con su nombre y madera (servicio.ts, `recalcular`).
@@ -314,6 +317,7 @@ export function CotizacionPanel({
   guardando,
   descargando,
   acciones,
+  documentos,
   tituloRef,
   agregarProducto,
   cambioVisual,
@@ -1217,7 +1221,7 @@ export function CotizacionPanel({
                                     }
                                     editable={editable}
                                     discreto
-                                    maxLength={500}
+                                    maxLength={LARGO_OBSERVACION_ITEM}
                                     guardando={guardando === `item.${i}.observaciones`}
                                     guardar={(v) =>
                                       acciones.editar(
@@ -1507,6 +1511,7 @@ export function CotizacionPanel({
                   archivo={actual.pdf}
                   descargando={descargando}
                   descargar={acciones.descargar}
+                  acciones={documentos}
                 />
               )}
               {actual.nota && (
@@ -1517,6 +1522,7 @@ export function CotizacionPanel({
                   descargar={acciones.descargar}
                   etiqueta="Descargar nota de pedido"
                   anulado={actual.nota.anulada}
+                  acciones={documentos}
                 />
               )}
             </div>

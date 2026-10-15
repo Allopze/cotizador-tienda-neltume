@@ -1,6 +1,6 @@
 // Secciones de «Ajustes»: el servidor valida `?seccion=` y el cliente arma la navegación lateral.
 // Las marcadas `admin` solo se muestran (y se aceptan en la URL) a quien administra.
-export const SECCIONES_AJUSTES = [
+const SECCIONES_AJUSTES = [
   { id: 'cuenta', titulo: 'Mi cuenta', encabezado: 'Mi cuenta', admin: false },
   { id: 'asistente', titulo: 'Asistente', encabezado: 'Asistente', admin: false },
   { id: 'empresa', titulo: 'Datos de la empresa', encabezado: 'Datos de la empresa', admin: false },

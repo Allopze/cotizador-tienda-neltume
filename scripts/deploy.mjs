@@ -232,6 +232,14 @@ sincronizar() {
 rsync -a --delete --checksum --exclude=/.env '--exclude=/respaldos*' --exclude=/compose.override.yaml --exclude=/cron/ --exclude=/.version-anterior/ "$1/" "$2/"
 }
 
+# Carpeta del respaldo según la salida de «npm run respaldar -- --json» (una línea JSON con "carpeta").
+carpetaRespaldo() {
+  c="$(printf '%s\\n' "$1" | sed -n 's/^{.*"carpeta":"\\([^"]*\\)".*}$/\\1/p' | tail -n 1)"
+  # Un contenedor con la versión anterior a --json lo ignora y escribe el texto «Respaldo en <carpeta>: …».
+  [ -n "$c" ] || c="$(printf '%s\\n' "$1" | sed -n 's/^Respaldo en \\([^:]*\\):.*/\\1/p' | tail -n 1)"
+  printf '%s' "$c"
+}
+
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/entrega.zip"
@@ -239,12 +247,12 @@ cat > "$tmp/entrega.zip"
 respaldo=""
 if [ -f "$destino/compose.yaml" ] && [ -n "$(cd "$destino" && docker compose ps --status running -q cotizador 2>/dev/null)" ]; then
   echo "Respaldando los datos antes de actualizar…"
-  salida="$(cd "$destino" && docker compose exec -T cotizador npm run --silent respaldar)" || {
+  salida="$(cd "$destino" && docker compose exec -T cotizador npm run --silent respaldar -- --json)" || {
     echo "No se pudo respaldar; no se actualizó nada." >&2
     exit 7
   }
   printf '%s\\n' "$salida"
-  respaldo="$(printf '%s\\n' "$salida" | sed -n 's/^Respaldo en \\([^:]*\\):.*/\\1/p' | tail -n 1)"
+  respaldo="$(carpetaRespaldo "$salida")"
 fi
 unzip -q "$tmp/entrega.zip" -d "$tmp/codigo"
 if ! mkdir -p "$destino" 2>/dev/null || [ ! -w "$destino" ]; then

@@ -78,7 +78,7 @@ describe('jerga técnica en pantalla', () => {
   });
 
   // Mensajes del servidor y del chat que la vendedora lee tal cual.
-  const mensajes = ['src/servidor/servicio.ts', 'src/asistente/flete.ts', 'src/negocio/starken.ts', 'src/negocio/cifras.ts']
+  const mensajes = ['src/servidor/servicio.ts', 'src/servidor/chat.ts', 'src/servidor/edicion.ts', 'src/asistente/flete.ts', 'src/negocio/starken.ts', 'src/negocio/cifras.ts']
     .map((ruta) => [ruta, readFileSync(ruta, 'utf8')] as [string, string]);
   const PROHIBIDOS_MENSAJES: RegExp[] = [
     /[`'](El )?[Mm]argen (especial|de |debe)/,

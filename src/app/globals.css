@@ -918,6 +918,10 @@ button[type='submit'].button.peligro:not(:disabled) {
   background: var(--disabled-bg);
   border-color: var(--disabled-bg);
 }
+/* La lista de sugerencias (`.selector-lista`) se ancla al campo que la abre. */
+.campo.editando.con-sugerencias {
+  position: relative;
+}
 .campo input {
   min-width: 0;
   width: min(100%, 220px);

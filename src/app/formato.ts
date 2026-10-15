@@ -20,7 +20,7 @@ import { dimensionesEnMilimetros, sufijoTipoMedida } from '@/negocio/medidas';
 import { errorMedida, rangoCampoMedida, textoRangoMedida, type CampoMedida } from '@/negocio/limites';
 
 // Los textos de rango de las medidas viven con sus límites (`limites.ts`), para que el servidor diga lo mismo.
-export { errorMedida, rangoCampoMedida, textoRangoMedida, type CampoMedida };
+export { errorMedida, textoRangoMedida, type CampoMedida };
 import { metros } from '@/catalogo/resolver';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
@@ -28,7 +28,6 @@ import type { CambiosCotizacion } from './contrato';
 // Textos y formatos compartidos por todas las vistas: una sola forma de decir cada cosa.
 export const SIN_NUMERO = 'Sin número';
 export const SIN_CLIENTE = 'Cliente sin nombre';
-export const VALIDEZ = `Validez: ${REGLAS.vigenciaDiasHabiles} días hábiles`;
 
 const zona = { timeZone: 'America/Santiago' } as const;
 // Una fecha sin hora (YYYY-MM-DD) se lee a mediodía: a medianoche UTC caería el día anterior en Chile.

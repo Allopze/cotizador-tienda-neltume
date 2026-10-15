@@ -7,7 +7,7 @@ import lockfile from 'proper-lockfile';
 import { nombreCanonicoModelo } from '../catalogo/configuracion';
 import type { Catalogo } from '../catalogo/tipos';
 import { estadoInicial, type Estado } from '../negocio/estado';
-import { guardarEstadoCompleto, leerEstadoDeBase } from './almacen';
+import { guardarEstadoCompleto, LOCK_ESTADO_VIGENTE_MS, leerEstadoDeBase } from './almacen';
 import {
   abrirBaseDatos,
   directorioDatos,
@@ -178,7 +178,7 @@ export async function migrarJsonASqlite(
     liberar = await lockfile.lock(directorioEstado, {
       realpath: false,
       lockfilePath: join(directorioEstado, '.estado.lock'),
-      stale: 30000,
+      stale: LOCK_ESTADO_VIGENTE_MS,
       retries: { retries: 1, minTimeout: 100, maxTimeout: 100 },
     });
   } catch {

@@ -36,6 +36,11 @@ export { directorioDatos };
  * (30 s) más la reserva y la confirmación.
  */
 export const EMISION_VIGENTE_MS = 2 * 60_000;
+/**
+ * Plazo tras el cual proper-lockfile da por abandonado `data/.estado.lock` (lo renueva cada mitad de ese plazo). Lo
+ * comparten el almacén, la migración desde JSON y la restauración, que lo usa para saber si el cotizador está activo.
+ */
+export const LOCK_ESTADO_VIGENTE_MS = 30_000;
 
 export class ErrorOcupado extends ErrorConflicto {
   constructor() {
@@ -836,7 +841,7 @@ export function guardarEstadoCompleto(db: Database.Database, estado: Estado) {
 }
 
 /** Cuánto puede saltar un número de cotización elegido a mano sobre el último usado o reservado. */
-export const SALTO_MAXIMO_NUMERO = 1000;
+const SALTO_MAXIMO_NUMERO = 1000;
 /** Días que un borrador eliminado queda en la papelera antes de que `limpiar-borradores` lo borre (su `--dias`). */
 export const DIAS_PAPELERA = 30;
 
@@ -1583,7 +1588,7 @@ export class Almacen {
       release = await lockfile.lock(this.directorio, {
         realpath: false,
         lockfilePath: join(this.directorio, '.estado.lock'),
-        stale: 30000,
+        stale: LOCK_ESTADO_VIGENTE_MS,
         retries: { retries: 60, minTimeout: 100, maxTimeout: 500 },
         // Si el bloqueo se pierde (reloj, disco lento) se registra: lanzar aquí derribaría el proceso.
         onCompromised: (error) => { comprometido = true; registrarError('almacen', `Bloqueo comprometido: ${error.message}`); },
@@ -1639,7 +1644,7 @@ export interface BorradorEnPapelera {
 }
 
 /** La cotización guardada no pasa la validación: se informa sin tumbar el resto del listado. */
-export class ErrorCotizacionDanada extends ErrorUsuario {
+class ErrorCotizacionDanada extends ErrorUsuario {
   constructor() {
     super(
       'La cotización guardada tiene datos dañados y no se puede abrir. Pide a quien administra el cotizador que la revise.',
