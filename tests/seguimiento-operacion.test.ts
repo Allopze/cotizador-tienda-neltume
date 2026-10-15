@@ -5,14 +5,14 @@ import { join } from 'node:path';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
-import type { Cotizacion } from '../src/negocio/estado';
+import { etiquetaOperativo, retrocesoOperativo, type Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
 import { SeguimientoOperacion } from '../src/app/seguimiento-operacion';
 import { Documento } from '../src/app/panel-totales';
 
 // La pantalla ofrece «Volver al paso anterior» y «Deshacer aprobación» exactamente cuando el servidor los acepta
-// (plan 4.4 sobre 3.6): el mapa de pasos del cliente no puede desfasarse del de servicio.ts.
+// (plan 4.4 sobre 3.6), y el diálogo anuncia el paso al que el servidor deja la operación, también desde «Completada».
 vi.mock('../src/servidor/pdf', () => ({
   prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
@@ -94,6 +94,11 @@ describe('seguimiento de la operación: caminos de vuelta', () => {
       return t.ir(await pagar(q, mitad(q)), { tipo: 'generar_nota' });
     };
     const saldo = (q: Cotizacion) => q.montos.total - mitad(q);
+    const despachada = async () => {
+      let q = await operar(await conNota(), 'iniciar_produccion');
+      q = await operar(await operar(await pagar(q, saldo(q)), 'produccion_terminada'), 'lista_despacho');
+      return operar(q, 'despachada', { despacho: { transporte: 'Starken' } });
+    };
 
     // Cada estado operativo por el que pasa un pedido, armado por el servicio real.
     const casos: [string, () => Promise<Cotizacion>][] = [
@@ -111,22 +116,30 @@ describe('seguimiento de la operación: caminos de vuelta', () => {
         const q = await operar(await conNota(), 'iniciar_produccion');
         return operar(await operar(await pagar(q, saldo(q)), 'produccion_terminada'), 'lista_despacho');
       }],
-      ['despachada', async () => {
-        let q = await operar(await conNota(), 'iniciar_produccion');
-        q = await operar(await operar(await pagar(q, saldo(q)), 'produccion_terminada'), 'lista_despacho');
-        return operar(q, 'despachada', { despacho: { transporte: 'Starken' } });
-      }],
+      ['despachada', despachada],
+      ['completada', async () => operar(await despachada(), 'completada')],
       ['facturada sin pagos', async () =>
         t.ir(await aprobada(), { tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'boleta' })],
     ];
     const vistos: Record<string, { volver: boolean; deshacer: boolean }> = {};
+    const anunciados: Record<string, string> = {};
     for (const [nombre, crear] of casos) {
       const q = await crear();
       const html = pantalla(q);
       const volver = html.includes('Volver al paso anterior');
       const deshacer = html.includes('Deshacer aprobación');
       vistos[nombre] = { volver, deshacer };
-      expect([nombre, volver]).toEqual([nombre, await t.acepta(q, { tipo: 'retroceder_operacion', motivo: 'Prueba' })]);
+      // Lo que el diálogo anuncia («de X a Y») es el paso al que el servidor deja la operación.
+      const anuncio = retrocesoOperativo(q);
+      expect([nombre, volver]).toEqual([nombre, anuncio !== null]);
+      const vuelta = await t.ir(q, { tipo: 'retroceder_operacion', motivo: 'Prueba' }).catch(() => null);
+      expect([nombre, volver]).toEqual([nombre, vuelta !== null]);
+      if (anuncio && vuelta) {
+        expect([nombre, anuncio.desde]).toEqual([nombre, etiquetaOperativo[q.estadoOperativo!]]);
+        expect([nombre, vuelta.estadoOperativo]).toEqual([nombre, anuncio.destino]);
+        expect([nombre, etiquetaOperativo[vuelta.estadoOperativo!]]).toEqual([nombre, anuncio.hasta]);
+        anunciados[nombre] = `${anuncio.desde} → ${anuncio.hasta}`;
+      }
       expect([nombre, deshacer]).toEqual([nombre, await t.acepta(await crear(), { tipo: 'desaprobar' })]);
     }
     // Lo que se espera de cada caso, para que un cambio en ambos lados a la vez no pase en silencio.
@@ -140,7 +153,16 @@ describe('seguimiento de la operación: caminos de vuelta', () => {
       pagada: { volver: true, deshacer: false },
       'lista para despacho': { volver: true, deshacer: false },
       despachada: { volver: true, deshacer: false },
+      completada: { volver: true, deshacer: false },
       'facturada sin pagos': { volver: false, deshacer: false },
+    });
+    expect(anunciados).toEqual({
+      'en producción': `${etiquetaOperativo.en_produccion} → ${etiquetaOperativo.pedido_generado}`,
+      'saldo pendiente': `${etiquetaOperativo.saldo_pendiente} → ${etiquetaOperativo.en_produccion}`,
+      pagada: `${etiquetaOperativo.pagada} → ${etiquetaOperativo.en_produccion}`,
+      'lista para despacho': `${etiquetaOperativo.lista_despacho} → ${etiquetaOperativo.pagada}`,
+      despachada: `${etiquetaOperativo.despachada} → ${etiquetaOperativo.lista_despacho}`,
+      completada: 'Completada → Despachada',
     });
   });
 });

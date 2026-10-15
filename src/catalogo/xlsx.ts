@@ -50,7 +50,7 @@ const mb = (bytes: number) => `${Math.round(bytes / 1024 / 1024)} MB`;
  * búfer de exactamente ese largo y no lo agranda, así que una parte que declara menos de lo que trae queda
  * truncada (y su XML falla al leerse), nunca ocupa más memoria que la declarada.
  */
-function descomprimirXlsx(bytes: Uint8Array, limites = LIMITES_DESCOMPRESION) {
+export function descomprimirXlsx(bytes: Uint8Array, limites = LIMITES_DESCOMPRESION) {
   rechazarCompuesto(bytes);
   let total = 0;
   try {

@@ -212,6 +212,16 @@ export function descripcionFlete(q: Pick<Cotizacion, 'fleteDescripcion' | 'despa
     .join(' · ');
 }
 type FaseOperativa = Pick<Cotizacion, 'estado' | 'estadoOperativo'>;
+/**
+ * Lo que anuncia «Volver al paso anterior» (de qué paso a cuál) y el destino que aplica `retroceder_operacion`: solo
+ * en una aprobada con un paso anterior. null si no hay a dónde volver.
+ */
+export function retrocesoOperativo(q: FaseOperativa & Pick<Cotizacion, 'nota'>) {
+  if (q.estado !== 'aprobada') return null;
+  const actual = q.estadoOperativo ?? (q.nota ? 'pedido_generado' : 'sin_pedido');
+  const destino = PASO_ANTERIOR[actual];
+  return destino ? { desde: etiquetaOperativo[actual], hasta: etiquetaOperativo[destino], destino } : null;
+}
 /** Un pago se anula mientras la operación no llegue a «Lista para despacho» (ahí el saldo ya está pagado). */
 export const pagoAnulable = (q: FaseOperativa) =>
   q.estado === 'aprobada' && !['lista_despacho', 'despachada', 'completada'].includes(q.estadoOperativo ?? '');

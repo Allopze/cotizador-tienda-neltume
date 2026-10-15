@@ -37,7 +37,7 @@ import {
   etiquetaFacturacion,
   etiquetaOperativo,
   pagoAnulable,
-  PASO_ANTERIOR,
+  retrocesoOperativo,
   puedeAnular,
   rangoFechaOperacion,
   sinTransportista,
@@ -609,9 +609,9 @@ export class Servicio {
             q.estado = 'emitida'; q.estadoComercial = 'enviada'; q.aprobadaPor = null; delete q.fechaAprobacion;
           } else {
             if (!accion.motivo.trim()) throw new ErrorUsuario('Indica el motivo del retroceso.');
-            const previo = PASO_ANTERIOR[q.estadoOperativo ?? 'sin_pedido'];
+            const previo = retrocesoOperativo(q);
             if (!previo) throw new ErrorConflicto('No hay un paso operativo anterior disponible.', 'estado_invalido');
-            q.estadoOperativo = previo;
+            q.estadoOperativo = previo.destino;
             this.estadoPorPagos(q);
           }
           q.actualizada = marca(q.actualizada); u.guardar(q);

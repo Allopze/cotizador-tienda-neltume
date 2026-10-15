@@ -5,7 +5,9 @@ import { dejarAvisoAlAbrir, tomarAvisoAlAbrir } from '../src/app/solicitud';
 
 // Pantalla, fase 6: el destino que anuncia «Volver al paso anterior» (incluida «Completada»), el aviso de la copia
 // que se abre desde el historial y el motivo en español de un descuento máximo fuera de rango. El flujo de compartir
-// (AbortError y NotAllowedError) vive dentro del componente del cotizador y se prueba en tests/movil.e2e.ts.
+// (AbortError y NotAllowedError) se prueba en tests/pantalla-cuentas-compartir.test.ts y, con la hoja del sistema
+// simulada, en tests/movil.e2e.ts; el destino anunciado contra el que aplica el servidor, en
+// tests/seguimiento-operacion.test.ts.
 
 /** Pares «estado: 'anterior'» del mapa que sigue a `marca` en el archivo. */
 function mapa(archivo: string, marca: string) {
