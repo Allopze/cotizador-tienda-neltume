@@ -8,10 +8,10 @@ export interface OpcionesPeticion {
   /** Obliga a llamar una herramienta («required» o «any»); sin ella, «auto» y el prompt la exigen. */
   herramientaForzada: boolean;
 }
-export const OPCIONES_COMPLETAS: OpcionesPeticion = { temperatura: true, herramientaForzada: true };
+const OPCIONES_COMPLETAS: OpcionesPeticion = { temperatura: true, herramientaForzada: true };
 
 /** Qué opción quitar según el texto de un rechazo 400; null si el rechazo es por otra causa. */
-export function opcionRechazada(texto: string, opciones: OpcionesPeticion): keyof OpcionesPeticion | null {
+function opcionRechazada(texto: string, opciones: OpcionesPeticion): keyof OpcionesPeticion | null {
   if (opciones.herramientaForzada && /tool_choice/i.test(texto)) return 'herramientaForzada';
   if (opciones.temperatura && /temperature/i.test(texto)) return 'temperatura';
   return null;

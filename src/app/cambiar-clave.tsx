@@ -1,7 +1,8 @@
 'use client';
-import { useRef, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import type { TipoAviso } from './avisos';
 import { useAvisarCambios } from './ajustes/borrador';
+import { useErrorCampo } from './error-campo';
 import { ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 // Mismos límites que Better Auth (minPasswordLength / maxPasswordLength en autenticacion-config).
@@ -19,9 +20,8 @@ export function CambiarClave({ avisar, alCambiar }: Props) {
   const [actual, setActual] = useState(''),
     [nueva, setNueva] = useState(''),
     [repetida, setRepetida] = useState('');
-  const [error, setError] = useState('');
   const [ocupado, setOcupado] = useState(false);
-  const primera = useRef<HTMLInputElement>(null);
+  const errores = useErrorCampo<'actual' | 'nueva' | 'repetida'>('cambiar-clave', 'catalog-error');
   const escrito = !!(actual || nueva || repetida);
   useAvisarCambios(escrito, alCambiar);
 
@@ -29,18 +29,19 @@ export function CambiarClave({ avisar, alCambiar }: Props) {
     setActual('');
     setNueva('');
     setRepetida('');
-    setError('');
+    errores.limpiar();
   }
 
   async function enviar(e: FormEvent) {
     e.preventDefault();
     if (ocupado) return;
+    if (!actual) return errores.fallar('actual', 'Escribe tu contraseña actual.');
     if (nueva.length < MINIMO || nueva.length > MAXIMO)
-      return setError(`La nueva contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
-    if (nueva !== repetida) return setError('La confirmación no coincide con la nueva contraseña.');
-    if (nueva === actual) return setError('La nueva contraseña debe ser distinta de la actual.');
+      return errores.fallar('nueva', `La nueva contraseña debe tener entre ${MINIMO} y ${MAXIMO} caracteres.`);
+    if (nueva !== repetida) return errores.fallar('repetida', 'La confirmación no coincide con la nueva contraseña.');
+    if (nueva === actual) return errores.fallar('nueva', 'La nueva contraseña debe ser distinta de la actual.');
     setOcupado(true);
-    setError('');
+    errores.limpiar();
     try {
       await pedirJSON('/api/auth/change-password', {
         json: { currentPassword: actual, newPassword: nueva, revokeOtherSessions: true },
@@ -51,28 +52,29 @@ export function CambiarClave({ avisar, alCambiar }: Props) {
       limpiar();
     } catch (causa) {
       if (esSilencioso(causa)) return;
-      setError(
+      errores.fallar(
+        'actual',
         causa instanceof ErrorSolicitud && causa.status === 400
           ? 'La contraseña actual no es correcta.'
           : causa instanceof ErrorSolicitud && causa.status === 429
             ? 'Demasiados intentos. Espera unos minutos antes de volver a intentarlo.'
             : mensajeDe(causa),
       );
-      primera.current?.focus();
     } finally {
       setOcupado(false);
     }
   }
 
   return (
-    <form onSubmit={enviar} className="dialogo-campos" aria-label="Cambiar contraseña">
+    <form onSubmit={enviar} className="dialogo-campos" aria-label="Cambiar contraseña" noValidate>
       <p className="catalog-modal-intro">
         Al cambiarla se cierran las demás sesiones abiertas con tu cuenta.
       </p>
       <label className="ia-field">
         <span>Contraseña actual</span>
         <input
-          ref={primera}
+          ref={errores.ref('actual')}
+          {...errores.atributos('actual')}
           type="password"
           value={actual}
           onChange={(e) => setActual(e.target.value)}
@@ -81,9 +83,12 @@ export function CambiarClave({ avisar, alCambiar }: Props) {
           disabled={ocupado}
         />
       </label>
+      {errores.mensaje('actual')}
       <label className="ia-field">
         <span>Nueva contraseña (mínimo {MINIMO} caracteres)</span>
         <input
+          ref={errores.ref('nueva')}
+          {...errores.atributos('nueva')}
           type="password"
           value={nueva}
           onChange={(e) => setNueva(e.target.value)}
@@ -94,9 +99,12 @@ export function CambiarClave({ avisar, alCambiar }: Props) {
           disabled={ocupado}
         />
       </label>
+      {errores.mensaje('nueva')}
       <label className="ia-field">
         <span>Repite la nueva contraseña</span>
         <input
+          ref={errores.ref('repetida')}
+          {...errores.atributos('repetida')}
           type="password"
           value={repetida}
           onChange={(e) => setRepetida(e.target.value)}
@@ -106,11 +114,7 @@ export function CambiarClave({ avisar, alCambiar }: Props) {
           disabled={ocupado}
         />
       </label>
-      {error && (
-        <p className="catalog-error" role="alert">
-          {error}
-        </p>
-      )}
+      {errores.mensaje('repetida')}
       <div className="ia-actions">
         <button type="button" className="button secondary" onClick={limpiar} disabled={ocupado || !escrito}>
           Descartar

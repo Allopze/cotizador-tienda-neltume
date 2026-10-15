@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 test('agrega al catálogo desde un pendiente con el formulario completado y cotiza el ítem', async ({ page }) => {
@@ -33,9 +33,9 @@ test('agrega al catálogo desde un pendiente con el formulario completado y coti
   await expect(datos.getByLabel('Ancho mínimo')).toHaveValue('0,8');
   await expect(datos.getByLabel('Ancho máximo')).toHaveValue('0,8');
   await expect(datos.getByRole('textbox', { name: /^Alto / })).toHaveValue('2,1');
-  await expect(datos.getByLabel('Precio base neto')).toHaveValue('');
-  await expect(datos.getByLabel('Precio base neto')).toBeFocused();
-  await datos.getByLabel('Precio base neto').fill('145.000');
+  await expect(datos.getByLabel('Precio base sin IVA')).toHaveValue('');
+  await expect(datos.getByLabel('Precio base sin IVA')).toBeFocused();
+  await datos.getByLabel('Precio base sin IVA').fill('145.000');
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
 
   const revision = dialogo.locator('.catalog-preview');

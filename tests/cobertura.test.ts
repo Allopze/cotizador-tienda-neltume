@@ -113,8 +113,79 @@ describe('pedidos sin registrar', () => {
     );
     expect(fleteAlFinal('flete a Chillán $380.000 + IVA')).toBe('flete a Chillán $380.000 + IVA');
   });
-  it('no revisa si una frase no aparece en el mensaje', () => {
-    expect(pedidosSinRegistrar(mensaje, ['ocho marcos 2x4 oregón'], [], resolver)).toBeNull();
+  it('mantiene la cobertura si una frase no aparece en el mensaje', () => {
+    // La IA parafraseó la frase del ítem que sí registró («Cotiza 8 marcos de 4 en oregón de 2»): solo faltan
+    // los otros dos pedidos.
+    expect(pedidosSinRegistrar(mensaje, ['ocho marcos 2x4 oregón'], [], resolver)).toEqual([
+      '6 marcos pino 2x8 de 2',
+      '5 juegos de marco 2x6 oregon de 3 m',
+    ]);
+  });
+  it('una frase parafraseada o cortada cubre la línea con su modelo y su cantidad, no otra', () => {
+    const lineas = '3 Molco lenga 80x200\n2 Toledo raulí 90x210';
+    expect(
+      pedidosSinRegistrar(lineas, ['tres puertas Molco de lenga', '2 Toledo raulí 90x210'], [], resolver),
+    ).toEqual([]);
+    expect(
+      pedidosSinRegistrar(lineas, ['3 Molco lenga 80x20', '2 Toledo raulí 90x210'], [], resolver),
+    ).toEqual([]);
+    // Otra cantidad u otro modelo no es su línea: esa sí falta.
+    expect(pedidosSinRegistrar(lineas, ['tres puertas Molco de lenga'], [], resolver)).toEqual([
+      '2 Toledo raulí 90x210',
+    ]);
+    expect(
+      pedidosSinRegistrar('3 Molco lenga 80x200\n2 Molco raulí 90x210', ['dos Molco'], [], resolver),
+    ).toEqual(['3 Molco lenga 80x200']);
+  });
+  it('con el mismo modelo y la misma cantidad, la madera y las medidas dicen cuál línea registró', () => {
+    // Nunca acusa la línea registrada: acusa la que falta.
+    const maderas = '2 Molco lenga 80x200\n2 Molco raulí 90x210';
+    expect(pedidosSinRegistrar(maderas, ['dos Molco de raulí'], [], resolver)).toEqual(['2 Molco lenga 80x200']);
+    expect(pedidosSinRegistrar(maderas, ['dos Molco raulí de 90 por 210'], [], resolver)).toEqual([
+      '2 Molco lenga 80x200',
+    ]);
+    const medidas = '2 Molco lenga 80x200\n2 Molco lenga 90x210';
+    expect(pedidosSinRegistrar(medidas, ['dos Molco lenga de 90 por 210'], [], resolver)).toEqual([
+      '2 Molco lenga 80x200',
+    ]);
+    expect(pedidosSinRegistrar(medidas, ['dos Molco lenga de 0,9 por 2,1'], [], resolver)).toEqual([
+      '2 Molco lenga 80x200',
+    ]);
+    // Dos líneas iguales: falta una, da lo mismo cuál se cita.
+    expect(
+      pedidosSinRegistrar('2 Molco lenga 80x200\n2 Molco lenga 80x200', ['dos Molco lenga de 80 por 200'], [], resolver),
+    ).toEqual(['2 Molco lenga 80x200']);
+    // Si la frase calza igual con dos líneas distintas, no se sabe cuál registró: no acusa ninguna.
+    expect(pedidosSinRegistrar('2 Molco lenga 80x200\n2 Molco raulí 80x200', ['dos Molco'], [], resolver)).toEqual(
+      [],
+    );
+  });
+  it('cada ítem toma una aparición distinta de su frase', () => {
+    const iguales = '2 Molco lenga 80x200\n2 Molco lenga 80x200';
+    // Dos líneas iguales registradas no son omisiones; con un solo ítem falta una.
+    expect(
+      pedidosSinRegistrar(iguales, ['2 Molco lenga 80x200', '2 Molco lenga 80x200'], [], resolver),
+    ).toEqual([]);
+    expect(pedidosSinRegistrar(iguales, ['2 Molco lenga 80x200'], [], resolver)).toEqual([
+      '2 Molco lenga 80x200',
+    ]);
+    // La frase contenida en otra línea no le quita esa línea a la más larga, en cualquier orden.
+    const frases = ['2 Molco lenga 80x200', '2 Molco lenga 80x200 con vidrio'];
+    for (const texto of [
+      '2 Molco lenga 80x200 y 2 Molco lenga 80x200 con vidrio',
+      '2 Molco lenga 80x200 con vidrio y 2 Molco lenga 80x200',
+    ])
+      expect(pedidosSinRegistrar(texto, frases, [], resolver)).toEqual([]);
+    // Dos ítems de una misma frase (la puerta y su marco) no tapan una línea que falta.
+    const conMarco = '3 Molco lenga 80x200 con su marco\n3 Molco raulí 90x210';
+    expect(
+      pedidosSinRegistrar(
+        conMarco,
+        ['3 Molco lenga 80x200 con su marco', '3 Molco lenga 80x200 con su marco'],
+        [],
+        resolver,
+      ),
+    ).toEqual(['3 Molco raulí 90x210']);
   });
   it('reconoce un pedido en un mensaje completo, pero no una pregunta', () => {
     expect(pareceUnPedido('precio de 3 Molco de 83 x 240 para Juan Pérez', resolver)).toBe(true);
@@ -127,5 +198,47 @@ describe('pedidos sin registrar', () => {
       ),
     ).toBe(true);
     expect(pareceUnPedido('hola, buenas tardes', resolver)).toBe(false);
+  });
+  it('un despacho a un lugar que se llama como un modelo no es un pedido (#21)', () => {
+    const conRinihue = {
+      ...resolver,
+      modelo: (s: string) => (normalizar(s) === 'RINIHUE' ? 'RINIHUE' : resolver.modelo(s)),
+    };
+    const pareceUnPedidoAqui = (m: string) => pareceUnPedido(m, conRinihue);
+    expect(pareceUnPedidoAqui('3 Riñihue lenga')).toBe(true);
+    expect(pareceUnPedidoAqui('Necesito despacho a Riñihue para 3 pallets')).toBe(false);
+    expect(pareceUnPedidoAqui('flete a Riñihue, 3 pallets')).toBe(false);
+    // Lo que va antes del dato del cliente o del despacho sí puede ser un pedido.
+    expect(pareceUnPedidoAqui('3 Molco lenga para Juan Pérez')).toBe(true);
+    expect(pareceUnPedidoAqui('3 Molco lenga\ndespacho a Riñihue')).toBe(true);
+    expect(pareceUnPedidoAqui('despacho a Riñihue de 3 Molco lenga 80x200')).toBe(true);
+  });
+});
+
+describe('reparto «2 Molco, una en lenga y otra en raulí» (caso 50 de la paridad con la IA)', () => {
+  const mensaje = 'dame 2 Molco, una en lenga y otra en raulí, ambas de 74x220';
+  it('la cantidad y el modelo que se reparten no son un pedido sin registrar', () => {
+    for (const frases of [
+      ['una en lenga', 'otra en raulí, ambas de 74x220'],
+      ['una en lenga', 'otra en raulí'],
+      // Frases armadas con trozos del mensaje: cada trozo se ubica.
+      ['una en lenga, ambas de 74x220', 'otra en raulí, ambas de 74x220'],
+      ['2 Molco, una en lenga, ambas de 74x220', 'otra en raulí, ambas de 74x220'],
+      ['dame 2 Molco, una en lenga... ambas de 74x220', 'otra en raulí'],
+      ['una en lenga y otra en raulí, ambas de 74x220', 'una en lenga y otra en raulí, ambas de 74x220'],
+    ])
+      expect(pedidosSinRegistrar(mensaje, frases, [], resolver), frases.join(' / ')).toEqual([]);
+  });
+  it('sin el reparto registrado, el trozo con el modelo sigue sin registrar', () => {
+    // Solo «una en lenga»: falta la otra, y el «2 Molco» no queda explicado.
+    expect(pedidosSinRegistrar(mensaje, ['una en lenga'], [], resolver)).toEqual(['dame 2 Molco']);
+    // Una frase con otro modelo no hereda el anterior.
+    expect(
+      pedidosSinRegistrar('2 Molco lenga 80x200, 3 Toledo raulí 90x210', ['3 Toledo raulí 90x210'], [], resolver),
+    ).toEqual(['2 Molco lenga 80x200']);
+    // Una continuación sin «una… otra…» no basta: «3 de 90x210» no explica la línea anterior.
+    expect(pedidosSinRegistrar('2 Molco lenga 80x200, 3 de 90x210', ['3 de 90x210'], [], resolver)).toEqual([
+      '2 Molco lenga 80x200',
+    ]);
   });
 });

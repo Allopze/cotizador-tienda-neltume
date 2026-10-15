@@ -17,13 +17,17 @@ import {
   type Linea,
 } from '@/negocio/precios';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '@/negocio/medidas';
+import { errorMedida, rangoCampoMedida, textoRangoMedida, type CampoMedida } from '@/negocio/limites';
+
+// Los textos de rango de las medidas viven con sus límites (`limites.ts`), para que el servidor diga lo mismo.
+export { errorMedida, textoRangoMedida, type CampoMedida };
+import { metros } from '@/catalogo/resolver';
 import { estaVencida } from '@/negocio/vigencia';
 import type { CambiosCotizacion } from './contrato';
 
 // Textos y formatos compartidos por todas las vistas: una sola forma de decir cada cosa.
 export const SIN_NUMERO = 'Sin número';
 export const SIN_CLIENTE = 'Cliente sin nombre';
-export const VALIDEZ = `Validez: ${REGLAS.vigenciaDiasHabiles} días hábiles`;
 
 const zona = { timeZone: 'America/Santiago' } as const;
 // Una fecha sin hora (YYYY-MM-DD) se lee a mediodía: a medianoche UTC caería el día anterior en Chile.
@@ -133,13 +137,35 @@ export function medidaProducto(p: {
 
 /** Número para un campo editable, con coma decimal y sin separador de miles: 0.8 → «0,8». */
 export const decimalCampo = (n: number) => n.toLocaleString('es-CL', { maximumFractionDigits: 4, useGrouping: false });
-/** «0,80», «0.8» u «80» (centímetros, sobre `limite`) → metros; vacío o ilegible → null. */
-export function leerMetros(valor: string, limite: number) {
-  const n = Number(valor.trim().replace(',', '.'));
-  if (!valor.trim() || !Number.isFinite(n)) return null;
-  return n > limite ? n / 100 : n;
+const DIVISOR_UNIDAD: Record<string, number> = {
+  m: 1, mt: 1, mts: 1, metro: 1, metros: 1,
+  cm: 100, cms: 100, centimetro: 100, centimetros: 100,
+  mm: 1000, milimetro: 1000, milimetros: 1000,
+};
+/**
+ * Lee una medida tal como se escribe, con coma o punto decimal y unidad opcional: «80», «0,80», «0.80», «80 cm»,
+ * «2100 mm», «2.100 mm» o «3,6 m». Sin unidad, como en el chat (`metros`): hasta 10 son metros y lo demás
+ * centímetros o milímetros según el tope de la familia. Devuelve metros; null si está vacía, no se entiende o queda
+ * fuera del rango (`rangoCampoMedida`). El ancho se lee siempre con el rango de puertas.
+ */
+export function leerMedida(texto: string, familia: string, campo: CampoMedida = 'alto'): number | null {
+  const limpio = texto.trim().toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const partes = limpio.match(/^(\d+(?:[.,]\d+)*)\s*([a-z]+)?\.?$/);
+  if (!partes) return null;
+  const [, cifra, unidad] = partes;
+  const divisor = unidad ? DIVISOR_UNIDAD[unidad] : 1;
+  if (!divisor) return null;
+  // «2.100 mm»: en centímetros y milímetros el punto con tres cifras detrás separa miles.
+  const miles = divisor > 1 && /^\d{1,3}(\.\d{3})+$/.test(cifra);
+  const numero = miles ? cifra.replace(/\./g, '') : cifra.replace(',', '.');
+  if (!/^\d+(\.\d+)?$/.test(numero)) return null;
+  const n = Number(numero);
+  const rango = rangoCampoMedida(campo, familia);
+  const valor = unidad ? n / divisor : metros(n, campo === 'ancho' ? 'PUERTA' : familia);
+  if (valor === null || !Number.isFinite(valor)) return null;
+  const redondeado = Math.round(valor * 10_000) / 10_000;
+  return redondeado >= rango.min - 1e-9 && redondeado <= rango.max + 1e-9 ? redondeado : null;
 }
-
 export const ETIQUETA_CAMPO: Record<keyof Cotizacion['cliente'], string> = {
   nombre: 'Cliente',
   rut: 'RUT',

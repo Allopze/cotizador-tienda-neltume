@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  anclarCifras,
   anclarFrases,
   anclarNombres,
+  avisosDeCampos,
+  avisosDePalabras,
   cantidadesDichas,
   nombresDichos,
   palabrasDesconocidas,
@@ -857,5 +860,349 @@ describe('lo que la frase dice completa o corrige a la IA (casos de la semilla 3
       anclar([{ modelo: 'MOLCO', madera: 'LENGA', ancho: 0.9, alto: 2.1, fuente: sinCantidad }], sinCantidad)
         .items[0].cantidad,
     ).toBeNull();
+  });
+});
+
+describe('modo «avisar»: diferencias con la frase sin corregir', () => {
+  it('junta en un aviso por ítem los campos en que la frase dice otra cosa, lo que falta y lo que sobra', () => {
+    const fuente = '1 lanco encha en mara 0.73x2.07';
+    const ia = [
+      item({ modelo: 'LANCO', madera: 'MARA ENCHAPADA', ancho: 0.73, alto: 2.07, cantidad: 1, fuente }),
+    ];
+    const porFrase = anclarFrases(ia, [], fuente, resolver).items;
+    expect(avisosDeCampos(ia, porFrase)).toEqual([
+      'Revisa el ítem 1 (LANCO): anoté la madera «MARA ENCHAPADA», pero tu mensaje parece decir «MARA».',
+    ]);
+    const molco = item({
+      modelo: 'MOLCO',
+      madera: 'LENGA',
+      ancho: null,
+      alto: 2,
+      cantidad: 2,
+      fuente: '3 molco mara de 80',
+    });
+    expect(
+      avisosDeCampos([molco], [{ ...molco, madera: 'MARA', cantidad: 3, ancho: 0.8, alto: null }]),
+    ).toEqual([
+      'Revisa el ítem 1 (MOLCO): anoté la madera «LENGA» y la cantidad 2, pero tu mensaje parece decir «MARA» y 3; ' +
+        'tu mensaje parece decir el ancho 0,8 m y no lo anoté; anoté el alto 2 m, pero no lo encuentro en tu mensaje.',
+    ]);
+  });
+
+  it('sin diferencias no avisa nada, aunque la medida venga en otra unidad', () => {
+    const ia = [
+      item({
+        modelo: 'MOLCO',
+        madera: 'LENGA',
+        ancho: 0.8,
+        alto: 2,
+        cantidad: 3,
+        fuente: '3 molco lenga 80x200',
+      }),
+    ];
+    expect(avisosDeCampos(ia, [{ ...ia[0], ancho: 80, madera: 'lenga' }])).toEqual([]);
+  });
+
+  it('avisa las palabras desconocidas junto al producto solo si su frase está en el mensaje', () => {
+    const fuente = '1 lanco encha en mara 0.73x2.07';
+    const ia = [item({ modelo: 'LANCO', madera: 'MARA ENCHAPADA', cantidad: 1, fuente })];
+    expect(avisosDePalabras(ia, fuente, resolver)).toEqual([
+      'No reconocí «encha» en el ítem 1 (LANCO): revisa que el producto sea el que se pidió.',
+    ]);
+    expect(avisosDePalabras(ia, 'otro mensaje', resolver)).toEqual([]);
+  });
+});
+
+describe('frases repetidas, «dúplex» y la escuadría «de N», en los dos modos', () => {
+  const familia = (m: string) =>
+    m === 'MARCO' ? 'MARCO' : m === 'PIEZAS T' ? 'PIEZAS_T' : m === 'MOLCO' ? 'PUERTA' : null;
+  /** Lo que ve la persona: «corregir» usa la lectura por frase; «avisar» conserva la de la IA y avisa. */
+  const modos = (ia: SolicitudItem[], mensaje: string) => {
+    const porFrase = anclarFrases(ia, [], mensaje, resolver, [], familia);
+    return {
+      corregir: porFrase,
+      avisar: [...avisosDeCampos(ia, porFrase.items), ...avisosDePalabras(ia, mensaje, resolver)],
+    };
+  };
+  const marco = (fuente: string, medida: string | null, s: Partial<SolicitudItem> = {}) =>
+    item({ modelo: 'MARCO', madera: 'RAULI', medida, cantidad: 6, alto: 2, fuente, ...s });
+
+  it('«6 marcos de 4» es la escuadría 2x4 aunque la IA lea 2x6', () => {
+    for (const [fuente, alto] of [
+      ['6 marcos de 4 en raulí de 2,2', 2.2],
+      ['6 marcos de 4 en raulí de 2', 2],
+    ] as const) {
+      const { corregir, avisar } = modos([marco(fuente, '2X6', { alto })], fuente);
+      expect(corregir.items[0]).toMatchObject({ medida: '2X4', alto });
+      expect(corregir.avisos).toEqual([
+        'Revisa el ítem 1 (MARCO): el asistente leyó la sección «2X6», pero tu pedido dice «2X4»; usé «2X4».',
+      ]);
+      expect(avisar).toEqual([
+        'Revisa el ítem 1 (MARCO): anoté la sección «2X6», pero tu mensaje parece decir «2X4».',
+      ]);
+    }
+    const piezas = '3 piezas T de 6 en pino de 2,4';
+    const t = modos(
+      [
+        item({
+          modelo: 'PIEZAS T',
+          madera: 'PINO OREGON',
+          medida: null,
+          cantidad: 3,
+          alto: 2.4,
+          fuente: piezas,
+        }),
+      ],
+      piezas,
+    );
+    expect(t.corregir.items[0].medida).toBe('2X6');
+  });
+
+  it('«de 2», «de 3 m» o «de 70» no son la escuadría, ni le ganan a la sección escrita', () => {
+    const pino = '6 marcos pino 2x8 de 2';
+    const leyo = modos([marco(pino, '2X6', { madera: 'PINO OREGON' })], pino);
+    expect(leyo.corregir.items[0].medida).toBe('2X8');
+    expect(leyo.corregir.avisos).toEqual([
+      'Revisa el ítem 1 (MARCO): el asistente leyó la sección «2X6», pero tu pedido dice «2X8»; usé «2X8».',
+    ]);
+    expect(leyo.avisar).toEqual([
+      'Revisa el ítem 1 (MARCO): anoté la sección «2X6», pero tu mensaje parece decir «2X8».',
+    ]);
+    const vacia = modos([marco(pino, null, { madera: 'PINO OREGON' })], pino);
+    expect(vacia.corregir.items[0].medida).toBe('2X8');
+    expect(vacia.corregir.avisos).toEqual([]);
+    expect(vacia.avisar).toEqual([
+      'Revisa el ítem 1 (MARCO): tu mensaje parece decir la sección «2X8» y no lo anoté.',
+    ]);
+
+    const juegos = '5 juegos de marco 2x6 oregon de 3 m';
+    const oregon = modos([marco(juegos, '2X8', { madera: 'PINO OREGON', cantidad: 5, alto: 3 })], juegos);
+    expect(oregon.corregir.items[0].medida).toBe('2X6');
+    expect(oregon.avisar).toEqual([
+      'Revisa el ítem 1 (MARCO): anoté la sección «2X8», pero tu mensaje parece decir «2X6».',
+    ]);
+
+    const ancho = '2 marcos de 70 en lenga';
+    for (const medida of [null, '2X4']) {
+      const { corregir, avisar } = modos(
+        [marco(ancho, medida, { madera: 'LENGA', cantidad: 2, alto: null })],
+        ancho,
+      );
+      expect(corregir.items[0].medida).not.toBe('2X70');
+      expect([...corregir.avisos, ...avisar].join(' ')).not.toMatch(/2X70/);
+    }
+  });
+
+  it('una palabra terminada en «x» no se pega a la siguiente: «dúplex lenga» sigue diciendo lenga', () => {
+    const fuente = '2 Molco dúplex lenga 80x200';
+    const ia = [item({ modelo: 'MOLCO', madera: 'MARA', cantidad: 2, ancho: 0.8, alto: 2, fuente })];
+    const { corregir, avisar } = modos(ia, fuente);
+    expect(corregir.items[0].madera).toBe('LENGA');
+    expect(corregir.avisos).toEqual([
+      'No reconocí «duplex» en el ítem 1 (MOLCO): revisa que el producto sea el que se pidió.',
+      'Revisa el ítem 1 (MOLCO): el asistente leyó la madera «MARA», pero tu pedido dice «LENGA»; usé «LENGA».',
+    ]);
+    expect(avisar).toEqual([
+      'Revisa el ítem 1 (MOLCO): anoté la madera «MARA», pero tu mensaje parece decir «LENGA».',
+      'No reconocí «duplex» en el ítem 1 (MOLCO): revisa que el producto sea el que se pidió.',
+    ]);
+  });
+
+  it('una frase repetida en el mensaje se sigue anclando y avisando', () => {
+    const fuente = '2 Molco lenga 80x200';
+    const ia = [
+      item({ modelo: 'MOLCO', madera: 'MARA', cantidad: 2, ancho: 0.8, alto: 2, fuente }),
+      item({ modelo: 'MOLCO', madera: 'LENGA', cantidad: 2, ancho: 0.8, alto: 2, fuente }),
+    ];
+    const { corregir, avisar } = modos(ia, `${fuente}\n${fuente}`);
+    expect(corregir.items.map((i) => i.madera)).toEqual(['LENGA', 'LENGA']);
+    expect(corregir.avisos).toEqual([
+      'Revisa el ítem 1 (MOLCO): el asistente leyó la madera «MARA», pero tu pedido dice «LENGA»; usé «LENGA».',
+    ]);
+    expect(avisar).toEqual([
+      'Revisa el ítem 1 (MOLCO): anoté la madera «MARA», pero tu mensaje parece decir «LENGA».',
+    ]);
+    const natural = '2 Molco natural lenga 80x200';
+    const conPalabra = ia.map((i) => ({ ...i, madera: 'LENGA', fuente: natural }));
+    expect(avisosDePalabras(conPalabra, `${natural} y ${natural}`, resolver)).toEqual([
+      'No reconocí «natural» en el ítem 1 (MOLCO): revisa que el producto sea el que se pidió.',
+      'No reconocí «natural» en el ítem 2 (MOLCO): revisa que el producto sea el que se pidió.',
+    ]);
+  });
+
+  it('ubica la frase con «×», espacios y el conector «en» distintos a los del mensaje', () => {
+    const mensaje = '3 molco lenga 80 x 200 y 2 tolten mara 70x200';
+    const ia = [
+      item({
+        modelo: 'MOLCO',
+        madera: 'MARA',
+        cantidad: 3,
+        ancho: 0.8,
+        alto: 2,
+        fuente: '3 Molco en lenga 80×200',
+      }),
+      item({
+        modelo: 'TOLTEN',
+        madera: 'MARA',
+        cantidad: 2,
+        ancho: 0.7,
+        alto: 2,
+        fuente: '2 tolten mara 70x200',
+      }),
+    ];
+    const { corregir, avisar } = modos(ia, mensaje);
+    expect(corregir.items.map((i) => i.madera)).toEqual(['LENGA', 'MARA']);
+    expect(avisar).toEqual([
+      'Revisa el ítem 1 (MOLCO): anoté la madera «MARA», pero tu mensaje parece decir «LENGA».',
+    ]);
+  });
+});
+
+describe('largos de accesorio sobre 3 m y la escuadría «de N» que existe', () => {
+  const familia = (m: string) =>
+    m === 'MARCO' ? 'MARCO' : m === 'PIEZAS T' ? 'PIEZAS_T' : m === 'GUARDAPOLVO' ? 'MOLDURA' : m === 'MOLCO' ? 'PUERTA' : null;
+  const modos = (
+    ia: SolicitudItem[],
+    mensaje: string,
+    escuadrias?: (modelo: string, madera: string | null) => readonly string[],
+  ) => {
+    const porFrase = anclarFrases(ia, [], mensaje, resolver, [], familia, escuadrias);
+    return { corregir: porFrase, avisar: avisosDeCampos(ia, porFrase.items, familia) };
+  };
+  const guardapolvo = (fuente: string, alto: number | null) =>
+    item({ modelo: 'GUARDAPOLVO', madera: 'PINO OREGON', medida: '12X1', cantidad: 2, alto, fuente });
+
+  it('el largo de un guardapolvo de 3,6 m se lee con el rango de su familia, también en centímetros', () => {
+    for (const fuente of ['2 guardapolvos 12x1 pino de 360', '2 guardapolvos 12x1 pino de 3,6 m', '2 guardapolvos 12x1 pino de 3.6']) {
+      // Antes «360» se leía como 0,36 m (milímetros de una puerta) y 3,6 no se reconocía: aviso «parece decir 3,6 m».
+      const { corregir, avisar } = modos([guardapolvo(fuente, 3.6)], fuente);
+      expect(corregir.items[0].alto, fuente).toBe(3.6);
+      expect(corregir.avisos, fuente).toEqual([]);
+      expect(avisar, fuente).toEqual([]);
+      // Si la IA lo dejó vacío, la frase lo completa.
+      expect(modos([guardapolvo(fuente, null)], fuente).corregir.items[0].alto, fuente).toBe(3.6);
+    }
+    // Sobre 6 m sigue sin ser un largo.
+    expect(modos([guardapolvo('2 guardapolvos 12x1 pino de 7 m', null)], '2 guardapolvos 12x1 pino de 7 m').corregir.items[0].alto).toBeNull();
+  });
+
+  it('las cifras del mensaje respaldan un largo de 3,6 m dicho en centímetros, y el aviso lo muestra en metros', () => {
+    const ia = [item({ modelo: 'GUARDAPOLVO', madera: 'PINO OREGON', medida: '12X1', cantidad: 2, alto: 3.6 })];
+    expect(anclarCifras(ia, [], ['2 guardapolvos 12x1 de 360'], familia)).toEqual({ items: ia, avisos: [] });
+    const inventado = anclarCifras(ia, [], ['2 guardapolvos 12x1 de 240'], familia);
+    expect(inventado.items[0].alto).toBeNull();
+    expect(inventado.avisos).toEqual([
+      'El asistente propuso el alto o largo 3,6 m para el ítem 1 (GUARDAPOLVO), pero esa cifra no aparece en tu mensaje: quedó pendiente para que la confirmes.',
+    ]);
+  });
+
+  it('«de N» es la escuadría solo si existe: «6 marcos de 3» no es una 2x3 y el 3 queda como largo', () => {
+    const fuente = '6 marcos de 3 en pino';
+    const marco = item({ modelo: 'MARCO', madera: 'PINO OREGON', medida: null, cantidad: 6, alto: 3, fuente });
+    const sinCatalogo = modos([marco], fuente);
+    expect(sinCatalogo.corregir.items[0]).toMatchObject({ medida: null, alto: 3 });
+    expect(sinCatalogo.corregir.avisos).toEqual([]);
+    expect(sinCatalogo.avisar).toEqual([]);
+    // Con las escuadrías del catálogo para ese modelo y esa madera: el 2x5 existe en lenga y no en pino.
+    const catalogo = (_modelo: string, madera: string | null) => (madera === 'LENGA' ? ['2X4', '2X5'] : ['2X4', '2X6']);
+    const pino = '6 marcos de 5 en pino de 2,2';
+    expect(modos([{ ...marco, alto: 2.2, fuente: pino }], pino, catalogo).corregir.items[0].medida).toBeNull();
+    const lenga = '6 marcos de 5 en lenga de 2,2';
+    expect(
+      modos([{ ...marco, madera: 'LENGA', alto: 2.2, fuente: lenga }], lenga, catalogo).corregir.items[0],
+    ).toMatchObject({ medida: '2X5', alto: 2.2 });
+  });
+
+  it('la cifra de la escuadría no queda además como largo', () => {
+    const fuente = '6 marcos de 4 en pino';
+    const marco = (s: Partial<SolicitudItem>) =>
+      item({ modelo: 'MARCO', madera: 'PINO OREGON', cantidad: 6, fuente, ...s });
+    const doble = modos([marco({ medida: null, alto: 4 })], fuente);
+    expect(doble.corregir.items[0]).toMatchObject({ medida: '2X4', alto: null });
+    expect(doble.corregir.avisos).toEqual([
+      'El asistente usó la escuadría «2X4» (grosor por ancho de la pieza) también como largo del ítem 1 (MARCO): quedó pendiente para que lo confirmes.',
+    ]);
+    expect(doble.avisar).toEqual([
+      'Revisa el ítem 1 (MARCO): tu mensaje parece decir la sección «2X4» y no lo anoté; anoté el alto 4 m, pero no lo encuentro en tu mensaje.',
+    ]);
+    // Con el largo vacío, la escuadría no lo completa como 4 m.
+    const vacio = modos([marco({ medida: '2X4', alto: null })], fuente);
+    expect(vacio.corregir.items[0]).toMatchObject({ medida: '2X4', alto: null });
+    expect(vacio.avisar).toEqual([]);
+    // Un largo escrito aparte sí vale.
+    const conLargo = '6 marcos de 4 en pino de 4 m';
+    expect(modos([marco({ medida: '2X4', alto: 4, fuente: conLargo })], conLargo).corregir).toMatchObject({
+      items: [{ medida: '2X4', alto: 4 }],
+      avisos: [],
+    });
+  });
+});
+
+describe('partes comunes del mensaje: «ambas de», «las dos», «cada una» (#14)', () => {
+  const familia = (m: string) => (m === 'MOLCO' ? 'PUERTA' : null);
+  const molco = (madera: string, fuente: string, s: Partial<SolicitudItem> = {}) =>
+    item({ modelo: 'MOLCO', madera, cantidad: 1, ancho: 0.73, alto: 2.4, fuente, ...s });
+  const modos = (ia: SolicitudItem[], mensaje: string) => {
+    const porFrase = anclarFrases(ia, [], mensaje, resolver, [], familia);
+    return { corregir: porFrase, avisar: avisosDeCampos(ia, porFrase.items, familia) };
+  };
+
+  it('los ítems heredan las medidas de la parte común y la cantidad escrita antes es el total', () => {
+    const mensaje = 'dame 2 Molco, una en raulí y otra en lenga, ambas de 73x240';
+    // Como cortó las frases la IA en el caso reproducido: el «2» y las medidas quedan en frases distintas.
+    for (const [a, b] of [
+      ['2 Molco, una en raulí', 'otra en lenga, ambas de 73x240'],
+      ['dame 2 Molco, una en raulí', 'otra en lenga'],
+      ['una en raulí', 'otra en lenga, ambas de 73x240'],
+    ]) {
+      const ia = [molco('RAULI', a), molco('LENGA', b)];
+      const { corregir, avisar } = modos(ia, mensaje);
+      expect(avisar, a).toEqual([]);
+      expect(corregir.avisos, a).toEqual([]);
+      expect(corregir.items, a).toEqual(ia);
+    }
+  });
+
+  it('vale igual con «las dos», «cada una de» y «todas de»', () => {
+    for (const comun of ['las dos de 73x240', 'cada una de 0,73 x 2,40', 'todas de 73 x 240']) {
+      const mensaje = `2 Molco, una en raulí y otra en lenga, ${comun}`;
+      const ia = [molco('RAULI', '2 Molco, una en raulí'), molco('LENGA', `otra en lenga, ${comun}`)];
+      const { corregir, avisar } = modos(ia, mensaje);
+      expect(avisar, comun).toEqual([]);
+      expect(corregir.items, comun).toEqual(ia);
+    }
+  });
+
+  it('la parte común corrige una medida mal leída del ítem que no dice las suyas', () => {
+    const mensaje = '2 Molco, una en raulí y otra en lenga, ambas de 73x240';
+    const ia = [molco('RAULI', '2 Molco, una en raulí', { ancho: 0.8 }), molco('LENGA', 'otra en lenga, ambas de 73x240')];
+    const { corregir, avisar } = modos(ia, mensaje);
+    expect(corregir.items[0]).toMatchObject({ ancho: 0.73, alto: 2.4, cantidad: 1 });
+    expect(avisar).toEqual(['Revisa el ítem 1 (MOLCO): anoté el ancho 0,8 m, pero tu mensaje parece decir 0,73 m.']);
+  });
+
+  it('sin reparto, la cantidad escrita antes del modelo sigue corrigiendo a la IA', () => {
+    const { avisar } = modos([molco('RAULI', '2 Molco raulí 73x240')], '2 Molco raulí 73x240');
+    expect(avisar).toEqual(['Revisa el ítem 1 (MOLCO): anoté la cantidad 1, pero tu mensaje parece decir 2.']);
+  });
+});
+
+describe('un par con una cifra sobre 300 (#18)', () => {
+  it('«102 x 320» se lee en centímetros: no hay un alto de 1,02 m que proponer', () => {
+    expect(parMedidaPuerta('4 LANCO en Lenga de 102 x 320')).toBeNull();
+    const ia = [
+      item({ modelo: 'LANCO', madera: 'LENGA', cantidad: 4, ancho: 1.02, alto: 3.2, fuente: '4 LANCO en Lenga de 102 x 320' }),
+    ];
+    const porFrase = anclarFrases(ia, [], '4 LANCO en Lenga de 102 x 320', resolver);
+    expect(porFrase.avisos).toEqual([]);
+    expect(porFrase.items).toEqual(ia);
+    expect(avisosDeCampos(ia, porFrase.items)).toEqual([]);
+  });
+
+  it('los pares en una sola unidad se leen como antes', () => {
+    expect(parMedidaPuerta('1230 x 2600 mm')).toEqual({ ancho: 1.23, alto: 2.6 });
+    expect(parMedidaPuerta('800 x 2100')).toEqual({ ancho: 0.8, alto: 2.1 });
+    expect(parMedidaPuerta('102 x 210')).toEqual({ ancho: 1.02, alto: 2.1 });
+    expect(parMedidaPuerta('0,8 x 2,1')).toEqual({ ancho: 0.8, alto: 2.1 });
   });
 });

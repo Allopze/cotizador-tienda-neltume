@@ -7,6 +7,7 @@ import { atributosProductoSchema } from '@/asistente/esquemas';
 import { ErrorCatalogo, cargarCatalogo } from '@/servidor/catalogo';
 import { ErrorMigracionRequerida, abrirBaseDatos } from '@/servidor/base-datos';
 import { ServicioAltaCatalogo } from '@/servidor/alta-catalogo';
+import { Almacen } from '@/servidor/almacen';
 import { ErrorUsuario, registrarError } from '@/servidor/errores';
 import {
   coincideBusquedaCatalogo,
@@ -16,12 +17,24 @@ import {
 } from '@/servidor/busqueda';
 import { leerConfiguracionNegocio } from '@/servidor/configuracion-negocio';
 import type { Producto } from '@/catalogo/tipos';
+import { ORIGENES_CATALOGO, type OrigenCatalogo } from '@/catalogo/origenes';
+import type { LLM } from '@/asistente/llm';
 import { margenProducto } from '@/negocio/precios';
+import { rangoMedidas } from '@/negocio/limites';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 const codigo = z.string().trim().min(1).max(80);
+const FAMILIAS = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'] as const;
+/**
+ * Topes del largo que se aceptan en la solicitud: los de `rangoMedidas`, del más corto al más largo de todas las
+ * familias. El tope de la familia del producto (3 m en puertas) lo comprueba el repositorio, con su mensaje.
+ */
+const LARGO = {
+  min: Math.min(...FAMILIAS.map((f) => rangoMedidas(f).min)),
+  max: Math.max(...FAMILIAS.map((f) => rangoMedidas(f).max)),
+};
 const peticionSchema = z.discriminatedUnion('tipo', [
   z
     .object({
@@ -53,9 +66,9 @@ const peticionSchema = z.discriminatedUnion('tipo', [
           familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
           madera: z.string().trim().min(1).max(80).optional(),
           medida: z.string().trim().min(1).max(60).optional(),
-          anchoMin: z.number().finite().positive().nullable().optional(),
-          anchoMax: z.number().finite().positive().nullable().optional(),
-          largo: z.number().finite().positive().max(100).optional(),
+          anchoMin: z.number().finite().positive().max(rangoMedidas('PUERTA').max).nullable().optional(),
+          anchoMax: z.number().finite().positive().max(rangoMedidas('PUERTA').max).nullable().optional(),
+          largo: z.number().finite().min(LARGO.min).max(LARGO.max).optional(),
           precioNeto: z.number().positive().max(100_000_000).optional(),
           descripcion: z.string().trim().min(1).max(300).optional(),
           tipo: z.string().trim().max(120).nullable().optional(),
@@ -65,8 +78,25 @@ const peticionSchema = z.discriminatedUnion('tipo', [
     })
     .strict(),
   z.object({ tipo: z.literal('eliminar'), codigo }).strict(),
+  // Papelera de productos agregados a mano.
+  z.object({ tipo: z.literal('listar_eliminados') }).strict(),
+  z.object({ tipo: z.literal('restaurar'), codigo }).strict(),
+  // Deshace la última importación de una planilla si el catálogo no cambió desde entonces (`versionCatalogo`).
+  z
+    .object({
+      tipo: z.literal('volver_planilla'),
+      origen: z.enum(ORIGENES_CATALOGO as [OrigenCatalogo, ...OrigenCatalogo[]]),
+      versionCatalogo: z.string().min(1).max(300),
+    })
+    .strict(),
 ]);
 const sinCache = { 'Cache-Control': 'no-store' };
+/** Solo el alta asistida usa la IA: las demás acciones no dependen de que su clave se pueda leer. */
+const sinIA: LLM = {
+  interpretar: async () => {
+    throw new Error('Esta acción no utiliza el asistente.');
+  },
+};
 
 const consultaSchema = z.object({
   q: z.string().max(100).optional(),
@@ -166,9 +196,20 @@ export async function POST(req: Request) {
   try {
     const catalogo = await cargarCatalogo();
     const peticion = parsed.data;
-    if ((peticion.tipo === 'listar_productos' || peticion.tipo === 'editar') && sesion.usuario.rol !== 'admin')
+    if (
+      (peticion.tipo === 'listar_productos' || peticion.tipo === 'editar') &&
+      sesion.usuario.rol !== 'admin'
+    )
       return Response.json(
-        { error: 'Solo quien administra el catálogo puede modificar productos importados.', codigo: 'sin_permiso' },
+        {
+          error: 'Solo quien administra el catálogo puede modificar productos importados.',
+          codigo: 'sin_permiso',
+        },
+        { status: 403, headers: sinCache },
+      );
+    if (peticion.tipo === 'volver_planilla' && sesion.usuario.rol !== 'admin')
+      return Response.json(
+        { error: 'Solo quien administra puede importar el catálogo.', codigo: 'sin_permiso' },
         { status: 403, headers: sinCache },
       );
     if (peticion.tipo === 'listar_manuales')
@@ -184,7 +225,24 @@ export async function POST(req: Request) {
       catalogo.eliminarManual(peticion.codigo);
       return Response.json({ eliminado: peticion.codigo }, { headers: sinCache });
     }
-    const servicio = new ServicioAltaCatalogo(abrirBaseDatos(), catalogo, crearLLM());
+    if (peticion.tipo === 'listar_eliminados')
+      return Response.json({ productos: catalogo.productosEliminados() }, { headers: sinCache });
+    if (peticion.tipo === 'restaurar')
+      return Response.json({ producto: catalogo.restaurarProducto(peticion.codigo) }, { headers: sinCache });
+    if (peticion.tipo === 'volver_planilla') {
+      // Con el bloqueo del almacén, como una importación: no cambia el catálogo en medio de una emisión.
+      const anterior = await new Almacen().restaurarImportacion(peticion.origen, peticion.versionCatalogo);
+      return Response.json(
+        { restaurada: anterior, versionCatalogo: catalogo.version },
+        { headers: sinCache },
+      );
+    }
+    // La clave de la IA se lee solo para el alta asistida: si no se puede leer, el alta manual sigue funcionando.
+    const servicio = new ServicioAltaCatalogo(
+      abrirBaseDatos(),
+      catalogo,
+      peticion.tipo === 'mensaje' ? crearLLM() : sinIA,
+    );
     if (peticion.tipo === 'mensaje')
       return Response.json(await servicio.mensaje(peticion.id, peticion.mensaje, usuarioId), {
         headers: sinCache,

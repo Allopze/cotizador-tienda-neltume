@@ -15,7 +15,7 @@ export class ErrorSolicitud extends Error {
   }
 }
 /** La sesión venció: el aviso global ya se mostró; quien llama no debe pintar otro error. */
-export class ErrorSesion extends ErrorSolicitud {
+class ErrorSesion extends ErrorSolicitud {
   constructor() {
     super('Tu sesión expiró. Vuelve a ingresar.', 401, 'sesion');
     this.name = 'ErrorSesion';
@@ -36,11 +36,41 @@ export const MENSAJES = {
   conflicto:
     'Otra persona modificó esta cotización al mismo tiempo. Se cargó la versión actual; revísala e intenta nuevamente.',
   grande: 'El contenido es demasiado largo. Acórtalo e intenta nuevamente.',
+  // 522/523/524: Cloudflare no llegó al servidor o este no respondió a tiempo (página HTML del proxy).
+  lento:
+    'El servidor tardó demasiado en responder. Tus datos guardados se conservan; espera un momento e intenta nuevamente.',
   servidor: (status: number) =>
     `El cotizador tuvo un problema (error ${status}). Tus datos guardados se conservan; intenta nuevamente en un momento.`,
   general: 'No se pudo completar la operación.',
   noEncontrado: 'No se encontró el documento solicitado.',
 };
+
+/** Pantallas desde las que se puede volver tras un vencimiento de sesión (`/login?desde=`), con su ruta. */
+export const PANTALLAS_LOGIN = {
+  cotizador: '/',
+  historial: '/historial',
+  catalogo: '/catalogo',
+  clientes: '/clientes',
+  ajustes: '/ajustes',
+  ayuda: '/ayuda',
+} as const;
+export type PantallaLogin = keyof typeof PANTALLAS_LOGIN;
+
+export const esPantallaLogin = (valor: unknown): valor is PantallaLogin =>
+  typeof valor === 'string' && Object.hasOwn(PANTALLAS_LOGIN, valor);
+
+/** La pantalla de la ruta actual, o null si no es una de las conocidas. */
+export function pantallaDeRuta(ruta: string): PantallaLogin | null {
+  const primera = `/${ruta.split('/').filter(Boolean)[0] ?? ''}`;
+  const encontrada = Object.entries(PANTALLAS_LOGIN).find(([, r]) => r === primera);
+  return encontrada ? (encontrada[0] as PantallaLogin) : null;
+}
+
+/** Login tras vencer la sesión: dice desde qué pantalla se llegó, para adaptar el aviso y volver a ella. */
+export function urlSesionExpirada(ruta = window.location.pathname) {
+  const desde = pantallaDeRuta(ruta);
+  return `/login?motivo=sesion${desde ? `&desde=${desde}` : ''}`;
+}
 
 type Oyente = () => void;
 const oyentesSesion = new Set<Oyente>();
@@ -51,11 +81,12 @@ export function alExpirarSesion(fn: Oyente) {
   return () => void oyentesSesion.delete(fn);
 }
 function expirarSesion(): never {
-  // Se avisa en cada 401 (el aviso se reemplaza, no se apila); sin oyentes se va al login una vez.
+  // Se avisa en cada 401 (el aviso se reemplaza, no se apila); sin oyentes se va al login una vez, con el
+  // motivo para que el login explique por qué pide ingresar de nuevo.
   if (oyentesSesion.size) oyentesSesion.forEach((fn) => fn());
   else if (!redirigido && window.location.pathname !== '/login') {
     redirigido = true;
-    window.location.replace('/login');
+    window.location.replace(urlSesionExpirada());
   }
   throw new ErrorSesion();
 }
@@ -85,6 +116,7 @@ async function pedir(url: string, init?: RequestInit & { json?: unknown }) {
 function mensajePorEstado(status: number, delServidor?: string, codigo?: string) {
   // Un 502/504 de un proxy trae HTML; los de la IA traen su código y un mensaje que dice qué hacer.
   if (codigo?.startsWith('ia_') && delServidor) return delServidor;
+  if (status === 522 || status === 523 || status === 524) return MENSAJES.lento;
   if (status === 504 || status === 502) return status === 504 ? MENSAJES.tiempo : MENSAJES.servidor(status);
   if (delServidor) return delServidor;
   if (status === 409) return MENSAJES.conflicto;
@@ -132,6 +164,15 @@ export async function pedirArchivo(
   if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status), r.status);
   const nombre = r.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null;
   return { blob: await r.blob(), nombre };
+}
+
+/** Comprueba (HEAD, sin bajar el archivo) que un documento siga en el servidor; falso si responde 404. */
+export async function documentoDisponible(url: string): Promise<boolean> {
+  const r = await pedir(url, { method: 'HEAD', cache: 'no-store' });
+  if (r.status === 401) expirarSesion();
+  if (r.status === 404) return false;
+  if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status), r.status);
+  return true;
 }
 
 /** Entrega un archivo al navegador como descarga. */
@@ -183,6 +224,29 @@ export function recordarAbierta(id: string | null) {
 export function leerAbierta(): string | null {
   try {
     return sessionStorage.getItem(CLAVE_ABIERTA);
+  } catch {
+    return null;
+  }
+}
+
+// Aviso del servidor para mostrar al abrir una cotización en el cotizador tras cambiar de pantalla (p. ej. «Duplicar»
+// desde el historial recorta el descuento al máximo vigente): la pantalla que lo recibió se va antes de mostrarlo.
+const CLAVE_AVISO_AL_ABRIR = 'neltume:aviso-al-abrir';
+export function dejarAvisoAlAbrir(id: string, texto: string) {
+  try {
+    sessionStorage.setItem(CLAVE_AVISO_AL_ABRIR, JSON.stringify({ id, texto }));
+  } catch {
+    // Sin almacenamiento: el aviso queda en la actividad de la cotización.
+  }
+}
+/** Devuelve (y borra) el aviso pendiente si es de esta cotización. */
+export function tomarAvisoAlAbrir(id: string): string | null {
+  try {
+    const crudo = sessionStorage.getItem(CLAVE_AVISO_AL_ABRIR);
+    if (!crudo) return null;
+    sessionStorage.removeItem(CLAVE_AVISO_AL_ABRIR);
+    const aviso = JSON.parse(crudo) as { id?: unknown; texto?: unknown };
+    return aviso.id === id && typeof aviso.texto === 'string' ? aviso.texto : null;
   } catch {
     return null;
   }

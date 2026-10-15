@@ -1,6 +1,7 @@
 import { StringDecoder } from 'node:string_decoder';
 import { z } from 'zod';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
+import { ACTOR_TERMINAL, registrarCambioCuenta } from '../src/servidor/auditoria-cuentas';
 import {
   migrarEsquemaAutenticacion,
   validarConfiguracionAutenticacion,
@@ -113,6 +114,7 @@ async function principal() {
       await context.internalAdapter.deleteUser(usuarioNuevo.id);
       throw error;
     }
+    registrarCambioCuenta({ actor: ACTOR_TERMINAL, objetivo: usuarioNuevo.email, accion: 'crear' }, database);
     console.log(`Cuenta admin creada: ${usuarioNuevo.email}.`);
     return;
   }
@@ -136,6 +138,7 @@ async function principal() {
       banExpires: null,
     });
     await context.internalAdapter.deleteUserSessions(usuario.id);
+    registrarCambioCuenta({ actor: ACTOR_TERMINAL, objetivo: email.data, accion: 'desactivar' }, database);
     console.log(`Cuenta desactivada: ${email.data}.`);
     return;
   }
@@ -146,6 +149,7 @@ async function principal() {
       banReason: null,
       banExpires: null,
     });
+    registrarCambioCuenta({ actor: ACTOR_TERMINAL, objetivo: email.data, accion: 'activar' }, database);
     console.log(`Cuenta activada: ${email.data}.`);
     return;
   }
@@ -164,6 +168,7 @@ async function principal() {
     });
   }
   await context.internalAdapter.deleteUserSessions(usuario.id);
+  registrarCambioCuenta({ actor: ACTOR_TERMINAL, objetivo: email.data, accion: 'restablecer-clave' }, database);
   console.log(`Contraseña restablecida y sesiones revocadas: ${email.data}.`);
 }
 

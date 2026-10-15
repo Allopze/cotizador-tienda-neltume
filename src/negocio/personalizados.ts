@@ -20,16 +20,37 @@ export const SIN_CATALOGO = new Set<Rechazo['tipo']>([
  * cuenta para el descuento por cantidad.
  */
 export function familiaEspecial(
-  r: Rechazo,
+  r: Rechazo | null | undefined,
   s?: Pick<SolicitudItem, 'modelo' | 'ancho' | 'medida'>,
 ): Familia {
-  const conocida = 'familia' in r ? r.familia : undefined;
+  const conocida = r && 'familia' in r ? r.familia : undefined;
   if (conocida) return conocida;
   const nombre = (s?.modelo ?? '').toLowerCase();
   if (/\bmarcos?\b/.test(nombre)) return 'MARCO';
   if (/\bpiezas?\s*t\b/.test(nombre)) return 'PIEZAS_T';
   if (/guardapolvo|pilastra|endolado|moldura|cornisa|junquillo|tapajunta/.test(nombre)) return 'MOLDURA';
   return s && s.ancho == null && s.medida ? 'MOLDURA' : 'PUERTA';
+}
+
+/**
+ * La única regla de familia de un ítem: con ella se leen y validan sus medidas (puertas hasta 3 m, accesorios
+ * hasta 6 m) en el botón de la pregunta, en el chat y en el servidor. Orden: la del pedido especial, la del producto
+ * con que se cotizó, la que trae su rechazo, la de su modelo en el catálogo (`familiaModelo`, que también acepta
+ * un alias) y, al final, la que dicen su nombre o su forma (`familiaEspecial`).
+ */
+export function familiaItem(
+  s: Pick<SolicitudItem, 'modelo' | 'ancho' | 'medida'> & Partial<Pick<SolicitudItem, 'personalizado'>>,
+  cotizado?: { familia: Familia } | null,
+  rechazo?: Rechazo | null,
+  familiaModelo?: (modelo: string) => string | null,
+): Familia {
+  return (
+    s.personalizado?.familia ??
+    cotizado?.familia ??
+    (rechazo && 'familia' in rechazo ? rechazo.familia : undefined) ??
+    ((s.modelo ? familiaModelo?.(s.modelo) : null) as Familia | null | undefined) ??
+    familiaEspecial(null, s)
+  );
 }
 
 /** Formatos admitidos como referencia del cliente y la extensión con que se guardan. */
@@ -76,8 +97,9 @@ export function productoPersonalizado(s: SolicitudItem, familia: Familia): Resol
     (s.cantidad === null || !Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000) && 'cantidad',
     !s.precioUnitario && 'precio',
   ].filter((c): c is string => !!c);
-  const ancho = s.ancho === null ? null : metros(s.ancho);
-  const alto = s.alto === null ? null : metros(s.alto);
+  // El ancho es de puerta (hasta 3 m); el largo de un accesorio especial llega a 6 m, como en el catálogo.
+  const ancho = s.ancho === null ? null : metros(s.ancho, 'PUERTA');
+  const alto = s.alto === null ? null : metros(s.alto, familia);
   if (s.ancho !== null && ancho === null) campos.push('ancho');
   if (s.alto !== null && alto === null) campos.push('alto');
   if (campos.length) return { ok: false, campos };

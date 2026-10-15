@@ -1,12 +1,21 @@
 'use client';
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { leerPesos } from '@/negocio/cifras';
 import { pesos } from '@/negocio/precios';
+import type { ProductoEliminado } from '@/servidor/repositorio-catalogo';
 import type { Avisar } from './avisos';
 import type { ProductoAdministrable } from './contrato';
 import { Dialogo, useConfirmacion } from './dialogo';
 import { FAMILIAS } from '@/catalogo/familias';
-import { decimalCampo, leerMetros, medidaProducto, nombreProducto } from './formato';
+import {
+  decimalCampo,
+  errorMedida,
+  fechaCorta,
+  leerMedida,
+  medidaProducto,
+  nombreProducto,
+  textoRangoMedida,
+} from './formato';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
@@ -24,7 +33,7 @@ type Cambios = Partial<
   >
 >;
 
-const campos = (p: ProductoAdministrable): Campos => ({
+export const campos = (p: ProductoAdministrable): Campos => ({
   modelo: p.modelo,
   familia: p.familia,
   madera: p.madera,
@@ -39,7 +48,7 @@ const campos = (p: ProductoAdministrable): Campos => ({
 });
 
 /** Solo lo que cambió; un error por campo si algo no se puede guardar. */
-function cambiosDe(p: ProductoAdministrable, c: Campos) {
+export function cambiosDe(p: ProductoAdministrable, c: Campos) {
   const errores: Partial<Record<keyof Campos, string>> = {};
   const cambios: Cambios = {};
   for (const campo of ['modelo', 'madera', 'medida', 'descripcion'] as const) {
@@ -50,14 +59,22 @@ function cambiosDe(p: ProductoAdministrable, c: Campos) {
   if (c.familia !== p.familia) cambios.familia = c.familia as ProductoAdministrable['familia'];
   const tipo = c.tipo.trim() || null;
   if (tipo !== p.tipo) cambios.tipo = tipo;
+  // Las medidas se leen como en el detalle y el chat (`leerMedida`): «80 cm», «2100 mm» o «3600 mm». Solo se
+  // revisan si cambian (el largo, también si cambia la familia, como en el servidor): un producto de la planilla
+  // fuera de rango se puede seguir corrigiendo en lo demás.
+  const originales = campos(p);
   for (const campo of ['anchoMin', 'anchoMax'] as const) {
-    const valor = c[campo].trim() ? leerMetros(c[campo], 4) : null;
-    if (c[campo].trim() && (valor === null || valor <= 0)) errores[campo] = 'Escribe un número en metros, como 0,80.';
+    const texto = c[campo].trim();
+    if (texto === originales[campo]) continue;
+    const valor = texto ? leerMedida(texto, 'PUERTA', 'ancho') : null;
+    if (texto && valor === null) errores[campo] = errorMedida('ancho', 'PUERTA');
     else if (valor !== p[campo]) cambios[campo] = valor;
   }
-  const largo = leerMetros(c.largo, 10);
-  if (largo === null || largo <= 0) errores.largo = 'Escribe un número en metros, como 2,10.';
-  else if (largo !== p.largo) cambios.largo = largo;
+  if (c.largo.trim() !== originales.largo || c.familia !== p.familia) {
+    const largo = leerMedida(c.largo, c.familia);
+    if (largo === null) errores.largo = errorMedida('alto', c.familia);
+    else if (largo !== p.largo) cambios.largo = largo;
+  }
   const precio = leerPesos(c.precio);
   if (!Number.isFinite(precio) || precio <= 0) errores.precio = 'Escribe el precio en pesos, como 145.000.';
   else if (precio !== Math.round(p.precioNeto)) cambios.precioNeto = precio;
@@ -74,8 +91,29 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
   const [ocupado, setOcupado] = useState('');
   const [confirmar, confirmacion] = useConfirmacion();
   const termino = busqueda.trim();
+  // Papelera de productos agregados a mano: se relee tras eliminar o restaurar.
+  const [eliminados, setEliminados] = useState<ProductoEliminado[] | null>(null);
+  const [errorEliminados, setErrorEliminados] = useState('');
+  const [releerEliminados, setReleerEliminados] = useState(0);
+  const otraVezEliminados = useCallback(() => setReleerEliminados((n) => n + 1), []);
 
   useEffect(() => guardarSesion('catalogo:gestion:q', busqueda), [busqueda]);
+
+  useEffect(() => {
+    const control = new AbortController();
+    pedirJSON<{ productos: ProductoEliminado[] }>('/api/catalogo', {
+      json: { tipo: 'listar_eliminados' },
+      signal: control.signal,
+    })
+      .then((d) => {
+        setEliminados(d.productos);
+        setErrorEliminados('');
+      })
+      .catch((e) => {
+        if (!esSilencioso(e)) setErrorEliminados(mensajeDe(e));
+      });
+    return () => control.abort();
+  }, [releerEliminados]);
 
   // Mismo ritmo que Consultar: se espera a que se deje de escribir y se cancela la consulta anterior.
   // Sin término se listan los productos agregados a mano, que son los que más se corrigen.
@@ -126,9 +164,28 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
     try {
       await pedirJSON('/api/catalogo', { json: { tipo: 'eliminar', codigo: p.codigo } });
       setDatos((d) => d && { productos: d.productos.filter((x) => x.codigo !== p.codigo), total: d.total - 1 });
-      avisar('exito', `Producto ${p.codigo} eliminado del catálogo.`);
+      avisar('exito', `Producto ${p.codigo} eliminado del catálogo. Puedes restaurarlo en «Productos eliminados».`);
+      otraVezEliminados();
     } catch (causa) {
       if (!esSilencioso(causa)) setError(mensajeDe(causa));
+    } finally {
+      setOcupado('');
+    }
+  }
+
+  async function restaurar(p: ProductoEliminado) {
+    if (ocupado) return;
+    setOcupado(p.codigo);
+    setErrorEliminados('');
+    try {
+      await pedirJSON('/api/catalogo', { json: { tipo: 'restaurar', codigo: p.codigo } });
+      avisar('exito', `Producto ${p.codigo} restaurado en el catálogo.`);
+      setEliminados((lista) => lista && lista.filter((x) => x.codigo !== p.codigo));
+      // La lista de arriba lo vuelve a mostrar (sin búsqueda, lista los agregados a mano).
+      setReintento((n) => n + 1);
+      otraVezEliminados();
+    } catch (causa) {
+      if (!esSilencioso(causa)) setErrorEliminados(mensajeDe(causa));
     } finally {
       setOcupado('');
     }
@@ -187,7 +244,7 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
               <tr>
                 <th scope="col">Producto / código</th>
                 <th scope="col">Medida</th>
-                <th scope="col">Precio base neto</th>
+                <th scope="col">Precio base sin IVA</th>
                 <th scope="col">
                   <span className="sr-only">Acciones</span>
                 </th>
@@ -203,7 +260,7 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
                     </small>
                   </td>
                   <td data-etiqueta="Medida">{medidaProducto(p)}</td>
-                  <td data-etiqueta="Precio base neto">{pesos(p.precioNeto)}</td>
+                  <td data-etiqueta="Precio base sin IVA">{pesos(p.precioNeto)}</td>
                   <td className="celda-acciones">
                     <button
                       type="button"
@@ -231,6 +288,72 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
             </tbody>
           </table>
         </div>
+      )}
+      {(!!eliminados?.length || errorEliminados) && (
+        <details className="gestion-eliminados">
+          <summary>
+            Productos eliminados{eliminados ? ` (${eliminados.length})` : ''}
+          </summary>
+          <p className="muted">
+            Productos agregados a mano que se eliminaron. Al restaurarlos vuelven tal como estaban, con quién los agregó
+            y cuándo.
+          </p>
+          {errorEliminados && (
+            <p className="catalog-error" role="alert">
+              {errorEliminados}{' '}
+              <button type="button" className="link" onClick={otraVezEliminados}>
+                Reintentar
+              </button>
+            </p>
+          )}
+          {!!eliminados?.length && (
+            <div className="catalogo-lista" tabIndex={0} role="region" aria-label="Productos eliminados">
+              <table>
+                <thead>
+                  <tr>
+                    <th scope="col">Producto / código</th>
+                    <th scope="col">Medida</th>
+                    <th scope="col">Precio base sin IVA</th>
+                    <th scope="col">
+                      <span className="sr-only">Acciones</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {eliminados.map((p) => (
+                    <tr key={p.codigo}>
+                      <td>
+                        {nombreProducto(p.descripcion)}
+                        <small>
+                          {p.codigo} · Eliminado el {fechaCorta(p.eliminada)}
+                          {p.creada ? ` · Agregado el ${fechaCorta(p.creada)}` : ''}
+                          {p.creadaPor ? ` por ${p.creadaPor}` : ''}
+                        </small>
+                        {p.codigoOcupado && (
+                          <small id={`ocupado-${p.codigo}`}>Otro producto usa hoy este código: no se puede restaurar.</small>
+                        )}
+                      </td>
+                      <td data-etiqueta="Medida">{medidaProducto(p)}</td>
+                      <td data-etiqueta="Precio base sin IVA">{pesos(p.precioNeto)}</td>
+                      <td className="celda-acciones">
+                        <button
+                          type="button"
+                          className="button secondary small"
+                          onClick={() => void restaurar(p)}
+                          disabled={!!ocupado || p.codigoOcupado}
+                          aria-label={`Restaurar ${p.codigo}`}
+                          aria-describedby={p.codigoOcupado ? `ocupado-${p.codigo}` : undefined}
+                        >
+                          {ocupado === p.codigo ? 'Restaurando…' : 'Restaurar'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </details>
       )}
       {editando && (
         <EditorProducto
@@ -293,8 +416,11 @@ function EditorProducto({
   }
 
   const campo = (nombre: keyof Campos, etiqueta: string, extra: { ayuda?: string; ancho?: boolean; numero?: boolean } = {}) => (
-    <label className={`alta-campo${extra.ancho ? ' alta-campo-ancho' : ''}`} htmlFor={`${uid}-${nombre}`}>
-      <span>{etiqueta}</span>
+    // La ayuda y el error van fuera de la etiqueta: el nombre del campo es solo su etiqueta y el resto se lee como descripción.
+    <div className={`alta-campo${extra.ancho ? ' alta-campo-ancho' : ''}`}>
+      <span>
+        <label htmlFor={`${uid}-${nombre}`}>{etiqueta}</label>
+      </span>
       <input
         id={`${uid}-${nombre}`}
         value={valores[nombre]}
@@ -313,7 +439,7 @@ function EditorProducto({
           {errores[nombre] ?? extra.ayuda}
         </small>
       )}
-    </label>
+    </div>
   );
 
   return (
@@ -339,11 +465,14 @@ function EditorProducto({
           {campo('modelo', 'Modelo')}
           {campo('madera', 'Madera')}
           {campo('tipo', 'Tipo (opcional)')}
-          {campo('medida', puerta ? 'Medida (texto)' : 'Medida o escuadría')}
-          {puerta && campo('anchoMin', 'Ancho mínimo', { numero: true, ayuda: 'En metros (0,80) o centímetros (80).' })}
+          {campo('medida', puerta ? 'Medida (texto)' : 'Medida o escuadría', puerta ? undefined : { ayuda: 'Escuadría: grosor por ancho de la pieza.' })}
+          {puerta && campo('anchoMin', 'Ancho mínimo', { numero: true, ayuda: 'En metros (0,80), centímetros (80 cm) o milímetros (800 mm).' })}
           {puerta && campo('anchoMax', 'Ancho máximo', { numero: true })}
-          {campo('largo', puerta ? 'Alto' : 'Largo', { numero: true, ayuda: 'En metros (2,10) o centímetros (210).' })}
-          {campo('precio', 'Precio base neto', { numero: true, ayuda: 'Sin IVA y sin el margen de venta.' })}
+          {campo('largo', puerta ? 'Alto' : 'Largo', {
+            numero: true,
+            ayuda: `En metros (2,10), centímetros (210 cm) o milímetros (2100 mm), ${textoRangoMedida('alto', valores.familia)}.`,
+          })}
+          {campo('precio', 'Precio base sin IVA', { numero: true, ayuda: 'Costo de fábrica, sin la ganancia de venta.' })}
           {campo('descripcion', 'Descripción', { ancho: true, ayuda: 'Es el texto que aparece en la cotización y el PDF.' })}
         </div>
         {error && (

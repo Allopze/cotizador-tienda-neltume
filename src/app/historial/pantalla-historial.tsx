@@ -7,7 +7,7 @@ import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
 import { Historial, useHistorial } from '../historial';
 import { antesDeNavegar, useEsCliente, useScrollRecordado } from '../memoria-pantalla';
-import { esSilencioso, leerAbierta, mensajeDe, pedirJSON } from '../solicitud';
+import { dejarAvisoAlAbrir, esSilencioso, leerAbierta, mensajeDe, pedirJSON } from '../solicitud';
 
 const sinEfecto = () => {};
 const sinSuscripcion = () => () => {};
@@ -53,6 +53,8 @@ function Listado({
     setDuplicando(id);
     try {
       const d = await pedirJSON<Resultado>('/api/accion', { json: { tipo: 'duplicar', id } });
+      // Lo que cambió al copiar (p. ej. el descuento recortado al máximo vigente) se avisa al abrir la copia.
+      if (d.avisos?.length) dejarAvisoAlAbrir(d.cotizacion.id, d.avisos.join(' '));
       antesDeNavegar();
       router.push(`/?cotizacion=${encodeURIComponent(d.cotizacion.id)}`, { scroll: false });
     } catch (e) {

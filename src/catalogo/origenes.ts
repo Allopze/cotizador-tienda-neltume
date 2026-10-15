@@ -8,5 +8,3 @@ export const ETIQUETA_ORIGEN: Record<OrigenCatalogo, string> = {
   principal: 'Planilla de puertas sólidas',
   enchapadas: 'Planilla de enchapadas, prepintadas y marcos finger',
 };
-export const esOrigenCatalogo = (valor: string): valor is OrigenCatalogo =>
-  (ORIGENES_CATALOGO as readonly string[]).includes(valor);

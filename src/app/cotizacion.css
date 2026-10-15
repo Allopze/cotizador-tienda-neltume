@@ -681,6 +681,18 @@ td small {
 .menu-acciones li button.peligro {
   color: var(--danger);
 }
+.menu-acciones li button.peligro:disabled {
+  color: var(--subtle);
+}
+/* Por qué una opción está deshabilitada: visible, no solo en `title`. */
+.menu-acciones .menu-detalle {
+  display: block;
+  max-width: 260px;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  white-space: normal;
+}
 .menu-acciones .separador {
   margin: 6px 0;
   border-top: 1px solid var(--line-soft);
@@ -874,8 +886,9 @@ td small {
     font-weight: 600;
   }
   /* La fila de usuario lleva tres acciones: ocupan el ancho y se envuelven, en vez de apilarse
-     alineadas a la derecha una por línea. */
-  .usuarios-admin .catalogo-lista td:last-child,
+     alineadas a la derecha una por línea. Solo la celda de acciones: el registro de cambios, en la misma
+     pantalla, no tiene acciones y su última celda (el cambio) sigue siendo texto. */
+  .usuarios-admin .catalogo-lista td.celda-acciones,
   .gestion-manuales .catalogo-lista td.celda-acciones {
     grid-column: 1 / -1;
     display: flex;
@@ -1029,6 +1042,11 @@ td small {
   grid-template-columns: repeat(3, minmax(130px, 1fr)) auto;
   align-items: end;
   gap: 10px;
+}
+/* El error del monto ocupa su propia fila al final: no corre los campos al aparecer. */
+.workflow-payment > .campo-error {
+  grid-column: 1 / -1;
+  margin-top: 0;
 }
 .workflow-payment .ia-field,
 .workflow-comment .ia-field {
@@ -1299,4 +1317,24 @@ td small {
 }
 .descuento-item-texto {
   font-weight: 600;
+}
+/* Avisos de ediciones directas: quedan en la conversación hasta el próximo mensaje, legibles como los cambios. */
+.message.local.avisos-edicion p {
+  font-style: normal;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+.message.local.avisos-edicion p + p {
+  margin-top: 4px;
+}
+/* Mientras el chat espera respuesta no se cambia de pantalla: los enlaces se ven apagados. */
+.header-nav a[aria-disabled='true'],
+.header-nav a[aria-disabled='true']:hover {
+  color: var(--muted);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* «Volver al paso anterior» acompaña a la acción principal sin competir con ella. */
+.workflow-next .workflow-atras {
+  margin-top: 0;
 }

@@ -3,8 +3,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { hostPermitido, hostsConfigurados, interpretarHost } from '../src/servidor/acceso';
+import { hostPermitido, hostsConfigurados, interpretarHost, rechazoAcceso } from '../src/servidor/acceso';
 import {
+  cabeceraIpCliente,
   crearAutenticacion,
   esRutaAdminAuth,
   MAX_FALLOS_POR_CORREO,
@@ -158,7 +159,23 @@ describe('Autenticación Better Auth', () => {
       headers: { origin: origen, 'content-type': 'application/json' },
       body: JSON.stringify({ email: correo, password: clave }),
     });
-    expect(cuentaDesactivada.status).toBe(403);
+    // Una cuenta desactivada responde exactamente igual que una contraseña incorrecta: no revela que existe.
+    expect(cuentaDesactivada.status).toBe(401);
+    const claveIncorrecta = await solicitudAuth(auth, '/sign-in/email', {
+      method: 'POST',
+      headers: { origin: origen, 'content-type': 'application/json' },
+      body: JSON.stringify({ email: correo, password: 'otra-clave-incorrecta-1' }),
+    });
+    expect(claveIncorrecta.status).toBe(401);
+    const noExiste = await solicitudAuth(auth, '/sign-in/email', {
+      method: 'POST',
+      headers: { origin: origen, 'content-type': 'application/json' },
+      body: JSON.stringify({ email: 'nadie@neltume.test', password: clave }),
+    });
+    const cuerpos = [await cuentaDesactivada.json(), await claveIncorrecta.json(), await noExiste.json()];
+    expect(cuerpos[0]).toEqual(cuerpos[1]);
+    expect(cuerpos[0]).toEqual(cuerpos[2]);
+    expect(JSON.stringify(cuerpos[0])).not.toMatch(/ban/i);
     const sesionRevocada = await solicitudAuth(auth, '/get-session', { headers: { cookie: segundaCookie } });
     expect(await sesionRevocada.json()).toBeNull();
   });
@@ -423,5 +440,81 @@ describe('Roles en rutas protegidas', () => {
     } finally {
       cerrarBaseDatos();
     }
+  });
+});
+
+describe('IP del cliente según el proxy (NELTUME_IP_HEADER)', () => {
+  let database: Database.Database | undefined;
+
+  afterEach(() => {
+    database?.close();
+    database = undefined;
+    vi.unstubAllEnvs();
+  });
+
+  async function preparar(cabecera: string) {
+    vi.stubEnv('BETTER_AUTH_SECRET', 'vitest-secret-0123456789abcdef-0123456789');
+    vi.stubEnv('BETTER_AUTH_URL', origen);
+    vi.stubEnv('NELTUME_IP_HEADER', cabecera);
+    database = new Database(':memory:');
+    await migrarEsquemaAutenticacion(database);
+    return crearAutenticacion(database);
+  }
+
+  // Cada intento usa otro correo para medir solo el límite por IP (5 cada 15 minutos), no el límite por correo.
+  const intento = (auth: ReturnType<typeof crearAutenticacion>, n: number, cabeceras: Record<string, string>) =>
+    solicitudAuth(auth, '/sign-in/email', {
+      method: 'POST',
+      headers: { origin: origen, 'content-type': 'application/json', ...cabeceras },
+      body: JSON.stringify({ email: `nadie${n}@neltume.test`, password: 'clave-incorrecta-123456' }),
+    });
+
+  it('acepta solo los valores conocidos y usa cf-connecting-ip por omisión', () => {
+    expect(cabeceraIpCliente(undefined)).toBe('cf-connecting-ip');
+    expect(cabeceraIpCliente(' X-Real-IP ')).toBe('x-real-ip');
+    expect(cabeceraIpCliente('ninguna')).toBe('ninguna');
+    expect(() => cabeceraIpCliente('true-client-ip')).toThrow(/NELTUME_IP_HEADER/);
+    vi.stubEnv('NELTUME_IP_HEADER', 'x-client-ip');
+    expect(() => validarConfiguracionAutenticacion()).toThrow(/NELTUME_IP_HEADER/);
+  });
+
+  it('con x-real-ip ignora cf-connecting-ip: inventarla en cada intento no salta el límite', async () => {
+    const auth = await preparar('x-real-ip');
+    for (let i = 0; i < 5; i++)
+      expect((await intento(auth, i, { 'x-real-ip': '203.0.113.5', 'cf-connecting-ip': `198.51.100.${i}` })).status).toBe(401);
+    const sexto = await intento(auth, 5, { 'x-real-ip': '203.0.113.5', 'cf-connecting-ip': '198.51.100.99' });
+    expect(sexto.status).toBe(429);
+    const otraPersona = await intento(auth, 6, { 'x-real-ip': '203.0.113.6' });
+    expect(otraPersona.status).toBe(401);
+  });
+
+  it('con ninguna todas comparten una sola cubeta (el riesgo documentado)', async () => {
+    const auth = await preparar('ninguna');
+    for (let i = 0; i < 5; i++)
+      expect((await intento(auth, i, { 'cf-connecting-ip': `198.51.100.${i}` })).status).toBe(401);
+    expect((await intento(auth, 5, { 'cf-connecting-ip': '198.51.100.200' })).status).toBe(429);
+  });
+});
+
+describe('Escrituras: Origin y Sec-Fetch-Site', () => {
+  const pedido = (cabeceras: Record<string, string>) =>
+    new Request(`${origen}/api/accion`, { method: 'POST', headers: { host: '127.0.0.1:3000', ...cabeceras } });
+
+  it('rechaza una escritura de otro sitio aunque no traiga Origin', () => {
+    for (const sitio of ['cross-site', 'same-site', 'none'])
+      expect(rechazoAcceso(pedido({ 'sec-fetch-site': sitio }), { escritura: true })?.status).toBe(403);
+    expect(
+      rechazoAcceso(pedido({ origin: origen, 'sec-fetch-site': 'cross-site' }), { escritura: true })?.status,
+    ).toBe(403);
+  });
+
+  it('acepta la propia aplicación y los clientes que no son navegador', () => {
+    expect(rechazoAcceso(pedido({ 'sec-fetch-site': 'same-origin' }), { escritura: true })).toBeNull();
+    expect(rechazoAcceso(pedido({ origin: origen, 'sec-fetch-site': 'same-origin' }), { escritura: true })).toBeNull();
+    // curl, scripts y pruebas no envían ninguna de las dos.
+    expect(rechazoAcceso(pedido({}), { escritura: true })).toBeNull();
+    // Origin ajeno sigue rechazado; una lectura no mira Sec-Fetch-Site.
+    expect(rechazoAcceso(pedido({ origin: 'https://malicioso.test' }), { escritura: true })?.status).toBe(403);
+    expect(rechazoAcceso(pedido({ 'sec-fetch-site': 'cross-site' }))).toBeNull();
   });
 });

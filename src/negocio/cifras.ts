@@ -1,4 +1,5 @@
 // Lectura de cifras escritas por personas, compartida por servidor e interfaz.
+import { MARGEN_MAX, MARGEN_MIN } from './limites';
 
 /**
  * Cifra con separadores chilenos: el punto separa miles y la coma decimales, pero una coma seguida de
@@ -51,11 +52,12 @@ export const leerPorcentajeConSigno = (texto: string) => {
   return negativo ? -n : n;
 };
 
-/** Mensaje de error de un margen escrito en porcentaje (−50 %…500 %, dos decimales), o null si es válido. */
+/** Mensaje de error de un margen («ganancia» en pantalla) escrito en porcentaje (−50 %…500 %, dos decimales), o null. */
 export function errorMargenTexto(texto: string): string | null {
   const n = leerPorcentajeConSigno(texto);
   if (Number.isNaN(n)) return 'Escribe un número.';
-  if (n < -50 || n > 500) return 'El margen debe estar entre -50 y 500 %.';
+  if (n < MARGEN_MIN * 100 || n > MARGEN_MAX * 100)
+    return `La ganancia debe estar entre ${MARGEN_MIN * 100} y ${MARGEN_MAX * 100} %.`;
   if (!conDosDecimales(n)) return 'Usa como máximo dos decimales.';
   return null;
 }

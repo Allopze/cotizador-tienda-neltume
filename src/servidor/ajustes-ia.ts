@@ -11,6 +11,8 @@ import {
 import { CommandCodeLLM, type LLM } from '../asistente/llm';
 import { abrirBaseDatos } from './base-datos';
 
+import { ErrorIA } from '../asistente/errores';
+
 const CLAVE = 'ia';
 const CLAVE_API = 'commandcode-api-key';
 const cifradoSchema = z.discriminatedUnion('desactivada', [
@@ -30,7 +32,7 @@ const cifradoSchema = z.discriminatedUnion('desactivada', [
     .strict(),
 ]);
 
-export type FuenteClaveCommandCode = 'ajustes' | 'entorno' | 'ninguna';
+export type FuenteClaveCommandCode = 'ajustes' | 'entorno' | 'ninguna' | 'ilegible';
 export interface EstadoClaveCommandCode {
   configurada: boolean;
   fuente: FuenteClaveCommandCode;
@@ -120,10 +122,11 @@ export function estadoClaveCommandCode(db: Database.Database = abrirBaseDatos())
     try {
       const guardada = cifradoSchema.parse(JSON.parse(fila.valor_json));
       if (guardada.desactivada) return { configurada: false, fuente: 'ninguna' };
+      descifrarClave(guardada);
+      return { configurada: true, fuente: 'ajustes' };
     } catch {
-      // Un registro inválido sigue siendo reemplazable desde Ajustes; nunca se devuelve su contenido.
+      return { configurada: false, fuente: 'ilegible' };
     }
-    return { configurada: true, fuente: 'ajustes' };
   }
   const configurada = !!process.env.CMD_API_KEY?.trim();
   return { configurada, fuente: configurada ? 'entorno' : 'ninguna' };
@@ -132,12 +135,11 @@ export function estadoClaveCommandCode(db: Database.Database = abrirBaseDatos())
 export function leerClaveCommandCode(db: Database.Database = abrirBaseDatos()): string {
   const fila = leerFilaClave(db);
   if (!fila) return process.env.CMD_API_KEY?.trim() ?? '';
-  const guardada = cifradoSchema.parse(JSON.parse(fila.valor_json));
-  if (guardada.desactivada) return '';
   try {
-    return descifrarClave(guardada);
+    const guardada = cifradoSchema.parse(JSON.parse(fila.valor_json));
+    return guardada.desactivada ? '' : descifrarClave(guardada);
   } catch {
-    throw new Error('No se pudo descifrar la clave API guardada. Vuelve a ingresarla desde Ajustes.');
+    throw new ErrorIA('ia_clave_ilegible', 'La clave de IA guardada ya no se puede leer. Vuelve a ingresarla en Ajustes.', 503);
   }
 }
 

@@ -139,7 +139,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                   <th scope="col">Medida</th>
                   <th scope="col">
                     Unitario cotización
-                    <small>neto + margen, sin IVA</small>
+                    <small>costo de fábrica + ganancia, sin IVA</small>
                   </th>
                 </tr>
               </thead>
@@ -157,7 +157,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                       </small>
                     </td>
                     <td data-etiqueta="Medida">{medidaProducto(p)}</td>
-                    <td data-etiqueta="Unitario (neto + margen, sin IVA)">{pesos(p.unitario)}</td>
+                    <td data-etiqueta="Unitario (costo + ganancia, sin IVA)">{pesos(p.unitario)}</td>
                   </tr>
                 ))}
               </tbody>

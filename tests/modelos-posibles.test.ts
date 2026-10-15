@@ -6,6 +6,7 @@ import { contextoSeguro, SYSTEM } from '../src/asistente/llm';
 import { pregunta } from '../src/asistente/preguntas';
 import {
   CONFIGURACION_CATALOGO_BASE,
+  modeloParecido,
   normalizarCatalogo,
   validarConfiguracionCatalogo,
 } from '../src/catalogo/configuracion';
@@ -25,6 +26,7 @@ import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repo
 import { Servicio } from '../src/servidor/servicio';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -343,5 +345,31 @@ describe('flujo de una coincidencia posible', () => {
     expect(otro.avisos?.[0]).toMatch(/se descartó su precio unitario manual/);
     expect(otro.cotizacion.montos.lineas[0].precioUnitario).toBe(155_000);
     expect(otro.cotizacion.solicitudes[0].descripcion).toBe('Puerta especial');
+  });
+});
+
+describe('plurales de un modelo', () => {
+  const marco = (codigo: string): Producto => ({
+    codigo, modelo: 'MARCO', familia: 'MARCO', tipo: null, madera: 'MARA', medida: '2X4',
+    anchoMin: null, anchoMax: null, largo: 2.5, precioNeto: 20_000, descripcion: 'MARCO MARA 2X4', filaOrigen: 9,
+  });
+  const conMarcos: Catalogo = {
+    ...catalogo,
+    productos: [...catalogo.productos, puerta('MOL-M-3-A', 'MOLCO'), marco('MAR-M-2X4')],
+  };
+  it('«marcos» y «molcos» son el modelo, no un modelo posible por confirmar', () => {
+    const marcos = resolverItem(conMarcos, { modelo: 'marcos', madera: 'Mara', medida: '2x4', alto: 2.5, cantidad: 3 });
+    expect(marcos.ok && marcos.producto.codigo).toBe('MAR-M-2X4');
+    const molcos = resolverItem(conMarcos, pedido('Molcos'));
+    expect(molcos.ok && molcos.producto.codigo).toBe('MOL-M-3-A');
+    expect(modeloParecido('MARCOS', CONFIGURACION_CATALOGO_BASE, modelosCatalogo(conMarcos))).toBeNull();
+    // Un alias seguro en plural también: «coscos» ya es alias de Coz Coz; «huilos», del singular «huilo».
+    const huilos = resolverItem(conMarcos, pedido('huilos'));
+    expect(huilos.ok && huilos.producto.modelo).toBe('Huilo Huilo');
+  });
+  it('una letra distinta sigue siendo un modelo posible, y un alias dudoso en plural no se acepta solo', () => {
+    expect(resolverItem(conMarcos, pedido('Molko'))).toMatchObject({ ok: false, rechazo: { tipo: 'modelo_posible', sugerido: 'MOLCO' } });
+    // «pillo» solo sugiere Huilo Huilo: su plural nunca se cotiza sin preguntar.
+    expect(resolverItem(conMarcos, pedido('Pillos')).ok).toBe(false);
   });
 });

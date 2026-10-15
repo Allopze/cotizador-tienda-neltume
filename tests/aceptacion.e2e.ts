@@ -1,10 +1,11 @@
-import { test, expect, type Download } from '@playwright/test';
+import { test, expect, type Download } from './fixtures-e2e';
 import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { Almacen } from '../src/servidor/almacen';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
-import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
+import { cotizar, descripcionLinea, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
+import { nombreProducto } from '../src/app/formato';
 import { DIR_E2E, iniciarSesion } from './login-e2e';
 
 async function textoPdf(ruta: string) {
@@ -25,7 +26,7 @@ const numeroDe = async (descarga: Promise<Download>, prefijo: 'cotizacion' | 'no
   return Number(nombre.match(/\d+/)![0]);
 };
 
-const DESCRIPCION = 'Puerta Huilo Huilo Mara, terminación natural';
+const PREFIJO_DESCRIPCION = 'Castaya - Puertas interiores - ';
 const PEDIDO = 'Cotiza 3 puertas Huilo Huilo en Mara de 83,5 x 236 medida vano para Juan Pérez.';
 
 // Escenario completo de punta a punta: del pedido en lenguaje natural hasta la operación completada.
@@ -40,7 +41,12 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   // 83,5 × 236 cm cae en el hueco de alto entre 2,30 y 2,40: se cotiza la siguiente medida, 0,80–0,85 × 2,40 m.
   const puerta = catalogo.buscarPorCodigo('HUIL-M-3-E')!;
   const reglas = { ...REGLAS, margenes: MARGENES_INICIALES };
-  const estandar = cotizar([{ producto: puerta, cantidad: 3 }], reglas);
+  const estandar = cotizar(
+    [{ producto: puerta, cantidad: 3, anchoSolicitado: 0.835, altoSolicitado: 2.36 }],
+    reglas,
+  );
+  const descripcionOriginal = nombreProducto(descripcionLinea(estandar.lineas[0]));
+  const DESCRIPCION = `${PREFIJO_DESCRIPCION}${descripcionOriginal}`;
   const especial = cotizar(
     [{ producto: puerta, cantidad: 3, margen: 0.42, descripcionDocumento: DESCRIPCION }],
     reglas,
@@ -71,7 +77,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(panel.locator('#producto-0 > td:first-child .quote-item-title > strong')).toHaveText(
     /^Huilo Huilo Mara 0,835 m × 2,36 m/,
   );
-  await expect(panel.getByText(/Normalizado desde|Revisar posible coincidencia|Incompleto/)).toHaveCount(0);
+  await expect(panel.getByText(/Lo escribiste como|Incompleto/)).toHaveCount(0);
   await panel.locator('#producto-0 .item-provenance > summary').click();
   await expect(
     panel.getByText('Referencia HUIL-M-3-E · 0,80–0,85 × 2,40 m · siguiente medida del catálogo en alto', {
@@ -89,18 +95,49 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   // 3. Precio del cliente = fábrica × 1,55.
   const linea = estandar.lineas[0];
   await expect(
-    panel.getByText(`Fábrica ${pesos(puerta.precioNeto)} → cliente ${pesos(linea.precioUnitario)}`, {
+    panel.getByText(`Costo de fábrica ${pesos(puerta.precioNeto)} · Precio al cliente ${pesos(linea.precioUnitario)}`, {
       exact: true,
     }),
   ).toBeVisible();
   await expect(
-    panel.getByText('Margen estándar: 55 % · Margen aplicado: 55 %', { exact: true }),
+    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 55 %', { exact: true }),
   ).toBeVisible();
   await expect(total).toHaveText(pesos(estandar.total));
 
   // 4. Descripción del documento y margen especial de la línea; el total sigue al margen.
+  // Un monto se abre seleccionado: lo que se escribe lo reemplaza («0» y luego «5» es 5 %, no «05»).
+  await panel.getByRole('button', { name: /^Editar descuento/ }).click();
+  const campoDescuento = panel.getByLabel('Descuento', { exact: true });
+  await expect(campoDescuento).toBeFocused();
+  await page.keyboard.type('5');
+  await expect(campoDescuento).toHaveValue('5');
+  await panel.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(total).toHaveText(pesos(estandar.total));
+
+  // La descripción, en cambio, se abre con el cursor al final para retocarla.
   await panel.getByRole('button', { name: /^Editar descripción para el documento/ }).click();
-  await panel.getByLabel('Descripción para el documento').fill(DESCRIPCION);
+  const campoDescripcion = panel.getByLabel('Descripción para el documento');
+  await expect(campoDescripcion).toHaveValue(descripcionOriginal);
+  await expect(campoDescripcion).toBeFocused();
+  await expect
+    .poll(() => campoDescripcion.evaluate((campo: HTMLInputElement) => [campo.selectionStart, campo.selectionEnd]))
+    .toEqual([descripcionOriginal.length, descripcionOriginal.length]);
+  await campoDescripcion.fill('Texto temporal que se cancelará');
+  await panel.getByRole('button', { name: 'Cancelar', exact: true }).click();
+  await expect(
+    panel.getByRole('button', { name: `Editar descripción para el documento: ${descripcionOriginal}` }),
+  ).toBeVisible();
+
+  await panel.getByRole('button', { name: /^Editar descripción para el documento/ }).click();
+  await expect(campoDescripcion).toHaveValue(descripcionOriginal);
+  await expect(campoDescripcion).toBeFocused();
+  await expect
+    .poll(() => campoDescripcion.evaluate((campo: HTMLInputElement) => campo.selectionStart))
+    .toBe(descripcionOriginal.length);
+  await campoDescripcion.evaluate((campo: HTMLInputElement) => campo.setSelectionRange(0, 0));
+  expect(await campoDescripcion.evaluate((campo: HTMLInputElement) => campo.selectionStart)).toBe(0);
+  await campoDescripcion.pressSequentially(PREFIJO_DESCRIPCION);
+  await expect(campoDescripcion).toHaveValue(DESCRIPCION);
   await panel.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(
     panel.getByRole('button', { name: `Editar descripción para el documento: ${DESCRIPCION}` }),
@@ -108,19 +145,19 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   // La descripción es solo para el documento: el producto y su precio siguen siendo los del catálogo.
   await expect(panel.getByText('HUIL-M-3-E', { exact: true })).toBeVisible();
   await expect(total).toHaveText(pesos(estandar.total));
-  const margenLinea = panel.getByLabel('Margen de la línea (%)');
+  const margenLinea = panel.getByLabel('Ganancia de la línea (%)');
   await margenLinea.fill('42');
   await margenLinea.press('Enter');
   await expect(total).toHaveText(pesos(especial.total));
   await expect(page.getByTestId('neto')).toHaveText(pesos(especial.neto));
   await expect(
-    panel.getByText('Margen estándar: 55 % · Margen aplicado: 42 % — modificado manualmente (línea)', {
+    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 42 % — cambiada a mano en esta línea', {
       exact: true,
     }),
   ).toBeVisible();
   const unitario = especial.lineas[0].precioUnitario;
   await expect(
-    panel.getByText(`Fábrica ${pesos(puerta.precioNeto)} → cliente ${pesos(unitario)}`, { exact: true }),
+    panel.getByText(`Costo de fábrica ${pesos(puerta.precioNeto)} · Precio al cliente ${pesos(unitario)}`, { exact: true }),
   ).toBeVisible();
 
   // 5. Emitir: el PDF muestra lo del cliente y nada interno.
@@ -142,7 +179,9 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
     expect(cotizacionPdf).toContain(pesos(monto));
   // Ni el precio de fábrica, ni la referencia de catálogo, ni nada de márgenes llegan al cliente.
   expect(cotizacionPdf).not.toContain(pesos(puerta.precioNeto));
-  expect(cotizacionPdf).not.toMatch(/Referencia de catálogo|margen|modificado manualmente|No especificado/i);
+  expect(cotizacionPdf).not.toMatch(
+    /Referencia de catálogo|margen|ganancia|modificado manualmente|cambiada a mano|Costo de fábrica|No especificado/i,
+  );
 
   // 6. La fila del historial resume la cotización emitida.
   await page.getByRole('link', { name: 'Historial' }).click();
@@ -175,6 +214,8 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(estados).toContainText('Operación: 50 % pagado');
   const descargaNota = page.waitForEvent('download');
   await flujo.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   const numeroNota = await numeroDe(descargaNota, 'nota-pedido');
   await expect(estados).toContainText('Operación: Nota de pedido generada');
   const notaPdf = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-${numeroNota}.pdf`);
@@ -196,8 +237,12 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
 
   // 8. Producción, saldo, despacho con transportista y destino, y cierre de la operación.
   await flujo.getByRole('button', { name: 'Iniciar producción' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Iniciar producción', exact: true }).click();
   await expect(estados).toContainText('Operación: En producción');
   await flujo.getByRole('button', { name: 'Marcar producción terminada' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Marcar producción terminada', exact: true }).click();
   await expect(estados).toContainText('Operación: Saldo pendiente');
   await expect(
     flujo.getByText(/Faltan .* para continuar con el despacho/),
@@ -216,10 +261,16 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await panel.getByRole('option', { name: 'Starken', exact: true }).click();
   await expect(panel.getByRole('combobox', { name: 'Transportista' })).toContainText('Starken');
   await flujo.getByRole('button', { name: 'Marcar lista para despacho' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Marcar lista para despacho', exact: true }).click();
   await expect(estados).toContainText('Operación: Lista para despacho');
   await flujo.getByRole('button', { name: 'Registrar despacho' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Registrar despacho', exact: true }).click();
   await expect(estados).toContainText('Operación: Despachada');
   await flujo.getByRole('button', { name: 'Completar operación' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Completar operación', exact: true }).click();
   await expect(estados).toContainText('Operación: Completada');
   await expect(estados).toContainText('Facturación: Pendiente de facturación');
 
@@ -268,7 +319,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(panel.locator('td strong').first()).toHaveText(DESCRIPCION);
   await expect(panel.getByText('HUIL-M-3-E', { exact: true })).toBeVisible();
   await expect(
-    panel.getByText('Margen estándar: 55 % · Margen aplicado: 42 % — modificado manualmente (línea)', {
+    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 42 % — cambiada a mano en esta línea', {
       exact: true,
     }),
   ).toBeVisible();

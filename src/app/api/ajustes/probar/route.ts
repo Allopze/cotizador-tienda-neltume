@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ErrorIA } from '@/asistente/errores';
 import { CASOS_PRUEBA } from '@/asistente/prueba-modelo';
 import { salidaSchema } from '@/asistente/esquemas';
 import { CommandCodeLLM, type LLM } from '@/asistente/llm';
@@ -49,6 +50,8 @@ export async function POST(req: Request) {
     let compatible = false;
     const espia: LLM = {
       verificarCifras: true,
+      // «Probar modelo» debe leer igual que el chat: con el mismo modo de anclaje.
+      anclaje: real.anclaje,
       interpretar: async (contexto, opciones) => {
         const salida = await real.interpretar(contexto, opciones);
         if (salidaSchema.safeParse(salida).success) compatible = true;
@@ -70,6 +73,15 @@ export async function POST(req: Request) {
       { headers: { 'Cache-Control': 'no-store' } },
     );
   } catch (error) {
+    // Una clave guardada que ya no se puede leer (otro secreto) u otra falla conocida del asistente: su mensaje dice
+    // qué hacer, con su estado. El detalle técnico queda solo en el registro del servidor.
+    if (error instanceof ErrorIA) {
+      if (error.tecnico) console.error(`[ajustes/probar] ${error.codigo}: ${error.tecnico}`);
+      return Response.json(
+        { error: error.message, codigo: error.codigo },
+        { status: error.status, headers: { 'Cache-Control': 'no-store' } },
+      );
+    }
     console.error('[ajustes/probar] fallo interno:', error instanceof Error ? error.message : 'desconocido');
     return Response.json({ error: 'No se pudo probar el modelo.' }, { status: 500 });
   }

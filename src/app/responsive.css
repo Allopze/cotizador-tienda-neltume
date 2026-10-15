@@ -186,9 +186,18 @@
   .history-list .history-estado small {
     margin-top: 0;
   }
+  /* Fecha, ítems, actualización y autora en una o dos líneas: apilados, cada tarjeta medía 267 px y en el teléfono
+     cabían tres por pantalla. */
   .history-list .history-meta {
     grid-column: 1 / -1;
     grid-row: 4;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 2px 12px;
+  }
+  .history-list .history-meta small {
+    margin-top: 0;
   }
   .history-list .history-fila > span:last-child {
     display: none;
@@ -304,6 +313,23 @@
   .history-fechas label {
     flex: 1 1 0;
     min-width: 0;
+  }
+  /* Seguimiento, operación y vendedora: uno por fila, a todo el ancho, sin desbordar en 390 px. */
+  .history-seguimiento {
+    flex-direction: column;
+    width: 100%;
+  }
+  /* Cada filtro al ancho de la columna y el select en lo que sobra: WebKit (Safari) dejaba la etiqueta del ancho de
+     la opción más larga y desbordaba 9 px a 320 px. */
+  .history-seguimiento label {
+    width: 100%;
+    min-width: 0;
+  }
+  .history-seguimiento select {
+    flex: 1 1 0;
+    width: 0;
+    min-width: 0;
+    max-width: none;
   }
   .history-fechas input {
     width: 100%;

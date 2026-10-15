@@ -9,6 +9,7 @@ import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -126,7 +127,7 @@ describe('flete desde el chat', () => {
     expect(r.cotizacion.cliente.comuna).toBeNull();
     expect(r.avisos ?? []).toEqual([]);
     expect(r.cotizacion.historial.at(-1)?.texto).toMatch(
-      /Flete: 1 × Flete por despacho a Chillán, \$380\.000 neto c\/u/,
+      /Flete: 1 × Flete por despacho a Chillán, \$380\.000 sin IVA c\/u/,
     );
   });
 
@@ -152,7 +153,7 @@ describe('flete desde el chat', () => {
       mensaje: 'flete 50 lucas',
     });
     expect(r.cotizacion.flete).toBe(50000);
-    expect(r.avisos).toEqual([expect.stringMatching(/como valor neto del flete/)]);
+    expect(r.avisos).toEqual([expect.stringMatching(/como valor del flete sin IVA/)]);
   });
 
   it('no aplica un valor que nadie escribió', async () => {
@@ -178,6 +179,18 @@ describe('flete desde el chat', () => {
       mensaje: 'DEPACHO A RIÑIHUE con un valor de $350.00 + iva',
     });
     expect(r.cotizacion.flete).toBe(350000);
+    expect(r.avisos ?? []).toEqual([]);
+  });
+
+  it.each([
+    'despacho a Chillán $380.000.',
+    'flete a Chillán: 380 mil.',
+    'flete trescientos ochenta mil + iva',
+  ])('aplica el flete escrito con punto final o en palabras: «%s»', async (mensaje) => {
+    const { servicio, llm, q } = await conPedido();
+    llm.interpretar.mockResolvedValueOnce(flete({ valor: 380000, iva: 'neto' }));
+    const r = await servicio.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje });
+    expect(r.cotizacion.flete).toBe(380000);
     expect(r.avisos ?? []).toEqual([]);
   });
 

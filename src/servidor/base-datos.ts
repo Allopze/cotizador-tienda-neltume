@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 21;
+export const VERSION_ESQUEMA = 23;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -404,6 +404,83 @@ function crearEsquema(db: Database.Database) {
         db.exec('ALTER TABLE solicitudes ADD COLUMN costo_fabrica INTEGER CHECK (costo_fabrica > 0);');
       db.exec('PRAGMA user_version = 21;');
     }).immediate();
+  if (version < 22)
+    db.transaction(() => {
+      // v22: destino y valor del despacho de la nota, snapshot del HTML de cada PDF, papelera, planilla anterior,
+      // ediciones a mano de productos importados y auditoría de cuentas. Se puede repetir sin efecto.
+      const columnas = (db.pragma('table_info(notas_pedido)') as { name: string }[]).map((c) => c.name);
+      if (!columnas.includes('despacho_destino')) db.exec('ALTER TABLE notas_pedido ADD COLUMN despacho_destino TEXT;');
+      if (!columnas.includes('despacho_valor')) db.exec('ALTER TABLE notas_pedido ADD COLUMN despacho_valor INTEGER;');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS documentos_snapshot (archivo TEXT PRIMARY KEY, cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE, html TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS papelera (tipo TEXT NOT NULL, id TEXT NOT NULL, contenido TEXT NOT NULL, eliminada TEXT NOT NULL, PRIMARY KEY(tipo,id));
+        CREATE TABLE IF NOT EXISTS catalogo_anterior (origen TEXT PRIMARY KEY, contenido TEXT NOT NULL, version TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS catalogo_ediciones (codigo TEXT PRIMARY KEY, fecha TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS auditoria_cuentas (id INTEGER PRIMARY KEY, fecha TEXT NOT NULL, actor TEXT, objetivo TEXT, accion TEXT NOT NULL);
+      `);
+      recalcularBusqueda(db);
+      db.exec('PRAGMA user_version = 22;');
+    }).immediate();
+  if (version < 23)
+    db.transaction(() => {
+      // v23: fecha de aprobación (límite inferior de pagos y facturas), tomada del último evento «aprobada» para lo
+      // ya aprobado, y la marca «en emisión» que impide generar dos veces el mismo PDF. Se puede repetir sin efecto.
+      const columnas = (db.pragma('table_info(cotizaciones)') as { name: string }[]).map((c) => c.name);
+      if (!columnas.includes('fecha_aprobacion')) db.exec('ALTER TABLE cotizaciones ADD COLUMN fecha_aprobacion TEXT;');
+      db.exec(`
+        UPDATE cotizaciones SET fecha_aprobacion = (
+          SELECT e.fecha FROM eventos e WHERE e.cotizacion_id = cotizaciones.id AND e.tipo = 'aprobada' ORDER BY e.id DESC LIMIT 1
+        ) WHERE fecha_aprobacion IS NULL AND estado IN ('aprobada', 'anulada');
+        CREATE TABLE IF NOT EXISTS emisiones_en_curso (
+          cotizacion_id TEXT PRIMARY KEY REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          documento TEXT NOT NULL,
+          ficha TEXT NOT NULL,
+          vence TEXT NOT NULL
+        );
+        PRAGMA user_version = 23;
+      `);
+    }).immediate();
+}
+
+/** Rehace la columna `busqueda` de todas las cotizaciones con `textoBusqueda` (v22: suma el teléfono). */
+function recalcularBusqueda(db: Database.Database) {
+  const filas = db
+    .prepare(
+      'SELECT id, numero, cliente_nombre, cliente_rut, cliente_comuna, cliente_proyecto, cliente_giro, cliente_telefono FROM cotizaciones',
+    )
+    .all() as {
+    id: string;
+    numero: number | null;
+    cliente_nombre: string | null;
+    cliente_rut: string | null;
+    cliente_comuna: string | null;
+    cliente_proyecto: string | null;
+    cliente_giro: string | null;
+    cliente_telefono: string | null;
+  }[];
+  const productos = db.prepare(`
+    SELECT modelo, madera FROM solicitudes WHERE cotizacion_id = ?
+    UNION ALL SELECT modelo, madera FROM cotizacion_lineas WHERE cotizacion_id = ?
+  `);
+  const actualizar = db.prepare('UPDATE cotizaciones SET busqueda = ? WHERE id = ?');
+  for (const f of filas) {
+    const ps = productos.all(f.id, f.id) as { modelo: string | null; madera: string | null }[];
+    actualizar.run(
+      textoBusqueda({
+        numero: f.numero,
+        cliente: {
+          nombre: f.cliente_nombre,
+          rut: f.cliente_rut,
+          comuna: f.cliente_comuna,
+          proyecto: f.cliente_proyecto,
+          giro: f.cliente_giro,
+          telefono: f.cliente_telefono,
+        },
+        productos: ps.flatMap((p) => [p.modelo, p.madera]),
+      }),
+      f.id,
+    );
+  }
 }
 
 const COLUMNAS_COTIZACION_V4 = `id, orden, numero, estado, cliente_nombre, cliente_nombre_normalizado, cliente_rut,

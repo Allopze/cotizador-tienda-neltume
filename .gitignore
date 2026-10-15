@@ -24,3 +24,12 @@ screenshots/
 deploy/
 
 /referencia
+.next-e2e/
+
+# Reunión privada y artefactos de herramientas: no se versionan.
+Transcripcion_Neltume.docx
+.commandcode/
+.impeccable/
+# Carpetas que una instalación del servidor conserva al actualizar.
+.version-anterior/
+compose.override.yaml

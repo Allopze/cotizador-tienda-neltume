@@ -39,15 +39,23 @@ export function hostPermitido(host: string | null): boolean {
   return !!nombre && hostnamesPermitidos().has(nombre);
 }
 
+/**
+ * Valida el Host y, en escrituras, de dónde viene la solicitud:
+ * - `Origin`, si viene, debe coincidir con el Host.
+ * - `Sec-Fetch-Site`, si viene, debe ser `same-origin`. Los navegadores actuales lo envían en toda solicitud,
+ *   también cuando omiten Origin, así que un formulario o un fetch de otro sitio (`cross-site`, `same-site`) o
+ *   una navegación escrita a mano (`none`) no llegan a escribir.
+ * - Sin ninguna de las dos cabeceras la solicitud no viene de un navegador actual (curl, scripts, pruebas): se
+ *   acepta y la protege la sesión, cuya cookie es SameSite=Lax y un sitio ajeno no puede adjuntarla a un POST.
+ */
 export function rechazoAcceso(req: Request, { escritura = false } = {}): Response | null {
   const host = req.headers.get('host');
   if (!host || !hostPermitido(host)) return Response.json({ error: 'Host no permitido.' }, { status: 403 });
+  if (!escritura) return null;
   const origen = req.headers.get('origin');
-  if (
-    escritura &&
-    origen &&
-    (!URL.canParse(origen) || new URL(origen).host.toLowerCase() !== host.toLowerCase())
-  )
+  if (origen && (!URL.canParse(origen) || new URL(origen).host.toLowerCase() !== host.toLowerCase()))
     return Response.json({ error: 'Origen no permitido.' }, { status: 403 });
+  const sitio = req.headers.get('sec-fetch-site')?.trim().toLowerCase();
+  if (sitio && sitio !== 'same-origin') return Response.json({ error: 'Origen no permitido.' }, { status: 403 });
   return null;
 }

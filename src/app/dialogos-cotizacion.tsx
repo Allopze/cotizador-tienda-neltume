@@ -1,8 +1,11 @@
 'use client';
-import { useCallback, useRef, useState, type FormEvent, type RefObject } from 'react';
+import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Dialogo } from './dialogo';
 import type { Despacho } from './contrato';
 import { fechaLarga, numeroCotizacion } from './formato';
+import { ANTICIPO_TEXTO } from '@/negocio/limites';
+import { pesos } from '@/negocio/precios';
+import { pedirJSON } from './solicitud';
 
 // Diálogos con formulario que devuelven una promesa, como useConfirmacion.
 
@@ -69,7 +72,7 @@ function FormAprobacion({
     <form onSubmit={enviar}>
       <div className="dialogo-mensaje">
         <p>Se registrará la aprobación del cliente y la cotización quedará bloqueada para edición.</p>
-        <p>La nota de pedido se habilitará cuando registres al menos 50 % de pago.</p>
+        <p>La nota de pedido se habilitará cuando registres al menos {ANTICIPO_TEXTO} de pago.</p>
         {datos.vencida && (
           <p className="dialogo-advertencia">
             Esta cotización venció{datos.vence ? ` el ${fechaLarga(datos.vence)}` : ''}. Apruébala solo si el
@@ -127,9 +130,11 @@ interface DatosEmision {
   productos?: { nombre: string; medida: string | null }[];
   /** N° de la cotización que esta revisión reemplaza al emitirse. */
   reemplaza?: number | null;
+  /** Solo una cuenta administradora elige el número a mano (la API lo exige igual). */
+  numeroManual?: boolean;
 }
 
-/** Emisión: permite elegir un número nuevo solo por encima del último correlativo reservado. */
+/** Emisión: una cuenta administradora puede elegir un número nuevo por encima del último reservado. */
 export function useEmision() {
   const [pendiente, setPendiente] = useState<
     (DatosEmision & { resolver: (r: { numero: number | null } | null) => void }) | null
@@ -160,6 +165,30 @@ export function useEmision() {
   return [pedir, elemento] as const;
 }
 
+/** Último número de cotización usado o reservado y el rango de un número elegido a mano (`GET ?numeracion=1`). */
+export interface Numeracion {
+  ultimo: number;
+  siguiente: number;
+  tope: number;
+}
+
+/**
+ * Error del número escrito en el diálogo de emisión, o null si sirve. Sin la numeración (no llegó), solo se
+ * revisa que sea un entero positivo: el servidor vuelve a validar el rango al emitir.
+ */
+export function errorNumeroManual(escrito: string, numeracion: Numeracion | null): string | null {
+  if (!escrito) return null;
+  if (!/^\d+$/.test(escrito) || Number(escrito) <= 0) return 'El número debe ser un entero positivo.';
+  if (!numeracion) return null;
+  const n = Number(escrito);
+  const miles = (x: number) => x.toLocaleString('es-CL');
+  if (n <= numeracion.ultimo)
+    return `El N° ${miles(n)} ya se usó o quedó reservado: elige uno desde el ${miles(numeracion.siguiente)}.`;
+  if (n > numeracion.tope)
+    return `El número puede saltar hasta 1.000 sobre el último: elige uno entre el ${miles(numeracion.siguiente)} y el ${miles(numeracion.tope)}.`;
+  return null;
+}
+
 function FormEmision({
   datos,
   responder,
@@ -171,11 +200,24 @@ function FormEmision({
 }) {
   const [numero, setNumero] = useState('');
   const [error, setError] = useState('');
+  // Último número y tope, para mostrarlos y validar antes de enviar. Si no llegan, el servidor valida igual.
+  const [numeracion, setNumeracion] = useState<Numeracion | null>(null);
+  useEffect(() => {
+    if (!datos.numeroManual) return;
+    const control = new AbortController();
+    pedirJSON<Numeracion>('/api/accion?numeracion=1', { signal: control.signal, cache: 'no-store' })
+      .then(setNumeracion)
+      .catch(() => {});
+    return () => control.abort();
+  }, [datos.numeroManual]);
+  // «1.250» se lee como 1250: los puntos de miles no hacen inválido el número.
+  const escrito = datos.numeroManual ? numero.replace(/[.\s]/g, '') : '';
+  const fueraDeRango = errorNumeroManual(escrito, numeracion);
+  const valido = !!escrito && !fueraDeRango;
   function enviar(e: FormEvent) {
     e.preventDefault();
-    const escrito = numero.trim();
-    if (escrito && (!/^\d+$/.test(escrito) || Number(escrito) <= 0)) {
-      setError('El número debe ser un entero positivo.');
+    if (fueraDeRango) {
+      setError(fueraDeRango);
       return;
     }
     responder({ numero: escrito ? Number(escrito) : null });
@@ -199,36 +241,70 @@ function FormEmision({
           </div>
         )}
         <p>
-          Total a emitir: <strong>{new Intl.NumberFormat('es-CL', { style: 'currency', currency: 'CLP', maximumFractionDigits: 0 }).format(datos.total)}</strong> (IVA incluido).
+          Total a emitir: <strong>{pesos(datos.total)}</strong> (IVA incluido).
         </p>
         {datos.reemplaza ? (
           <p>
-            Es una revisión: al emitirla, la cotización N° {datos.reemplaza} quedará <strong>Reemplazada</strong> y
-            su PDF se conserva.
+            Es una revisión: al emitirla, la cotización N° {datos.reemplaza} quedará <strong>Reemplazada</strong>
+            (se guarda para consultarla, pero ya no se podrá aprobar) y su PDF se conserva.
           </p>
         ) : null}
-        <p>Si dejas el número vacío se asignará el siguiente correlativo disponible.</p>
-        <p>También puedes indicar un número manual, pero debe ser mayor que el último número usado o reservado.</p>
+        {datos.numeroManual ? (
+          <>
+            <p>
+              Si dejas el número vacío se asignará el siguiente número disponible
+              {numeracion ? <> (N° {numeracion.siguiente.toLocaleString('es-CL')})</> : null}.
+            </p>
+            {numeracion ? (
+              <p id="emision-rango">
+                Último número usado o reservado: <strong>N° {numeracion.ultimo.toLocaleString('es-CL')}</strong>. Un
+                número a mano puede ir del {numeracion.siguiente.toLocaleString('es-CL')} al{' '}
+                {numeracion.tope.toLocaleString('es-CL')}.
+              </p>
+            ) : (
+              <p id="emision-rango">
+                Un número a mano debe ser mayor que el último usado o reservado y no superarlo en más de 1.000.
+              </p>
+            )}
+          </>
+        ) : (
+          <p>Se le asignará el siguiente número disponible.</p>
+        )}
+        {valido && (
+          // El salto no se deshace: los números intermedios no se vuelven a usar.
+          <p className="dialogo-advertencia" id="emision-salto">
+            Se emitirá como N° {Number(escrito).toLocaleString('es-CL')}: los números que se salten no se usarán
+            después y la siguiente cotización seguirá desde el {(Number(escrito) + 1).toLocaleString('es-CL')}.
+          </p>
+        )}
       </div>
-      <div className="dialogo-campos">
-        <label className="ia-field">
-          <span>Número de cotización (opcional)</span>
-          <input
-            type="number"
-            min={1}
-            max={1_000_000_000}
-            step={1}
-            value={numero}
-            onChange={(e) => {
-              setNumero(e.target.value);
-              setError('');
-            }}
-            placeholder="Siguiente disponible"
-            autoComplete="off"
-          />
-        </label>
-        {error && <p className="campo-error" role="alert">{error}</p>}
-      </div>
+      {datos.numeroManual && (
+        <div className="dialogo-campos">
+          <label className="ia-field">
+            <span>Número de cotización (opcional)</span>
+            <input
+              inputMode="numeric"
+              value={numero}
+              onChange={(e) => {
+                setNumero(e.target.value);
+                setError('');
+              }}
+              placeholder="Siguiente disponible"
+              autoComplete="off"
+              maxLength={13}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={
+                error ? 'emision-numero-error' : valido ? 'emision-salto emision-rango' : 'emision-rango'
+              }
+            />
+          </label>
+          {error && (
+            <p className="campo-error" id="emision-numero-error" role="alert">
+              {error}
+            </p>
+          )}
+        </div>
+      )}
       <div className="dialogo-acciones">
         <button ref={cancelar} type="button" className="button secondary" onClick={() => responder(null)}>Cancelar</button>
         <button type="submit" className="button primary">Emitir y generar PDF</button>
@@ -242,11 +318,12 @@ export function useAnulacion() {
   const [pendiente, setPendiente] = useState<{
     numero: number | null;
     aprobada: boolean;
+    pagado: number;
     resolver: (r: { motivo: string } | null) => void;
   } | null>(null);
   const pedir = useCallback(
-    (numero: number | null, aprobada: boolean) =>
-      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ numero, aprobada, resolver })),
+    (numero: number | null, aprobada: boolean, pagado = 0) =>
+      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ numero, aprobada, pagado, resolver })),
     [],
   );
   const cancelar = useRef<HTMLButtonElement>(null);
@@ -264,17 +341,20 @@ export function useAnulacion() {
       focoInicial={cancelar}
       alerta
     >
-      {pendiente && <FormAnulacion aprobada={pendiente.aprobada} responder={cerrar} cancelar={cancelar} />}
+      {pendiente && <FormAnulacion aprobada={pendiente.aprobada} pagado={pendiente.pagado} responder={cerrar} cancelar={cancelar} />}
     </Dialogo>
   );
   return [pedir, elemento] as const;
 }
 function FormAnulacion({
   aprobada,
+  pagado,
   responder,
   cancelar,
 }: {
   aprobada: boolean;
+  /** Pagos registrados: anular no los devuelve, y se advierte. */
+  pagado: number;
   responder: (r: { motivo: string } | null) => void;
   cancelar: RefObject<HTMLButtonElement | null>;
 }) {
@@ -293,6 +373,12 @@ function FormAnulacion({
           válida y no podrá aprobarse ni editarse; su número no se reutiliza.
         </p>
         {aprobada && <p>La nota de pedido de fábrica asociada también quedará marcada como anulada.</p>}
+        {pagado > 0 && (
+          <p className="dialogo-advertencia">
+            <strong>Tiene {pesos(pagado)} pagado; anular no lo devuelve.</strong> La devolución se gestiona aparte y
+            el monto queda anotado en la actividad.
+          </p>
+        )}
         <p>Si necesitas cambiarla, puedes duplicarla antes o después de anular.</p>
       </div>
       <div className="dialogo-campos">
@@ -395,6 +481,103 @@ function FormAnulacionPago({
         </button>
         <button type="submit" className="button peligro">
           Anular pago
+        </button>
+      </div>
+    </form>
+  );
+}
+
+interface DatosRetroceso {
+  /** Etiquetas del paso actual y del anterior («Despachada» → «Lista para despacho»). */
+  desde: string;
+  hasta: string;
+}
+/** Volver un paso de la operación: el motivo es obligatorio y queda en la actividad. */
+export function useRetroceso() {
+  const [pendiente, setPendiente] = useState<
+    (DatosRetroceso & { resolver: (r: { motivo: string } | null) => void }) | null
+  >(null);
+  const pedir = useCallback(
+    (datos: DatosRetroceso) =>
+      new Promise<{ motivo: string } | null>((resolver) => setPendiente({ ...datos, resolver })),
+    [],
+  );
+  const campo = useRef<HTMLTextAreaElement>(null);
+  const cerrar = (r: { motivo: string } | null) => {
+    pendiente?.resolver(r);
+    setPendiente(null);
+  };
+  const elemento = (
+    <Dialogo
+      abierto={!!pendiente}
+      alCerrar={() => cerrar(null)}
+      titulo="Volver al paso anterior"
+      eyebrow="OPERACIÓN"
+      className="dialogo-confirmacion"
+      focoInicial={campo}
+      alerta
+    >
+      {pendiente && <FormRetroceso datos={pendiente} responder={cerrar} campo={campo} />}
+    </Dialogo>
+  );
+  return [pedir, elemento] as const;
+}
+function FormRetroceso({
+  datos,
+  responder,
+  campo,
+}: {
+  datos: DatosRetroceso;
+  responder: (r: { motivo: string } | null) => void;
+  campo: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const [motivo, setMotivo] = useState('');
+  const [error, setError] = useState('');
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (motivo.trim()) responder({ motivo: motivo.trim() });
+        else {
+          setError('Escribe el motivo: queda registrado en la actividad.');
+          campo.current?.focus();
+        }
+      }}
+    >
+      <div className="dialogo-mensaje">
+        <p>
+          La operación vuelve de «{datos.desde}» a «{datos.hasta}». El cambio y su motivo quedan en la actividad.
+        </p>
+      </div>
+      <div className="dialogo-campos">
+        <label className="ia-field">
+          <span>Motivo</span>
+          <textarea
+            ref={campo}
+            value={motivo}
+            onChange={(e) => {
+              setMotivo(e.target.value);
+              setError('');
+            }}
+            maxLength={300}
+            rows={2}
+            placeholder="Ej. se marcó por error"
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'retroceso-error' : undefined}
+          />
+        </label>
+        {error && (
+          <p className="campo-error" id="retroceso-error" role="alert">
+            {error}
+          </p>
+        )}
+      </div>
+      <div className="dialogo-acciones">
+        <button type="button" className="button secondary" onClick={() => responder(null)}>
+          Cancelar
+        </button>
+        <button type="submit" className="button primary">
+          Volver al paso anterior
         </button>
       </div>
     </form>

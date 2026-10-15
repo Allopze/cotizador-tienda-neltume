@@ -5,12 +5,12 @@ import { negociar, type OpcionesPeticion } from './opciones-peticion';
 const respuestaSchema = z.object({
   choices: z.array(
     z.object({
-      finish_reason: z.string().nullable(),
+      finish_reason: z.string().nullish(),
       message: z.object({
         tool_calls: z
           .array(
             z.object({
-              type: z.literal('function'),
+              type: z.literal('function').nullish(),
               function: z.object({ name: z.string(), arguments: z.string() }),
             }),
           )
@@ -50,19 +50,33 @@ export async function interpretarChat(
     });
   // Un modelo que no acepta temperature o tool_choice «required» se vuelve a pedir sin esa opción.
   const response = await negociar(pedir, async (r) => (r?.status === 400 ? r.clone().text() : null));
-  if (!response.ok) throw errorProveedor(response.status);
+  if (!response.ok) throw errorProveedor(response.status, await cuerpoRechazo(response, apiKey));
   const parsed = respuestaSchema.safeParse(await response.json());
   if (!parsed.success || parsed.data.choices.length !== 1) return null;
   const choice = parsed.data.choices[0];
   const calls = choice.message.tool_calls;
   // Algunos backends compatibles informan 'stop' aun con una llamada forzada; 'length' sigue siendo truncado.
-  if (!['tool_calls', 'stop'].includes(choice.finish_reason ?? '') || calls?.length !== 1) return null;
+  if ((choice.finish_reason != null && !['tool_calls', 'stop'].includes(choice.finish_reason)) || calls?.length !== 1) return null;
   const name = calls[0].function.name;
   try {
     const input = JSON.parse(calls[0].function.arguments);
     return { name, input: desenvolver(input, tools.find((t) => t.name === name)?.input_schema) };
   } catch {
     return null;
+  }
+}
+
+/**
+ * Texto de un rechazo 4xx para el registro del servidor (errorProveedor guarda sus primeros 300 caracteres). Si el
+ * proveedor repitiera la clave en el cuerpo, se oculta; un cuerpo ilegible no impide informar el error.
+ */
+async function cuerpoRechazo(response: Response, apiKey: string): Promise<string | undefined> {
+  if (response.status < 400 || response.status >= 500) return undefined;
+  try {
+    const texto = await response.text();
+    return apiKey ? texto.split(apiKey).join('[clave]') : texto;
+  } catch {
+    return undefined;
   }
 }
 

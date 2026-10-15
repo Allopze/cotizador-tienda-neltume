@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { ErrorUsuario } from '../src/servidor/errores';
 import { calcularFlete, type ProductoDespacho } from '../src/negocio/envios';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import type { Cotizacion } from '../src/negocio/estado';
 import {
   buscarCiudades,
   calcularBulto,
+  claveTarifas,
   IVA_STARKEN,
   leerMedida,
   netoDesdeIva,
@@ -19,6 +21,7 @@ import {
   textoBulto,
   textoTarifa,
   textoTarifaAplicada,
+  totalConIva,
   type CiudadStarken,
   type ParametrosPaquete,
 } from '../src/negocio/starken';
@@ -37,18 +40,23 @@ import {
   leerConfiguracionStarken,
   mensajeErrorConfiguracion,
 } from '../src/servidor/starken-configuracion';
-import { firmarTarifa, verificarTarifa, VIGENCIA_FIRMA_MS } from '../src/servidor/starken-firma';
+import { firmarTarifa, huellaBulto, verificarTarifa, VIGENCIA_FIRMA_MS } from '../src/servidor/starken-firma';
 import {
   cotizarEnvioStarken,
   crearClienteStarken,
   estadoStarken,
   guardarAjustesStarken,
+  ErrorCatalogoCambio,
+  lineasVigentes,
+  MENSAJE_CATALOGO_CAMBIO,
   modoStarkenFijo,
+  respuestaCatalogoCambio,
   respuestaErrorStarken,
 } from '../src/servidor/starken-servicio';
 import { ENTORNO_FIJO, fetchFijo } from '../src/servidor/starken-fijo';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -722,7 +730,74 @@ describe('bulto equivalente', () => {
   });
 });
 
+describe('huella del pedido y vigencia de las tarifas en pantalla', () => {
+  const p = parametros({ MARCO: { kg: 8, espesorCm: 10 } });
+  const puertas = { ...linea(puerta, 3, 0.82, 2), medidaSolicitada: null };
+  const marcos = { ...linea(marco, 2), medidaSolicitada: '2X4' };
+  const bultoDe = (lineas: ProductoDespacho[]) => {
+    const r = calcularBulto(lineas, p);
+    if (!r.ok) throw new Error(r.mensaje);
+    return r.bulto;
+  };
+  const clave = (lineas: ProductoDespacho[]) => claveTarifas(lineas, bultoDe(lineas), 'Temuco', null);
+
+  it('la huella no depende del orden de las líneas', () => {
+    expect(huellaBulto([puertas, marcos])).toBe(huellaBulto([marcos, puertas]));
+    expect(huellaBulto([puertas, marcos])).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it('cambia con el pedido aunque el bulto quede igual: el servidor ya no aceptaría la tarifa', () => {
+    // 0,80 en vez de 0,82: la referencia del catálogo (85 cm) sigue mandando en el bulto.
+    const angostas = { ...puertas, anchoSolicitado: 0.8 };
+    expect(bultoDe([angostas, marcos])).toEqual(bultoDe([puertas, marcos]));
+    expect(huellaBulto([angostas, marcos])).not.toBe(huellaBulto([puertas, marcos]));
+    expect(clave([angostas, marcos])).not.toBe(clave([puertas, marcos]));
+    const otroCodigo = { ...puertas, producto: { ...puerta, codigo: 'MOL-O-3-N' } };
+    expect(clave([otroCodigo, marcos])).not.toBe(clave([puertas, marcos]));
+    expect(clave([{ ...puertas, cantidad: 4 }, marcos])).not.toBe(clave([puertas, marcos]));
+  });
+
+  it('también cambia con el destino o la comuna del cliente', () => {
+    const lineas = [puertas, marcos];
+    const bulto = bultoDe(lineas);
+    expect(claveTarifas(lineas, bulto, 'Valdivia', null)).not.toBe(clave(lineas));
+    expect(claveTarifas(lineas, bulto, 'Temuco', 'Padre Las Casas')).not.toBe(clave(lineas));
+  });
+});
+
 describe('IVA y neto', () => {
+  it('neto + IVA del cotizador reconstruye el total de Starken al peso siempre que algún neto entero lo permite', () => {
+    // El IVA del cotizador es el de precios.ts (round(neto × iva)); totalConIva debe ser esa misma cuenta.
+    expect(totalConIva(37326)).toBe(37326 + Math.round(37326 * 0.19));
+    const MAX = 200_000;
+    // Todos los totales que alcanza algún neto entero (con margen: el neto de 200.000 es ~168.067).
+    const alcanzables = new Set<number>();
+    for (let n = 0; n <= MAX; n++) alcanzables.add(totalConIva(n));
+    let exactos = 0,
+      aUnPeso = 0;
+    for (let total = 1; total <= MAX; total++) {
+      const neto = netoDesdeIva(total);
+      const diferencia = totalConIva(neto) - total;
+      if (alcanzables.has(total)) {
+        if (diferencia !== 0) throw new Error(`${total}: el neto ${neto} da ${totalConIva(neto)}`);
+        exactos++;
+      } else {
+        // Ningún neto lo alcanza: totalConIva salta de total − 1 a total + 1 y el elegido queda a $1, lo mínimo.
+        if (!alcanzables.has(total - 1) || !alcanzables.has(total + 1) || Math.abs(diferencia) !== 1)
+          throw new Error(`${total}: el neto ${neto} queda a ${diferencia}`);
+        aUnPeso++;
+      }
+      // Es el neto de siempre: las tarifas ya firmadas y los fletes ya guardados siguen calzando.
+      if (neto !== Math.round(total / 1.19)) throw new Error(`${total}: cambió el neto (${neto})`);
+    }
+    expect(exactos).toBe(168_067);
+    expect(aUnPeso).toBe(31_933); // ~16 %: imposibles con neto entero e IVA redondeado al peso.
+    // Ejemplos: $44.420 se reconstruye; $44.421 y $9.999 no tienen neto exacto.
+    expect(totalConIva(netoDesdeIva(44420))).toBe(44420);
+    expect(totalConIva(netoDesdeIva(44421))).toBe(44422);
+    expect(totalConIva(netoDesdeIva(9999))).toBe(10000);
+  });
+
   it('el despacho se guarda neto: el valor con IVA dividido por 1,19 y redondeado a pesos', () => {
     expect(IVA_STARKEN).toBe(0.19);
     expect(netoDesdeIva(119)).toBe(100);
@@ -744,10 +819,10 @@ describe('IVA y neto', () => {
 
   it('los textos muestran el valor con IVA y el neto', () => {
     expect(textoTarifa({ tipoEntrega: 'DOMICILIO', servicio: 'NORMAL', dias: 3, costoTotal: 101150 })).toBe(
-      'Domicilio · 3 días · $101.150 IVA incl. ($85.000 neto)',
+      'Domicilio · 3 días · $101.150 IVA incl. ($85.000 sin IVA)',
     );
     expect(textoTarifa({ tipoEntrega: 'AGENCIA', dias: 1, costoTotal: 1190 })).toBe(
-      'Agencia · 1 día · $1.190 IVA incl. ($1.000 neto)',
+      'Agencia · 1 día · $1.190 IVA incl. ($1.000 sin IVA)',
     );
     expect(textoTarifa({ tipoEntrega: 'AGENCIA', servicio: 'EXPRESS', dias: 1, costoTotal: 1190 })).toContain(
       'Agencia Express',
@@ -761,7 +836,7 @@ describe('IVA y neto', () => {
         codigoCiudadDestino: 2,
       }),
     ).toBe(
-      'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 neto) · destino TEMUCO (ciudad 2)',
+      'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 sin IVA) · destino TEMUCO (ciudad 2)',
     );
   });
 });
@@ -895,7 +970,9 @@ async function setup(comuna: string | null = 'Temuco') {
       input: { items: [molco(3)], cliente: { ...clienteVacio(), nombre: 'Juan Pérez', comuna } },
     }),
   };
-  const servicio = new Servicio(catalogo(), llm, almacen, { nombre: 'Paula', email: 'paula@neltume.cl' });
+  const usuario = { nombre: 'Paula', email: 'paula@neltume.cl' };
+  const vigente = catalogo();
+  const servicio = new Servicio(vigente, llm, almacen, usuario);
   const db = almacen.baseDatos();
   const borrador = async () => (await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza' })).cotizacion;
   const editar = async (q: Cotizacion, cambios: Record<string, unknown>) =>
@@ -908,14 +985,27 @@ async function setup(comuna: string | null = 'Temuco') {
     origen: { codigoCiudad: 1, nombre: 'SANTIAGO' },
     paquete: p,
   });
-  return { dir, almacen, db, servicio, borrador, editar, detalles, espia, starken, configuracion };
+  return {
+    dir,
+    almacen,
+    db,
+    usuario,
+    vigente,
+    servicio,
+    borrador,
+    editar,
+    detalles,
+    espia,
+    starken,
+    configuracion,
+  };
 }
 
 describe('cotizar el despacho de una cotización con Starken', () => {
-  it('arma el bulto con las líneas guardadas, resuelve la comuna del cliente y devuelve agencia y domicilio', async () => {
+  it('arma el bulto con las líneas del pedido, resuelve la comuna del cliente y devuelve agencia y domicilio', async () => {
     const { borrador, starken, configuracion, espia } = await setup('Temuco');
     const q = await borrador();
-    const r = await cotizarEnvioStarken(q, undefined, configuracion(), starken);
+    const r = await cotizarEnvioStarken(q, catalogo(), undefined, configuracion(), starken);
     if (r.estado !== 'tarifas') throw new Error(r.estado);
     // 3 puertas × 4,5 cm = 13,5 cm; ancho 85 (la referencia supera los 82 pedidos); largo 200; 75 kg.
     expect(r.bulto).toMatchObject({ alto: 13.5, ancho: 85, largo: 200, kilos: 75 });
@@ -940,7 +1030,7 @@ describe('cotizar el despacho de una cotización con Starken', () => {
     const { borrador, editar, starken, configuracion } = await setup('Temuco');
     let q = await borrador();
     q = await editar(q, { despacho: { destino: 'Valdivia' } });
-    expect(await cotizarEnvioStarken(q, undefined, configuracion(), starken)).toMatchObject({
+    expect(await cotizarEnvioStarken(q, catalogo(), undefined, configuracion(), starken)).toMatchObject({
       estado: 'tarifas',
       destino: { codigoCiudad: 40 },
     });
@@ -948,31 +1038,33 @@ describe('cotizar el despacho de una cotización con Starken', () => {
       despacho: { destino: 'Av. Los Lagos 10, San Pablo' },
       cliente: { comuna: 'Atlantis' },
     });
-    const dudoso = await cotizarEnvioStarken(q, undefined, configuracion(), starken);
+    const dudoso = await cotizarEnvioStarken(q, catalogo(), undefined, configuracion(), starken);
     expect(dudoso).toMatchObject({ estado: 'elegir_ciudad', motivo: 'ambigua' });
     expect(dudoso.estado === 'elegir_ciudad' && dudoso.candidatas.map((c) => c.nombre)).toEqual([
       'OSORNO',
       'RIO NEGRO',
     ]);
     q = await editar(q, { despacho: { destino: 'Atlantis' } });
-    expect(await cotizarEnvioStarken(q, undefined, configuracion(), starken)).toEqual({
+    expect(await cotizarEnvioStarken(q, catalogo(), undefined, configuracion(), starken)).toEqual({
       estado: 'elegir_ciudad',
       motivo: 'no_encontrada',
       candidatas: [],
     });
     // Elegida a mano (código de la lista), se cotiza; uno que no existe se rechaza.
-    expect(await cotizarEnvioStarken(q, 31, configuracion(), starken)).toMatchObject({
+    expect(await cotizarEnvioStarken(q, catalogo(), 31, configuracion(), starken)).toMatchObject({
       estado: 'tarifas',
       destino: { codigoCiudad: 31, nombre: 'RIO NEGRO' },
     });
-    await expect(cotizarEnvioStarken(q, 12345, configuracion(), starken)).rejects.toMatchObject({
+    await expect(cotizarEnvioStarken(q, catalogo(), 12345, configuracion(), starken)).rejects.toMatchObject({
       codigo: 'destino',
     });
   });
 
   it('un destino sin cobertura devuelve el mensaje de Starken', async () => {
     const { borrador, starken, configuracion } = await setup('Temuco');
-    await expect(cotizarEnvioStarken(await borrador(), 99, configuracion(), starken)).rejects.toMatchObject({
+    await expect(
+      cotizarEnvioStarken(await borrador(), catalogo(), 99, configuracion(), starken),
+    ).rejects.toMatchObject({
       codigo: 'rechazado',
       message: 'Starken: El destino no tiene cobertura.',
     });
@@ -981,12 +1073,12 @@ describe('cotizar el despacho de una cotización con Starken', () => {
   it('sin configurar o sin origen no consulta a Starken', async () => {
     const { borrador, starken, configuracion, espia } = await setup();
     const q = await borrador();
-    await expect(cotizarEnvioStarken(q, undefined, configuracion(), null)).rejects.toMatchObject({
+    await expect(cotizarEnvioStarken(q, catalogo(), undefined, configuracion(), null)).rejects.toMatchObject({
       codigo: 'no_configurado',
       message: 'Starken no está configurado',
     });
     await expect(
-      cotizarEnvioStarken(q, undefined, { ...configuracion(), origen: null }, starken),
+      cotizarEnvioStarken(q, catalogo(), undefined, { ...configuracion(), origen: null }, starken),
     ).rejects.toThrow('ciudad de origen');
     expect(espia).not.toHaveBeenCalled();
   });
@@ -998,9 +1090,91 @@ describe('cotizar el despacho de una cotización con Starken', () => {
       ...q,
       incompletos: [{ indice: 1, rechazo: { tipo: 'modelo' } as never, pregunta: '¿Cuál?' }],
     };
-    await expect(cotizarEnvioStarken(conPendiente, undefined, configuracion(), starken)).rejects.toThrow(
-      'ítems pendientes',
+    await expect(
+      cotizarEnvioStarken(conPendiente, catalogo(), undefined, configuracion(), starken),
+    ).rejects.toThrow('ítems pendientes');
+  });
+
+  it('un ítem que el catálogo vigente ya no tiene también queda pendiente: no se cotiza un bulto sin él', async () => {
+    const { borrador, starken, configuracion, espia } = await setup();
+    const q = await borrador();
+    expect(q.incompletos).toEqual([]);
+    // Desde el último guardado, la planilla dejó la puerta solo en otra madera.
+    const sinPino = { ...catalogo(), sha256: 'v2', productos: [{ ...puerta, madera: 'RAULI' }] };
+    // La pantalla no ve pendientes en la cotización guardada: el error dice que cambió el catálogo y qué ítem tocó.
+    const error = await cotizarEnvioStarken(q, sinPino, undefined, configuracion(), starken).catch((e) => e);
+    expect(error).toBeInstanceOf(ErrorCatalogoCambio);
+    expect(error.message).toBe(
+      'El catálogo cambió desde que guardaste esta cotización: revisa el pedido antes de cotizar el despacho.',
     );
+    expect(error.message).not.toMatch(/ítems pendientes/);
+    expect(error.items).toEqual([
+      { numero: 1, descripcion: expect.stringMatching(/MOLCO/), motivo: expect.any(String) },
+    ]);
+    expect(error.items[0].motivo.length).toBeGreaterThan(0);
+    // La ruta lo entrega como 409 con código propio y los ítems en el detalle (lo que lee cotizar-starken.tsx).
+    const respuesta = respuestaCatalogoCambio(error);
+    expect(respuesta.status).toBe(409);
+    expect(await respuesta.json()).toEqual({
+      error: MENSAJE_CATALOGO_CAMBIO,
+      codigo: 'catalogo_cambio',
+      detalle: { items: error.items },
+    });
+    expect(espia).not.toHaveBeenCalled();
+  });
+});
+
+describe('el bulto de Starken y el cálculo de la cotización usan la misma regla', () => {
+  it('un precio o un descuento que el catálogo vigente deja fuera de regla saca el ítem de los dos lados', async () => {
+    const e = await setup();
+    const ejecutar = async (servicio: Servicio, q: Cotizacion, accion: Record<string, unknown>) =>
+      (await servicio.ejecutar({ ...accion, id: q.id, actualizada: q.actualizada } as never)).cotizacion;
+    let q = await e.borrador();
+    q = await ejecutar(e.servicio, q, { tipo: 'agregar_producto', codigo: 'MOL-O-3-A', cantidad: 2 });
+    q = await ejecutar(e.servicio, q, {
+      tipo: 'agregar_personalizado',
+      item: { nombre: 'Puerta curva', familia: 'PUERTA', madera: 'Raulí', ancho: 0.9, alto: 2.1, cantidad: 1, precioUnitario: 250000 },
+    });
+    // Ítem 1: precio fijado a mano ($60.000 sobre un costo de $100.000). Ítem 2: descuento igual a su precio.
+    q = await ejecutar(e.servicio, q, { tipo: 'editar', items: [{ indice: 0, cambios: { precioUnitario: 60000 } }] });
+    const precio = q.montos.lineas[1].precioUnitario;
+    q = await ejecutar(e.servicio, q, {
+      tipo: 'editar',
+      items: [{ indice: 1, cambios: { descuento: { tipo: 'monto', valor: precio } } }],
+    });
+    expect(q.incompletos).toEqual([]);
+    expect(huellaBulto(lineasVigentes(q, e.vigente))).toBe(huellaBulto(q.montos.lineas));
+
+    // Con el costo en $150.000, el precio fijado queda bajo el −50 %; con $50.000, el descuento supera el precio.
+    for (const [precioNeto, fuera] of [
+      [150000, 0],
+      [50000, 1],
+    ]) {
+      const cambiado: Catalogo = { ...catalogo(), sha256: `costo-${precioNeto}`, productos: [{ ...puerta, precioNeto }] };
+      const lineas = lineasVigentes(q, cambiado);
+      // Lo que recalcula el servicio con ese catálogo, al guardar cualquier cambio.
+      const servicio = new Servicio(cambiado, { interpretar: vi.fn() }, e.almacen, e.usuario);
+      const recalculada = await ejecutar(servicio, q, { tipo: 'editar', cliente: { telefono: `+56 9 1234 ${precioNeto}` } });
+      expect(recalculada.incompletos.map((p) => [p.indice, p.rechazo])).toEqual([
+        [fuera, { tipo: 'faltan_datos', campos: ['precio'], disponibles: {} }],
+      ]);
+      expect(recalculada.montos.lineas.map((l) => l.indice)).toEqual([0, 1, 2].filter((i) => i !== fuera));
+      expect(lineas).toHaveLength(2);
+      expect(huellaBulto(lineas)).toBe(huellaBulto(recalculada.montos.lineas));
+      const error = await cotizarEnvioStarken(q, cambiado, undefined, e.configuracion(), e.starken).catch((x) => x);
+      if (q.incompletos.length) {
+        // Guardada con un pendiente a la vista: la pantalla ya lo muestra y se pide completarlo.
+        expect(error).toBeInstanceOf(ErrorUsuario);
+        expect(error.message).toBe('Completa o quita los ítems pendientes antes de cotizar el despacho.');
+      } else {
+        // Guardada sin pendientes: se avisa el cambio de catálogo con el ítem que quedó fuera y por qué.
+        expect(error).toBeInstanceOf(ErrorCatalogoCambio);
+        expect(error.message).toBe(MENSAJE_CATALOGO_CAMBIO);
+        expect(error.items.map((i: { numero: number }) => i.numero)).toEqual([fuera + 1]);
+        expect(error.items[0].motivo).toBe(recalculada.incompletos[0].pregunta);
+      }
+      q = recalculada;
+    }
   });
 });
 
@@ -1010,10 +1184,12 @@ describe('aplicar la tarifa elegida', () => {
    * La tarifa tal como la entrega /api/starken/cotizar (firmada por el servidor para esa cotización) y su neto.
    * `ahora` permite firmarla en otro momento, para probar el vencimiento.
    */
-  async function elegir(e: Entorno, q: Cotizacion, tipo = 'DOMICILIO', ahora?: number) {
-    const r = await cotizarEnvioStarken(q, undefined, e.configuracion(), e.starken, ahora);
+  async function elegir(e: Entorno, q: Cotizacion, tipo = 'DOMICILIO', ahora?: number, vigente = e.vigente) {
+    const r = await cotizarEnvioStarken(q, vigente, undefined, e.configuracion(), e.starken, ahora);
     if (r.estado !== 'tarifas') throw new Error(r.estado);
     const t = r.tarifas.find((x) => x.tipoEntrega === tipo)!;
+    expect(t.huellaBulto).toMatch(/^[a-f0-9]{64}$/);
+    // Los mismos campos que envía la pantalla (cotizar-starken.tsx).
     return {
       neto: t.neto,
       tarifa: {
@@ -1025,6 +1201,7 @@ describe('aplicar la tarifa elegida', () => {
         codigoCiudadDestino: r.destino.codigoCiudad,
         vence: t.vence,
         firma: t.firma,
+        huellaBulto: t.huellaBulto,
       },
     };
   }
@@ -1048,7 +1225,7 @@ describe('aplicar la tarifa elegida', () => {
     const actividad = e.detalles(q).at(-1)!;
     expect(actividad).toContain('Flete $0 → $85.000');
     expect(actividad).toContain(
-      'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 neto) · destino TEMUCO (ciudad 2)',
+      'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 sin IVA) · destino TEMUCO (ciudad 2)',
     );
     // La firma no se copia a la actividad.
     expect(actividad).not.toContain(tarifa.firma);
@@ -1074,10 +1251,10 @@ describe('aplicar la tarifa elegida', () => {
     const { tarifa } = await elegir(e, q);
     const antes = e.detalles(q).length;
     await expect(e.editar(q, { despacho: { valor: 70000 }, tarifaStarken: tarifa })).rejects.toThrow(
-      'El valor de despacho debe ser el neto de la tarifa elegida ($85.000).',
+      'El valor de despacho debe ser el de la tarifa elegida sin IVA ($85.000).',
     );
     // Sin valor nuevo tampoco: el actual ($0) no es el neto de la tarifa.
-    await expect(e.editar(q, { tarifaStarken: tarifa })).rejects.toThrow('neto de la tarifa');
+    await expect(e.editar(q, { tarifaStarken: tarifa })).rejects.toThrow('tarifa elegida sin IVA');
     q = await e.editar(q, { despacho: { transporte: 'Transportes Paredes' } });
     await expect(e.editar(q, { despacho: { valor: 85000 }, tarifaStarken: tarifa })).rejects.toThrow(
       'Elige Starken como transportista',
@@ -1157,10 +1334,109 @@ describe('aplicar la tarifa elegida', () => {
     expect(r.cotizacion.flete).toBe(85000);
     expect(emitida.flete).toBe(0);
   });
+
+  it('si el pedido cambia después de cotizar, la tarifa ya no se aplica: hay que volver a cotizar', async () => {
+    const e = await conStarken();
+    const { tarifa, neto } = await elegir(e, e.q);
+    const pedidoCambio = 'El pedido cambió. Vuelve a cotizar el despacho.';
+    // En la misma petición: 20 puertas con la tarifa de 3.
+    await expect(
+      e.editar(e.q, {
+        cantidades: [{ indice: 0, cantidad: 20 }],
+        despacho: { valor: neto },
+        tarifaStarken: tarifa,
+      }),
+    ).rejects.toThrow(pedidoCambio);
+    // Después de guardar el cambio.
+    const veinte = await e.editar(e.q, { cantidades: [{ indice: 0, cantidad: 20 }] });
+    await expect(e.editar(veinte, { despacho: { valor: neto }, tarifaStarken: tarifa })).rejects.toThrow(
+      pedidoCambio,
+    );
+    // La huella va firmada: ponerle la del pedido nuevo no hace valer la tarifa vieja.
+    await expect(
+      e.editar(veinte, {
+        despacho: { valor: neto },
+        tarifaStarken: { ...tarifa, huellaBulto: huellaBulto(veinte.montos.lineas) },
+      }),
+    ).rejects.toThrow('La tarifa de Starken no es válida para esta cotización');
+    expect(e.almacen.obtener(e.q.id)!.flete).toBe(0);
+    // Al volver a cotizar, la tarifa del pedido nuevo se aplica.
+    const nueva = await elegir(e, veinte);
+    expect(nueva.neto).toBe(510000);
+    let q = await e.editar(veinte, { despacho: { valor: nueva.neto }, tarifaStarken: nueva.tarifa });
+    expect(q.flete).toBe(510000);
+    // Una medida pedida distinta también cambia el pedido, aunque el bulto sea el mismo (la referencia es de 85 cm).
+    const antes = await elegir(e, q);
+    q = await e.editar(q, { items: [{ indice: 0, cambios: { ancho: 0.8 } }] });
+    expect((await elegir(e, q)).neto).toBe(antes.neto);
+    await expect(
+      e.editar(q, { despacho: { valor: antes.neto }, tarifaStarken: antes.tarifa }),
+    ).rejects.toThrow(pedidoCambio);
+  });
+
+  it('con el pedido cambiado, una tarifa vencida o adulterada dice eso y no «El pedido cambió»', async () => {
+    const e = await conStarken();
+    const vencida = await elegir(e, e.q, 'DOMICILIO', Date.now() - VIGENCIA_FIRMA_MS - 1000);
+    const { tarifa, neto } = await elegir(e, e.q);
+    const veinte = await e.editar(e.q, { cantidades: [{ indice: 0, cantidad: 20 }] });
+    // La firma se revisa antes que la huella: el mensaje dice por qué no sirve volver a aplicarla.
+    await expect(
+      e.editar(veinte, { despacho: { valor: vencida.neto }, tarifaStarken: vencida.tarifa }),
+    ).rejects.toThrow('La tarifa de Starken venció. Vuelve a cotizar el despacho.');
+    await expect(
+      e.editar(veinte, { despacho: { valor: neto }, tarifaStarken: { ...tarifa, costoTotal: 11900 } }),
+    ).rejects.toThrow('La tarifa de Starken no es válida para esta cotización');
+    expect(e.almacen.obtener(e.q.id)!.flete).toBe(0);
+  });
+
+  it('si el catálogo cambió desde el último guardado, la tarifa cotizada se aplica (no pide volver a cotizar sin fin)', async () => {
+    const e = await conStarken();
+    // Un pedido especial: su línea no depende del catálogo, pero entra en el bulto y en la huella.
+    const q = (
+      await e.servicio.ejecutar({
+        tipo: 'agregar_personalizado',
+        id: e.q.id,
+        actualizada: e.q.actualizada,
+        item: {
+          nombre: 'Puerta curva',
+          familia: 'PUERTA',
+          madera: 'Raulí',
+          ancho: 0.9,
+          alto: 2.1,
+          cantidad: 1,
+          precioUnitario: 250000,
+        },
+      })
+    ).cotizacion;
+    expect(q.montos.lineas.map((l) => l.producto.codigo)).toEqual(['MOL-O-3-A', 'ESPECIAL']);
+    // Una importación renombró el código de la puerta: lo guardado todavía tiene el anterior.
+    const renombrado: Catalogo = {
+      ...catalogo(),
+      sha256: 'v2',
+      productos: [{ ...puerta, codigo: 'MOL-O-3-N' }],
+    };
+    const servicio = new Servicio(renombrado, { interpretar: vi.fn() }, e.almacen, e.usuario);
+    const { tarifa, neto } = await elegir(e, q, 'DOMICILIO', undefined, renombrado);
+    // 4 puertas × 25 kg: 100 kg.
+    expect(neto).toBe(110000);
+    const aplicada = (
+      await servicio.ejecutar({
+        tipo: 'editar',
+        id: q.id,
+        actualizada: q.actualizada,
+        despacho: { valor: neto },
+        tarifaStarken: tarifa,
+      })
+    ).cotizacion;
+    expect(aplicada.flete).toBe(110000);
+    expect(aplicada.montos.lineas.map((l) => l.producto.codigo)).toEqual(['MOL-O-3-N', 'ESPECIAL']);
+    expect(e.detalles(aplicada).at(-1)).toContain('Tarifa Starken aplicada');
+  });
 });
 
 describe('firma de tarifas', () => {
   const datos = {
+    huellaBulto: 'a'.repeat(64),
     tipoEntrega: 'DOMICILIO',
     servicio: 'NORMAL',
     dias: 3,
@@ -1180,6 +1456,7 @@ describe('firma de tarifas', () => {
     expect(verificarTarifa(ID, aplicada, ahora + VIGENCIA_FIRMA_MS + 1)).toBe('vencida');
     expect(verificarTarifa(ID.replace('0b9b', '1c9b'), aplicada, ahora)).toBe('invalida');
     expect(verificarTarifa(ID, { ...aplicada, costoTotal: 1190 }, ahora)).toBe('invalida');
+    expect(verificarTarifa(ID, { ...aplicada, huellaBulto: 'b'.repeat(64) }, ahora)).toBe('invalida');
     expect(verificarTarifa(ID, { ...aplicada, vence: new Date(ahora + 1e9).toISOString() }, ahora)).toBe(
       'invalida',
     );

@@ -34,12 +34,13 @@ describe('Ajustes del asistente', () => {
 
   it('guarda el modelo de respaldo; sin indicarlo usa el predeterminado y null lo desactiva', async () => {
     const db = await base();
-    guardarAjustesIA({ commandcode: { modelo: 'Qwen/Qwen3.7-Flash', respaldo: 'gpt-6-luna' } }, db);
+    const principal = 'deepseek/deepseek-v4.1-flash';
+    guardarAjustesIA({ commandcode: { modelo: principal, respaldo: 'gpt-6-luna' } }, db);
     expect(leerAjustesIA(db).commandcode.respaldo).toBe('gpt-6-luna');
     // Lo guardado antes de existir el respaldo sigue valiendo y toma el predeterminado.
-    guardarAjustesIA({ commandcode: { modelo: 'Qwen/Qwen3.7-Flash' } }, db);
+    guardarAjustesIA({ commandcode: { modelo: principal } }, db);
     expect(modeloRespaldo(leerAjustesIA(db))).toBe(MODELO_RESPALDO_PREDETERMINADO);
-    guardarAjustesIA({ commandcode: { modelo: 'Qwen/Qwen3.7-Flash', respaldo: null } }, db);
+    guardarAjustesIA({ commandcode: { modelo: principal, respaldo: null } }, db);
     expect(modeloRespaldo(leerAjustesIA(db))).toBeNull();
     // El mismo modelo principal no es un respaldo.
     expect(modeloRespaldo({ commandcode: { modelo: 'gpt-6-luna', respaldo: 'gpt-6-luna' } })).toBeNull();

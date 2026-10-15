@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { auth } from '@/servidor/autenticacion';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
+import { registrarCambioCuenta, ultimosCambiosCuentas } from '@/servidor/auditoria-cuentas';
 import { leerJson } from '@/servidor/cuerpo';
 
 export const runtime = 'nodejs';
@@ -16,12 +17,56 @@ const nuevaCuentaSchema = z
 
 const sinCache = { 'Cache-Control': 'no-store' };
 
+// Contraseña de quien hace el cambio: se exige para cambiar el correo o la contraseña de una cuenta.
+const passwordActual = z.string().max(128).optional();
+
 const accionUsuarioSchema = z.discriminatedUnion('accion', [
-  z.object({ accion: z.literal('editar'), id: z.string().min(1), nombre: z.string().trim().min(1).max(120), email: z.string().trim().toLowerCase().email().max(254) }).strict(),
+  z.object({ accion: z.literal('editar'), id: z.string().min(1), nombre: z.string().trim().min(1).max(120), email: z.string().trim().toLowerCase().email().max(254), passwordActual }).strict(),
   z.object({ accion: z.literal('activar'), id: z.string().min(1) }).strict(),
   z.object({ accion: z.literal('desactivar'), id: z.string().min(1) }).strict(),
-  z.object({ accion: z.literal('restablecer-clave'), id: z.string().min(1), password: z.string().min(8).max(128) }).strict(),
+  z.object({ accion: z.literal('restablecer-clave'), id: z.string().min(1), password: z.string().min(8).max(128), passwordActual }).strict(),
 ]);
+
+// Confirmaciones fallidas por cuenta: con una sesión robada no se puede probar contraseñas sin límite.
+const MAX_CONFIRMACIONES_FALLIDAS = 5;
+const VENTANA_CONFIRMACION_MS = 15 * 60 * 1000;
+const confirmacionesFallidas = new Map<string, { cantidad: number; desde: number }>();
+
+type Contexto = Awaited<typeof auth.$context>;
+
+/**
+ * Cambiar el correo o la contraseña de una cuenta permite tomarla: con una sesión ajena abierta en un equipo
+ * compartido bastaría un clic. Por eso se pide la contraseña de quien hace el cambio. Devuelve la respuesta de error
+ * o `null` si la confirmación es correcta.
+ */
+async function rechazoConfirmacion(contexto: Contexto, actorId: string, password: string | undefined) {
+  const ahora = Date.now();
+  const registro = confirmacionesFallidas.get(actorId);
+  if (registro && ahora - registro.desde > VENTANA_CONFIRMACION_MS) confirmacionesFallidas.delete(actorId);
+  if ((confirmacionesFallidas.get(actorId)?.cantidad ?? 0) >= MAX_CONFIRMACIONES_FALLIDAS)
+    return Response.json(
+      { error: 'Demasiados intentos con una contraseña incorrecta. Espera unos minutos.', codigo: 'confirmar_clave' },
+      { status: 429, headers: sinCache },
+    );
+  if (!password)
+    return Response.json(
+      { error: 'Escribe tu contraseña para confirmar el cambio.', codigo: 'confirmar_clave' },
+      { status: 400, headers: sinCache },
+    );
+  const cuenta = await contexto.internalAdapter.findCredentialAccount(actorId);
+  const correcta = !!cuenta?.password && (await contexto.password.verify({ hash: cuenta.password, password }));
+  if (correcta) {
+    confirmacionesFallidas.delete(actorId);
+    return null;
+  }
+  const vigente = confirmacionesFallidas.get(actorId);
+  if (vigente) vigente.cantidad += 1;
+  else confirmacionesFallidas.set(actorId, { cantidad: 1, desde: ahora });
+  return Response.json(
+    { error: 'Tu contraseña no es correcta.', codigo: 'confirmar_clave' },
+    { status: 403, headers: sinCache },
+  );
+}
 
 async function listarUsuarios() {
   const contexto = await auth.$context;
@@ -40,11 +85,19 @@ async function listarUsuarios() {
   });
 }
 
+/** Lista de cuentas, la cuenta de quien consulta y los últimos cambios de cuentas (quién hizo qué a quién). */
+async function respuestaCuentas(actual: string) {
+  return Response.json(
+    { usuarios: await listarUsuarios(), actual, cambios: ultimosCambiosCuentas() },
+    { headers: sinCache },
+  );
+}
+
 export async function GET(req: Request) {
   const sesion = await exigirSesion(req, { rol: 'admin' });
   if (!sesion.ok) return sesion.respuesta;
   try {
-    return Response.json({ usuarios: await listarUsuarios(), actual: sesion.usuario.id }, { headers: sinCache });
+    return await respuestaCuentas(sesion.usuario.id);
   } catch {
     return Response.json({ error: 'No se pudo leer las cuentas.' }, { status: 500, headers: sinCache });
   }
@@ -64,6 +117,16 @@ export async function PATCH(req: Request) {
     const objetivo = usuarios.find((usuario) => usuario.id === parsed.data.id);
     if (!objetivo) return Response.json({ error: 'No se encontró la cuenta.' }, { status: 404, headers: sinCache });
     const cuenta = objetivo as typeof objetivo & { role?: string | null; banned?: boolean };
+    const actor = sesion.usuario.email;
+    let descripcionObjetivo = objetivo.email;
+    const cambiaAcceso =
+      parsed.data.accion === 'restablecer-clave' ||
+      (parsed.data.accion === 'editar' && parsed.data.email !== objetivo.email.toLowerCase());
+    if (cambiaAcceso) {
+      const confirmacion = 'passwordActual' in parsed.data ? parsed.data.passwordActual : undefined;
+      const rechazo = await rechazoConfirmacion(contexto, sesion.usuario.id, confirmacion);
+      if (rechazo) return rechazo;
+    }
     if (parsed.data.accion === 'editar') {
       const existente = await contexto.internalAdapter.findUserByEmail(parsed.data.email);
       if (existente && existente.user.id !== objetivo.id)
@@ -73,7 +136,18 @@ export async function PATCH(req: Request) {
         email: parsed.data.email,
         emailVerified: true,
       });
+      const antes = [
+        parsed.data.email !== objetivo.email ? `correo antes: ${objetivo.email}` : '',
+        parsed.data.nombre !== objetivo.name ? `nombre antes: ${objetivo.name}` : '',
+      ].filter(Boolean);
+      descripcionObjetivo = antes.length ? `${parsed.data.email} (${antes.join('; ')})` : parsed.data.email;
     } else if (parsed.data.accion === 'desactivar') {
+      // La interfaz ya oculta el botón; la API también lo impide: quien se desactiva pierde su propia sesión.
+      if (objetivo.id === sesion.usuario.id)
+        return Response.json(
+          { error: 'No puedes desactivar tu propia cuenta. Pide a otra persona administradora que lo haga.' },
+          { status: 409, headers: sinCache },
+        );
       const activos = usuarios.filter((usuario) => {
         const u = usuario as typeof cuenta;
         return (u.role ?? 'admin') === 'admin' && !u.banned;
@@ -90,7 +164,8 @@ export async function PATCH(req: Request) {
       else await contexto.internalAdapter.createAccount({ userId: objetivo.id, providerId: 'credential', accountId: objetivo.id, password: hash });
       await contexto.internalAdapter.deleteUserSessions(objetivo.id);
     }
-    return Response.json({ usuarios: await listarUsuarios(), actual: sesion.usuario.id }, { headers: sinCache });
+    registrarCambioCuenta({ actor, objetivo: descripcionObjetivo, accion: parsed.data.accion });
+    return await respuestaCuentas(sesion.usuario.id);
   } catch (error) {
     console.error('[usuarios] fallo al actualizar cuenta:', error instanceof Error ? error.name : 'desconocido');
     return Response.json({ error: 'No se pudo actualizar la cuenta.' }, { status: 500, headers: sinCache });
@@ -142,6 +217,7 @@ export async function POST(req: Request) {
       }
       throw error;
     }
+    registrarCambioCuenta({ actor: sesion.usuario.email, objetivo: usuario.email, accion: 'crear' });
 
     return Response.json(
       { usuario: { email: usuario.email, nombre: usuario.name, rol: 'admin' } },

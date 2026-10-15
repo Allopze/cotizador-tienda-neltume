@@ -1,14 +1,29 @@
 'use client';
 import { useId, useState, type FormEvent } from 'react';
-import { metros } from '@/catalogo/resolver';
 import { metrosTexto } from '@/catalogo/escalones';
 import { cambiosRespuesta, type PreguntaPendiente } from '@/negocio/pendientes';
 import type { CambiosEdicion } from './contrato';
 import { AltaProducto } from './alta-producto';
 import { Dialogo } from './dialogo';
+import { leerMedida } from './formato';
 
 /** Con más opciones que estas, un desplegable se lee mejor que una fila de botones. */
 const MAX_BOTONES = 10;
+
+/** Resumen del detalle de un ítem pendiente por precio o descuento: la explicación completa va bajo el producto. */
+export const RESUMEN_FUERA_DE_REGLA = 'Precio o descuento fuera de regla';
+
+/**
+ * Preguntas del detalle de un ítem sin la explicación de un precio o descuento fuera de regla, que ya se lee bajo
+ * el producto: la pregunta conserva el título y el botón para corregirlo. En el chat se muestra completa.
+ */
+export function sinExplicacionRepetida(preguntas: PreguntaPendiente[], explicacion: string | null) {
+  if (!explicacion) return preguntas;
+  // El detalle es la explicación sin una lista final de opciones (`sinLista`): basta con que la empiece.
+  return preguntas.map((p) =>
+    p.campo === null && p.detalle && explicacion.startsWith(p.detalle) ? { ...p, detalle: null } : p,
+  );
+}
 
 interface Props {
   preguntas: PreguntaPendiente[];
@@ -177,9 +192,10 @@ function Entrada({
     : `entre ${entrada.min} y ${entrada.max.toLocaleString('es-CL')}`;
   function enviar(e: FormEvent) {
     e.preventDefault();
-    const n = Number(texto.trim().replace(',', '.'));
-    // Una medida se acepta también en centímetros o milímetros: «80» es 0,80 m.
-    const valor = enMetros ? metros(n) : n;
+    // Una medida se lee como en el detalle del ítem, con la familia del ítem: «80», «0,80», «80 cm» o «3600 mm».
+    const valor = enMetros
+      ? leerMedida(texto, entrada.familia ?? 'PUERTA', p.campo === 'ancho' ? 'ancho' : 'alto')
+      : Number(texto.trim().replace(',', '.'));
     const valido =
       valor !== null &&
       Number.isFinite(valor) &&
@@ -187,7 +203,11 @@ function Entrada({
       valor >= entrada.min - 1e-9 &&
       valor <= entrada.max + 1e-9;
     if (!valido) {
-      setError(`Indica ${enMetros ? 'una medida' : 'un número entero'} ${rango}.`);
+      setError(
+        enMetros
+          ? `Indica una medida ${rango}: en metros (${metrosTexto(entrada.min)}) o con «cm» o «mm» (${Math.round(entrada.min * 100)} cm).`
+          : `Indica un número entero ${rango}.`,
+      );
       return;
     }
     setError(null);

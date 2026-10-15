@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 test('agregar un producto a mano en la misma pantalla que el alta asistida', async ({ page }) => {
@@ -16,7 +16,7 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
   await datos.getByLabel('Ancho mínimo').fill('80');
   await datos.getByLabel('Ancho máximo').fill('85');
   await datos.getByLabel('Alto').fill('2,10');
-  await datos.getByLabel('Precio base neto').fill('145.000');
+  await datos.getByLabel('Precio base sin IVA').fill('145.000');
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
 
   const revision = page.locator('.catalog-preview');
@@ -25,7 +25,7 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
   await page.screenshot({ path: 'test-results/alta-manual.png', fullPage: true });
 
   // Cambiar un dato invalida la revisión: hay que volver a revisar.
-  await datos.getByLabel('Precio base neto').fill('150.000');
+  await datos.getByLabel('Precio base sin IVA').fill('150.000');
   await expect(revision).toHaveCount(0);
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
   await expect(revision).toContainText('$150.000');

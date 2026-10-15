@@ -20,8 +20,15 @@ import { Servicio } from '../src/servidor/servicio';
 import { ErrorUsuario } from '../src/servidor/errores';
 import { resumenTexto } from '../src/app/formato';
 import { errorDescuentoItem } from '../src/app/descuento-item';
+import { cantidadesDichas, cifrasDelTexto } from '../src/asistente/anclaje';
+import { montoEscrito, porcentajeEscrito, porcentajesDelTexto, textosSinPorcentajes } from '../src/asistente/montos';
+import { CAMPOS_ITEM, casoSchema, puntuar } from '../src/asistente/evaluacion';
+import { SYSTEM } from '../src/asistente/llm';
+import { clienteVacio } from '../src/catalogo/tipos';
+import type { Cotizacion } from '../src/negocio/estado';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -226,6 +233,7 @@ describe('descuento especial por ítem en el servicio', () => {
       { tipo: 'monto', valor: 155_001 },
     ] as const)
       await expect(t.descuento(0, valor)).rejects.toBeInstanceOf(ErrorUsuario);
+    // Escrito en el detalle se rechaza con el campo abierto; deshacer o el chat lo dejan pendiente.
     await expect(t.descuento(0, { tipo: 'monto', valor: 155_001 })).rejects.toThrow(/supera su precio unitario/);
     expect(new Almacen(t.dir).obtener(t.q.id)).toMatchObject({ actualizada: version });
     expect(new Almacen(t.dir).obtener(t.q.id)!.solicitudes[0].descuento).toBeUndefined();
@@ -261,7 +269,7 @@ describe('descuento especial por ítem en el servicio', () => {
     await t.descuento(0, { tipo: 'porcentaje', valor: 15 });
     let q = (await t.servicio.ejecutar({ tipo: 'emitir', id: t.q.id, actualizada: t.q.actualizada })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
-    q = (await t.servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5), fecha: '2026-09-30' })).cotizacion;
+    q = (await t.servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5) })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
     const nota = new Almacen(t.dir).obtener(q.id)!.nota!;
     expect(nota.montos.lineas.map((l) => [l.precioUnitario, l.descuentoItem, l.total])).toEqual([
@@ -314,5 +322,224 @@ describe('compatibilidad', () => {
     } finally {
       db.close();
     }
+  });
+});
+
+describe('lectura de porcentajes escritos', () => {
+  it('lee «15 %», «15%», «12,5 %», «por ciento» en cifras y en palabras, y la cifra sola junto a «descuento»', () => {
+    expect(porcentajesDelTexto('hazle 15% de descuento a las Molco')).toEqual([15]);
+    expect(porcentajesDelTexto('12,5 % a la Huilo')).toEqual([12.5]);
+    expect(porcentajesDelTexto('Descuento del 20 %')).toEqual([20]);
+    expect(porcentajesDelTexto('15 por ciento')).toEqual([15]);
+    expect(porcentajesDelTexto('un diez por ciento')).toEqual([10]);
+    expect(porcentajesDelTexto('a las molco y diez por ciento')).toEqual([10]);
+    expect(porcentajesDelTexto('treinta y cinco por ciento')).toEqual([35]);
+    expect(porcentajesDelTexto('descuento de 15')).toEqual([15]);
+    expect(porcentajesDelTexto('15 de descuento')).toEqual([15]);
+  });
+
+  it('un monto en pesos no es un porcentaje, ni uno sobre 100', () => {
+    expect(porcentajesDelTexto('descuento de 15 mil')).toEqual([]);
+    expect(porcentajesDelTexto('descuento de $15.000')).toEqual([]);
+    expect(porcentajesDelTexto('$20.000 de descuento')).toEqual([]);
+    expect(porcentajesDelTexto('150 %')).toEqual([]);
+  });
+
+  it('el porcentaje propuesto vale si está escrito; una fracción (0,15) vale como lo escrito (15 %)', () => {
+    expect(porcentajeEscrito(15, ['con 15% de descuento'])).toBe(15);
+    expect(porcentajeEscrito(0.15, ['con 15% de descuento'])).toBe(15);
+    expect(porcentajeEscrito(20, ['con 15% de descuento'])).toBeNull();
+    expect(porcentajeEscrito(15, null)).toBe(15);
+  });
+
+  it('un porcentaje no respalda un monto, una cantidad ni una medida', () => {
+    expect(montoEscrito(15, textosSinPorcentajes(['15% de descuento']))).toMatchObject({ ok: false });
+    expect(montoEscrito(20_000, textosSinPorcentajes(['rebájale 20 mil a cada una']))).toEqual({ ok: true, valor: 20_000 });
+    expect(cantidadesDichas('hazle 15% de descuento a las 4 Molco')).toEqual([4]);
+    expect(cifrasDelTexto('quince por ciento de descuento a las 4 molco')).toEqual([4]);
+  });
+});
+
+describe('descuento especial pedido en el chat', () => {
+  const MARA = '2 Huilo Huilo mara de 83,5 x 236 medida de hoja';
+  const RAULI = '1 Huilo Huilo raulí de 83,5 x 236 medida de hoja';
+  const huilo = (madera: string, cantidad: number, fuente: string, extra: Record<string, unknown> = {}) => ({
+    modelo: 'Huilo Huilo', madera, ancho: 83.5, alto: 236, medida: null, cantidad, tipoMedida: 'hoja', fuente, ...extra,
+  });
+  const editar = (cambios: { indice: number; cambios: Record<string, unknown> }[]) => ({
+    name: 'modificar_cotizacion',
+    input: { items: cambios },
+  });
+
+  /** Chat con el anclaje de la aplicación (modelo real, modo «avisar»): la IA es un doble con su respuesta. */
+  async function conversar() {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-descuento-chat-'));
+    dirs.push(dir);
+    const almacen = new Almacen(dir);
+    const llm = { interpretar: vi.fn(), verificarCifras: true, anclaje: 'avisar' as const };
+    const servicio = new Servicio(catalogo, llm, almacen);
+    let q: Cotizacion | null = null;
+    const enviar = async (mensaje: string, salida: unknown) => {
+      llm.interpretar.mockResolvedValueOnce(salida);
+      const r = await servicio.ejecutar(
+        q ? { tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje } : { tipo: 'chat', mensaje },
+      );
+      q = r.cotizacion;
+      return r;
+    };
+    const eventos = () => almacen.eventos(q!.id).map((e) => e.detalle ?? '');
+    return { enviar, eventos, llm, get q() { return q!; } };
+  }
+
+  /** Pedido base: 2 Huilo Huilo en Mara y 1 en Raulí, a $155.000 c/u (margen de categoría 55 %). */
+  async function conPedido() {
+    const t = await conversar();
+    const mensaje = `${MARA} y ${RAULI}`;
+    const r = await t.enviar(mensaje, {
+      name: 'modificar_cotizacion',
+      input: { agregar: [huilo('Mara', 2, MARA), huilo('Rauli', 1, RAULI)] },
+    });
+    expect(r.avisos ?? []).toEqual([]);
+    expect(t.q.montos.lineas.map((l) => l.total)).toEqual([310_000, 155_000]);
+    return t;
+  }
+
+  it('el prompt enseña a registrar el descuento y deja de prohibirlo', () => {
+    expect(SYSTEM).toMatch(/## Descuento/);
+    expect(SYSTEM).toMatch(/el descuento de un producto \(ver Descuento\)/);
+    expect(SYSTEM).toMatch(/«15 %» es 15 \(nunca 0.15\)/);
+  });
+
+  it('escrito junto al producto se aplica, se confirma con el precio original y el rebajado, y queda en la actividad', async () => {
+    const t = await conversar();
+    const fuente = `${MARA} con 15% de descuento`;
+    const r = await t.enviar(fuente, {
+      name: 'modificar_cotizacion',
+      input: { agregar: [huilo('Mara', 2, fuente, { descuento: { tipo: 'porcentaje', valor: 15 } })] },
+    });
+    expect(t.q.solicitudes[0].descuento).toEqual({ tipo: 'porcentaje', valor: 15 });
+    expect(t.q.solicitudes[0]).not.toHaveProperty('descuentoEscrito');
+    expect(t.q.solicitudes[0].cantidad).toBe(2);
+    expect(t.q.montos.lineas[0]).toMatchObject({ precioUnitario: 155_000, descuentoUnitario: 23_250, total: 263_500 });
+    expect(r.avisos).toEqual([
+      'Descuento especial de 15 % en el ítem 1 (Huilo Huilo): $155.000 → $131.750 c/u (ahorro $46.500).',
+    ]);
+    expect(t.q.historial.at(-1)!.texto).toContain('$155.000 → $131.750 c/u');
+    expect(t.eventos().at(-1)).toMatch(/Descuento especial de 2 × Huilo Huilo .*: sin descuento → 15 %/);
+    // Se guarda como el descuento del detalle: el PDF y el resumen muestran el precio tachado.
+    expect(resumenTexto(t.q)).toContain('$155.000 c/u, descuento especial 15 % → $131.750 c/u');
+  });
+
+  it('pedido después, solo cambia el ítem nombrado; una fracción (0,15) se toma como el 15 % escrito', async () => {
+    const t = await conPedido();
+    const mensaje = 'a la de mara hazle un 15% de descuento';
+    const r = await t.enviar(mensaje, editar([{ indice: 0, cambios: { descuento: { tipo: 'porcentaje', valor: 0.15 }, fuente: mensaje } }]));
+    expect(t.q.solicitudes.map((s) => s.descuento)).toEqual([{ tipo: 'porcentaje', valor: 15 }, undefined]);
+    expect(t.q.montos.lineas.map((l) => l.total)).toEqual([263_500, 155_000]);
+    expect(r.avisos).toEqual([
+      'Descuento especial de 15 % en el ítem 1 (Huilo Huilo): $155.000 → $131.750 c/u (ahorro $46.500).',
+    ]);
+  });
+
+  it('el mismo descuento en todos los ítems («a todo»)', async () => {
+    const t = await conPedido();
+    const mensaje = 'hazle un 10 por ciento de descuento a todo';
+    await t.enviar(mensaje, editar([0, 1].map((indice) => ({ indice, cambios: { descuento: { tipo: 'porcentaje', valor: 10 }, fuente: mensaje } }))));
+    expect(t.q.montos.lineas.map((l) => [l.descuentoUnitario, l.total])).toEqual([[15_500, 279_000], [15_500, 139_500]]);
+  });
+
+  it('un monto por unidad, escrito en pesos', async () => {
+    const t = await conPedido();
+    const mensaje = 'a la de raulí rebájale 20 mil';
+    const r = await t.enviar(mensaje, editar([{ indice: 1, cambios: { descuento: { tipo: 'monto', valor: 20_000 }, fuente: mensaje } }]));
+    expect(t.q.solicitudes[1].descuento).toEqual({ tipo: 'monto', valor: 20_000 });
+    expect(t.q.montos.lineas[1]).toMatchObject({ descuentoUnitario: 20_000, total: 135_000 });
+    expect(r.avisos).toEqual(['Descuento especial de $20.000 c/u en el ítem 2 (Huilo Huilo): $155.000 → $135.000 c/u.']);
+  });
+
+  it('una cifra que no está escrita no se aplica: ni otro porcentaje, ni un porcentaje leído como pesos', async () => {
+    const t = await conPedido();
+    const mensaje = 'a la de mara hazle un 15% de descuento';
+    let r = await t.enviar(mensaje, editar([{ indice: 0, cambios: { descuento: { tipo: 'porcentaje', valor: 20 }, fuente: mensaje } }]));
+    expect(r.avisos).toEqual([
+      'No apliqué el descuento del ítem 1 (Huilo Huilo): el porcentaje no aparece escrito en su línea del pedido.',
+    ]);
+    r = await t.enviar(mensaje, editar([{ indice: 0, cambios: { descuento: { tipo: 'monto', valor: 15 }, fuente: mensaje } }]));
+    expect(r.avisos?.[0]).toBe('No apliqué el descuento del ítem 1 (Huilo Huilo): el monto no aparece escrito en su línea del pedido.');
+    expect(t.q.solicitudes[0].descuento).toBeUndefined();
+    expect(t.q.montos.lineas[0].total).toBe(310_000);
+  });
+
+  it('sin cifra pide cuánto; un porcentaje sobre 100 se rechaza', async () => {
+    const t = await conPedido();
+    const mensaje = 'hazle un descuento a la de mara';
+    let r = await t.enviar(mensaje, editar([{ indice: 0, cambios: { descuento: { tipo: 'porcentaje', valor: null }, fuente: mensaje } }]));
+    expect(r.avisos?.[0]).toMatch(/^Indica cuánto descuento quieres para el ítem 1 \(Huilo Huilo\)/);
+    const mas = 'a la de mara un 120% de descuento';
+    r = await t.enviar(mas, editar([{ indice: 0, cambios: { descuento: { tipo: 'porcentaje', valor: 120 }, fuente: mas } }]));
+    expect(r.avisos?.[0]).toBe('No apliqué el descuento del ítem 1 (Huilo Huilo): debe ser un porcentaje mayor que 0 % y hasta 100 %.');
+    expect(t.q.solicitudes[0].descuento).toBeUndefined();
+  });
+
+  it('se quita si el mensaje lo pide; un null de relleno al editar otro dato no lo borra', async () => {
+    const t = await conPedido();
+    const pide = 'a todas hazles 15% de descuento';
+    await t.enviar(pide, editar([0, 1].map((indice) => ({ indice, cambios: { descuento: { tipo: 'porcentaje', valor: 15 }, fuente: pide } }))));
+    // La IA rellena descuento: null al cambiar la cantidad: el mensaje no habla de descuento.
+    const cantidad = 'que la de raulí sean 3';
+    let r = await t.enviar(cantidad, editar([{ indice: 1, cambios: { cantidad: 3, descuento: null, fuente: cantidad } }]));
+    expect(t.q.solicitudes[1]).toMatchObject({ cantidad: 3, descuento: { tipo: 'porcentaje', valor: 15 } });
+    expect(r.avisos ?? []).toEqual([]);
+    const quitar = 'a la de mara sácale el descuento';
+    r = await t.enviar(quitar, editar([{ indice: 0, cambios: { descuento: null, fuente: quitar } }]));
+    expect(t.q.solicitudes[0]).not.toHaveProperty('descuento');
+    expect(t.q.solicitudes[1].descuento).toEqual({ tipo: 'porcentaje', valor: 15 });
+    expect(r.avisos).toEqual(['Quité el descuento especial del ítem 1 (Huilo Huilo): vuelve a $155.000 c/u.']);
+    expect(t.eventos().at(-1)).toMatch(/: 15 % → sin descuento/);
+  });
+
+  it('un monto mayor que el precio deja el ítem pendiente con su pregunta, sin confirmarlo', async () => {
+    const t = await conPedido();
+    const mensaje = 'a la de raulí descuéntale $200.000';
+    const r = await t.enviar(mensaje, editar([{ indice: 1, cambios: { descuento: { tipo: 'monto', valor: 200_000 }, fuente: mensaje } }]));
+    expect(t.q.incompletos).toEqual([expect.objectContaining({ indice: 1, pregunta: expect.stringMatching(/supera su precio unitario \(\$155\.000\)/) })]);
+    expect((r.avisos ?? []).some((a) => a.startsWith('Descuento especial'))).toBe(false);
+  });
+
+  it('en un ítem incompleto se anota y se aplica cuando se completa', async () => {
+    const t = await conversar();
+    const fuente = '2 Huilo Huilo de 83,5 x 236 medida de hoja con 15% de descuento';
+    const r = await t.enviar(fuente, {
+      name: 'modificar_cotizacion',
+      input: { agregar: [huilo(null as never, 2, fuente, { descuento: { tipo: 'porcentaje', valor: 15 } })] },
+    });
+    expect(r.avisos).toContain('Anoté un descuento especial de 15 % para el ítem 1 (Huilo Huilo): se aplica cuando el ítem esté completo.');
+    await t.enviar('mara', editar([{ indice: 0, cambios: { madera: 'Mara', fuente: 'mara' } }]));
+    expect(t.q.montos.lineas[0]).toMatchObject({ descuentoUnitario: 23_250, total: 263_500 });
+  });
+});
+
+describe('evaluación de la IA con descuentos', () => {
+  const caso = (descuento?: { tipo: 'porcentaje' | 'monto'; valor: number }) =>
+    casoSchema.parse({
+      id: 'd',
+      descripcion: 'descuento',
+      mensajes: ['x'],
+      esperado: { items: [{ modelo: 'MOLCO', madera: 'LENGA', ancho: 0.8, alto: 2, medida: null, cantidad: 2, ...(descuento ? { descuento } : {}) }] },
+    });
+  const item = (descuento?: SolicitudItem['descuento']) => ({
+    modelo: 'MOLCO', madera: 'LENGA', ancho: 0.8, alto: 2, medida: null, cantidad: 2, ...(descuento ? { descuento } : {}),
+  });
+
+  it('mide el descuento como un campo más: el que falta, el que sobra y el distinto son errores', () => {
+    expect(CAMPOS_ITEM).toContain('descuento');
+    const pct = { tipo: 'porcentaje', valor: 15 } as const;
+    const medir = (esperado?: typeof pct, obtenido?: SolicitudItem['descuento']) =>
+      puntuar(caso(esperado), { items: [item(obtenido)], cliente: clienteVacio() }).diferencias.map((d) => d.campo);
+    expect(medir(pct, pct)).toEqual([]);
+    expect(medir(undefined, undefined)).toEqual([]);
+    expect(medir(pct, undefined)).toEqual(['descuento']);
+    expect(medir(undefined, pct)).toEqual(['descuento']);
+    expect(medir(pct, { tipo: 'monto', valor: 15 })).toEqual(['descuento']);
   });
 });

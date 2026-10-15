@@ -38,6 +38,12 @@ export interface Incidencia {
 }
 /** Descripción de catálogo: con los rangos de medida que cubre el producto. */
 export const descripcion = (p: Producto) => describirProducto(p);
+/** Anchos de una medida de puerta («0,70 A 0,80» o «70 A 80»): un número mayor que 10 viene en centímetros. */
+const anchosDePuerta = (medida: string) =>
+  medida.split(' A ').map((valor) => {
+    const n = Number(valor.replace(',', '.'));
+    return n > 10 ? n / 100 : n;
+  });
 export async function importar(ruta: string, configEntrada?: ConfiguracionCatalogo, abierto?: Xlsx) {
   const configuracion = validarConfiguracionCatalogo(configEntrada ?? {});
   const x = abierto ?? (await abrirXlsx(ruta));
@@ -108,10 +114,7 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
         : familia === 'MOLDURA'
           ? codigo.split('-')[2]
           : `2X${get(precio, 'D', r)}`;
-    const anchos = familia === 'PUERTA' ? medida.split(' A ').map((valor) => {
-      const n = Number(valor.replace(',', '.'));
-      return n > 10 ? n / 100 : n;
-    }) : [];
+    const anchos = familia === 'PUERTA' ? anchosDePuerta(medida) : [];
     const maderaHoja = limpio(get(precio, 'G', r))
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '');
@@ -150,6 +153,8 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       !maderaConfigurada ||
       !maderaPorNombreHoja.has(normalizarCatalogo(maderaConfigurada)) ||
       (!(p.altoMin !== undefined && p.altoMax !== undefined && p.altoMin !== p.altoMax) && !codigoCalculado(p)) ||
+      // P vacía, en #N/A o con texto da NaN y NaN nunca es «> 0,01»: sin este chequeo pasaba como consistente.
+      !Number.isFinite(conIva) ||
       Math.abs(conIva - bruto * 1.19) > 0.01
     ) {
       incidencias.push({
@@ -202,7 +207,7 @@ export async function importar(ruta: string, configEntrada?: ConfiguracionCatalo
       }
       p = aValida ? { ...p, codigo: calculado } : b;
       if (p.familia === 'PUERTA')
-        [p.anchoMin, p.anchoMax] = p.medida.split(' A ').map((n) => Number(n.replace(',', '.')));
+        [p.anchoMin, p.anchoMax = p.anchoMin] = anchosDePuerta(p.medida);
       incidencias.push({
         fila: p.filaOrigen,
         accion: 'correccion',

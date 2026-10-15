@@ -9,6 +9,7 @@ import { clienteVacio, type Catalogo, type Producto } from '../src/catalogo/tipo
 // inválidos; que el origen venga de la lista de Starken; y la ida y vuelta cotizar → aplicar con la tarifa firmada.
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -318,6 +319,9 @@ describe('ciudades y cotización de Starken', () => {
     try {
       const { Servicio } = await import('../src/servidor/servicio');
       const { Almacen } = await import('../src/servidor/almacen');
+      // La ruta cotiza con el catálogo vigente de la base, el mismo con que `editar` comprueba el pedido.
+      const { guardarCatalogo } = await import('../src/servidor/repositorio-catalogo');
+      guardarCatalogo(m.db, catalogo());
       const llm = {
         interpretar: vi.fn().mockResolvedValue({
           name: 'actualizar_cotizacion',
@@ -366,6 +370,7 @@ describe('ciudades y cotización de Starken', () => {
           neto: number;
           vence: string;
           firma: string;
+          huellaBulto: string;
         }[];
       };
       expect(r.estado).toBe('tarifas');
@@ -376,6 +381,7 @@ describe('ciudades y cotización de Starken', () => {
       ]);
       for (const t of r.tarifas) {
         expect(t.firma).toMatch(/^[\w-]{43}$/);
+        expect(t.huellaBulto).toMatch(/^[a-f0-9]{64}$/);
         expect(Date.parse(t.vence)).toBeGreaterThan(Date.now());
       }
 
@@ -390,6 +396,7 @@ describe('ciudades y cotización de Starken', () => {
         codigoCiudadDestino: r.destino.codigoCiudad,
         vence: domicilio.vence,
         firma: domicilio.firma,
+        huellaBulto: domicilio.huellaBulto,
       };
       const editar = (tarifaStarken: unknown) =>
         m.rutas.accion.POST(
@@ -408,6 +415,9 @@ describe('ciudades y cotización de Starken', () => {
       expect((await editar({ ...aplicada, firma: undefined })).status).toBe(400);
       expect((await editar({ ...aplicada, firma: 'x' })).status).toBe(400);
       expect((await editar({ ...aplicada, otro: 1 })).status).toBe(400);
+      // También la huella del pedido con que se cotizó.
+      expect((await editar({ ...aplicada, huellaBulto: undefined })).status).toBe(400);
+      expect((await editar({ ...aplicada, huellaBulto: 'x' })).status).toBe(400);
       // …y el servicio, que el costo sea el firmado.
       const aplicar = (tarifaStarken: typeof aplicada) =>
         servicio.ejecutar({
@@ -421,9 +431,11 @@ describe('ciudades y cotización de Starken', () => {
         'La tarifa de Starken no es válida para esta cotización',
       );
       expect(new Almacen().obtener(q.id)?.flete).toBe(0);
-      // La tarifa auténtica se aplica y queda en la actividad.
-      const editada = (await aplicar(aplicada)).cotizacion;
-      expect(editada.flete).toBe(85000);
+      // La tarifa auténtica, tal como la envía la pantalla, pasa la ruta, se aplica y queda en la actividad: los 400
+      // de arriba son por el campo alterado.
+      const aceptada = await editar(aplicada);
+      expect(aceptada.status).toBe(200);
+      expect(((await aceptada.json()) as { cotizacion: { flete: number } }).cotizacion.flete).toBe(85000);
       expect(
         new Almacen()
           .eventos(q.id)
@@ -431,6 +443,56 @@ describe('ciudades y cotización de Starken', () => {
             e.detalle?.includes('Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl.'),
           ),
       ).toBe(true);
+    } finally {
+      m.cerrar();
+    }
+  });
+  it('con el catálogo cambiado desde el guardado, cotizar responde 409 «catalogo_cambio» con los ítems afectados', async () => {
+    const m = await montar();
+    try {
+      const { Servicio } = await import('../src/servidor/servicio');
+      const { Almacen } = await import('../src/servidor/almacen');
+      const { guardarCatalogo } = await import('../src/servidor/repositorio-catalogo');
+      guardarCatalogo(m.db, catalogo());
+      await m.rutas.ajustes.POST(
+        m.peticion('/api/starken', { cookie: m.admin, cuerpo: configuracionCompleta() }),
+      );
+      const llm = {
+        interpretar: vi.fn().mockResolvedValue({
+          name: 'actualizar_cotizacion',
+          input: {
+            items: [
+              { modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.82, alto: 2, medida: null, cantidad: 3 },
+            ],
+            cliente: { ...clienteVacio(), nombre: 'Juan Pérez', comuna: 'Temuco' },
+          },
+        }),
+      };
+      const servicio = new Servicio(catalogo(), llm, new Almacen(), {
+        nombre: 'Paula',
+        email: 'paula@neltume.cl',
+      });
+      const q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza' })).cotizacion;
+      expect(q.incompletos).toEqual([]);
+      // La planilla nueva deja la puerta solo en raulí: la cotización guardada no muestra ningún pendiente.
+      guardarCatalogo(m.db, { ...catalogo(), sha256: 'v2', productos: [{ ...puerta, madera: 'RAULI' }] });
+      const respuesta = await m.rutas.cotizar.POST(
+        m.peticion('/api/starken/cotizar', { cookie: m.usuario, cuerpo: { id: q.id } }),
+      );
+      expect(respuesta.status).toBe(409);
+      expect(respuesta.headers.get('cache-control')).toBe('no-store');
+      const cuerpo = (await respuesta.json()) as {
+        error: string;
+        codigo: string;
+        detalle: { items: { numero: number; descripcion: string; motivo: string }[] };
+      };
+      expect(cuerpo.codigo).toBe('catalogo_cambio');
+      expect(cuerpo.error).toBe(
+        'El catálogo cambió desde que guardaste esta cotización: revisa el pedido antes de cotizar el despacho.',
+      );
+      expect(cuerpo.detalle.items).toEqual([
+        { numero: 1, descripcion: expect.stringMatching(/MOLCO/), motivo: expect.any(String) },
+      ]);
     } finally {
       m.cerrar();
     }

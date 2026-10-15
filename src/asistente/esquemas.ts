@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { LARGO_OBSERVACION_ITEM } from '../negocio/limites';
 const texto = z.string().max(300).nullable();
 /**
  * Precio de una unidad que la persona escribió para un producto («a $450.000 + IVA»). Igual que el flete, el
@@ -11,6 +12,17 @@ const precioSchema = z
     iva: z.enum(['neto', 'incluido']).nullable(),
   })
   .strict();
+/**
+ * Descuento especial que la persona pidió para un producto («15 % de descuento», «rebájale $20.000 c/u»): un
+ * porcentaje o un monto por unidad. Como el precio, el servidor solo lo acepta si la cifra está escrita en la
+ * conversación; null lo quita.
+ */
+const descuentoSchema = z
+  .object({
+    tipo: z.enum(['porcentaje', 'monto']),
+    valor: z.number().nullable(),
+  })
+  .strict();
 export const solicitudSchema = z
   .object({
     modelo: texto,
@@ -20,12 +32,13 @@ export const solicitudSchema = z
     medida: texto,
     tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
     descripcion: texto.optional(),
-    observaciones: z.string().max(1000).nullable().optional(),
+    observaciones: z.string().max(LARGO_OBSERVACION_ITEM).nullable().optional(),
     // Se acepta cualquier número y el servidor anula cantidades no enteras o fuera de 1–10.000 (con aviso).
     cantidad: z.number().nullable(),
     /** Frase exacta del mensaje que describe el ítem; el servidor la muestra junto al ítem. */
     fuente: texto.optional(),
     precio: precioSchema.nullable().optional(),
+    descuento: descuentoSchema.nullable().optional(),
   })
   .strict();
 export const clienteSchema = z
@@ -40,7 +53,7 @@ export const clienteSchema = z
     proyecto: texto,
   })
   .strict();
-export const actualizarSchema = z
+const actualizarSchema = z
   .object({ items: z.array(solicitudSchema).max(100), cliente: clienteSchema })
   .strict();
 const solicitudCambioSchema = z
@@ -53,9 +66,10 @@ const solicitudCambioSchema = z
     cantidad: z.number().nullable().optional(),
     tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
     descripcion: texto.optional(),
-    observaciones: z.string().max(1000).nullable().optional(),
+    observaciones: z.string().max(LARGO_OBSERVACION_ITEM).nullable().optional(),
     fuente: texto.optional(),
     precio: precioSchema.nullable().optional(),
+    descuento: descuentoSchema.nullable().optional(),
   })
   .strict();
 const clienteCambioSchema = z
@@ -73,7 +87,7 @@ const clienteCambioSchema = z
  * Línea de flete pedida en el chat. Es la única cifra en pesos que la IA devuelve: el servidor solo la acepta
  * si está escrita en la conversación y la guarda neta según `iva`.
  */
-export const fleteChatSchema = z
+const fleteChatSchema = z
   .object({
     descripcion: texto,
     cantidad: z.number().nullable(),
@@ -84,7 +98,7 @@ export const fleteChatSchema = z
   })
   .strict();
 export type FleteChat = z.infer<typeof fleteChatSchema>;
-export const modificarSchema = z
+const modificarSchema = z
   .object({
     items: z
       .array(

@@ -14,12 +14,34 @@ export const URL_FERIADOS = (anio: number) => `https://api.boostr.cl/holidays/${
 const VIGENCIA_MS = 24 * 60 * 60 * 1000,
   REINTENTO_MS = 60 * 60 * 1000;
 /** Espera máxima al emitir cuando un año nunca se ha sincronizado; si no, se refresca en segundo plano. */
-export const ESPERA_PRIMERA_MS = 3000;
+const ESPERA_PRIMERA_MS = 3000;
 
 const respuestaSchema = z.object({
   status: z.literal('success'),
-  data: z.array(z.object({ date: z.iso.date(), title: z.string().max(300) })).max(80),
+  data: z
+    .array(
+      z.object({
+        date: z.iso.date(),
+        title: z.string().max(300),
+        // boostr trae el tipo («Civil», «Religioso») y un detalle («Civil e Irrenunciable»); pueden faltar.
+        type: z.string().max(100).nullish(),
+        extra: z.string().max(300).nullish(),
+      }),
+    )
+    .max(80),
 });
+type FeriadoFuente = z.infer<typeof respuestaSchema>['data'][number];
+
+/**
+ * Solo los feriados nacionales cuentan para los días hábiles: civiles, religiosos e irrenunciables. Uno regional
+ * (p. ej. el 7 de junio en Arica o el 20 de agosto en Chillán) no se aplica a todo el país y se descarta. Sin tipo
+ * se acepta: la fuente no siempre lo trae.
+ */
+function esFeriadoNacional(f: Pick<FeriadoFuente, 'type' | 'extra'>) {
+  const texto = `${f.type ?? ''} ${f.extra ?? ''}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  if (/regi(on|onal)/i.test(texto)) return false;
+  return !f.type?.trim() || /civil|religios|irrenunciable/i.test(f.type);
+}
 
 type Obtener = (url: string, init: RequestInit) => Promise<Response>;
 type FilaSincronizacion = { anio: number; sincronizado: string | null; intentado: string };
@@ -28,14 +50,14 @@ type FilaSincronizacion = { anio: number; sincronizado: string | null; intentado
 export const sincronizacionActiva = () => process.env.NELTUME_FERIADOS_SYNC !== '0';
 
 /** Carga en memoria los feriados guardados para que los use el cálculo de días hábiles. */
-export function cargarFeriadosGuardados(db: Database.Database) {
+function cargarFeriadosGuardados(db: Database.Database) {
   const filas = db
     .prepare('SELECT fecha FROM feriados')
     .all() as { fecha: string }[];
   registrarFeriadosExternos(filas.map((f) => f.fecha));
 }
 
-export async function sincronizarAnio(db: Database.Database, anio: number, obtener: Obtener = fetch) {
+async function sincronizarAnio(db: Database.Database, anio: number, obtener: Obtener = fetch) {
   const intentado = new Date().toISOString();
   try {
     const r = await obtener(URL_FERIADOS(anio), {
@@ -45,7 +67,7 @@ export async function sincronizarAnio(db: Database.Database, anio: number, obten
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const parsed = respuestaSchema.safeParse(await r.json());
     if (!parsed.success) throw new Error('respuesta con formato inesperado');
-    const feriados = parsed.data.data.filter((f) => f.date.startsWith(`${anio}-`));
+    const feriados = parsed.data.data.filter((f) => f.date.startsWith(`${anio}-`) && esFeriadoNacional(f));
     // Una lista vacía o casi vacía es un error de la fuente: no borra lo que ya se tenía.
     if (feriados.length < 5) throw new Error(`solo ${feriados.length} feriados para ${anio}`);
     db.transaction(() => {

@@ -416,6 +416,37 @@ h1 {
   color: var(--pending);
   font-size: var(--fs-sm);
 }
+/* «Avanzado» de Ajustes y del catálogo: plegado entre dos líneas, con la advertencia arriba al abrirlo. Sin
+   márgenes laterales propios: la botonera fija de «Guardar» usa los del contenido de la página. */
+.ajustes-avanzado {
+  margin: 26px 0 16px;
+  border-block: 1px solid var(--line);
+}
+.ajustes-avanzado > summary {
+  padding-block: 12px;
+  cursor: pointer;
+  color: var(--ink);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.ajustes-avanzado[open] {
+  padding-bottom: 16px;
+}
+.ajustes-avanzado > summary:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: 4px;
+}
+.ajustes-avanzado > p.muted {
+  margin: 0 0 12px;
+}
+.ajustes-avanzado-aviso {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
 .ajustes-detalle {
   margin: 0 0 16px;
   font-size: var(--fs-sm);
@@ -428,6 +459,75 @@ h1 {
 .ajustes-detalle p {
   margin: 8px 0 0;
   line-height: 1.6;
+}
+/* Guía «Cómo funciona»: texto para leer, a un ancho de línea cómodo, con los estados como en el historial. */
+.ayuda-pagina {
+  padding: 24px 28px 30px;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  line-height: 1.6;
+}
+.ayuda-pagina > * {
+  max-width: 76ch;
+}
+.ayuda-intro {
+  font-size: var(--fs-lg);
+}
+.ayuda-indice ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 20px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+.ayuda-indice a {
+  display: inline-block;
+  padding-block: 6px;
+  color: var(--green);
+}
+.ayuda-seccion {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
+}
+.ayuda-seccion h2 {
+  margin-bottom: 12px;
+  font: var(--serif-3) / 1.3 var(--serif);
+}
+.ayuda-pasos,
+.ayuda-lista {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-left: 22px;
+}
+.ayuda-nota {
+  margin-top: 14px;
+  color: var(--muted);
+}
+.ayuda-estados {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+}
+.ayuda-estados > div {
+  display: grid;
+  grid-template-columns: 116px minmax(0, 1fr);
+  gap: 4px 14px;
+  align-items: baseline;
+}
+.ayuda-estados dd {
+  margin: 0;
+}
+@media (max-width: 450px) {
+  .ayuda-pagina {
+    padding: 18px 16px 22px;
+  }
+  .ayuda-estados > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 /* Pantalla «Historial»: herramientas y listado dentro de la tarjeta. */
 .history {
@@ -818,6 +918,10 @@ button[type='submit'].button.peligro:not(:disabled) {
   background: var(--disabled-bg);
   border-color: var(--disabled-bg);
 }
+/* La lista de sugerencias (`.selector-lista`) se ancla al campo que la abre. */
+.campo.editando.con-sugerencias {
+  position: relative;
+}
 .campo input {
   min-width: 0;
   width: min(100%, 220px);
@@ -850,4 +954,150 @@ button[type='submit'].button.peligro:not(:disabled) {
 /* Cotizar no tiene título visible (lo dice la pestaña activa): el panel se separa de la cabecera. */
 .masthead + .sr-only + .workspace {
   margin-top: 18px;
+}
+/* Historial: seguimiento comercial, operación y vendedora, como las fechas (un control de 44px con su etiqueta). */
+.history-seguimiento {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.history-seguimiento label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--control);
+  padding: 0 6px 0 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.history-seguimiento label:focus-within {
+  outline: 2px solid var(--warm);
+  outline-offset: 1px;
+}
+.history-seguimiento select {
+  min-height: calc(var(--control) - 2px);
+  max-width: 220px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+}
+.history-seguimiento select:focus-visible {
+  outline: 0;
+}
+/* Exportación por partes y plazo de la papelera. */
+.history-partes {
+  margin: 16px 0 0;
+}
+.history-partes p {
+  margin: 0 0 10px;
+}
+.history-partes-botones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.history-plazo {
+  margin: 14px 0 0;
+  font-size: var(--fs-sm);
+}
+/* Directorio de clientes: una ficha plegable por cliente, con sus cotizaciones. */
+.clientes-lista {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.clientes-lista > li {
+  border-bottom: 1px solid var(--line-soft);
+}
+.cliente-ficha > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 16px;
+  min-height: var(--control);
+  padding: 14px 4px;
+  cursor: pointer;
+}
+.cliente-ficha > summary:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: 1px;
+}
+.cliente-nombre {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.cliente-resumen {
+  font-size: var(--fs-sm);
+  color: var(--muted);
+  text-align: right;
+}
+.cliente-ficha small {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--muted);
+}
+.cliente-detalle {
+  padding: 0 4px 16px;
+}
+.cliente-detalle > p {
+  margin: 0 0 10px;
+  font-size: var(--fs-sm);
+}
+.cliente-cotizaciones {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.cliente-cotizaciones a {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) auto 1fr auto;
+  align-items: center;
+  gap: 8px 14px;
+  min-height: var(--control);
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line-soft);
+  color: inherit;
+  text-decoration: none;
+}
+.cliente-cotizaciones a:hover {
+  background: var(--panel);
+}
+.cliente-cotizaciones a:focus-visible {
+  outline: 2px solid var(--warm);
+  outline-offset: -2px;
+}
+.cliente-cotizacion-proyecto {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-sm);
+  color: var(--muted);
+}
+.cliente-cotizaciones strong {
+  font-weight: 400;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 520px) {
+  .cliente-resumen {
+    text-align: left;
+  }
+  .cliente-cotizaciones a {
+    grid-template-columns: auto 1fr auto;
+  }
+  .cliente-cotizacion-proyecto {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
 }

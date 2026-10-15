@@ -7,19 +7,23 @@ import {
   despachoEditable,
   esEditable,
   etiquetaEstado,
+  puedeAnular,
+  sinTransportista,
   unitarioFlete,
   type Cotizacion,
 } from '@/negocio/estado';
-import { conDescuentoItem, descripcionLinea, pesos, precioConDescuento } from '@/negocio/precios';
+import { conDescuentoItem, descripcionLinea, pesos, precioConDescuento, textoDescuentoItem } from '@/negocio/precios';
 import { metros } from '@/catalogo/resolver';
 import { leerPesos } from '@/negocio/cifras';
+import { LARGO_OBSERVACION_ITEM } from '@/negocio/limites';
 import { esStarken } from '@/negocio/starken';
-import { CampoEditable } from './campo-editable';
+import { CampoEditable, type SugerenciaCampo } from './campo-editable';
 import { CotizarStarken } from './cotizar-starken';
-import { PreguntasPendientes } from './preguntas-pendientes';
+import { PreguntasPendientes, RESUMEN_FUERA_DE_REGLA, sinExplicacionRepetida } from './preguntas-pendientes';
 import {
   ETIQUETA_PENDIENTE,
   faltantesItem,
+  fueraDeRegla,
   preguntasPendientes,
   type CampoPendiente,
 } from '@/negocio/pendientes';
@@ -27,12 +31,17 @@ import { bonito } from '@/asistente/preguntas';
 import { metrosTexto } from '@/catalogo/escalones';
 import { dimensionesEnMilimetros, indicesMedidaSinTipo } from '@/negocio/medidas';
 import type { CambiosEdicion, Despacho } from './contrato';
+import type { Familia } from '@/catalogo/tipos';
+import type { ClienteAnterior } from '@/servidor/clientes';
 import {
   ETIQUETA_CAMPO,
   SIN_CLIENTE,
   autoria,
+  decimalCampo,
+  errorMedida,
   fechaLarga,
   comportamientoScroll,
+  leerMedida,
   medidaPedida,
   nombreProducto,
   numeroCotizacion,
@@ -42,14 +51,14 @@ import {
   vencida,
 } from './formato';
 import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
-import { DescuentoLinea, textoDescuentoLinea } from './descuento-item';
-import { esPersonalizado, familiaEspecial, SIN_CATALOGO } from '@/negocio/personalizados';
+import { DescuentoLinea, descuentoEscrito, errorDescuentoItem, textoDescuentoLinea } from './descuento-item';
+import { esPersonalizado, familiaEspecial, familiaItem, SIN_CATALOGO } from '@/negocio/personalizados';
 import { ReferenciasItem } from './referencias-item';
 import { MenuAcciones } from './menu-acciones';
-import { Documento, Totales } from './panel-totales';
+import { Documento, Totales, type AccionesDocumentos } from './panel-totales';
 import { SelectorDesplegable } from './selector-desplegable';
 import { SeguimientoOperacion } from './seguimiento-operacion';
-import { pedirJSON } from './solicitud';
+import { esSilencioso, pedirJSON } from './solicitud';
 
 export type Operacion =
   'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'reordenar' | 'duplicar' | 'eliminar' | 'anular' | 'workflow';
@@ -82,6 +91,8 @@ interface Props {
   guardando: string | null;
   descargando: string | null;
   acciones: AccionesPanel;
+  /** Ver y compartir los PDF de la cotización (`Documento`). */
+  documentos?: AccionesDocumentos | null;
   tituloRef: RefObject<HTMLHeadingElement | null>;
   agregarProducto: () => void;
   cambioVisual: { indices: number[]; total: boolean; texto: string } | null;
@@ -89,7 +100,7 @@ interface Props {
   cargando: boolean;
 }
 /** Línea valorizada que corresponde al ítem i (los incompletos no tienen línea). */
-export function lineaDe(q: Cotizacion, i: number) {
+function lineaDe(q: Cotizacion, i: number) {
   const pendiente = q.incompletos.find((p) => p.indice === i);
   if (pendiente) return { pendiente, linea: null };
   const porIndice = q.montos.lineas.find((l) => l.indice === i);
@@ -106,17 +117,38 @@ export const descripcionItem = (q: Cotizacion, i: number) => {
       'Producto por definir',
   );
 };
-/** Lo que ya se sabe de un ítem pendiente, aparte del modelo y la cantidad que muestra la fila. */
-function entendido(s: Cotizacion['solicitudes'][number]) {
+/** Descripción que arma el sistema para el ítem, sin la escrita a mano; null si el ítem aún no se valoriza. */
+function descripcionGenerada(q: Cotizacion, i: number) {
+  const { linea } = lineaDe(q, i);
+  if (!linea) return null;
+  // Un personalizado se describe con su nombre y madera (servicio.ts, `recalcular`).
+  return esPersonalizado(q.solicitudes[i])
+    ? linea.producto.descripcion
+    : descripcionLinea({ ...linea, descripcionDocumento: null });
+}
+/**
+ * Descripción para el documento que se guarda: vacía o igual a la generada queda en null, así el documento
+ * sigue al ítem si después cambian el modelo, la madera o las medidas.
+ */
+export function descripcionAGuardar(q: Cotizacion, i: number, texto: string) {
+  const v = texto.trim();
+  const generada = descripcionGenerada(q, i);
+  return !v || (generada !== null && (v === generada || v === nombreProducto(generada))) ? null : v;
+}
+/**
+ * Lo que ya se sabe de un ítem pendiente, aparte del modelo y la cantidad que muestra la fila. El largo se lee
+ * con la familia del ítem: una moldura de 3,6 m no es una medida implausible.
+ */
+function entendido(s: Cotizacion['solicitudes'][number], familia: Familia) {
   const medida = (n: number | null) => {
-    const m = n === null ? null : metros(n);
+    const m = n === null ? null : metros(n, familia);
     return m === null ? '—' : metrosTexto(m);
   };
   const medidas = s.medida
     ? `${s.medida}${s.alto !== null ? ` × ${medida(s.alto)} m` : ''}`
     : dimensionesEnMilimetros(
-        s.ancho === null ? null : metros(s.ancho),
-        s.alto === null ? null : metros(s.alto),
+        s.ancho === null ? null : metros(s.ancho, 'PUERTA'),
+        s.alto === null ? null : metros(s.alto, familia),
         s.tipoMedida,
       );
   return [s.madera && bonito(s.madera), medidas].filter(Boolean).join(' · ');
@@ -159,7 +191,6 @@ function FilaFlete({
     <tr ref={fila} id="linea-flete" className="linea-flete">
       <td>
         <CampoEditable
-          key={`${actual.actualizada}-flete-descripcion`}
           etiqueta="Descripción del flete"
           etiquetaOculta
           discreto
@@ -171,11 +202,10 @@ function FilaFlete({
           guardar={(v) => editar({ fleteLinea: { descripcion: v || null } }, 'flete.descripcion')}
         />
         <small>{CODIGO_FLETE}</small>
-        <small>Neto · sin descuento</small>
+        <small>Sin IVA · no lleva descuento</small>
       </td>
       <td className="celda-cantidad" data-etiqueta="Cant.">
         <CampoEditable
-          key={`${actual.actualizada}-flete-cantidad`}
           etiqueta="Cantidad del flete"
           etiquetaOculta
           discreto
@@ -197,7 +227,6 @@ function FilaFlete({
       </td>
       <td className="celda-monto" data-etiqueta="Unitario">
         <CampoEditable
-          key={`${actual.actualizada}-flete-unitario`}
           etiqueta="Unitario del flete"
           etiquetaOculta
           discreto
@@ -216,7 +245,7 @@ function FilaFlete({
           guardar={(v) => editar({ fleteLinea: { unitario: v ? leerPesos(v) : 0 } }, 'flete.unitario')}
         />
       </td>
-      <td className="celda-monto celda-total" data-etiqueta="Total neto">
+      <td className="celda-monto celda-total" data-etiqueta="Total sin IVA">
         {pesos(actual.flete)}
       </td>
       {conQuitar && (
@@ -237,6 +266,18 @@ function FilaFlete({
 }
 
 const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'direccion', 'telefono', 'proyecto'] as const;
+/** Datos que completa un cliente de otra cotización; el proyecto es de cada cotización y no se copia. */
+const CAMPOS_CLIENTE_ANTERIOR = ['nombre', 'rut', 'giro', 'telefono', 'direccion', 'comuna'] as const;
+/** Lo que trae el cliente elegido; un dato que no tiene no borra el ya escrito en esta cotización. */
+export function datosClienteAnterior(c: ClienteAnterior): CambiosEdicion['cliente'] {
+  const datos: NonNullable<CambiosEdicion['cliente']> = {};
+  for (const campo of CAMPOS_CLIENTE_ANTERIOR) if (c[campo]) datos[campo] = c[campo];
+  return datos;
+}
+
+/** «Otro» de la lista de transportistas no es un nombre (`sinTransportista`): pide escribirlo y no se guarda solo. */
+export const esOtroTransportista = (t: string | null | undefined) => !!t?.trim() && sinTransportista(t);
+const OPCION_OTRO = '__otro__';
 
 function notaEstado(q: Cotizacion | null) {
   if (!q) return 'Revisa antes de compartir; tú decides cuándo emitirla.';
@@ -276,6 +317,7 @@ export function CotizacionPanel({
   guardando,
   descargando,
   acciones,
+  documentos,
   tituloRef,
   agregarProducto,
   cambioVisual,
@@ -290,19 +332,28 @@ export function CotizacionPanel({
   const indiceArrastrado = useRef<number | null>(null);
   /** Cotización en la que se pidió «Agregar flete»: muestra la línea en $0 hasta que se guarde un valor. */
   const [agregandoFlete, setAgregandoFlete] = useState<string | null>(null);
-  const [transportistas, setTransportistas] = useState(['Starken', 'Transportes Paredes', 'Ignacio', 'Otro']);
-  useEffect(() => {
-    const abort = new AbortController();
+  /**
+   * Transportistas de Ajustes, leídos del servidor cada vez que se abre Despacho (sin copia local: un cambio en
+   * Ajustes se ve sin recargar). null: aún no se leen; 'error': no se pudieron leer.
+   */
+  const [transportistas, setTransportistas] = useState<string[] | null | 'error'>(null);
+  const cargaTransportistas = useRef<AbortController | null>(null);
+  /** Cotización en la que se eligió «Otro»: se pide el nombre y nada se guarda hasta escribirlo. */
+  const [eligiendoOtro, setEligiendoOtro] = useState<string | null>(null);
+  useEffect(() => () => cargaTransportistas.current?.abort(), []);
+  function cargarTransportistas() {
+    cargaTransportistas.current?.abort();
+    const control = new AbortController();
+    cargaTransportistas.current = control;
     pedirJSON<{ configuracion?: { transportistas?: string[] } }>('/api/configuracion-negocio', {
-      signal: abort.signal,
+      signal: control.signal,
       cache: 'no-store',
     })
-      .then((d) => {
-        if (d.configuracion?.transportistas?.length) setTransportistas(d.configuracion.transportistas);
-      })
-      .catch(() => {});
-    return () => abort.abort();
-  }, []);
+      .then((d) => setTransportistas(d.configuracion?.transportistas ?? []))
+      .catch((e) => {
+        if (!esSilencioso(e) && !control.signal.aborted) setTransportistas((t) => (Array.isArray(t) ? t : 'error'));
+      });
+  }
   useEffect(() => {
     const alPresionar = (evento: KeyboardEvent) => {
       if (evento.defaultPrevented || evento.altKey || (!evento.metaKey && !evento.ctrlKey)) return;
@@ -370,6 +421,7 @@ export function CotizacionPanel({
   const medidasPendientes = indicesMedidaSinTipo(actual);
   const listo = conItems && !actual.incompletos.length && !medidasPendientes.length;
   const estado = actual.estado;
+  const anulable = puedeAnular(actual);
   const esVencida = vencida(actual);
   const ayudaEmitir = !actual?.solicitudes.length
     ? 'Agrega al menos un producto para generar el PDF.'
@@ -391,6 +443,22 @@ export function CotizacionPanel({
   const editaDespacho = editable || (despachoEditable(actual) && !ocupado);
   const guardarDespacho = (cambios: Despacho, campo: string) =>
     editable ? acciones.editar({ despacho: cambios }, campo) : acciones.despacho(cambios, campo);
+  /** Clientes de cotizaciones anteriores para lo escrito en el nombre o el RUT; elegir uno completa sus datos. */
+  const sugerirCliente =
+    (campo: 'nombre' | 'rut') =>
+    async (texto: string, senal: AbortSignal): Promise<SugerenciaCampo[]> => {
+      const { clientes } = await pedirJSON<{ clientes: ClienteAnterior[] }>(
+        `/api/clientes?${new URLSearchParams({ q: texto, excluir: actual.id })}`,
+        { signal: senal, cache: 'no-store' },
+      );
+      return clientes.map((c) => ({
+        clave: `${c.rut ?? ''}|${c.nombre ?? ''}`,
+        etiqueta: (campo === 'rut' ? c.rut : c.nombre) ?? c.nombre ?? c.rut ?? SIN_CLIENTE,
+        detalle:
+          [campo === 'rut' ? c.nombre : c.rut, c.giro, c.comuna].filter(Boolean).join(' · ') || undefined,
+        aplicar: () => acciones.editar({ cliente: datosClienteAnterior(c) }, `cliente.${campo}`),
+      }));
+    };
   const quien = [
     autoria(actual),
     actual.fechaEmision && estado !== 'borrador' && fechaLarga(actual.fechaEmision),
@@ -443,13 +511,30 @@ export function CotizacionPanel({
     </>
   );
   const despacho = actual?.nota?.despacho;
+  const transporteNota = esOtroTransportista(despacho?.transporte) ? null : despacho?.transporte;
   const condicionDespacho =
-    despacho && (despacho.direccion || despacho.transporte)
-      ? `Despacho: ${[despacho.direccion, despacho.transporte].filter(Boolean).join(' · ')}`
+    despacho && (despacho.direccion || transporteNota)
+      ? `Despacho: ${[despacho.direccion, transporteNota].filter(Boolean).join(' · ')}`
       : actual?.montos.flete
-        ? `Incluye flete por ${pesos(actual.montos.flete)} neto`
+        ? `Incluye flete por ${pesos(actual.montos.flete)} sin IVA`
         : 'Despacho por confirmar';
   const ocurrenciasItems = new Map<string, number>();
+  // Transportista: la lista de Ajustes (sin «Otro», que se ofrece siempre al final) y, mientras se lee, el guardado.
+  const transporte = actual.despacho?.transporte ?? '';
+  const listaTransportistas = Array.isArray(transportistas) ? transportistas : null;
+  const conocidos = (listaTransportistas ?? []).filter((t) => !esOtroTransportista(t));
+  /** Escrito a mano: no está en la lista de Ajustes. «Otro» guardado literal (versiones anteriores) pide el nombre. */
+  const transporteLibre = !!transporte && !esOtroTransportista(transporte) && !!listaTransportistas && !conocidos.includes(transporte);
+  const valorTransportista =
+    eligiendoOtro === actual.id || transporteLibre || esOtroTransportista(transporte) ? OPCION_OTRO : transporte;
+  const opcionesTransportista = [
+    { value: '', label: 'Seleccionar transportista' },
+    ...conocidos.map((nombre) => ({ value: nombre, label: nombre })),
+    ...(!listaTransportistas && transporte && !esOtroTransportista(transporte)
+      ? [{ value: transporte, label: transporte }]
+      : []),
+    { value: OPCION_OTRO, label: transporteLibre ? `Otro · ${transporte}` : 'Otro' },
+  ];
   return (
     <section id="panel-cotizacion" className={`quote-panel estado-${estado}`} aria-label="Cotización en curso">
       <div className="panel-heading">
@@ -473,8 +558,8 @@ export function CotizacionPanel({
         <div className={`panel-aviso${puedeModificar ? ' editando' : ''}`} id="aviso-revision">
           <p>
             {puedeModificar
-              ? 'Modo edición: el primer cambio crea (o reutiliza) una revisión en borrador y conserva este PDF.'
-              : 'Para cambiarla se crea una revisión en borrador; este PDF se conserva.'}
+              ? 'Modo edición: el primer cambio crea una revisión (una versión nueva en borrador que reemplazará a esta al emitirla) y este PDF se conserva.'
+              : 'Para cambiarla se crea una revisión: una versión nueva en borrador que reemplazará a esta al emitirla. Este PDF se conserva.'}
           </p>
           <button
             type="button"
@@ -538,7 +623,7 @@ export function CotizacionPanel({
                   <th scope="col">PRODUCTO / CÓDIGO</th>
                   <th scope="col">CANT.</th>
                   <th scope="col">UNITARIO</th>
-                  <th scope="col">TOTAL NETO</th>
+                  <th scope="col">TOTAL SIN IVA</th>
                   {conQuitar && (
                     <th>
                       <span className="sr-only">Acciones</span>
@@ -554,15 +639,23 @@ export function CotizacionPanel({
                   const { pendiente, linea } = lineaDe(actual, i);
                   const medida = linea && medidaPedida(linea);
                   const descripcion = descripcionItem(actual, i);
-                  const anchoMetros = s.ancho === null ? null : metros(s.ancho);
-                  const altoMetros = s.alto === null ? null : metros(s.alto);
+                  // Puertas hasta 3 m; el largo de marcos, piezas T y molduras, hasta 6 m (`rangoMedidas`).
+                  const familia = familiaItem(s, linea?.producto, pendiente?.rechazo);
+                  const anchoMetros = s.ancho === null ? null : metros(s.ancho, 'PUERTA');
+                  const altoMetros = s.alto === null ? null : metros(s.alto, familia);
                   const faltan = faltantesItem(actual, i) ?? [];
                   const falta = (campo: CampoPendiente) =>
                     faltan.includes(campo) ? ' item-campo-falta' : '';
                   const preguntasItem = pendiente
                     ? preguntasPendientes({ solicitudes: actual.solicitudes, incompletos: [pendiente] })
                     : [];
-                  const sabido = pendiente ? entendido(s) : '';
+                  const sabido = pendiente ? entendido(s, familia) : '';
+                  // Pendiente por un precio o un descuento fuera de regla: se corrige en la misma celda.
+                  // La explicación se muestra una sola vez, bajo el producto (`pending-resumen`); el resumen del
+                  // detalle y su pregunta solo ofrecen cómo corregirlo.
+                  const explicacionPrecio = pendiente ? fueraDeRegla(actual, i) : null;
+                  const precioPendiente = !linea && !!explicacionPrecio;
+                  const descuentoPendiente = precioPendiente ? (s.descuento ?? null) : null;
                   const medidaSinTipo = medidasPendientes.includes(i);
                   // Fuera de catálogo: se titula con su nombre y su precio es el escrito, sin margen ni referencia de catálogo.
                   const personalizado = esPersonalizado(s);
@@ -637,10 +730,11 @@ export function CotizacionPanel({
                               {linea && !personalizado && <small>{referenciaCatalogo(linea)}</small>}
                               {s.modeloOriginal && s.coincidenciaModelo && (
                                 <small className={`match-confidence ${s.coincidenciaModelo}`}>
+                                  {/* Lo que se escribió y no era el nombre exacto del catálogo: se dice en palabras simples. */}
+                                  Lo escribiste como «{s.modeloOriginal}».{' '}
                                   {s.coincidenciaModelo === 'alias'
-                                    ? 'Normalizado desde'
-                                    : 'Revisar posible coincidencia'}
-                                  : {s.modeloOriginal}
+                                    ? 'Es otro nombre del mismo modelo.'
+                                    : 'Revisa que sea el modelo correcto.'}
                                 </small>
                               )}
                               {s.fuente && (
@@ -667,15 +761,14 @@ export function CotizacionPanel({
                           {pendiente && (
                             <small className="pending-resumen">
                               {sabido && <>Entendido: {sabido}. </>}
-                              {faltan.length ? `Falta: ${textoFaltan(faltan)}.` : null}
+                              {faltan.length ? `Falta: ${textoFaltan(faltan)}.` : fueraDeRegla(actual, i)}
                             </small>
                           )}
                           {pendiente && editable && s.modelo && SIN_CATALOGO.has(pendiente.rechazo.tipo) && (
                             // Lo que no existe en el catálogo se cotiza como especial con el precio que se indique.
                             <div className="cotizar-especial">
                               <CampoEditable
-                                key={`${actual.actualizada}-${i}-especial`}
-                                etiqueta={`Precio neto para cotizar como especial: ${descripcion}`}
+                                etiqueta={`Precio sin IVA para cotizar como especial: ${descripcion}`}
                                 etiquetaOculta
                                 discreto
                                 vacio="Cotizar como especial"
@@ -689,7 +782,7 @@ export function CotizacionPanel({
                                   const n = leerPesos(v);
                                   return Number.isSafeInteger(n) && n > 0 && n <= 100_000_000
                                     ? null
-                                    : 'Escribe el precio unitario neto en pesos, entre $1 y $100.000.000.';
+                                    : 'Escribe el precio unitario sin IVA en pesos, entre $1 y $100.000.000.';
                                 }}
                                 guardar={(v) =>
                                   acciones.editar(
@@ -714,6 +807,9 @@ export function CotizacionPanel({
                             <div className="measure-choice" role="group" aria-label={`Medida del ítem ${i + 1}`}>
                               <strong>Falta confirmar la medida</strong>
                               <span>¿La medida solicitada corresponde a la hoja o al vano?</span>
+                              <small className="measure-choice-ayuda">
+                                Hoja: la puerta misma. Vano: el hueco del muro donde va instalada.
+                              </small>
                               {editable ? (
                                 <div>
                                   <button type="button" disabled={ocupado} onClick={() => void acciones.editar(
@@ -731,7 +827,6 @@ export function CotizacionPanel({
                         </td>
                         <td className="celda-cantidad" data-etiqueta="Cant.">
                           <CampoEditable
-                            key={`${actual.actualizada}-${i}`}
                             etiqueta={`Cantidad de ${descripcion}`}
                             etiquetaOculta
                             discreto
@@ -758,7 +853,8 @@ export function CotizacionPanel({
                           />
                         </td>
                         <td className="celda-monto" data-etiqueta="Unitario">
-                          {linea ? (
+                          {/* El mismo campo antes y después de corregir un pendiente: conserva el foco al valorizarse. */}
+                          {linea || precioPendiente ? (
                             <CampoEditable
                               etiqueta="Precio unitario"
                               etiquetaOculta
@@ -768,7 +864,9 @@ export function CotizacionPanel({
                                   : String(s.precioUnitario)
                               }
                               mostrar={
-                                conDescuentoItem(linea) ? (
+                                !linea ? (
+                                  s.precioUnitario != null ? pesos(s.precioUnitario) : undefined
+                                ) : conDescuentoItem(linea) ? (
                                   <s className="precio-original" title="Precio original">
                                     {pesos(linea.precioUnitario)}
                                   </s>
@@ -776,6 +874,7 @@ export function CotizacionPanel({
                                   pesos(linea.precioUnitario)
                                 )
                               }
+                              vacio="Precio de catálogo"
                               editable={editable}
                               discreto
                               guardando={guardando === `item.${i}.precioUnitario`}
@@ -808,8 +907,40 @@ export function CotizacionPanel({
                               {pesos(precioConDescuento(linea))}
                             </span>
                           )}
+                          {descuentoPendiente && (
+                            <CampoEditable
+                              etiqueta="Descuento especial del ítem"
+                              etiquetaOculta
+                              discreto
+                              valor={String(descuentoPendiente.valor).replace('.', ',')}
+                              mostrar={`Descuento ${textoDescuentoItem(descuentoPendiente)}`}
+                              editable={editable}
+                              guardando={guardando === `item.${i}.descuento`}
+                              tipo="text"
+                              modoEntrada={descuentoPendiente.tipo === 'porcentaje' ? 'decimal' : 'numeric'}
+                              sufijo={descuentoPendiente.tipo === 'porcentaje' ? '%' : '$'}
+                              // Sin línea no se conoce el precio de catálogo: el tope en pesos lo revisa el servidor.
+                              validar={(v) =>
+                                errorDescuentoItem(
+                                  descuentoPendiente.tipo,
+                                  v,
+                                  s.precioUnitario ?? Number.MAX_SAFE_INTEGER,
+                                )
+                              }
+                              guardar={(v) =>
+                                acciones.editar(
+                                  {
+                                    items: [
+                                      { indice: i, cambios: { descuento: descuentoEscrito(descuentoPendiente.tipo, v) } },
+                                    ],
+                                  },
+                                  `item.${i}.descuento`,
+                                )
+                              }
+                            />
+                          )}
                         </td>
-                        <td className="celda-monto celda-total" data-etiqueta="Total neto">
+                        <td className="celda-monto celda-total" data-etiqueta="Total sin IVA">
                           {linea && conDescuentoItem(linea) && (
                             <s className="precio-original" title="Total original">
                               {pesos(linea.cantidad * linea.precioUnitario)}
@@ -863,7 +994,9 @@ export function CotizacionPanel({
                                   {pendiente
                                     ? faltan.length
                                       ? `Falta: ${textoFaltan(faltan)}`
-                                      : pendiente.pregunta
+                                      : explicacionPrecio
+                                        ? RESUMEN_FUERA_DE_REGLA
+                                        : pendiente.pregunta
                                     : linea && conDescuentoItem(linea)
                                       ? `Modelo, madera, medidas y condiciones · ${textoDescuentoLinea(linea)}`
                                       : 'Modelo, madera, medidas, condiciones y descuento'}
@@ -876,7 +1009,7 @@ export function CotizacionPanel({
                               >
                                 {preguntasItem.length > 0 && (
                                   <PreguntasPendientes
-                                    preguntas={preguntasItem}
+                                    preguntas={sinExplicacionRepetida(preguntasItem, explicacionPrecio)}
                                     asistente={asistente}
                                     editable={editable}
                                     guardando={guardando}
@@ -919,8 +1052,8 @@ export function CotizacionPanel({
                                   <strong>Datos del producto</strong>
                                   {linea && !personalizado && (
                                     <small className="precio-trazabilidad">
-                                      Fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} →
-                                      cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}
+                                      Costo de fábrica {pesos(linea.precioFabrica ?? linea.producto.precioNeto)} · Precio
+                                      al cliente {pesos(linea.precioCliente ?? linea.precioUnitario)}
                                     </small>
                                   )}
                                 </div>
@@ -928,15 +1061,17 @@ export function CotizacionPanel({
                                   <CampoEditable
                                     className="item-campo item-campo-descripcion"
                                     etiqueta="Descripción para el documento"
-                                    valor={s.descripcion ?? ''}
+                                    // Abre con el texto que se ve para retocarlo; un ítem pendiente aún no tiene descripción.
+                                    valor={s.descripcion ?? (linea ? descripcion : '')}
                                     mostrar={s.descripcion || descripcion}
                                     editable={editable}
                                     discreto
+                                    cursorAlFinal
                                     maxLength={300}
                                     guardando={guardando === `item.${i}.descripcion`}
                                     guardar={(v) =>
                                       acciones.editar(
-                                        { items: [{ indice: i, cambios: { descripcion: v || null } }] },
+                                        { items: [{ indice: i, cambios: { descripcion: descripcionAGuardar(actual, i, v) } }] },
                                         `item.${i}.descripcion`,
                                       )
                                     }
@@ -981,26 +1116,29 @@ export function CotizacionPanel({
                                     <CampoEditable
                                       className={`item-campo${falta('ancho')}`}
                                       etiqueta="Ancho (m)"
-                                      valor={anchoMetros === null ? '' : String(anchoMetros)}
+                                      valor={anchoMetros === null ? '' : decimalCampo(anchoMetros)}
                                       mostrar={anchoMetros === null ? undefined : decimal(anchoMetros)}
                                       vacio="Agregar ancho"
                                       editable={editable}
                                       discreto
-                                      tipo="number"
-                                      paso={0.001}
-                                      min={0.3}
-                                      max={3}
+                                      // Texto y no número: el navegador entregaba vacío ante «0,80» o «80 cm».
+                                      tipo="text"
+                                      modoEntrada="decimal"
+                                      maxLength={20}
                                       sufijo="m"
                                       guardando={guardando === `item.${i}.ancho`}
+                                      // Solo un accesorio puede quedar sin ancho: a una puerta le hace falta.
                                       validar={(v) =>
-                                        !v || (Number(v) >= 0.3 && Number(v) <= 3)
+                                        (v ? leerMedida(v, familia, 'ancho') !== null : familia !== 'PUERTA')
                                           ? null
-                                          : 'Indica un ancho entre 0,3 y 3 metros.'
+                                          : errorMedida('ancho', familia)
                                       }
                                       guardar={(v) =>
                                         acciones.editar(
                                           {
-                                            items: [{ indice: i, cambios: { ancho: v ? Number(v) : null } }],
+                                            items: [
+                                              { indice: i, cambios: { ancho: v ? leerMedida(v, familia, 'ancho') : null } },
+                                            ],
                                           },
                                           `item.${i}.ancho`,
                                         )
@@ -1027,25 +1165,20 @@ export function CotizacionPanel({
                                   <CampoEditable
                                     className={`item-campo${falta('alto')}`}
                                     etiqueta="Alto / largo (m)"
-                                    valor={altoMetros === null ? '' : String(altoMetros)}
+                                    valor={altoMetros === null ? '' : decimalCampo(altoMetros)}
                                     mostrar={altoMetros === null ? undefined : decimal(altoMetros)}
                                     vacio="Agregar alto o largo"
                                     editable={editable}
                                     discreto
-                                    tipo="number"
-                                    paso={0.001}
-                                    min={0.3}
-                                    max={3}
+                                    tipo="text"
+                                    modoEntrada="decimal"
+                                    maxLength={20}
                                     sufijo="m"
                                     guardando={guardando === `item.${i}.alto`}
-                                    validar={(v) =>
-                                      !v || (Number(v) >= 0.3 && Number(v) <= 3)
-                                        ? null
-                                        : 'Indica un alto o largo entre 0,3 y 3 metros.'
-                                    }
+                                    validar={(v) => (leerMedida(v, familia) === null ? errorMedida('alto', familia) : null)}
                                     guardar={(v) =>
                                       acciones.editar(
-                                        { items: [{ indice: i, cambios: { alto: v ? Number(v) : null } }] },
+                                        { items: [{ indice: i, cambios: { alto: leerMedida(v, familia) } }] },
                                         `item.${i}.alto`,
                                       )
                                     }
@@ -1057,8 +1190,8 @@ export function CotizacionPanel({
                                       value={s.tipoMedida ?? 'no_especificado'}
                                       opciones={[
                                         { value: 'no_especificado', label: 'No especificado' },
-                                        { value: 'hoja', label: 'Hoja' },
-                                        { value: 'vano', label: 'Vano' },
+                                        { value: 'hoja', label: 'Hoja (la puerta)' },
+                                        { value: 'vano', label: 'Vano (hueco del muro)' },
                                       ]}
                                       onChange={(valor) =>
                                         void acciones.editar(
@@ -1088,7 +1221,7 @@ export function CotizacionPanel({
                                     }
                                     editable={editable}
                                     discreto
-                                    maxLength={500}
+                                    maxLength={LARGO_OBSERVACION_ITEM}
                                     guardando={guardando === `item.${i}.observaciones`}
                                     guardar={(v) =>
                                       acciones.editar(
@@ -1136,7 +1269,6 @@ export function CotizacionPanel({
                                   )}
                                   {linea && (
                                     <DescuentoLinea
-                                      key={`${actual.actualizada}-descuento-${i}`}
                                       actual={actual}
                                       linea={linea}
                                       indice={i}
@@ -1198,7 +1330,7 @@ export function CotizacionPanel({
               return null;
             return (
               <CampoEditable
-                key={`${actual?.id}-${actual?.actualizada}-${campo}`}
+                key={campo}
                 className={`cliente-campo cliente-${campo}`}
                 etiqueta={ETIQUETA_CAMPO[campo]}
                 valor={valor}
@@ -1208,6 +1340,7 @@ export function CotizacionPanel({
                 guardando={guardando === `cliente.${campo}`}
                 maxLength={300}
                 guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
+                sugerir={campo === 'nombre' || campo === 'rut' ? sugerirCliente(campo) : undefined}
               />
             );
           })}
@@ -1235,14 +1368,21 @@ export function CotizacionPanel({
             </details>
           )}
           {(admiteCambios || despachoEditable(actual) || actual.despacho) && (
-            <details id="despacho-details" key={`despacho-${actual.id}`} className="quote-details">
+            <details
+              id="despacho-details"
+              key={`despacho-${actual.id}`}
+              className="quote-details"
+              onToggle={(e) => {
+                if (e.currentTarget.open) cargarTransportistas();
+              }}
+            >
               <summary>
                 <span>Despacho</span>
                 <small>
                   {[
                     actual.despacho?.destino,
-                    actual.despacho?.transporte,
-                    actual.flete ? `${pesos(actual.flete)} neto` : null,
+                    esOtroTransportista(transporte) ? null : transporte,
+                    actual.flete ? `${pesos(actual.flete)} sin IVA` : null,
                   ]
                     .filter(Boolean)
                     .join(' · ') || 'Destino, transporte y costo por confirmar'}
@@ -1273,52 +1413,56 @@ export function CotizacionPanel({
                   <span>Transportista</span>
                   <SelectorDesplegable
                     ariaLabel="Transportista"
-                    value={
-                      transportistas.includes(actual.despacho?.transporte ?? '')
-                        ? (actual.despacho?.transporte ?? '')
-                        : actual.despacho?.transporte
-                          ? '__otro__'
-                          : ''
-                    }
-                    opciones={[
-                      { value: '', label: 'Seleccionar transportista' },
-                      ...transportistas.map((nombre) => ({ value: nombre, label: nombre })),
-                      ...(actual.despacho?.transporte && !transportistas.includes(actual.despacho.transporte)
-                        ? [{ value: '__otro__', label: `Otro · ${actual.despacho.transporte}` }]
-                        : []),
-                    ]}
-                    onChange={(valor) =>
-                      void guardarDespacho(
-                        {
-                          transporte:
-                            valor === '__otro__' ? (actual.despacho?.transporte ?? '') : valor || null,
-                        },
-                        'despacho.transporte',
-                      )
-                    }
+                    value={valorTransportista}
+                    opciones={opcionesTransportista}
+                    onChange={(valor) => {
+                      // «Otro» no se guarda: primero se escribe el nombre.
+                      if (valor === OPCION_OTRO) return setEligiendoOtro(actual.id);
+                      setEligiendoOtro(null);
+                      void guardarDespacho({ transporte: valor || null }, 'despacho.transporte');
+                    }}
                     disabled={!editaDespacho || ocupado}
                   />
                 </div>
-                {(actual.despacho?.transporte === 'Otro' ||
-                  (!!actual.despacho?.transporte &&
-                    !transportistas.includes(actual.despacho.transporte))) && (
+                {transportistas === 'error' && (
+                  <p className="muted" role="status">
+                    No se pudo leer la lista de transportistas.{' '}
+                    <button type="button" className="enlace" onClick={cargarTransportistas}>
+                      Reintentar
+                    </button>
+                  </p>
+                )}
+                {valorTransportista === OPCION_OTRO && (
                   <CampoEditable
-                    etiqueta="Especificar transportista"
-                    valor={actual.despacho?.transporte === 'Otro' ? '' : (actual.despacho?.transporte ?? '')}
-                    mostrar={
-                      actual.despacho?.transporte === 'Otro'
-                        ? 'Especificar transportista'
-                        : (actual.despacho?.transporte ?? '')
-                    }
+                    etiqueta="Nombre del transportista"
+                    valor={transporteLibre ? transporte : ''}
+                    vacio="Escribir el nombre del transportista"
                     editable={editaDespacho}
                     discreto
+                    abrirAlMontar={eligiendoOtro === actual.id && editaDespacho}
+                    alCancelar={() => {
+                      if (eligiendoOtro !== actual.id) return;
+                      setEligiendoOtro(null);
+                      requestAnimationFrame(() =>
+                        document
+                          .querySelector<HTMLButtonElement>('#despacho-details [role="combobox"][aria-label="Transportista"]')
+                          ?.focus(),
+                      );
+                    }}
                     guardando={guardando === 'despacho.transporte'}
                     maxLength={120}
-                    guardar={(v) => guardarDespacho({ transporte: v || null }, 'despacho.transporte')}
+                    validar={(v) =>
+                      !v.trim() || esOtroTransportista(v) ? 'Escribe el nombre del transportista.' : null
+                    }
+                    guardar={async (v) => {
+                      const ok = await guardarDespacho({ transporte: v }, 'despacho.transporte');
+                      if (ok) setEligiendoOtro(null);
+                      return ok;
+                    }}
                   />
                 )}
                 <p className="muted">
-                  Valor de despacho: {actual.flete ? `${pesos(actual.flete)} neto` : 'sin flete'}. Se edita en
+                  Valor de despacho: {actual.flete ? `${pesos(actual.flete)} sin IVA` : 'sin flete'}. Se edita en
                   la línea de flete del detalle del pedido.
                 </p>
                 <CampoEditable
@@ -1367,6 +1511,7 @@ export function CotizacionPanel({
                   archivo={actual.pdf}
                   descargando={descargando}
                   descargar={acciones.descargar}
+                  acciones={documentos}
                 />
               )}
               {actual.nota && (
@@ -1377,6 +1522,7 @@ export function CotizacionPanel({
                   descargar={acciones.descargar}
                   etiqueta="Descargar nota de pedido"
                   anulado={actual.nota.anulada}
+                  acciones={documentos}
                 />
               )}
             </div>
@@ -1478,8 +1624,19 @@ export function CotizacionPanel({
               ...(estado === 'borrador' && actual.numero === null
                 ? [{ etiqueta: 'Eliminar borrador', alElegir: acciones.eliminar, peligro: true }]
                 : []),
+              // Una despachada, completada o facturada ya no se anula: la opción queda con el motivo a la vista.
               ...(estado === 'emitida' || estado === 'aprobada'
-                ? [{ etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }]
+                ? [
+                    anulable.ok
+                      ? { etiqueta: 'Anular', alElegir: acciones.anular, peligro: true }
+                      : {
+                          etiqueta: 'Anular',
+                          alElegir: () => {},
+                          peligro: true,
+                          deshabilitada: true,
+                          detalle: anulable.motivo,
+                        },
+                  ]
                 : []),
             ]}
           />
@@ -1496,7 +1653,13 @@ export function CotizacionPanel({
                         <button type="button" className="enlace" onClick={() => irAPendiente(p.indice)}>
                           Ítem {p.indice + 1} · {descripcionItem(actual, p.indice)}
                         </button>
-                        <span>{campos.length ? ` — falta ${textoFaltan(campos)}` : ' — revisar'}</span>
+                        <span>
+                          {campos.length
+                            ? ` — falta ${textoFaltan(campos)}`
+                            : fueraDeRegla(actual, p.indice)
+                              ? ' — revisar el precio o el descuento'
+                              : ' — revisar'}
+                        </span>
                       </li>
                     );
                   })}

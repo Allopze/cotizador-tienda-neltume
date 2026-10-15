@@ -21,8 +21,6 @@ export interface DatosEmpresa {
   logoSvg: string | null;
 }
 
-export const CORREO_PREDETERMINADO = 'neltume.co@gmail.com';
-
 export function datosEmpresa(db?: Database.Database): DatosEmpresa {
   return db ? leerConfiguracionNegocio(db).empresa : configuracionNegocioPredeterminada().empresa;
 }

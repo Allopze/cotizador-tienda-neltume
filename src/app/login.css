@@ -162,6 +162,13 @@
     max-width: 140px;
   }
 }
+/* Entre 801 y 920 px la navegación sigue en la fila del logo y, con «Cómo funciona» y «Cerrar sesión», el nombre
+   quedaba reducido a una letra: en ese tramo se oculta. */
+@media (min-width: 801px) and (max-width: 920px) {
+  .account-email {
+    display: none;
+  }
+}
 /* Cabecera móvil: asistente, correo y salida en un menú compacto. */
 @media (max-width: 480px) {
   .account-toggle {

@@ -1,3 +1,4 @@
+import { esSetDeMarco } from '../catalogo/escalones';
 import type { Producto } from '../catalogo/tipos';
 
 // Estimación del peso y las medidas embaladas de una unidad, para cotizar el despacho cuando la empresa no ha
@@ -18,10 +19,10 @@ const DENSIDADES: readonly [RegExp, number][] = [
   [/PINO/, 500],
 ];
 /** Madera desconocida: se toma una densidad alta para no quedarse corto. */
-export const DENSIDAD_PREDETERMINADA = 600;
+const DENSIDAD_PREDETERMINADA = 600;
 
 /** Espesor de una hoja de puerta terminada, en cm. */
-export const ESPESOR_PUERTA_CM = 4.5;
+const ESPESOR_PUERTA_CM = 4.5;
 /**
  * Fracción maciza del volumen de la hoja: una puerta de tableros tiene paneles más delgados que el bastidor.
  * Las «especiales» (anchos mayores) pueden ser de cualquier diseño: se toma un valor intermedio.
@@ -48,7 +49,7 @@ const SECCION_MOLDURA_CM: [number, number] = [6, 2];
  * cartón corrugado con esquineros; marcos, molduras y piezas T, en film y zuncho. Más un peso fijo por unidad
  * (cinta, etiqueta, zuncho).
  */
-export const EMBALAJE = {
+const EMBALAJE = {
   puerta: { espesorCm: 1, bordeCm: 4, kgPorM2: 0.5 },
   resto: { espesorCm: 1, bordeCm: 4, kgPorM2: 0.2 },
   fijoKg: 0.2,
@@ -73,10 +74,10 @@ const sinTildes = (texto: string) =>
 const primera = (tabla: readonly [RegExp, number][], texto: string, omision: number) =>
   tabla.find(([patron]) => patron.test(sinTildes(texto)))?.[1] ?? omision;
 
-export const densidadMadera = (madera: string) => primera(DENSIDADES, madera, DENSIDAD_PREDETERMINADA);
+const densidadMadera = (madera: string) => primera(DENSIDADES, madera, DENSIDAD_PREDETERMINADA);
 
 /** «12X4,5» → [12, 4.5]; «2X4» → [2, 4]. null si no es una escuadría. */
-export function leerSeccion(medida: string): [number, number] | null {
+function leerSeccion(medida: string): [number, number] | null {
   const m = /^\s*(\d+(?:[.,]\d+)?)\s*[X×]\s*(\d+(?:[.,]\d+)?)\s*$/i.exec(medida);
   if (!m) return null;
   const [a, b] = [m[1], m[2]].map((n) => Number(n.replace(',', '.')));
@@ -127,9 +128,9 @@ export function estimarUnidad(
     return embalar({ espesor: lado, ancho: lado, largo: largoCm, kgMadera: m3 * densidad }, EMBALAJE.resto);
   }
   // Marcos y piezas T: kit de dos jambas y un dintel, de la escuadría en pulgadas, atados juntos.
-  const [a, b] = (leerSeccion(producto.medida) ?? SECCION_KIT_PULGADAS).map(
-    (p) => p * CM_POR_PULGADA * CEPILLADO,
-  );
+  const seccion = leerSeccion(producto.medida) ?? SECCION_KIT_PULGADAS;
+  const milimetros = esSetDeMarco(producto) || seccion.every((n) => n > 12);
+  const [a, b] = seccion.map((p) => milimetros ? p / 10 : p * CM_POR_PULGADA * CEPILLADO);
   const jamba = largoCm * SOBRELARGO_JAMBA;
   const metros = (JAMBAS_POR_KIT * jamba) / 100 + DINTEL_M;
   const m3 = (a / 100) * (b / 100) * metros;

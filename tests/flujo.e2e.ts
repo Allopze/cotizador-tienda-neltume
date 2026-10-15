@@ -1,4 +1,4 @@
-import { test, expect, type Download } from '@playwright/test';
+import { test, expect, type Download } from './fixtures-e2e';
 import { readFile } from 'node:fs/promises';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { Almacen } from '../src/servidor/almacen';
@@ -100,6 +100,8 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await panel.getByLabel(/^Monto recibido/).fill(String(Math.ceil(completo.total * 0.5)));
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
   await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-1.pdf');
   await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
   // Una aprobada no ofrece quitar ítems.
@@ -230,6 +232,8 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
   await panel.getByLabel(/^Monto recibido/).fill(String(anticipo));
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
   await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   expect((await nota).suggestedFilename()).toMatch(/^nota-pedido-\d+\.pdf$/);
   await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
 });

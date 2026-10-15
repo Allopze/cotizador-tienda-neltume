@@ -98,7 +98,7 @@ type ConDescuento = {
 export const descuentoEsManual = (q: Pick<ConDescuento, 'descuento' | 'descuentoManual'>) =>
   q.descuentoManual ?? (q.descuento ?? 0) > 0;
 /** El descuento de la cotización sale de los tramos (no de una persona), y hay tramos que lo explican. */
-export const descuentoPorCantidadActivo = (q: ConDescuento) =>
+const descuentoPorCantidadActivo = (q: ConDescuento) =>
   !descuentoEsManual(q) && !!q.reglas?.descuentosPorCantidad?.length;
 /**
  * Nombre del descuento en los documentos: «Descuento por cantidad» solo si lo aplicó un tramo. La versión

@@ -13,16 +13,23 @@ import type { ModeloCommandCode } from '@/asistente/modelos-commandcode';
 import { useConfirmacion } from './dialogo';
 import type { TipoAviso } from './avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
+import { SeccionAvanzada } from './ajustes/avanzado';
 import { AccionesGuardar, useAvisarCambios } from './ajustes/borrador';
+import { ultimoDiagnosticoIA, type DiagnosticoIA } from './diagnostico-ia';
+import { useEsCliente } from './memoria-pantalla';
 
 export interface EstadoAjustes {
   ajustes: AjustesIA;
   commandcodeClave: boolean;
-  commandcodeClaveFuente: 'ajustes' | 'entorno' | 'ninguna';
+  commandcodeClaveFuente: 'ajustes' | 'entorno' | 'ninguna' | 'ilegible';
   asistenteConfigurado: boolean;
   /** Solo quien administra puede cambiar el modelo; ausente = editable (compatibilidad). */
   puedeEditar?: boolean;
 }
+/** ¿Hay una clave que quitar? También una guardada que ya no se puede leer: no solo se puede reemplazar. */
+export const claveQuitable = (estado: Pick<EstadoAjustes, 'commandcodeClave' | 'commandcodeClaveFuente'>) =>
+  estado.commandcodeClave || estado.commandcodeClaveFuente === 'ilegible';
+
 interface CatalogoModelos {
   modelos: ModeloCommandCode[];
   desactualizado: boolean;
@@ -38,7 +45,10 @@ interface Props {
   alCambiar?: (sucio: boolean) => void;
 }
 
-/** Sección «Asistente» de la configuración: modelo del asistente y estado de su clave. */
+/**
+ * Sección «Asistente» de la configuración: a la vista, si el asistente funciona; plegados en «Avanzado», el modelo,
+ * el respaldo, la clave y «Probar modelo», que con un toque pueden dejar el chat sin responder o gastar saldo.
+ */
 export function ConfiguracionIA({ estado, errorCarga, reintentar, guardado, avisar, alCambiar }: Props) {
   if (estado) return <Formulario estado={estado} guardado={guardado} avisar={avisar} alCambiar={alCambiar} />;
   if (errorCarga)
@@ -76,6 +86,8 @@ function Formulario({
   const [confirmar, dialogoConfirmacion] = useConfirmacion();
   const editable = estado.puedeEditar !== false;
   const campoRespaldo = useRef<HTMLButtonElement>(null);
+  // Sin una clave que funcione, «Avanzado» empieza abierto: ahí se escribe. Se decide una vez, al montar.
+  const [avanzadoAbierto] = useState(() => editable && !estado.commandcodeClave);
   /** Sin indicar se usa el respaldo predeterminado; null es «sin respaldo». */
   const respaldoDe = (a: AjustesIA) =>
     a.commandcode.respaldo === undefined ? MODELO_RESPALDO_PREDETERMINADO : a.commandcode.respaldo;
@@ -141,7 +153,7 @@ function Formulario({
   }
 
   async function quitarApiKey() {
-    if (!estado.commandcodeClave || ocupado || guardandoApiKey || !editable) return;
+    if (!claveQuitable(estado) || ocupado || guardandoApiKey || !editable) return;
     const aceptado = await confirmar({
       eyebrow: 'CLAVE API',
       titulo: 'Quitar clave de CommandCode',
@@ -167,189 +179,233 @@ function Formulario({
 
   return (
     <>
-      <form onSubmit={guardar}>
-        <p className="catalog-modal-intro">
-          El asistente interpreta los mensajes del chat. Los precios siempre se calculan en el cotizador y
-          nunca se envían al asistente.
-        </p>
-
-        <div className="ia-section">
-          <div className="ia-field">
-            <span id="ia-modelo-label">Modelo del asistente</span>
-            {!editable ? (
-              // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
-              <div className="ia-model-fijo">
-                <ModeloFijo id={borrador.commandcode.modelo} nombre={nombreDe(borrador.commandcode.modelo)} />
-              </div>
-            ) : (
-              <SelectorModelo
-                refTrigger={campo}
-                modelo={borrador.commandcode.modelo}
-                modelos={catalogo?.modelos ?? []}
-                cargando={catalogo === null && !errorCatalogo}
-                error={errorCatalogo}
-                desactualizado={catalogo?.desactualizado ?? false}
-                editable={editable && !ocupado && !guardandoApiKey}
-                // Se conserva el respaldo: elegir el modelo principal no lo borra.
-                seleccionar={(modelo) => setBorrador((b) => ({ commandcode: { ...b.commandcode, modelo } }))}
-                reintentar={reintentarCatalogo}
-              />
-            )}
-            {editable && (
-              <ProbarModelo
-                modelo={borrador.commandcode.modelo}
-                modelos={catalogo?.modelos ?? []}
-                deshabilitado={ocupado || guardandoApiKey}
-                confirmar={confirmar}
-              />
-            )}
-            {!editable && (
-              <p id="ia-permiso" className="ia-permiso">
-                Solo quien administra el cotizador puede cambiar el modelo.
+      <p className="catalog-modal-intro">
+        El asistente interpreta los mensajes del chat. Los precios siempre se calculan en el cotizador y
+        nunca se envían al asistente.
+      </p>
+      <p id="ia-nota" className={`ia-status ${estado.commandcodeClave ? 'ok' : 'falta'}`}>
+        {estado.commandcodeClaveFuente === 'ilegible'
+          ? 'La clave guardada ya no se puede leer. Vuelve a ingresarla aquí.'
+          : estado.commandcodeClave
+          ? estado.commandcodeClaveFuente === 'entorno'
+            ? '✓ El asistente usa la clave definida en el servidor.'
+            : '✓ El asistente tiene su clave API configurada en Ajustes.'
+          : 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.'}
+      </p>
+      <SeccionAvanzada
+        abierta={avanzadoAbierto}
+        titulo="modelo y clave del asistente"
+        advertencia={
+          <>
+            Deciden cómo funciona el asistente para todas las cuentas. Cambiar el modelo o quitar la clave puede
+            dejar el chat sin responder, y «Probar modelo» puede gastar saldo de CommandCode. Cámbialos solo si
+            sabes lo que haces o te lo pidió quien da soporte.
+          </>
+        }
+      >
+        <form onSubmit={guardar} aria-label="Modelo del asistente">
+          <div className="ia-section">
+            <div className="ia-field">
+              <span id="ia-modelo-label">Modelo del asistente</span>
+              {!editable ? (
+                // Sin permiso no se muestra un selector deshabilitado: es un dato, no un control.
+                <div className="ia-model-fijo">
+                  <ModeloFijo id={borrador.commandcode.modelo} nombre={nombreDe(borrador.commandcode.modelo)} />
+                </div>
+              ) : (
+                <SelectorModelo
+                  refTrigger={campo}
+                  modelo={borrador.commandcode.modelo}
+                  modelos={catalogo?.modelos ?? []}
+                  cargando={catalogo === null && !errorCatalogo}
+                  error={errorCatalogo}
+                  desactualizado={catalogo?.desactualizado ?? false}
+                  editable={editable && !ocupado && !guardandoApiKey}
+                  // Se conserva el respaldo: elegir el modelo principal no lo borra.
+                  seleccionar={(modelo) => setBorrador((b) => ({ commandcode: { ...b.commandcode, modelo } }))}
+                  reintentar={reintentarCatalogo}
+                />
+              )}
+              {editable && (
+                <ProbarModelo
+                  modelo={borrador.commandcode.modelo}
+                  modelos={catalogo?.modelos ?? []}
+                  deshabilitado={ocupado || guardandoApiKey}
+                  confirmar={confirmar}
+                />
+              )}
+              {!editable && (
+                <p id="ia-permiso" className="ia-permiso">
+                  Solo quien administra el cotizador puede cambiar el modelo.
+                </p>
+              )}
+            </div>
+            <div className="ia-field">
+              <span id="ia-respaldo-label">Modelo de respaldo</span>
+              {!editable ? (
+                respaldo ? (
+                  <ModeloFijo id={respaldo} nombre={nombreDe(respaldo)} />
+                ) : (
+                  <div className="ia-model-fijo">
+                    <strong>Sin respaldo</strong>
+                  </div>
+                )
+              ) : (
+                <SelectorModelo
+                  idBase="ia-respaldo"
+                  descripcionId="ia-respaldo-nota"
+                  refTrigger={campoRespaldo}
+                  modelo={respaldo ?? ''}
+                  vacio="Sin respaldo"
+                  modelos={catalogo?.modelos ?? []}
+                  cargando={catalogo === null && !errorCatalogo}
+                  error={errorCatalogo}
+                  desactualizado={catalogo?.desactualizado ?? false}
+                  editable={editable && !ocupado && !guardandoApiKey}
+                  seleccionar={(modelo) => setBorrador((b) => ({ commandcode: { ...b.commandcode, respaldo: modelo } }))}
+                  reintentar={reintentarCatalogo}
+                />
+              )}
+              {editable && respaldo && (
+                <ProbarModelo
+                  modelo={respaldo}
+                  modelos={catalogo?.modelos ?? []}
+                  deshabilitado={ocupado || guardandoApiKey}
+                  confirmar={confirmar}
+                />
+              )}
+              <p id="ia-respaldo-nota" className="ia-permiso">
+                {!respaldo
+                  ? 'Sin respaldo: si el modelo del asistente falla, se muestra el error y hay que reenviar el mensaje.'
+                  : respaldo === borrador.commandcode.modelo
+                    ? 'Es el mismo modelo del asistente: no hay respaldo.'
+                    : 'Responde solo si el modelo del asistente falla: límite de uso, caída, demora o modelo retirado.'}
+                {editable && respaldo && (
+                  <>
+                    {' '}
+                    <button
+                      type="button"
+                      className="link"
+                      disabled={ocupado || guardandoApiKey}
+                      onClick={() => setBorrador((b) => ({ commandcode: { ...b.commandcode, respaldo: null } }))}
+                    >
+                      Quitar respaldo
+                    </button>
+                  </>
+                )}
+              </p>
+            </div>
+            <UltimaRespuesta nombreDe={nombreDe} />
+            {catalogo?.desactualizado && (
+              <p className="ia-status falta" role="status">
+                CommandCode no respondió; se muestra el último catálogo disponible.
               </p>
             )}
           </div>
-          <div className="ia-field">
-            <span id="ia-respaldo-label">Modelo de respaldo</span>
-            {!editable ? (
-              respaldo ? (
-                <ModeloFijo id={respaldo} nombre={nombreDe(respaldo)} />
-              ) : (
-                <div className="ia-model-fijo">
-                  <strong>Sin respaldo</strong>
-                </div>
-              )
-            ) : (
-              <SelectorModelo
-                idBase="ia-respaldo"
-                descripcionId="ia-respaldo-nota"
-                refTrigger={campoRespaldo}
-                modelo={respaldo ?? ''}
-                vacio="Sin respaldo"
-                modelos={catalogo?.modelos ?? []}
-                cargando={catalogo === null && !errorCatalogo}
-                error={errorCatalogo}
-                desactualizado={catalogo?.desactualizado ?? false}
-                editable={editable && !ocupado && !guardandoApiKey}
-                seleccionar={(modelo) => setBorrador((b) => ({ commandcode: { ...b.commandcode, respaldo: modelo } }))}
-                reintentar={reintentarCatalogo}
-              />
-            )}
-            {editable && respaldo && (
-              <ProbarModelo
-                modelo={respaldo}
-                modelos={catalogo?.modelos ?? []}
-                deshabilitado={ocupado || guardandoApiKey}
-                confirmar={confirmar}
-              />
-            )}
-            <p id="ia-respaldo-nota" className="ia-permiso">
-              {!respaldo
-                ? 'Sin respaldo: si el modelo del asistente falla, se muestra el error y hay que reenviar el mensaje.'
-                : respaldo === borrador.commandcode.modelo
-                  ? 'Es el mismo modelo del asistente: no hay respaldo.'
-                  : 'Responde solo si el modelo del asistente falla: límite de uso, caída, demora o modelo retirado.'}
-              {editable && respaldo && (
-                <>
-                  {' '}
-                  <button
-                    type="button"
-                    className="link"
-                    disabled={ocupado || guardandoApiKey}
-                    onClick={() => setBorrador((b) => ({ commandcode: { ...b.commandcode, respaldo: null } }))}
-                  >
-                    Quitar respaldo
-                  </button>
-                </>
-              )}
-            </p>
-          </div>
-          {catalogo?.desactualizado && (
-            <p className="ia-status falta" role="status">
-              CommandCode no respondió; se muestra el último catálogo disponible.
+
+          {error && (
+            <p className="catalog-error" role="alert">
+              {error}
             </p>
           )}
-          <p id="ia-nota" className={`ia-status ${estado.commandcodeClave ? 'ok' : 'falta'}`}>
-            {estado.commandcodeClave
-              ? estado.commandcodeClaveFuente === 'entorno'
-                ? '✓ El asistente usa la clave definida en el servidor.'
-                : '✓ El asistente tiene su clave API configurada en Ajustes.'
-              : 'El asistente no está configurado. Pide a quien administra el cotizador que lo active.'}
-          </p>
-        </div>
+          {editable && (
+            <AccionesGuardar
+              sucio={cambiado}
+              ocupado={ocupado || guardandoApiKey}
+              descartar={() => setBorrador(structuredClone(estado.ajustes))}
+            />
+          )}
+        </form>
 
-        {error && (
-          <p className="catalog-error" role="alert">
-            {error}
-          </p>
-        )}
         {editable && (
-          <AccionesGuardar
-            sucio={cambiado}
-            ocupado={ocupado || guardandoApiKey}
-            descartar={() => setBorrador(structuredClone(estado.ajustes))}
-          />
-        )}
-      </form>
-
-      {editable && (
-        <section className="ia-key-settings" aria-labelledby="ia-clave-titulo">
-          <h3 id="ia-clave-titulo" className="eyebrow">
-            CLAVE API DE COMMANDCODE
-          </h3>
-          <p className="catalog-modal-intro">
-            {estado.commandcodeClaveFuente === 'entorno'
-              ? 'El asistente usa una clave definida en el servidor. Si guardas otra aquí, se usará esta en su lugar.'
-              : 'La clave se guarda cifrada en este cotizador y no vuelve a mostrarse.'}
-          </p>
-          <form onSubmit={guardarApiKey} aria-label="Configurar clave API de CommandCode">
-            <label className="ia-field">
-              <span>Nueva clave API</span>
-              <input
-                type="password"
-                value={apiKey}
-                onChange={(evento) => setApiKey(evento.target.value)}
-                placeholder={
-                  estado.commandcodeClave
-                    ? 'Ingresa una clave para reemplazar la actual'
-                    : 'Pega tu clave API'
-                }
-                autoComplete="new-password"
-                autoCapitalize="off"
-                spellCheck={false}
-                maxLength={2048}
-                disabled={guardandoApiKey || ocupado}
-              />
-            </label>
-            {errorApiKey && (
-              <p className="catalog-error" role="alert">
-                {errorApiKey}
-              </p>
-            )}
-            <div className="ia-actions">
-              {estado.commandcodeClave && (
-                <button
-                  type="button"
-                  className="button secondary"
-                  onClick={quitarApiKey}
+          <section className="ia-key-settings" aria-labelledby="ia-clave-titulo">
+            <h3 id="ia-clave-titulo" className="eyebrow">
+              CLAVE API DE COMMANDCODE
+            </h3>
+            <p className="catalog-modal-intro">
+              {estado.commandcodeClaveFuente === 'entorno'
+                ? 'El asistente usa una clave definida en el servidor. Si guardas otra aquí, se usará esta en su lugar.'
+                : 'La clave se guarda cifrada en este cotizador y no vuelve a mostrarse.'}
+            </p>
+            <form onSubmit={guardarApiKey} aria-label="Configurar clave API de CommandCode">
+              <label className="ia-field">
+                <span>Nueva clave API</span>
+                <input
+                  type="password"
+                  value={apiKey}
+                  onChange={(evento) => setApiKey(evento.target.value)}
+                  placeholder={
+                    estado.commandcodeClave
+                      ? 'Ingresa una clave para reemplazar la actual'
+                      : 'Pega tu clave API'
+                  }
+                  autoComplete="new-password"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  maxLength={2048}
                   disabled={guardandoApiKey || ocupado}
-                >
-                  Quitar clave
-                </button>
+                />
+              </label>
+              {errorApiKey && (
+                <p className="catalog-error" role="alert">
+                  {errorApiKey}
+                </p>
               )}
-              <button
-                type="submit"
-                className="button primary"
-                disabled={guardandoApiKey || ocupado || !apiKey.trim()}
-              >
-                {guardandoApiKey ? 'Guardando…' : 'Guardar clave'}
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
+              <div className="ia-actions">
+                {claveQuitable(estado) && (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={quitarApiKey}
+                    disabled={guardandoApiKey || ocupado}
+                  >
+                    Quitar clave
+                  </button>
+                )}
+                <button
+                  type="submit"
+                  className="button primary"
+                  disabled={guardandoApiKey || ocupado || !apiKey.trim()}
+                >
+                  {guardandoApiKey ? 'Guardando…' : 'Guardar clave'}
+                </button>
+              </div>
+            </form>
+          </section>
+        )}
+      </SeccionAvanzada>
       {dialogoConfirmacion}
     </>
+  );
+}
+
+/** Texto del último diagnóstico del chat: qué modelo respondió, si fue el respaldo y cuánto tardó. */
+export function textoDiagnostico(d: DiagnosticoIA | null, nombre?: string) {
+  if (!d) return 'Todavía no hay mensajes del chat en esta pestaña.';
+  const modelo = d.modelo ? (nombre ? `${nombre} (${d.modelo})` : d.modelo) : 'sin consultar a la IA';
+  const segundos = (d.ms / 1000).toLocaleString('es-CL', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const hora = new Date(d.fecha).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  return `${hora} · ${modelo}${d.respaldo ? ' · respondió el modelo de respaldo' : ''} · ${segundos} s`;
+}
+
+/**
+ * Último mensaje del chat en esta pestaña (lo guarda el cotizador en sessionStorage). Si respondió el respaldo,
+ * el modelo del asistente está fallando: es la pista para revisarlo o probarlo.
+ */
+function UltimaRespuesta({ nombreDe }: { nombreDe: (id: string) => string | undefined }) {
+  const cliente = useEsCliente();
+  const d = cliente ? ultimoDiagnosticoIA() : null;
+  return (
+    <div className="ia-field">
+      <span>Última respuesta del chat</span>
+      <p
+        className={d?.respaldo ? 'ia-status falta' : 'ia-permiso'}
+        data-testid="ia-ultima-respuesta"
+      >
+        {textoDiagnostico(d, d?.modelo ? nombreDe(d.modelo) : undefined)}
+        {d?.respaldo && '. El modelo del asistente falló en ese mensaje: pruébalo o revisa el registro del servidor.'}
+      </p>
+    </div>
   );
 }
 

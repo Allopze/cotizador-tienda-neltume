@@ -12,7 +12,7 @@ const desplazar = (a: number, m: number, d: number, dias: number) => {
 };
 
 /** Domingo de Pascua (algoritmo de Meeus/Jones/Butcher, calendario gregoriano). */
-export function pascua(a: number) {
+function pascua(a: number) {
   const x = a % 19,
     b = Math.floor(a / 100),
     c = a % 100,
@@ -63,7 +63,7 @@ const rad = (g: number) => (g * Math.PI) / 180;
  * Día de los Pueblos Indígenas (Ley 21.357): el día del solsticio de invierno en Chile continental.
  * Se calcula con el algoritmo de Meeus (error de pocos minutos) y se lleva a la hora de Santiago.
  */
-export function solsticioInvierno(a: number) {
+function solsticioInvierno(a: number) {
   const y = (a - 2000) / 1000;
   const jde0 = 2451716.56767 + 365241.62603 * y + 0.00325 * y ** 2 + 0.00888 * y ** 3 - 0.0003 * y ** 4;
   const t = (jde0 - 2451545) / 36525;

@@ -41,7 +41,7 @@ export function fleteDelChat(
       avisos.push(`El flete quedó en ${pesos(unitario)}: revisa si le faltan ceros.`);
     if (pedido.iva === null)
       avisos.push(
-        `Tomé ${pesos(unitario)} como valor neto del flete (sin IVA). Si lo incluía, escribe «con IVA incluido».`,
+        `Tomé ${pesos(unitario)} como valor del flete sin IVA. Si lo incluía, escribe «con IVA incluido».`,
       );
   } else if (existe) unitario = unitarioFlete(actual);
   else
@@ -65,7 +65,7 @@ export function fleteDelChat(
   if (!fleteValido(flete))
     return {
       linea: null,
-      avisos: [...avisos, 'El flete debe ser un monto neto entero en pesos, hasta $100.000.000.'],
+      avisos: [...avisos, 'El flete debe ser un monto entero en pesos sin IVA, hasta $100.000.000.'],
     };
   const descripcion = pedido.descripcion?.replace(/\s+/g, ' ').trim().slice(0, 300) || null;
   return {

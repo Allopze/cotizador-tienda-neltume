@@ -1044,6 +1044,10 @@
           "tipoMedida": "hoja"
         }
       ],
+      "flete": {
+        "unitario": 350000,
+        "cantidad": 1
+      },
       "cliente": {
         "nombre": "VERONICA HENNICKE"
       }
@@ -1125,6 +1129,607 @@
           "alto": 2.1,
           "medida": null,
           "cantidad": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "flete-antes-de-productos",
+    "descripcion": "La línea del despacho con su valor va antes de los productos: se registran los productos y el flete",
+    "mensajes": [
+      "Cotizar para Juan Soto\nDespacho a Chillán $380.000 + iva\n3 molco lenga de 80x200"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        }
+      ],
+      "flete": {
+        "unitario": 380000,
+        "cantidad": 1
+      },
+      "cliente": {
+        "nombre": "Juan Soto"
+      }
+    }
+  },
+  {
+    "id": "flete-iva-incluido",
+    "descripcion": "Flete con IVA incluido: se guarda neto",
+    "mensajes": [
+      "2 molco lenga de 80x200 y un flete a Temuco de $119.000 con iva incluido"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "flete": {
+        "unitario": 100000,
+        "cantidad": 1
+      }
+    }
+  },
+  {
+    "id": "descuento-despues-un-item",
+    "descripcion": "Descuento en porcentaje para un solo producto, pedido en otro mensaje: el otro ítem no cambia",
+    "mensajes": [
+      "2 Molco lenga 80x200 y 2 Palena raulí 80x200",
+      "a las Molco hazles un 15% de descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 15
+          }
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-en-el-pedido",
+    "descripcion": "Descuento escrito junto al producto: no se confunde con la cantidad",
+    "mensajes": [
+      "3 Lican oregón 80x200 con 10 % de descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "LICAN",
+          "madera": "PINO OREGON",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 10
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-monto",
+    "descripcion": "Descuento en pesos por unidad, no es un precio",
+    "mensajes": [
+      "2 Molco lenga 80x200",
+      "rebájale 20 mil a cada Molco"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "monto",
+            "valor": 20000
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-en-todo",
+    "descripcion": "«Descuento a todo» es el mismo descuento en cada ítem",
+    "mensajes": [
+      "2 Molco lenga 80x200 y 1 Palena raulí 80x200",
+      "hazle un 5% de descuento a todo"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 5
+          }
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 1,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 5
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-palabras",
+    "descripcion": "Porcentaje dicho en palabras (voz)",
+    "mensajes": [
+      "2 Palena raulí 80x200",
+      "a las Palena un diez por ciento de descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 10
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-quitar",
+    "descripcion": "«Sin descuento» quita el descuento especial",
+    "mensajes": [
+      "2 Molco lenga 80x200 con 10% de descuento",
+      "mejor déjalas sin descuento"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-se-conserva",
+    "descripcion": "Cambiar otro dato del ítem no borra su descuento",
+    "mensajes": [
+      "2 Molco lenga 80x200",
+      "hazle 15% de descuento a las Molco",
+      "mejor que sean 4"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 4,
+          "descuento": {
+            "tipo": "porcentaje",
+            "valor": 15
+          }
+        }
+      ]
+    }
+  },
+  {
+    "id": "descuento-sin-cifra",
+    "descripcion": "Pedir un descuento sin decir cuánto no inventa uno",
+    "mensajes": [
+      "2 Molco lenga 80x200",
+      "hazle un descuento a las Molco"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ]
+    }
+  },
+  {
+    "id": "i2-madera-no-fija-alto",
+    "descripcion": "I2: responder la madera cuando faltan madera y alto no fija el alto con las opciones que ofreció el asistente",
+    "mensajes": [
+      "2 Ranco de 70",
+      "lenga"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": "LENGA",
+          "ancho": 0.7,
+          "alto": null,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "pendientes": [
+        {
+          "item": 1,
+          "campo": "alto"
+        }
+      ]
+    }
+  },
+  {
+    "id": "i2-alto-no-fija-madera",
+    "descripcion": "I2: responder el alto cuando faltan madera y alto no fija la madera",
+    "mensajes": [
+      "2 Ranco de 70",
+      "de 2,10"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": null,
+          "ancho": 0.7,
+          "alto": 2.1,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "pendientes": [
+        {
+          "item": 1,
+          "campo": "madera"
+        }
+      ]
+    }
+  },
+  {
+    "id": "i3-4-marcos-de-6",
+    "descripcion": "I3: en «4 marcos de 6» la sección es 2x6 y la cantidad 4, no al revés",
+    "mensajes": [
+      "4 marcos de 6 en oregón de 2,1"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MARCO",
+          "madera": "PINO OREGON",
+          "ancho": null,
+          "alto": 2.1,
+          "medida": "2X6",
+          "cantidad": 4
+        }
+      ]
+    }
+  },
+  {
+    "id": "i4-x-pegada",
+    "descripcion": "I4: medidas con «x» pegada; cada ítem se verifica contra su frase",
+    "mensajes": [
+      "3 molco lenga 80x200 y 2 palena raulí 80x200"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "avisos": [
+        {
+          "categoria": "campo",
+          "texto": "No pude verificar",
+          "ausente": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "i4-x-espacios",
+    "descripcion": "I4: medidas con « x » entre espacios; la frase se ubica aunque la IA la escriba «80x200»",
+    "mensajes": [
+      "3 molco lenga 80 x 200 y 2 palena raulí 80 x 200"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "avisos": [
+        {
+          "categoria": "campo",
+          "texto": "No pude verificar",
+          "ausente": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "i4-x-signo",
+    "descripcion": "I4: medidas con «×»; la frase se ubica aunque la IA la normalice a «x»",
+    "mensajes": [
+      "3 molco lenga 80×200 y 2 palena raulí 80×200"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "avisos": [
+        {
+          "categoria": "campo",
+          "texto": "No pude verificar",
+          "ausente": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "i6-responde-segundo-pendiente",
+    "descripcion": "I6: con dos ítems pendientes, responder el segundo completa ese y deja pendiente el primero",
+    "mensajes": [
+      "2 Molco de 80x200 y 3 Palena raulí de 80",
+      "las Palena de 2 metros"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": null,
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        },
+        {
+          "modelo": "PALENA",
+          "madera": "RAULI",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        }
+      ],
+      "pendientes": [
+        {
+          "item": 1,
+          "campo": "madera"
+        }
+      ]
+    }
+  },
+  {
+    "id": "i7-precio-total",
+    "descripcion": "I7: un precio «en total» no se toma como unitario y se avisa",
+    "mensajes": [
+      "2 molco lenga 80x200 a $400.000 en total"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "avisos": [
+        {
+          "categoria": "precio",
+          "texto": "precio total"
+        }
+      ]
+    }
+  },
+  {
+    "id": "i8-un-millon",
+    "descripcion": "I8: precio en palabras («un millón más iva»)",
+    "mensajes": [
+      "1 huilo huilo enchapada en mara de 1,90 x 2,20 a un millón más iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "HUILO HUILO",
+          "madera": "MARA ENCHAPADA",
+          "ancho": 1.9,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1,
+          "precioUnitario": 1000000
+        }
+      ]
+    }
+  },
+  {
+    "id": "i8-cu-pegado",
+    "descripcion": "I8: precio con «c/u» pegado al monto",
+    "mensajes": [
+      "2 molco lenga 80x200 a $400.000c/u + iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "precioUnitario": 400000
+        }
+      ]
+    }
+  },
+  {
+    "id": "i8-flete-cien-mil",
+    "descripcion": "I8: flete en palabras («cien mil más iva»)",
+    "mensajes": [
+      "2 molco lenga 80x200 y flete a Temuco cien mil más iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        }
+      ],
+      "flete": {
+        "unitario": 100000,
+        "cantidad": 1
+      }
+    }
+  },
+  {
+    "id": "mismo-item-dos-veces",
+    "descripcion": "El mismo producto en dos líneas son dos ítems, cada uno con su cantidad, y ninguno queda sin registrar",
+    "mensajes": [
+      "2 molco lenga 80x200\n3 molco lenga 80x200"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2
+        },
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        }
+      ],
+      "avisos": [
+        {
+          "categoria": "noRegistre",
+          "ausente": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "riñihue-despacho-no-es-pedido",
+    "descripcion": "«Despacho a Riñihue para 3 pallets» no es un pedido de productos (Riñihue también es un modelo) ni un flete con valor",
+    "mensajes": [
+      "Necesito despacho a Riñihue para 3 pallets"
+    ],
+    "esperado": {
+      "items": [],
+      "avisos": [
+        {
+          "categoria": "responder",
+          "ausente": true
+        },
+        {
+          "categoria": "noRegistre",
+          "ausente": true
         }
       ]
     }

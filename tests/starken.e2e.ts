@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { leerConfiguracionStarken } from '../src/servidor/starken-configuracion';
 import { DIR_E2E, iniciarSesion, USUARIO_E2E } from './login-e2e';
@@ -131,8 +131,8 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     // El texto del bulto es el que calculó el servidor, con las medidas de la puerta del catálogo.
     await expect(tarifas).toContainText(/Bulto cotizado: 3 puertas · 1 línea · total 13,5 × /);
     await expect(tarifas.getByRole('listitem')).toHaveText([
-      /Agencia · 2 días · \$89\.250 IVA incl\. \(\$75\.000 neto\)/,
-      /Domicilio · 3 días · \$101\.150 IVA incl\. \(\$85\.000 neto\)/,
+      /Agencia · 2 días · \$89\.250 IVA incl\. \(\$75\.000 sin IVA\)/,
+      /Domicilio · 3 días · \$101\.150 IVA incl\. \(\$85\.000 sin IVA\)/,
     ]);
     // Cotizar no aplica nada: el valor sigue en $0 hasta que la persona elige.
     await expect(lineaFlete).toHaveCount(0);
@@ -140,7 +140,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     // --- Elegir domicilio deja su neto como valor de despacho ---
     await tarifas.getByRole('button', { name: /^Usar esta tarifa: Domicilio/ }).click();
     await expect(
-      panel.getByRole('status').filter({ hasText: 'Valor de despacho fijado en $85.000 neto' }),
+      panel.getByRole('status').filter({ hasText: 'Valor de despacho fijado en $85.000 sin IVA' }),
     ).toBeVisible();
     await expect(lineaFlete.locator('.celda-total')).toHaveText('$85.000');
     await expect(lineaFlete).toContainText('Starken');
@@ -192,7 +192,7 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
     expect(tarifaAplicada).toHaveLength(1);
     expect(tarifaAplicada[0].detalle).toContain('Flete $0 → $85.000');
     expect(tarifaAplicada[0].detalle).toContain(
-      'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 neto) · destino TEMUCO (ciudad 2)',
+      'Tarifa Starken aplicada: Domicilio · 3 días · $101.150 IVA incl. ($85.000 sin IVA) · destino TEMUCO (ciudad 2)',
     );
     // Los cambios manuales no dicen que vengan de Starken.
     expect(
@@ -219,6 +219,8 @@ test('despacho con Starken: ajustes, bulto, tarifas, elección de ciudad y audit
           codigoCiudadDestino: tarifasFirmadas.destino.codigoCiudad,
           vence: domicilio.vence,
           firma: domicilio.firma,
+          // La huella auténtica (el pedido no cambió): así lo que se rechaza es la firma del costo alterado.
+          huellaBulto: domicilio.huellaBulto,
         },
       },
     });

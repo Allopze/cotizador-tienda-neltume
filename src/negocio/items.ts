@@ -1,5 +1,6 @@
 import { metros, normalizarMedida } from '../catalogo/resolver';
-import type { SolicitudItem } from '../catalogo/tipos';
+import type { DescuentoEscrito, SolicitudItem } from '../catalogo/tipos';
+import { LARGO_OBSERVACION_ITEM } from './limites';
 import type { TipoMedida } from './medidas';
 
 /** Modelo y madera normalizados para comparar; vacío si el ítem no los trae. */
@@ -15,7 +16,7 @@ const MAX_TEXTO = {
   madera: 300,
   medida: 300,
   descripcion: 300,
-  observaciones: 1000,
+  observaciones: LARGO_OBSERVACION_ITEM,
   fuente: 300,
 } as const;
 
@@ -37,13 +38,31 @@ export function sanearTextos<T extends Partial<SolicitudItem>>(item: T): T {
   return limpio as T;
 }
 
-export const claveMedida = (n: number | null) => {
+/**
+ * Ítem (o cambio de un ítem) que propone la IA, con sus textos saneados. Su `descuento` es lo que la persona
+ * pidió, sin anclar al texto: pasa a `descuentoEscrito` y el servidor decide si vale. Nunca reemplaza
+ * directamente al descuento guardado.
+ */
+export function desdeIA<T extends Partial<Omit<SolicitudItem, 'descuento'>> & { descuento?: DescuentoEscrito | null }>({
+  descuento,
+  ...item
+}: T) {
+  return sanearTextos({ ...item, ...(descuento !== undefined ? { descuentoEscrito: descuento } : {}) });
+}
+
+/** Medida normalizada para comparar: el alto o largo de un accesorio admite hasta 6 m (3,6 y 360 son lo mismo). */
+export const claveMedida = (n: number | null, familia = 'PUERTA') => {
   if (n === null) return '';
-  const v = metros(n);
+  const v = metros(n, familia);
   return v === null ? `?${n}` : v.toFixed(4);
 };
+// Sin catálogo a mano: un pedido especial dice su familia y un ítem con sección es un accesorio.
 const medidasDelItem = (s: SolicitudItem) =>
-  [claveMedida(s.ancho), claveMedida(s.alto), s.medida ? normalizarMedida(s.medida) : ''].join('|');
+  [
+    claveMedida(s.ancho),
+    claveMedida(s.alto, s.personalizado?.familia ?? (s.medida ? 'MOLDURA' : 'PUERTA')),
+    s.medida ? normalizarMedida(s.medida) : '',
+  ].join('|');
 
 /** Cambia el producto solo si un modelo o madera que había pasa a ser otro: un valor que falta, antes o después, no cuenta. */
 const cambioDeProducto = (antes: ProductoItem, despues: ProductoItem) =>

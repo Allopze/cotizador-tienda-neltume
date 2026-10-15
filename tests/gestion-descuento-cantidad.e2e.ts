@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { guardarConfiguracionNegocio, leerConfiguracionNegocio } from '../src/servidor/configuracion-negocio';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
@@ -39,11 +39,20 @@ test('descuento por cantidad: se configura en Ajustes, se aplica solo, se fija a
     // Una administradora agrega los tramos, con sus validaciones.
     rol.run('admin', USUARIO_E2E);
     await page.goto('/ajustes?seccion=precios');
-    // Un campo vacío no se guarda como 0: queda marcado, con el foco, hasta corregirlo o descartar.
+    // El IVA y las ganancias por categoría van plegados en «Avanzado», con su advertencia.
     const ivaCampo = page.getByLabel('IVA (%)');
+    const avanzado = page.locator('summary', { hasText: 'Avanzado · IVA y ganancia por categoría' });
+    await expect(ivaCampo).toBeHidden();
+    await avanzado.click();
+    await expect(page.getByText(/Un valor equivocado \(por ejemplo, IVA 1,9 en vez de\s+19\)/)).toBeVisible();
+    // Un campo vacío no se guarda como 0: queda marcado, con el foco, hasta corregirlo o descartar. Aunque
+    // «Avanzado» se haya vuelto a plegar, guardar lo abre para mostrar el error.
     await expect(ivaCampo).toHaveValue('19');
     await ivaCampo.fill('');
+    await avanzado.click();
+    await expect(ivaCampo).toBeHidden();
     await page.getByRole('button', { name: 'Guardar cambios' }).click();
+    await expect(ivaCampo).toBeVisible();
     await expect(ivaCampo).toHaveAttribute('aria-invalid', 'true');
     await expect(ivaCampo).toBeFocused();
     await page.getByRole('button', { name: 'Descartar cambios' }).click();

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pregunta } from '../src/asistente/preguntas';
+import { preguntasPendientes } from '../src/negocio/pendientes';
 import { respuestaDirecta } from '../src/asistente/respuesta-directa';
 import { resolverItem, resolverNombres } from '../src/catalogo/resolver';
 import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
@@ -133,5 +134,84 @@ describe('respuesta directa a una pregunta pendiente', () => {
     expect(
       respuesta(borrador({ modelo: 'MOLCO', madera: 'LENGA', ancho: 0.8, alto: 2, cantidad: 1 }), 'lenga'),
     ).toBeNull();
+  });
+});
+
+describe('respuesta directa al largo de un accesorio de más de 3 m', () => {
+  const guardapolvo = (largo: number): Producto => ({
+    codigo: `GUA-O-12X1-${largo}`,
+    modelo: 'GUARDAPOLVO',
+    familia: 'MOLDURA',
+    tipo: null,
+    madera: 'PINO OREGON',
+    medida: '12X1',
+    anchoMin: null,
+    anchoMax: null,
+    largo,
+    precioNeto: 5_000,
+    descripcion: 'GUARDAPOLVO',
+    filaOrigen: 3,
+  });
+  const conMolduras: Catalogo = { ...catalogo, productos: [...catalogo.productos, guardapolvo(2.4), guardapolvo(3.6)] };
+  const resolverMolduras = resolverNombres(conMolduras);
+  const familia = (modelo: string) => conMolduras.productos.find((p) => p.modelo === modelo)?.familia ?? null;
+  const solicitudes = [solicitud({ modelo: 'GUARDAPOLVO', madera: 'PINO OREGON', medida: '12x1', cantidad: 4 })];
+  const q = {
+    solicitudes,
+    incompletos: solicitudes.flatMap((s, indice) => {
+      const r = resolverItem(conMolduras, s);
+      return r.ok ? [] : [{ indice, rechazo: r.rechazo, pregunta: pregunta(r.rechazo, s.modelo) }];
+    }),
+  };
+  const largo = (mensaje: string, conFamilia = true) =>
+    respuestaDirecta(q, mensaje, resolverMolduras, conFamilia ? familia : undefined)?.input.items?.[0]?.cambios.alto ??
+    null;
+
+  it('«3,6» o «360 cm» responden el largo de 3,6 m, con o sin la familia del catálogo', () => {
+    expect(q.incompletos.map((p) => p.rechazo.tipo)).toEqual(['faltan_datos']);
+    for (const mensaje of ['3,6', '3,6 m', '360 cm', 'de 3.6 de largo']) {
+      expect(largo(mensaje), mensaje).toBe(3.6);
+      // Sin la familia, la sección del ítem dice que es un accesorio.
+      expect(largo(mensaje, false), mensaje).toBe(3.6);
+    }
+    expect(largo('2,4')).toBe(2.4);
+    // Un largo que no es una de las opciones va a la IA.
+    expect(largo('5 m')).toBeNull();
+  });
+});
+
+describe('una sola regla de familia: el botón y el chat leen igual el largo de un marco', () => {
+  it('un «Marco» pendiente sin sección acepta 3,6 m desde el botón y escrito en el chat', () => {
+    // Un largo de 7 m es implausible incluso para un accesorio: el rechazo trae la familia del modelo.
+    const q = borrador({ modelo: 'MARCO', madera: 'LENGA', alto: 7, cantidad: 2 });
+    expect(q.incompletos[0].rechazo).toMatchObject({ tipo: 'medida_implausible', campo: 'alto', familia: 'MARCO' });
+    const [p] = preguntasPendientes(q);
+    expect(p.campo).toBe('alto');
+    expect(p.entrada).toMatchObject({ max: 6, familia: 'MARCO' });
+    // Sin consultar el catálogo, como en las pruebas de servicio sin familia: el rechazo basta.
+    expect(respuesta(q, '3,6')).toEqual([{ indice: 0, alto: 3.6, fuente: '3,6' }]);
+    expect(respuesta(q, '360 cm')?.[0]).toMatchObject({ alto: 3.6 });
+  });
+  it('un nombre de marco que el catálogo no conoce se lee con la familia que dice su nombre', () => {
+    const q = {
+      solicitudes: [solicitud({ modelo: 'Marco curvo', madera: 'LENGA', alto: 7, cantidad: 1 })],
+      incompletos: [
+        {
+          indice: 0,
+          rechazo: { tipo: 'medida_implausible' as const, campo: 'alto' as const, valor: 7, disponibles: [] },
+          pregunta: '¿Qué largo?',
+        },
+      ],
+    };
+    expect(preguntasPendientes(q)[0].entrada).toMatchObject({ max: 6 });
+    expect(respuesta(q, '3,6')?.[0]).toMatchObject({ alto: 3.6 });
+  });
+});
+
+describe('respuesta directa con la escuadría invertida', () => {
+  it('«4x2» responde la sección 2X4 que ofrece la pregunta', () => {
+    const q = borrador({ modelo: 'MARCO', madera: 'LENGA', alto: 2.1, cantidad: 2 });
+    expect(respuesta(q, '4x2')).toEqual([{ indice: 0, medida: '2X4', fuente: '4x2' }]);
+    expect(respuesta(q, '6 x 2')?.[0]).toMatchObject({ medida: '2X6' });
   });
 });

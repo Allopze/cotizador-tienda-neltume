@@ -1,4 +1,4 @@
-import { test, expect, type Page } from '@playwright/test';
+import { test, expect, type Page } from './fixtures-e2e';
 import { ADMIN_E2E, iniciarSesion } from './login-e2e';
 
 const irA = async (page: Page, seccion: string) => {
@@ -59,10 +59,10 @@ test('gestionar: el buscador conserva el foco y lo escrito; editar abre un diál
 
   // Validación junto al campo, sin ir al servidor.
   await fila.getByRole('button', { name: 'Editar MOL-O-1-A' }).click();
-  await dialogo.getByLabel('Precio base neto').fill('');
+  await dialogo.getByLabel('Precio base sin IVA').fill('');
   await dialogo.getByRole('button', { name: 'Guardar cambios' }).click();
-  await expect(dialogo.getByLabel('Precio base neto')).toHaveAttribute('aria-invalid', 'true');
-  await expect(dialogo.getByLabel('Precio base neto')).toBeFocused();
+  await expect(dialogo.getByLabel('Precio base sin IVA')).toHaveAttribute('aria-invalid', 'true');
+  await expect(dialogo.getByLabel('Precio base sin IVA')).toBeFocused();
   await dialogo.getByRole('button', { name: 'Cancelar' }).click();
 });
 
@@ -158,7 +158,7 @@ test('agregar: los datos que faltan se marcan en su campo', async ({ page }) => 
   const datos = page.getByRole('form', { name: 'DATOS DEL PRODUCTO' });
   await expect(datos.getByRole('combobox', { name: 'Familia' })).toBeFocused();
   await expect(datos.getByLabel('Modelo')).toHaveAttribute('aria-invalid', 'true');
-  await expect(datos.getByLabel('Precio base neto')).toHaveAttribute('aria-invalid', 'true');
+  await expect(datos.getByLabel('Precio base sin IVA')).toHaveAttribute('aria-invalid', 'true');
 });
 
 test('en móvil la pestaña activa queda a la vista', async ({ browser }) => {

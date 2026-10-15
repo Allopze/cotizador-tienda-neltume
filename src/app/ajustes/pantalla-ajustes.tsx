@@ -11,6 +11,7 @@ import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { CrearUsuario } from './crear-usuario';
 import { CotizacionesDespacho, DatosEmpresa, PreciosDescuentos, useConfiguracionNegocio } from './configuracion-negocio';
 import { seccionesVisibles, type SeccionAjustes } from './secciones';
+import { SesionesActivas } from './sesiones';
 import { ConfiguracionStarkenAjustes } from './starken';
 import { GestionUsuarios } from './usuarios';
 
@@ -128,6 +129,7 @@ export function PantallaAjustes({
           {montada('cuenta') && (
             <div hidden={seccion !== 'cuenta'}>
               <CambiarClave avisar={avisar} alCambiar={alCambiar.cuenta} />
+              <SesionesActivas avisar={avisar} />
             </div>
           )}
           {montada('asistente') && (

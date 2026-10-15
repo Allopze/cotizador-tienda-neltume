@@ -1,4 +1,5 @@
 'use client';
+import { useSyncExternalStore } from 'react';
 import type { Cotizacion } from '@/negocio/estado';
 import { conDosDecimales, leerPorcentaje } from '@/negocio/cifras';
 import {
@@ -130,7 +131,7 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
         </>
       )}
       <div>
-        <span>Neto</span>
+        <span>Total sin IVA</span>
         <span data-testid="neto">{pesos(m?.neto ?? 0)}</span>
       </div>
       <div>
@@ -147,6 +148,33 @@ export function Totales({ actual, editable, guardando, editar }: Props) {
   );
 }
 
+/**
+ * Lo que el cotizador agrega a los documentos sin pasar por el panel: abrir el PDF comprobando antes que
+ * exista (si falta, ofrece regenerarlo) y compartirlo con la hoja del sistema.
+ */
+export interface AccionesDocumentos {
+  /** Abre el PDF en una pestaña nueva; falso si el navegador no la abrió (se sigue el enlace normal). */
+  ver: (archivo: string) => boolean;
+  compartir: (archivo: string) => void;
+  /** Solo el PDF de la cotización se comparte; la nota de pedido es para fábrica. */
+  compartible: string | null;
+}
+
+let compartirArchivos: boolean | null = null;
+/** Si el navegador comparte archivos (Web Share API con `files`): en general, teléfonos y tabletas. */
+function admiteCompartir() {
+  if (compartirArchivos === null)
+    try {
+      compartirArchivos =
+        typeof navigator.canShare === 'function' &&
+        navigator.canShare({ files: [new File(['%PDF'], 'cotizacion.pdf', { type: 'application/pdf' })] });
+    } catch {
+      compartirArchivos = false;
+    }
+  return compartirArchivos;
+}
+const sinSuscripcion = () => () => {};
+
 export function Documento({
   nombre,
   archivo,
@@ -155,6 +183,7 @@ export function Documento({
   etiqueta = 'Descargar cotización',
   anulado,
   descripcion = nombre,
+  acciones,
 }: {
   nombre: string;
   /** Cómo se nombra el documento para lectores de pantalla («Ver cotización N° 325…»). */
@@ -164,7 +193,11 @@ export function Documento({
   descargar: (archivo: string) => void;
   etiqueta?: string;
   anulado?: boolean;
+  /** Las del cotizador; sin ellas (otras pantallas), «Ver» sigue el enlace normal y no se ofrece «Compartir». */
+  acciones?: AccionesDocumentos | null;
 }) {
+  // Falso en el servidor y al hidratar: el botón aparece recién en el navegador que lo admite.
+  const puedeCompartir = useSyncExternalStore(sinSuscripcion, admiteCompartir, () => false);
   return (
     <div>
       <span className="doc-nombre">
@@ -177,6 +210,11 @@ export function Documento({
         target="_blank"
         rel="noopener"
         aria-label={`Ver ${descripcion} en una pestaña nueva`}
+        onClick={(e) => {
+          // Con teclas modificadoras (otra ventana, guardar enlace) manda el navegador.
+          if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return;
+          if (acciones?.ver(archivo)) e.preventDefault();
+        }}
       >
         Ver <span aria-hidden>↗</span>
       </a>
@@ -189,6 +227,17 @@ export function Documento({
       >
         {descargando === archivo ? 'Descargando…' : 'Descargar'} <span aria-hidden>↓</span>
       </button>
+      {puedeCompartir && acciones?.compartible === archivo && (
+        <button
+          type="button"
+          className="button secondary small"
+          onClick={() => acciones.compartir(archivo)}
+          disabled={descargando === archivo}
+          aria-label={`Compartir ${descripcion}`}
+        >
+          Compartir
+        </button>
+      )}
     </div>
   );
 }

@@ -17,12 +17,14 @@ import {
   type EstadoOperativo,
 } from '../src/negocio/estado';
 import { pesos } from '../src/negocio/precios';
+import { fechaLocal } from '../src/negocio/vigencia';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { Servicio } from '../src/servidor/servicio';
 import { plantilla } from '../src/servidor/pdf';
 import { estadoPago } from '../src/app/formato';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -55,6 +57,7 @@ const usuario = { nombre: 'Paula', email: 'paula@neltume.cl' };
 const dirs: string[] = [];
 afterEach(async () => {
   vi.clearAllMocks();
+  vi.useRealTimers();
   for (const dir of dirs.splice(0)) {
     cerrarAlmacen(join(dir, 'cotizador.sqlite'));
     await rm(dir, { recursive: true, force: true });
@@ -65,6 +68,9 @@ async function setup() {
   const dir = await mkdtemp(join(tmpdir(), 'neltume-operacion-'));
   dirs.push(dir);
   const almacen = new Almacen(dir);
+  // La cotización se arma y se aprueba el 1 de septiembre de 2026; desde la aprobación, «hoy» es el 1 de octubre:
+  // los pagos y facturas con fecha de septiembre caen entre la aprobación y hoy, como exige el servidor.
+  vi.setSystemTime('2026-09-01T15:00:00.000Z');
   const llm = {
     interpretar: vi.fn().mockResolvedValue({
       name: 'actualizar_cotizacion',
@@ -76,6 +82,7 @@ async function setup() {
   let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza MOLCO' })).cotizacion;
   const ir = async (accion: Record<string, unknown>) => {
     q = (await servicio.ejecutar({ ...accion, id: q.id, actualizada: q.actualizada } as never)).cotizacion;
+    if (accion.tipo === 'aprobar') vi.setSystemTime('2026-10-01T15:00:00.000Z');
     return q;
   };
   const intentar = (accion: Record<string, unknown>) =>
@@ -158,7 +165,7 @@ describe('pagos: solo después de la aprobación del cliente', () => {
     const t = await setup();
     await t.aprobada();
     await t.ir({ tipo: 'pago', monto: 1000 });
-    expect(t.recargada().pagos![0].fecha.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
+    expect(t.recargada().pagos![0].fecha).toBe(`${fechaLocal(new Date())}T12:00:00.000Z`);
   });
 });
 
@@ -359,6 +366,16 @@ describe('versiones obsoletas y cotizaciones sin aprobar', () => {
       );
     expect(t.recargada().estadoOperativo).toBe('sin_pedido');
     expect(t.recargada().despacho ?? null).toBeNull();
+  });
+});
+
+describe('transportista «Otro»', () => {
+  it('no se guarda como transportista: solo indica que falta el nombre', async () => {
+    const t = await setup();
+    await t.aprobada();
+    await t.ir({ tipo: 'despacho', despacho: { transporte: 'Otro', destino: 'Osorno' } });
+    expect(t.recargada().despacho).toMatchObject({ transporte: null, destino: 'Osorno' });
+    expect(t.ultimo('despacho_actualizado')!.detalle).not.toContain('Otro');
   });
 });
 
@@ -591,7 +608,6 @@ describe('etiquetas legibles', () => {
       anticipo_pagado: '50 % pagado',
       pedido_generado: 'Nota de pedido generada',
       en_produccion: 'En producción',
-      produccion_terminada: 'Producción terminada',
       saldo_pendiente: 'Saldo pendiente',
       pagada: '100 % pagado',
       lista_despacho: 'Lista para despacho',

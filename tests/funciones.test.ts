@@ -14,6 +14,7 @@ import { calcularVence, fechaLocal, sumarDiasHabiles } from '../src/negocio/vige
 import { normalizarRut } from '../src/negocio/cliente';
 import { plantilla } from '../src/servidor/pdf';
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));

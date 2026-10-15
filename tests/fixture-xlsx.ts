@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { strToU8, zipSync } from 'fflate';
 
-export type Celdas = Record<string, string | number>;
+/** Celda de error («#N/A») o con fórmula, con o sin el valor que Excel guardó al calcularla. */
+export type CeldaEspecial = { error: string } | { formula: string; valor?: number };
+export type Celdas = Record<string, string | number | CeldaEspecial>;
 /** Nombre de hoja → celdas por referencia («B3»). */
 export type Hojas = Record<string, Celdas>;
 
@@ -14,12 +16,14 @@ const indice = (col: string) => [...col].reduce((n, c) => n * 26 + c.charCodeAt(
 export function xlsxBytes(hojas: Hojas) {
   const nombres = Object.keys(hojas);
   const textos: string[] = [];
+  const indices = new Map<string, number>();
   const compartido = (s: string) => {
-    const i = textos.indexOf(s);
-    return i >= 0 ? i : textos.push(s) - 1;
+    let i = indices.get(s);
+    if (i === undefined) indices.set(s, (i = textos.push(s) - 1));
+    return i;
   };
   const hoja = (celdas: Celdas) => {
-    const filas = new Map<number, [string, string | number][]>();
+    const filas = new Map<number, [string, Celdas[string]][]>();
     for (const [ref, valor] of Object.entries(celdas)) {
       const fila = Number(ref.replace(/[A-Z]/g, ''));
       filas.set(fila, [...(filas.get(fila) ?? []), [ref, valor]]);
@@ -32,7 +36,11 @@ export function xlsxBytes(hojas: Hojas) {
           .map(([ref, v]) =>
             typeof v === 'number'
               ? `<c r="${ref}"><v>${v}</v></c>`
-              : `<c r="${ref}" t="s"><v>${compartido(v)}</v></c>`,
+              : typeof v === 'string'
+                ? `<c r="${ref}" t="s"><v>${compartido(v)}</v></c>`
+                : 'error' in v
+                  ? `<c r="${ref}" t="e"><v>${esc(v.error)}</v></c>`
+                  : `<c r="${ref}"><f>${esc(v.formula)}</f>${v.valor === undefined ? '' : `<v>${v.valor}</v>`}</c>`,
           )
           .join('');
         return `<row r="${fila}">${celdasFila}</row>`;
@@ -194,5 +202,52 @@ export function planillaEnchapadas(): Hojas {
       ...cabeceraMarco(29),
       ...filasMarco(30, [['SET ENDOLADO 15MMX130MM X 2,40 MTS', 34945]]),
     },
+  };
+}
+
+/** Fila de la hoja Precio de la planilla principal: [código, modelo, tipo, medida, largo, madera, neto]. */
+export type FilaPrecio = [string, string, string, string | number, number | string, string, number];
+/**
+ * Forma mínima de la planilla principal (Precio, Categorias y Cotización), con las tablas de códigos de
+ * Categorias: modelo → abreviatura, medida → segmento y largo → letra.
+ */
+export function planillaPrincipal(
+  filas: FilaPrecio[] = [
+    ['LANC-L-070-A', 'LANCO', 'PUERTA', '70 A 80', 2, 'LENGA', 100000],
+    ['LANC-L-070-B', 'LANCO', 'PUERTA', '70 A 80', 2.4, 'LENGA', 120000],
+    ['LANC-R-090-A', 'LANCO', 'PUERTA', '0,90', 2, 'RAULI', 150000],
+  ],
+): Hojas {
+  const precio: Celdas = {};
+  filas.forEach(([codigo, modelo, tipo, medida, largo, madera, neto], i) => {
+    const r = 4 + i;
+    Object.assign(precio, {
+      [`A${r}`]: codigo,
+      [`B${r}`]: modelo,
+      [`C${r}`]: tipo,
+      [`D${r}`]: medida,
+      [`F${r}`]: largo,
+      [`G${r}`]: madera,
+      [`O${r}`]: neto,
+      [`P${r}`]: Math.round(neto * 1.19 * 100) / 100,
+    });
+  });
+  return {
+    Precio: precio,
+    Categorias: {
+      G4: 'LENGA',
+      G5: 'RAULI',
+      O4: 'LANCO',
+      P4: 'LANC',
+      R4: '70 A 80',
+      S4: '070',
+      R5: '0,90',
+      S5: '090',
+      U4: 2,
+      V4: 'A',
+      U5: 2.4,
+      V5: 'B',
+    },
+    Cotización: { C8: 'Ítem' },
   };
 }

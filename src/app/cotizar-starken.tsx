@@ -6,6 +6,7 @@ import { pesos } from '@/negocio/precios';
 import {
   buscarCiudades,
   calcularBulto,
+  claveTarifas,
   textoBulto,
   textoTarifa,
   type CiudadStarken,
@@ -14,7 +15,7 @@ import {
   type TarifaStarkenFirmada,
 } from '@/negocio/starken';
 import type { CambiosEdicion } from './contrato';
-import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
+import { codigoDe, ErrorSolicitud, esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 
 type Tarifas = Extract<ResultadoEnvioStarken, { estado: 'tarifas' }>;
 type Seleccion = Extract<ResultadoEnvioStarken, { estado: 'elegir_ciudad' }>;
@@ -32,6 +33,26 @@ interface Props {
  * El valor sigue pudiéndose escribir a mano.
  */
 /** «PUERTO MONTT» → «Puerto Montt»: Starken nombra las ciudades en mayúsculas. */
+/** Ítems que el catálogo vigente deja pendientes (error `catalogo_cambio` de /api/starken/cotizar). */
+interface ItemCatalogoCambio {
+  numero: number;
+  descripcion: string;
+  motivo: string;
+}
+const itemsCatalogoCambio = (e: unknown): ItemCatalogoCambio[] => {
+  const items = e instanceof ErrorSolicitud ? e.detalle?.items : undefined;
+  return Array.isArray(items)
+    ? items.filter(
+        (i): i is ItemCatalogoCambio =>
+          !!i &&
+          typeof i === 'object' &&
+          typeof i.numero === 'number' &&
+          typeof i.descripcion === 'string' &&
+          typeof i.motivo === 'string',
+      )
+    : [];
+};
+
 const nombreCiudad = (nombre: string) =>
   nombre
     .toLocaleLowerCase('es-CL')
@@ -42,6 +63,8 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
   const [errorEstado, setErrorEstado] = useState('');
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
+  // Con el catálogo cambiado desde el último guardado, los ítems que quedaron pendientes (la pantalla no los ve).
+  const [cambioCatalogo, setCambioCatalogo] = useState<ItemCatalogoCambio[]>([]);
   const [resultado, setResultado] = useState<{ tarifas: Tarifas; clave: string } | null>(null);
   const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
   const [ciudades, setCiudades] = useState<CiudadStarken[] | null>(null);
@@ -61,10 +84,10 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
 
   const lineas = actual.montos.lineas;
   const bulto = useMemo(() => calcularBulto(lineas, estado?.configuracion.paquete), [lineas, estado]);
-  // Las tarifas valen para el bulto y el destino con que se pidieron: si cambia el pedido, el destino o la comuna
-  // del cliente, hay que volver a cotizar (antes quedaban a la vista tarifas de otra ciudad).
+  // Las tarifas valen para el pedido, el bulto y el destino con que se pidieron: si algo cambia, hay que volver a
+  // cotizar (antes quedaban a la vista tarifas de otra ciudad, o de otro pedido con el mismo bulto).
   const claveBulto = bulto.ok
-    ? JSON.stringify([bulto.bulto, actual.despacho?.destino ?? '', actual.cliente.comuna ?? ''])
+    ? claveTarifas(lineas, bulto.bulto, actual.despacho?.destino, actual.cliente.comuna)
     : '';
   const vigente = resultado && resultado.clave === claveBulto ? resultado.tarifas : null;
 
@@ -87,6 +110,7 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
     if (!puedeCotizar && codigoCiudad === undefined) return;
     setCargando(true);
     setError('');
+    setCambioCatalogo([]);
     setAplicada('');
     // Las tarifas anteriores no se dejan al lado de una consulta nueva (o de su error).
     setResultado(null);
@@ -104,7 +128,10 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
         await cargarCiudades();
       }
     } catch (e) {
-      if (!esSilencioso(e)) setError(mensajeDe(e));
+      if (!esSilencioso(e)) {
+        setError(mensajeDe(e));
+        if (codigoDe(e) === 'catalogo_cambio') setCambioCatalogo(itemsCatalogoCambio(e));
+      }
     } finally {
       setCargando(false);
     }
@@ -148,10 +175,11 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
         // Con la firma, el servidor reconoce que la tarifa salió de él para esta cotización y no venció.
         vence: t.vence,
         firma: t.firma,
+        huellaBulto: t.huellaBulto,
       },
     });
     if (ok) {
-      setAplicada(`Valor de despacho fijado en ${pesos(t.neto)} neto con la tarifa de Starken.`);
+      setAplicada(`Valor de despacho fijado en ${pesos(t.neto)} sin IVA con la tarifa de Starken.`);
       setResultado(null);
     }
   }
@@ -204,9 +232,18 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
         )}
       </div>
       {error && (
-        <p className="catalog-error" role="alert">
-          {error}
-        </p>
+        <div className="catalog-error" role="alert">
+          <p>{error}</p>
+          {cambioCatalogo.length > 0 && (
+            <ul aria-label="Ítems afectados por el cambio de catálogo">
+              {cambioCatalogo.map((i) => (
+                <li key={i.numero}>
+                  Ítem {i.numero} ({i.descripcion}): {i.motivo}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {/* Con un bloqueo nuevo (p. ej. un ítem pendiente) la tarifa aplicada ya no describe el pedido: no se
           muestra junto al motivo para que los dos mensajes no se contradigan. */}
@@ -252,7 +289,7 @@ export function CotizarStarken({ actual, aplicar, ocupado, guardando }: Props) {
             ))}
           </ul>
           <p className="muted">
-            Starken informa el valor con IVA; el despacho de la cotización se guarda neto.
+            Starken informa el valor con IVA; en la cotización el despacho se guarda sin IVA.
           </p>
         </div>
       )}

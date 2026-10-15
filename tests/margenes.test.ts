@@ -32,6 +32,7 @@ import { Servicio } from '../src/servidor/servicio';
 import { ErrorUsuario } from '../src/servidor/errores';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -366,7 +367,7 @@ describe('margen especial de la cotización en el servicio', () => {
     expect(t.q.montos.lineas.every((l) => l.margenPersonalizado === false)).toBe(true);
     expect(t.q.montos.subtotal).toBe(142_000 * 3);
     expect(new Almacen(t.dir).obtener(t.q.id)!.margenCotizacion).toBe(0.42);
-    expect(t.detalles().at(-1)).toBe('Margen especial de la cotización: estándar de categoría → 42 %');
+    expect(t.detalles().at(-1)).toBe('Ganancia especial de la cotización: estándar de categoría → 42 %');
 
     // Una línea con margen propio gana al de la cotización.
     await t.editar({ items: [{ indice: 0, cambios: { margen: 0.3 } }] });
@@ -378,12 +379,12 @@ describe('margen especial de la cotización en el servicio', () => {
     await t.editar({ margenCotizacion: 0.07 });
     expect(t.q.margenCotizacion).toBe(0.07);
     expect(t.precios()).toEqual([130_000, 107_000]);
-    expect(t.detalles().at(-1)).toBe('Margen especial de la cotización: 42 % → 7 %');
+    expect(t.detalles().at(-1)).toBe('Ganancia especial de la cotización: 42 % → 7 %');
 
     // Quitar el margen de la línea vuelve al de la cotización y el registro lo dice así.
     await t.editar({ items: [{ indice: 0, cambios: { margen: null } }] });
     expect(t.precios()).toEqual([107_000, 107_000]);
-    expect(t.detalles().at(-1)).toContain('30 % → margen especial de la cotización');
+    expect(t.detalles().at(-1)).toContain('30 % → ganancia especial de la cotización');
 
     // Repetir el mismo valor no cambia la versión ni agrega registro.
     const antes = { version: t.q.actualizada, eventos: t.detalles().length };
@@ -394,7 +395,7 @@ describe('margen especial de la cotización en el servicio', () => {
     await t.editar({ margenCotizacion: null });
     expect(t.q.margenCotizacion).toBeNull();
     expect(t.precios()).toEqual([155_000, 155_000]);
-    expect(t.detalles().at(-1)).toBe('Margen especial de la cotización: 7 % → estándar de categoría');
+    expect(t.detalles().at(-1)).toBe('Ganancia especial de la cotización: 7 % → estándar de categoría');
     expect(new Almacen(t.dir).obtener(t.q.id)!.margenCotizacion).toBeNull();
   });
 
@@ -421,7 +422,7 @@ describe('margen especial de la cotización en el servicio', () => {
     expect(t.detalles().at(-1)).toContain('55 % → 7 %');
     await t.editar({ items: [{ indice: 0, cambios: { margen: 0.07000000000000001 } }] });
     await t.editar({ items: [{ indice: 0, cambios: { margen: 0.07 } }] });
-    expect(t.detalles().filter((d) => d?.includes('Margen de '))).toHaveLength(1);
+    expect(t.detalles().filter((d) => d?.includes('Ganancia de '))).toHaveLength(1);
     expect(t.q.solicitudes[0].margen).toBe(0.07);
   });
 
@@ -430,7 +431,7 @@ describe('margen especial de la cotización en el servicio', () => {
     const version = t.q.actualizada;
     for (const margenCotizacion of [6, -0.51, 0.12345, 5.01]) {
       await expect(t.editar({ margenCotizacion })).rejects.toBeInstanceOf(ErrorUsuario);
-      await expect(t.editar({ margenCotizacion })).rejects.toThrow(/margen especial de la cotización/);
+      await expect(t.editar({ margenCotizacion })).rejects.toThrow(/ganancia especial de la cotización/);
     }
     expect(new Almacen(t.dir).obtener(t.q.id)).toMatchObject({ actualizada: version, margenCotizacion: null });
     await t.editar({ margenCotizacion: -0.5 });
@@ -476,7 +477,7 @@ describe('margen especial de la cotización en el servicio', () => {
     expect(q.margenCotizacion).toBe(0.42);
     expect(q.montos.lineas.map((l) => l.precioUnitario)).toEqual([130_000, 142_000]);
     q = (await t.servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
-    q = (await t.servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5), fecha: '2026-09-30' })).cotizacion;
+    q = (await t.servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5) })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
     const nota = new Almacen(t.dir).obtener(q.id)!.nota!;
     expect(nota.montos.lineas.map((l) => [l.precioUnitario, l.precioFabrica, l.margen, l.margenPersonalizado])).toEqual([

@@ -10,8 +10,11 @@ import { dimensionesEnMilimetros } from '../src/negocio/medidas';
 import { detectarTipoMedida } from '../src/negocio/items';
 import { Servicio } from '../src/servidor/servicio';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { descripcionAGuardar } from '../src/app/cotizacion-panel';
+import { nombreProducto } from '../src/app/formato';
 
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -122,12 +125,38 @@ describe('descripción de documento y observaciones de línea', () => {
     const servicio = new Servicio(catalogo, llm, almacen);
     let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara' })).cotizacion;
     expect(q.montos.lineas[0]).toMatchObject({ descripcionDocumento: null, observaciones: null });
+    q = (
+      await servicio.ejecutar({
+        tipo: 'editar',
+        id: q.id,
+        actualizada: q.actualizada,
+        items: [{ indice: 0, cambios: { descuento: { tipo: 'porcentaje', valor: 15 } } }],
+      })
+    ).cotizacion;
+    const prefijo = 'Castaya - Puertas interiores - ';
+    const descripcionOriginal =
+      q.montos.lineas[0].descripcionDocumento || descripcionLinea(q.montos.lineas[0]);
+    const descripcionEditada = `${prefijo}${descripcionOriginal}`;
     q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada,
-      items: [{ indice: 0, cambios: { descripcion: 'Puerta principal sólida de lenga modelo X' } }],
+      items: [{ indice: 0, cambios: { descripcion: descripcionEditada } }],
     })).cotizacion;
-    const esperada = { descripcionDocumento: 'Puerta principal sólida de lenga modelo X', margen: 0.55, precioUnitario: 155_000 };
+    const esperada = {
+      descripcionDocumento: descripcionEditada,
+      margen: 0.55,
+      precioUnitario: 155_000,
+      descuentoItem: { tipo: 'porcentaje', valor: 15 },
+      descuentoUnitario: 23_250,
+    };
     expect(q.montos.lineas[0]).toMatchObject(esperada);
     expect(q.montos.lineas[0].producto.descripcion).toBe(puerta().descripcion);
+    expect(q.solicitudes[0]).toMatchObject({
+      cantidad: 2,
+      ancho: 83.5,
+      alto: 236,
+      tipoMedida: 'hoja',
+      descripcion: descripcionEditada,
+      descuento: { tipo: 'porcentaje', valor: 15 },
+    });
     const recargada = () => new Almacen(dir).obtener(q.id)!;
     expect(recargada().montos.lineas[0]).toMatchObject(esperada);
     expect(recargada().montos.lineas[0].producto.descripcion).toBe(puerta().descripcion);
@@ -135,17 +164,48 @@ describe('descripción de documento y observaciones de línea', () => {
     q = (await servicio.ejecutar({
       tipo: 'editar', id: q.id, actualizada: q.actualizada, cantidades: [{ indice: 0, cantidad: 4 }],
     })).cotizacion;
-    expect(q.solicitudes[0].descripcion).toBe('Puerta principal sólida de lenga modelo X');
-    expect(q.montos.lineas[0]).toMatchObject({ ...esperada, cantidad: 4 });
-    expect(recargada().solicitudes[0].descripcion).toBe('Puerta principal sólida de lenga modelo X');
+    expect(q.solicitudes[0].descripcion).toBe(descripcionEditada);
+    expect(q.montos.lineas[0]).toMatchObject({ ...esperada, cantidad: 4, total: 527_000 });
+    expect(recargada().solicitudes[0].descripcion).toBe(descripcionEditada);
 
     q = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
-    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5), fecha: '2026-09-30' })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5) })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
     const nota = recargada().nota!.montos.lineas[0];
-    expect(nota).toMatchObject({ descripcionDocumento: 'Puerta principal sólida de lenga modelo X', cantidad: 4, precioUnitario: 100_000, margen: 0 });
+    expect(nota).toMatchObject({ descripcionDocumento: descripcionEditada, cantidad: 4, precioUnitario: 100_000, margen: 0 });
     expect(nota.producto.descripcion).toBe(puerta().descripcion);
+  });
+
+  it('guardar el mismo texto que se genera no fija la descripción: el documento sigue al ítem', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-mejoras-'));
+    dirs.push(dir);
+    const otra = puerta({ codigo: 'HUI-M-3-B', medida: '0,90 A 0,95', anchoMin: 0.9, anchoMax: 0.95, precioNeto: 110_000,
+      descripcion: 'HUILO HUILO MARA 0,90 A 0,95 MT X 2,30 A 2,40 MT' });
+    const solicitud: SolicitudItem = { modelo: 'Huilo Huilo', madera: 'Mara', ancho: 83.5, alto: 236, medida: null, cantidad: 1 };
+    const cliente = { nombre: null, rut: null, giro: null, telefono: null, direccion: null, comuna: null, proyecto: null };
+    const llm = { interpretar: vi.fn().mockResolvedValue({ name: 'actualizar_cotizacion', input: { items: [solicitud], cliente } }) };
+    const servicio = new Servicio({ ...catalogo, productos: [puerta(), otra] }, llm, new Almacen(dir));
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza Huilo Huilo en Mara' })).cotizacion;
+    // Lo que el panel muestra al abrir el campo: el texto generado, ya con nombres legibles.
+    const generada = nombreProducto(descripcionLinea(q.montos.lineas[0]));
+    expect(generada).toBe('Huilo Huilo Mara 0,835 m × 2,36 m');
+    const editar = async (texto: string) =>
+      (q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada,
+        items: [{ indice: 0, cambios: { descripcion: descripcionAGuardar(q, 0, texto) } }] })).cotizacion);
+    for (const texto of [generada, ` ${generada} `, descripcionLinea(q.montos.lineas[0]), ''])
+      expect(descripcionAGuardar(q, 0, texto)).toBeNull();
+    // Una descripción propia se guarda; volver al texto generado la quita.
+    await editar(`Castaya - ${generada}`);
+    expect(q.solicitudes[0].descripcion).toBe(`Castaya - ${generada}`);
+    expect(descripcionAGuardar(q, 0, generada)).toBeNull();
+    await editar(generada);
+    expect(q.solicitudes[0].descripcion ?? null).toBeNull();
+    // Sin descripción fijada, cambiar el ancho cambia también lo que dice el documento.
+    q = (await servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada,
+      items: [{ indice: 0, cambios: { ancho: 0.92 } }] })).cotizacion;
+    expect(q.montos.lineas[0].producto.codigo).toBe('HUI-M-3-B');
+    expect(nombreProducto(descripcionLinea(q.montos.lineas[0]))).toBe('Huilo Huilo Mara 0,92 m × 2,36 m');
   });
 });
 
@@ -264,9 +324,9 @@ describe('flujo persistido de venta y producción', () => {
     await expect(servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
 
     const mitad = Math.ceil(q.montos.total * 0.5);
-    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.floor(mitad * 0.98), fecha: '2026-09-30', observacion: 'Anticipo' })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.floor(mitad * 0.98), observacion: 'Anticipo' })).cotizacion;
     await expect(servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
-    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: mitad - Math.floor(mitad * 0.98), fecha: '2026-09-30' })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: mitad - Math.floor(mitad * 0.98) })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
     expect(q.nota?.montos.lineas[0]).toMatchObject({ precioUnitario: 100_000, precioFabrica: 100_000, margen: 0, margenPersonalizado: false });
     expect(q.estadoOperativo).toBe('pedido_generado');
@@ -276,7 +336,7 @@ describe('flujo persistido de venta y producción', () => {
     const comentario = await servicio.ejecutar({ tipo: 'comentario', id: q.id, actualizada: q.actualizada, texto: 'Coordinar despacho con cliente' });
     q = comentario.cotizacion;
     const pagarSaldo = q.montos.total - mitad;
-    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: pagarSaldo, fecha: '2026-09-30' })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: pagarSaldo })).cotizacion;
     const paso = async (p: 'iniciar_produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada') => {
       q = (await servicio.ejecutar({ tipo: 'operacion', id: q.id, actualizada: q.actualizada, paso: p })).cotizacion;
     };

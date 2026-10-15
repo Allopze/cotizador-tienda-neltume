@@ -1,5 +1,5 @@
 'use client';
-import { useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import type { Cotizacion } from '@/negocio/estado';
 import {
   errorMargenTexto,
@@ -9,20 +9,22 @@ import {
 } from '@/negocio/cifras';
 import { margenProducto, origenMargen, porcentaje, REGLAS, type Linea, type OrigenMargen } from '@/negocio/precios';
 import { CampoEditable } from './campo-editable';
+import { MARGEN_MAX, MARGEN_MIN } from '@/negocio/limites';
 import type { CambiosEdicion } from './contrato';
 
 type Editar = (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
 
+// En pantalla el margen se llama «ganancia» (sobre el costo de fábrica): es la palabra que usan las vendedoras.
 const ORIGEN: Record<OrigenMargen, string> = {
-  linea: ' — modificado manualmente (línea)',
-  cotizacion: ' — modificado manualmente (cotización)',
+  linea: ' — cambiada a mano en esta línea',
+  cotizacion: ' — cambiada a mano para toda la cotización',
   precio: ' — según el precio unitario fijado a mano',
   categoria: '',
 };
 
-/** «Margen estándar: 55 % · Margen aplicado: 42 % — modificado manualmente (línea)». Márgenes en fracción. */
-export const textoMargen = (estandar: number, aplicado: number, origen: OrigenMargen) =>
-  `Margen estándar: ${porcentaje(margenAPorcentaje(estandar))} · Margen aplicado: ${porcentaje(margenAPorcentaje(aplicado))}${ORIGEN[origen]}`;
+/** «Ganancia estándar: 55 % · Ganancia aplicada: 42 % — cambiada a mano en esta línea». Márgenes en fracción. */
+const textoMargen = (estandar: number, aplicado: number, origen: OrigenMargen) =>
+  `Ganancia estándar: ${porcentaje(margenAPorcentaje(estandar))} · Ganancia aplicada: ${porcentaje(margenAPorcentaje(aplicado))}${ORIGEN[origen]}`;
 
 /** Lo que dice una línea de su margen cuando no se puede editar (cotización aprobada o anulada). */
 export function textoMargenLinea(actual: Cotizacion, linea: Linea) {
@@ -57,6 +59,12 @@ export function MargenLinea({
   const estandar = margenProducto(linea.producto, actual.reglas ?? REGLAS);
   const aplicado = linea.margen ?? estandar;
   const guardado = margenAPorcentaje(aplicado);
+  // Lo guardado llega al campo solo si no se está escribiendo en él: al volver a la pestaña o cuando otra vendedora
+  // guarda, lo escrito no se pierde.
+  useEffect(() => {
+    const campo = entrada.current;
+    if (campo && document.activeElement !== campo) campo.value = String(guardado);
+  }, [guardado]);
 
   async function guardar() {
     const campo = entrada.current;
@@ -84,13 +92,12 @@ export function MargenLinea({
   return (
     <div className="margen-linea">
       <label className="ia-field item-select-field">
-        <span>Margen de la línea (%)</span>
+        <span>Ganancia de la línea (%)</span>
         <input
           ref={entrada}
-          key={`${actual.actualizada}-${indice}-margen`}
           type="number"
-          min={-50}
-          max={500}
+          min={MARGEN_MIN * 100}
+          max={MARGEN_MAX * 100}
           step="0.01"
           defaultValue={guardado}
           disabled={!editable}
@@ -118,7 +125,7 @@ export function MargenLinea({
           className="button secondary small"
           onClick={() => void editar({ items: [{ indice, cambios: { margen: null } }] }, `item.${indice}.margen`)}
         >
-          {actual.margenCotizacion != null ? 'Usar el margen de la cotización' : 'Usar el margen estándar'}
+          {actual.margenCotizacion != null ? 'Usar la ganancia de la cotización' : 'Usar la ganancia estándar'}
         </button>
       )}
     </div>
@@ -126,7 +133,7 @@ export function MargenLinea({
 }
 
 /**
- * Margen especial de toda la cotización: reemplaza el de cada categoría, pero no el de una línea modificada
+ * Ganancia especial (margen) de toda la cotización: reemplaza el de cada categoría, pero no el de una línea modificada
  * a mano. Se guarda como fracción; vacío o «Restaurar» vuelve al margen de cada categoría. Un margen fijado
  * siempre se ve; el control para fijarlo solo aparece mientras la cotización admite cambios (aunque no
  * tenga ítems todavía), y no desaparece mientras se guarda.
@@ -151,7 +158,7 @@ export function MargenCotizacion({
   return (
     <div className="margen-cotizacion">
       <CampoEditable
-        etiqueta="Margen especial de la cotización"
+        etiqueta="Ganancia especial de la cotización"
         valor={valor}
         mostrar={fijado === null ? 'Por categoría' : porcentaje(margenAPorcentaje(fijado))}
         editable={editable}
@@ -171,11 +178,11 @@ export function MargenCotizacion({
           disabled={guardando === 'margenCotizacion'}
           onClick={() => void editar({ margenCotizacion: null }, 'margenCotizacion')}
         >
-          Restaurar margen por categoría
+          Volver a la ganancia por categoría
         </button>
       )}
       {fijado !== null && (
-        <small>Reemplaza el margen de cada categoría; el de una línea modificada a mano tiene prioridad.</small>
+        <small>Reemplaza la ganancia de cada categoría; la de una línea cambiada a mano tiene prioridad.</small>
       )}
     </div>
   );

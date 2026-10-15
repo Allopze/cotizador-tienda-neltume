@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { descuentoEsManual, MAX_DESDE_PUERTAS } from '../negocio/descuento-cantidad';
 import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
+import { LARGO_OBSERVACION_ITEM, MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
+import { leerEstadoOperativo } from '../negocio/estado';
 
 const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
 /**
@@ -42,11 +44,11 @@ const solicitudSchema = z.object({
   medida: z.string().nullable(),
   cantidad: z.number().int().min(1).max(10000).nullable(),
   precioUnitario: z.number().int().positive().max(100_000_000).nullable().optional(),
-  margen: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
   tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
   medidaPorDefecto: z.boolean().optional(),
   descripcion: z.string().max(300).nullable().optional(),
-  observaciones: z.string().max(1000).nullable().optional(),
+  observaciones: z.string().max(LARGO_OBSERVACION_ITEM).nullable().optional(),
   modeloOriginal: z.string().max(300).nullable().optional(),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: z.string().max(300).nullable().optional(),
@@ -91,11 +93,11 @@ const montosSchema = z.object({
       cantidad: z.number().int().min(1).max(10000),
       precioUnitario: z.number().int(),
       precioFabrica: z.number().finite().nonnegative().optional(),
-      margen: z.number().finite().min(-0.5).max(5).optional(),
+      margen: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).optional(),
       precioCliente: z.number().int().optional(),
       margenPersonalizado: z.boolean().optional(),
       tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
-      observaciones: z.string().max(1000).nullable().optional(),
+      observaciones: z.string().max(LARGO_OBSERVACION_ITEM).nullable().optional(),
       descripcionDocumento: z.string().max(300).nullable().optional(),
       total: z.number().int(),
       precioUnitarioPersonalizado: z.number().int().positive().max(100_000_000).nullable().optional(),
@@ -155,6 +157,14 @@ const rechazoSchema = z.discriminatedUnion('tipo', [
     campo: z.enum(['ancho', 'alto']),
     valor: z.number(),
     disponibles: z.array(z.string()),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
+  }),
+  z.object({
+    tipo: z.literal('medidas_invertidas'),
+    ancho: z.number(),
+    alto: z.number(),
+    disponibles: z.array(z.string()),
+    familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']).optional(),
   }),
   z.object({ tipo: z.literal('producto_ambiguo'), valor: z.string(), disponibles: z.array(z.string()) }),
   z.object({
@@ -181,20 +191,23 @@ export const cotizacionSchema = z.looseObject({
   fechaEmision: z.string().nullable().optional(),
   origen: z.number().int().nullable().optional(),
   vence: z.string().nullable(),
-  descuento: z.number().min(0).max(100),
+  descuento: z.number().min(0).max(50),
   /** Ausente: el descuento de quien lo guardó antes de existir el automático (se deriva al guardar). */
   descuentoManual: z.boolean().optional(),
   flete: z.number().int().nonnegative(),
   fleteDescripcion: z.string().max(300).nullable().optional(),
   fleteCantidad: z.number().int().min(1).max(10000).optional(),
   /** Margen especial de toda la cotización (fracción); ausente o null usa el de cada categoría. */
-  margenCotizacion: z.number().finite().min(-0.5).max(5).nullable().optional(),
+  margenCotizacion: z.number().finite().min(MARGEN_MIN).max(MARGEN_MAX).nullable().optional(),
   observaciones: z.string().nullable().optional(),
   despacho: z
     .object({
       direccion: z.string().nullable(),
       transporte: z.string().nullable(),
       entregaComprometida: z.string().nullable(),
+      // Opcionales: un despacho guardado antes de tenerlos no los trae. Sin declararlos, la papelera los perdía.
+      destino: z.string().nullable().optional(),
+      valor: z.number().int().nonnegative().nullable().optional(),
     })
     .nullable()
     .optional(),
@@ -206,25 +219,26 @@ export const cotizacionSchema = z.looseObject({
       descuentoMaximo: z.number().min(0).max(100),
       descuentosPorCantidad: tramosDescuentoSchema.optional(),
       margenes: z.object({
-        puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
-        puertas_solidas_oregon: z.number().finite().min(0).max(5),
+        puertas_solidas_mara_lenga: z.number().finite().min(0).max(MARGEN_MAX),
+        puertas_solidas_oregon: z.number().finite().min(0).max(MARGEN_MAX),
         // Categorías posteriores a la primera versión: las cotizaciones congeladas antes no las traen.
-        puertas_solidas_rauli: z.number().finite().min(0).max(5).optional(),
-        puertas_prepintadas: z.number().finite().min(0).max(5),
-        puertas_enchapadas_mara: z.number().finite().min(0).max(5),
-        marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
-        marcos_finger_enchapados: z.number().finite().min(0).max(5),
+        puertas_solidas_rauli: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        puertas_prepintadas: z.number().finite().min(0).max(MARGEN_MAX),
+        puertas_enchapadas_mara: z.number().finite().min(0).max(MARGEN_MAX),
+        marcos_finger_sin_enchape: z.number().finite().min(0).max(MARGEN_MAX),
+        marcos_finger_enchapados: z.number().finite().min(0).max(MARGEN_MAX),
         // Categorías incorporadas después; las cotizaciones antiguas siguen usando su «otros» congelado.
-        marcos_solidos_oregon: z.number().finite().min(0).max(5).optional(),
-        marcos_solidos_lenga: z.number().finite().min(0).max(5).optional(),
-        accesorios_madera_solida: z.number().finite().min(0).max(5).optional(),
-        otros: z.number().finite().min(0).max(5),
+        marcos_solidos_oregon: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        marcos_solidos_lenga: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        accesorios_madera_solida: z.number().finite().min(0).max(MARGEN_MAX).optional(),
+        otros: z.number().finite().min(0).max(MARGEN_MAX),
       }).strict().optional(),
     })
     .optional(),
   creadaPor: z.string().nullable(),
   emitidaPor: z.string().nullable(),
   aprobadaPor: z.string().nullable(),
+  fechaAprobacion: z.string().nullable().optional(),
   anuladaPor: z.string().nullable(),
   fechaAnulacion: z.string().nullable(),
   motivoAnulacion: z.string().nullable(),
@@ -240,13 +254,20 @@ export const cotizacionSchema = z.looseObject({
         direccion: z.string().nullable(),
         transporte: z.string().nullable(),
         entregaComprometida: z.string().nullable().optional(),
+        destino: z.string().nullable().optional(),
+        valor: z.number().int().nonnegative().nullable().optional(),
       }),
       observaciones: z.string().nullable().optional(),
       anulada: z.boolean(),
     })
     .nullable(),
   estadoComercial: z.enum(['pendiente', 'enviada', 'seguimiento', 'aprobada', 'rechazada', 'vendida']).optional(),
-  estadoOperativo: z.enum(['sin_pedido', 'anticipo_pagado', 'pedido_generado', 'en_produccion', 'produccion_terminada', 'saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada']).optional(),
+  // «produccion_terminada» nunca se asignó como estado (el paso deja «saldo_pendiente» o «pagada»); un dato que
+  // lo traiga se lee como «en_produccion».
+  estadoOperativo: z.preprocess(
+    leerEstadoOperativo,
+    z.enum(['sin_pedido', 'anticipo_pagado', 'pedido_generado', 'en_produccion', 'saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada']).optional(),
+  ),
   pagos: z.array(z.object({
     id: z.string(), fecha: z.string(), monto: z.number().int().positive(), observacion: z.string().nullable(), usuario: z.string().nullable(),
   })).optional(),

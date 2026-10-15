@@ -2,20 +2,22 @@ import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-cantidad';
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
+import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, DESCUENTO_MAXIMO } from '../negocio/limites';
 import { abrirBaseDatos } from './base-datos';
+import { problemaSvg } from './svg-seguro';
 import { tramoDescuentoSchema } from './persistencia-esquemas';
 import type { DatosEmpresa } from './empresa';
 
 const texto = (max: number) => z.string().trim().max(max).nullable();
 const TRANSPORTISTAS_INICIALES = ['Starken', 'Transportes Paredes', 'Ignacio', 'Otro'];
+// El logo se valida con un parser y una lista de elementos y atributos de dibujo permitidos (svg-seguro.ts).
 const logoSvg = z
   .string()
   .max(48_000)
-  .refine((valor) => /<svg(?:\s|>)/i.test(valor), 'El logo debe ser un SVG válido.')
-  .refine(
-    (valor) => !/<script|<foreignObject|\son\w+\s*=|javascript:/i.test(valor),
-    'El SVG contiene contenido no permitido.',
-  )
+  .superRefine((valor, ctx) => {
+    const problema = problemaSvg(valor);
+    if (problema) ctx.addIssue({ code: 'custom', message: problema });
+  })
   .nullable();
 
 export const configuracionNegocioSchema = z
@@ -39,10 +41,19 @@ export const configuracionNegocioSchema = z
       .strict(),
     reglas: z
       .object({
-        ajuste: z.number().finite().min(-0.5).max(1),
-        iva: z.number().finite().min(0).max(1),
-        vigenciaDiasHabiles: z.number().int().min(0).max(365),
-        descuentoMaximo: z.number().finite().min(0).max(100),
+        ajuste: z.number().finite().min(AJUSTE_MIN).max(AJUSTE_MAX),
+        // Mensajes propios: la API los devuelve tal cual y el genérico de zod llega en inglés («Too big: …»).
+        iva: z.number().finite().min(0, 'El IVA no puede ser negativo.').max(1, 'El IVA no puede superar 100 %.'),
+        vigenciaDiasHabiles: z
+          .number()
+          .int('La vigencia debe ser un número entero de días hábiles.')
+          .min(0, 'La vigencia no puede ser negativa.')
+          .max(365, 'La vigencia no puede superar 365 días hábiles.'),
+        descuentoMaximo: z
+          .number()
+          .finite()
+          .min(0, 'El descuento máximo no puede ser negativo.')
+          .max(DESCUENTO_MAXIMO, `El descuento máximo no puede superar ${DESCUENTO_MAXIMO} %.`),
         // Vacío por omisión: una configuración guardada antes de esta regla no aplica descuento por cantidad.
         // Se guardan de menor a mayor umbral; la validación (umbrales distintos, porcentaje hasta el máximo)
         // se hace abajo porque depende de `descuentoMaximo`.
@@ -52,18 +63,18 @@ export const configuracionNegocioSchema = z
           .default([])
           .transform(ordenarTramos),
         margenes: z.object({
-          puertas_solidas_mara_lenga: z.number().finite().min(0).max(5),
-          puertas_solidas_oregon: z.number().finite().min(0).max(5),
+          puertas_solidas_mara_lenga: z.number().finite().min(0).max(MARGEN_MAX),
+          puertas_solidas_oregon: z.number().finite().min(0).max(MARGEN_MAX),
           // Categorías posteriores a la primera versión: un ajuste guardado sin ellas recibe su valor inicial.
-          puertas_solidas_rauli: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.puertas_solidas_rauli),
-          puertas_prepintadas: z.number().finite().min(0).max(5),
-          puertas_enchapadas_mara: z.number().finite().min(0).max(5),
-          marcos_finger_sin_enchape: z.number().finite().min(0).max(5),
-          marcos_finger_enchapados: z.number().finite().min(0).max(5),
-          marcos_solidos_oregon: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.marcos_solidos_oregon),
-          marcos_solidos_lenga: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.marcos_solidos_lenga),
-          accesorios_madera_solida: z.number().finite().min(0).max(5).default(MARGENES_INICIALES.accesorios_madera_solida),
-          otros: z.number().finite().min(0).max(5),
+          puertas_solidas_rauli: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.puertas_solidas_rauli),
+          puertas_prepintadas: z.number().finite().min(0).max(MARGEN_MAX),
+          puertas_enchapadas_mara: z.number().finite().min(0).max(MARGEN_MAX),
+          marcos_finger_sin_enchape: z.number().finite().min(0).max(MARGEN_MAX),
+          marcos_finger_enchapados: z.number().finite().min(0).max(MARGEN_MAX),
+          marcos_solidos_oregon: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.marcos_solidos_oregon),
+          marcos_solidos_lenga: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.marcos_solidos_lenga),
+          accesorios_madera_solida: z.number().finite().min(0).max(MARGEN_MAX).default(MARGENES_INICIALES.accesorios_madera_solida),
+          otros: z.number().finite().min(0).max(MARGEN_MAX),
         }).strict(),
       })
       .strict()
@@ -82,7 +93,7 @@ export interface ConfiguracionNegocio {
 
 const leerEntorno = (clave: string) => process.env[clave]?.trim() || null;
 
-export const CORREO_PREDETERMINADO_NEGOCIO = 'neltume.co@gmail.com';
+const CORREO_PREDETERMINADO_NEGOCIO = 'neltume.co@gmail.com';
 
 export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
   return {
@@ -103,15 +114,29 @@ export function configuracionNegocioPredeterminada(): ConfiguracionNegocio {
   };
 }
 
+/**
+ * Un logo guardado antes de la validación con parser puede no pasarla: se descarta solo el logo (vuelve el
+ * predeterminado) en vez de perder toda la configuración del negocio.
+ */
+function logoGuardado(valor: unknown): string | null {
+  if (typeof valor !== 'string') return null;
+  const problema = valor.length > 48_000 ? 'excede el tamaño máximo' : problemaSvg(valor);
+  if (!problema) return valor;
+  console.error('[configuracion-negocio] se ignora el logo guardado:', problema);
+  return null;
+}
+
 function validarConfiguracion(valor: unknown, respaldo: ConfiguracionNegocio) {
   const parcial = valor as Partial<ConfiguracionNegocio> | null;
   const reglasParciales = parcial?.reglas as Partial<ReglasComerciales> | undefined;
   return configuracionNegocioSchema.parse({
     transportistas: parcial?.transportistas ?? respaldo.transportistas,
-    empresa: { ...respaldo.empresa, ...(parcial?.empresa ?? {}) },
+    empresa: { ...respaldo.empresa, ...(parcial?.empresa ?? {}), logoSvg: logoGuardado(parcial?.empresa?.logoSvg) },
     reglas: {
       ...respaldo.reglas,
       ...(reglasParciales ?? {}),
+      descuentoMaximo: Math.min(reglasParciales?.descuentoMaximo ?? respaldo.reglas.descuentoMaximo, DESCUENTO_MAXIMO),
+      descuentosPorCantidad: (reglasParciales?.descuentosPorCantidad ?? respaldo.reglas.descuentosPorCantidad)?.map((t) => ({ ...t, porcentaje: Math.min(t.porcentaje, reglasParciales?.descuentoMaximo ?? DESCUENTO_MAXIMO, DESCUENTO_MAXIMO) })),
       margenes: { ...respaldo.reglas.margenes, ...(reglasParciales?.margenes ?? {}) },
     },
   });

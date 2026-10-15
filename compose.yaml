@@ -9,11 +9,41 @@ services:
         cl.neltume.cotizador: 'true'
     restart: unless-stopped
     init: true
-    env_file: .env
+    # Solo las variables que usa la aplicación (lista explícita, sin env_file): lo demás del .env, como
+    # CLOUDFLARE_TUNNEL_TOKEN, no entra a este contenedor. Una variable nueva de la app se agrega aquí y en
+    # .env.example. Los valores por omisión son los mismos de la app; vacía equivale a no definida.
     environment:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Completa BETTER_AUTH_SECRET en .env}
       BETTER_AUTH_URL: ${BETTER_AUTH_URL:?Completa BETTER_AUTH_URL con tu origen HTTPS en .env}
       NELTUME_HOSTS: ${NELTUME_HOSTS:?Completa NELTUME_HOSTS con tu dominio en .env}
+      NELTUME_IP_HEADER: ${NELTUME_IP_HEADER:-cf-connecting-ip}
+      # Asistente de IA (CommandCode). CMD_PLAZO_TOTAL_MS vacía usa CMD_TIMEOUT_MS + 30 s.
+      CMD_API_KEY: ${CMD_API_KEY:-}
+      CMD_MODEL: ${CMD_MODEL:-}
+      CMD_TIMEOUT_MS: ${CMD_TIMEOUT_MS:-60000}
+      CMD_PLAZO_TOTAL_MS: ${CMD_PLAZO_TOTAL_MS:-}
+      CMD_REINTENTO_MS: ${CMD_REINTENTO_MS:-2000}
+      # Catálogo y feriados.
+      NELTUME_CATALOGO_CONFIG: ${NELTUME_CATALOGO_CONFIG:-config/catalogo.json}
+      NELTUME_FERIADOS_SYNC: ${NELTUME_FERIADOS_SYNC:-1}
+      # Datos impresos en los documentos (Ajustes los reemplaza).
+      NELTUME_EMPRESA_NOMBRE: ${NELTUME_EMPRESA_NOMBRE:-}
+      NELTUME_EMPRESA_RUT: ${NELTUME_EMPRESA_RUT:-}
+      NELTUME_EMPRESA_DIRECCION: ${NELTUME_EMPRESA_DIRECCION:-}
+      NELTUME_EMPRESA_TELEFONO: ${NELTUME_EMPRESA_TELEFONO:-}
+      NELTUME_EMPRESA_CORREO: ${NELTUME_EMPRESA_CORREO:-}
+      NELTUME_EMPRESA_WEB: ${NELTUME_EMPRESA_WEB:-}
+      NELTUME_CONDICIONES_PAGO: ${NELTUME_CONDICIONES_PAGO:-}
+      NELTUME_PLAZO_ENTREGA: ${NELTUME_PLAZO_ENTREGA:-}
+      NELTUME_DATOS_BANCARIOS: ${NELTUME_DATOS_BANCARIOS:-}
+      # Despacho con Starken (opcional).
+      STARKEN_URL: ${STARKEN_URL:-}
+      STARKEN_RUT: ${STARKEN_RUT:-}
+      STARKEN_CLAVE: ${STARKEN_CLAVE:-}
+      STARKEN_CUENTA_CORRIENTE: ${STARKEN_CUENTA_CORRIENTE:-}
+      STARKEN_CUENTA_CORRIENTE_DV: ${STARKEN_CUENTA_CORRIENTE_DV:-}
+      STARKEN_RUT_CLIENTE: ${STARKEN_RUT_CLIENTE:-}
+      # Fijas de la imagen: rutas dentro del contenedor.
       NODE_ENV: production
       CHROMIUM_PATH: /usr/bin/chromium
       NELTUME_DATA_DIR: /app/data
@@ -30,13 +60,16 @@ services:
     mem_limit: ${NELTUME_MEMORIA:-1536m}
     memswap_limit: ${NELTUME_MEMORIA:-1536m}
     pids_limit: 512
+    # /api/salud sin sesión responde 200 si la base abre con el esquema esperado, la configuración de inicio de
+    # sesión es válida, hay espacio en el disco de datos y Chromium arranca (se lanza de verdad como mucho cada
+    # 10 minutos; el resultado queda en memoria); si no, 503.
     healthcheck:
       test:
         [
           'CMD',
           'node',
           '-e',
-          "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
+          "fetch('http://127.0.0.1:3000/api/salud').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))",
         ]
       interval: 30s
       timeout: 10s
@@ -51,8 +84,11 @@ services:
 
   # Túnel de Cloudflare propio de la cuenta del dominio. Se activa con COMPOSE_PROFILES=tunel
   # y CLOUDFLARE_TUNNEL_TOKEN en .env; en el panel, el hostname apunta a http://cotizador:3000.
+  # Versión fija: una actualización no cambia el túnel sin que nadie lo decida. Para actualizarla, elige la última
+  # etiqueta AAAA.M.P de https://hub.docker.com/r/cloudflare/cloudflared/tags (no `latest`), cámbiala aquí y aplica
+  # con `docker compose up -d tunel` (ver docker/LEEME.md, «Túnel de Cloudflare»).
   tunel:
-    image: cloudflare/cloudflared:latest
+    image: cloudflare/cloudflared:2026.9.3
     profiles: [tunel]
     restart: unless-stopped
     command: tunnel --no-autoupdate run

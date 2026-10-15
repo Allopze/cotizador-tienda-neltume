@@ -24,7 +24,7 @@ function errorArchivo(archivo: File) {
   return null;
 }
 
-export async function subirReferencia(archivo: File) {
+async function subirReferencia(archivo: File) {
   const error = errorArchivo(archivo);
   if (error) throw new Error(error);
   const cuerpo = new FormData();
@@ -46,6 +46,7 @@ export function ReferenciasItem({
   guardar,
   producto,
   amplio = false,
+  alSubir,
 }: {
   referencias: ReferenciaItem[];
   editable: boolean;
@@ -55,6 +56,8 @@ export function ReferenciasItem({
   producto: string;
   /** En un formulario: título y acción visibles aunque todavía no haya referencias. */
   amplio?: boolean;
+  /** Avisa cuando empieza y termina una subida: un formulario no debe enviarse a medias. */
+  alSubir?: (subiendo: boolean) => void;
 }) {
   const entrada = useRef<HTMLInputElement>(null);
   /** Posición que reemplaza el archivo elegido; null agrega al final. */
@@ -80,6 +83,7 @@ export function ReferenciasItem({
       setError(invalido);
       return;
     }
+    alSubir?.(true);
     try {
       const nuevas: ReferenciaItem[] = [];
       for (const archivo of lista) {
@@ -97,6 +101,7 @@ export function ReferenciasItem({
       setError(mensajeDe(e));
     } finally {
       setSubiendo(null);
+      alSubir?.(false);
     }
   }
 

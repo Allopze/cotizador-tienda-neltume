@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { Almacen } from '@/servidor/almacen';
-import { abrirBaseDatos } from '@/servidor/base-datos';
+import { abrirBaseDatos, ErrorMigracionRequerida } from '@/servidor/base-datos';
+import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { leerJson } from '@/servidor/cuerpo';
 import { ErrorUsuario, registrarError } from '@/servidor/errores';
 import { ErrorStarken } from '@/servidor/starken';
@@ -9,7 +10,9 @@ import { leerConfiguracionStarken } from '@/servidor/starken-configuracion';
 import {
   cotizarEnvioStarken,
   crearClienteStarken,
+  ErrorCatalogoCambio,
   registrarFallaStarken,
+  respuestaCatalogoCambio,
   respuestaErrorStarken,
 } from '@/servidor/starken-servicio';
 
@@ -22,8 +25,9 @@ const cotizarSchema = z
   .strict();
 
 /**
- * Consulta las tarifas de Starken para el bulto de una cotización. No modifica nada: aplicar una tarifa es
- * decisión de la persona y se hace con la acción `editar`, que deja la tarifa en la actividad.
+ * Consulta las tarifas de Starken para el bulto de una cotización, con el catálogo vigente (el mismo con que
+ * `editar` comprueba el pedido al aplicarla). No modifica nada: aplicar una tarifa es decisión de la persona y se
+ * hace con la acción `editar`, que deja la tarifa en la actividad.
  */
 export async function POST(req: Request) {
   const sesion = await exigirSesion(req, { escritura: true });
@@ -45,12 +49,14 @@ export async function POST(req: Request) {
       );
     const resultado = await cotizarEnvioStarken(
       cotizacion,
+      await cargarCatalogo(),
       parsed.data.codigoCiudad,
       leerConfiguracionStarken(abrirBaseDatos()),
       await crearClienteStarken(),
     );
     return Response.json(resultado, { headers: sinCache });
   } catch (e) {
+    if (e instanceof ErrorCatalogoCambio) return respuestaCatalogoCambio(e);
     if (e instanceof ErrorStarken) {
       registrarFallaStarken('api/starken/cotizar', e);
       return respuestaErrorStarken(e);
@@ -58,6 +64,15 @@ export async function POST(req: Request) {
     if (e instanceof ErrorUsuario)
       return Response.json({ error: e.message, codigo: e.codigo }, { status: e.status, headers: sinCache });
     registrarError('api/starken/cotizar', e);
+    // Sin catálogo o con la base por migrar responde como /api/accion: el detalle queda solo en el registro.
+    if (e instanceof ErrorCatalogo || e instanceof ErrorMigracionRequerida)
+      return Response.json(
+        {
+          error: 'El cotizador no está listo. Pide a quien administra el cotizador que lo revise.',
+          codigo: 'no_configurado',
+        },
+        { status: 503, headers: sinCache },
+      );
     return Response.json({ error: 'No se pudo cotizar con Starken.' }, { status: 500, headers: sinCache });
   }
 }

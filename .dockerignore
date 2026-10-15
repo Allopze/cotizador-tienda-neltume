@@ -7,7 +7,11 @@ node_modules
 deploy
 data
 datos-privados
-respaldos
+respaldos*
+# Carpetas del servidor que las actualizaciones conservan: no forman parte de la imagen.
+.version-anterior
+cron
+compose.override.yaml
 tests
 scripts/preparar-e2e.ts
 test-results
@@ -19,3 +23,5 @@ screenshots
 **/*.xlsx
 **/*.pdf
 .DS_Store
+# Build de las pruebas E2E (distDir con NELTUME_TEST_MODE=1, cientos de MB): no va al contexto de docker build.
+.next-e2e

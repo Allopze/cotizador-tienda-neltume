@@ -15,6 +15,7 @@ import { MAX_OPCIONES, pregunta } from '../src/asistente/preguntas';
 import { csvCotizaciones } from '../src/servidor/exportar';
 import { resolverReferencia } from '../src/servidor/referencias';
 vi.mock('../src/servidor/pdf', () => ({
+  prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
   plantilla: vi.fn(async () => '<html/>'),
 }));
@@ -209,6 +210,26 @@ describe('ciclo de vida', () => {
     ]);
   });
 
+  it('anular dos veces con la misma versión (doble envío) devuelve la anulada sin 409 ni otro evento', async () => {
+    const { servicio, almacen, emitida } = await setup();
+    const e = await emitida();
+    const anular = (motivo: string) =>
+      servicio.ejecutar({ tipo: 'anular', id: e.id, actualizada: e.actualizada, motivo });
+    const primera = await anular('Error');
+    const segunda = await anular('Otro');
+    expect(segunda.cotizacion).toMatchObject({
+      estado: 'anulada',
+      motivoAnulacion: 'Error',
+      actualizada: primera.cotizacion.actualizada,
+    });
+    expect(almacen.eventos(e.id).filter((x) => x.tipo === 'anulada')).toHaveLength(1);
+    // Una emitida con la versión vieja sigue rechazada: solo la ya anulada se devuelve sin exigirla.
+    const otra = await emitida();
+    await expect(
+      servicio.ejecutar({ tipo: 'anular', id: otra.id, actualizada: '2020-01-01T00:00:00.000Z' }),
+    ).rejects.toThrow(/cambió/);
+  });
+
   it('aprobar una anulada explica que está anulada', async () => {
     const { servicio, emitida } = await setup();
     const e = await emitida();
@@ -295,6 +316,32 @@ describe('textos y exportación', () => {
     const [, linea] = csvCotizaciones([fila]).split('\r\n');
     expect(linea).toContain(`"'=HYPERLINK(""x"")"`);
     expect(linea).toContain('"Casa; ""Sur"""');
+  });
+
+  it('el CSV deja el saldo y la facturación vacíos salvo en una cotización aprobada', () => {
+    const celdas = (estado: string, extra: Partial<ResumenCotizacion> = {}) => {
+      const fila = {
+        numero: 324,
+        estado,
+        cliente: { ...clienteVacio(), nombre: 'Ana' },
+        fecha: '2026-09-28T12:00:00.000Z',
+        fechaEmision: null,
+        total: 119000,
+        productos: '',
+        nota: null,
+        ...extra,
+      } as unknown as ResumenCotizacion;
+      const [cabecera, linea] = csvCotizaciones([fila]).split('\r\n');
+      const valores = linea.split(';');
+      return Object.fromEntries(cabecera.split(';').map((titulo, i) => [titulo, valores[i]]));
+    };
+    // Un borrador, una emitida, una reemplazada o una anulada no es una venta: nadie debe su total.
+    for (const estado of ['borrador', 'emitida', 'reemplazada', 'anulada'])
+      expect(celdas(estado, { pagado: 0 }), estado).toMatchObject({ Total: '119000', Saldo: '', Facturación: '' });
+    expect(celdas('aprobada', { pagado: 59500 })).toMatchObject({ Saldo: '59500', Facturación: 'Pendiente' });
+    expect(
+      celdas('aprobada', { pagado: 119000, saldoPendiente: 0, facturacion: { estado: 'facturada' } }),
+    ).toMatchObject({ Saldo: '0', Facturación: 'Facturada' });
   });
 });
 

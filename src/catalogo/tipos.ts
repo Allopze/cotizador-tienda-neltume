@@ -67,6 +67,17 @@ export interface SolicitudItem {
    * null es no haberlo escrito: un precio se quita en el detalle, no con un null que la IA pudo poner de más.
    */
   precio?: PrecioEscrito | null;
+  /**
+   * Solo en tránsito desde el chat: el descuento especial que la persona pidió para el ítem, tal como lo propuso
+   * la IA. El servidor ancla la cifra al texto y lo convierte en `descuento`; nunca se guarda. null lo quita,
+   * pero solo si el mensaje habla de descuento: puede ser un null que la IA puso de más.
+   */
+  descuentoEscrito?: DescuentoEscrito | null;
+}
+/** Descuento especial pedido en el chat, como lo propuso la IA; `valor` es null si la persona no dijo cuánto. */
+export interface DescuentoEscrito {
+  tipo: 'porcentaje' | 'monto';
+  valor: number | null;
 }
 /** Precio de una unidad escrito en el chat, como lo escribió la persona; `iva` dice si lo incluía. */
 export interface PrecioEscrito {

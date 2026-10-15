@@ -1,4 +1,5 @@
 import type Database from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
@@ -16,17 +17,30 @@ import type {
   ResumenCotizacion,
   TipoEvento,
 } from '../negocio/estado';
-import { cantidadFlete } from '../negocio/estado';
+import { cantidadFlete, etiquetaComercial, etiquetaOperativo, leerEstadoOperativo, type EstadoOperativo } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { descuentoEsManual } from '../negocio/descuento-cantidad';
 import { REGLAS, type ReglasComerciales } from '../negocio/precios';
-import { calcularVence, estaVencida, inicioDiaSantiago } from '../negocio/vigencia';
+import { calcularVence, estaVencida, inicioDiaSantiago, fechaLocal } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
 import { normalizarTexto, textoBusqueda } from './busqueda';
 import { ErrorConflicto, ErrorUsuario, registrarError } from './errores';
 import { cotizacionSchema, estadoPersistidoSchema, tramosDescuentoSchema } from './persistencia-esquemas';
+import type { OrigenCatalogo } from '../catalogo/origenes';
+import { guardarCatalogo, RepositorioCatalogoSqlite } from './repositorio-catalogo';
 
 export { directorioDatos };
+
+/**
+ * Cuánto dura la marca «en emisión» si nadie la libera (un corte a media emisión): holgado sobre el plazo del PDF
+ * (30 s) más la reserva y la confirmación.
+ */
+export const EMISION_VIGENTE_MS = 2 * 60_000;
+/**
+ * Plazo tras el cual proper-lockfile da por abandonado `data/.estado.lock` (lo renueva cada mitad de ese plazo). Lo
+ * comparten el almacén, la migración desde JSON y la restauración, que lo usa para saber si el cotizador está activo.
+ */
+export const LOCK_ESTADO_VIGENTE_MS = 30_000;
 
 export class ErrorOcupado extends ErrorConflicto {
   constructor() {
@@ -51,11 +65,19 @@ export interface CandidataReferencia {
 }
 
 export interface FiltrosListado {
+  vencenPronto?: boolean;
+  saldoPendiente?: boolean;
   q?: string;
   estados?: EstadoCotizacion[];
   /** YYYY-MM-DD inclusive, sobre la fecha de emisión o, si no hay, la de creación (hora de Chile). */
   desde?: string;
   hasta?: string;
+  /** Seguimiento comercial tal como lo muestra el historial (una anulada cuenta como «rechazada»). */
+  comerciales?: EstadoComercial[];
+  /** Estado operativo tal como lo muestra el historial (sin dato, «sin nota de pedido»). */
+  operativos?: EstadoOperativo[];
+  /** Quien creó la cotización (`creadaPor`), exacto. */
+  vendedora?: string;
   pagina?: number;
   porPagina?: number;
 }
@@ -90,6 +112,7 @@ type FilaCotizacion = {
   creada_por: string | null;
   emitida_por: string | null;
   aprobada_por: string | null;
+  fecha_aprobacion: string | null;
   anulada_por: string | null;
   fecha_anulacion: string | null;
   motivo_anulacion: string | null;
@@ -102,7 +125,8 @@ type FilaCotizacion = {
   despacho_destino: string | null;
   despacho_valor: number | null;
   estado_comercial: 'pendiente' | 'enviada' | 'seguimiento' | 'aprobada' | 'rechazada' | 'vendida';
-  estado_operativo: Cotizacion['estadoOperativo'];
+  /** Texto guardado: puede traer el antiguo «produccion_terminada» (ver `leerEstadoOperativo`). */
+  estado_operativo: string | null;
   facturacion_estado: 'pendiente' | 'facturada';
   facturacion_tipo: 'factura' | 'boleta' | null;
   facturacion_id_externo: string | null;
@@ -161,6 +185,8 @@ type FilaMontos = {
 };
 
 type FilaNota = {
+  despacho_destino: string | null;
+  despacho_valor: number | null;
   cotizacion_id: string;
   numero: number;
   pdf: string;
@@ -409,7 +435,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           versionCatalogo: f.version_catalogo,
           nota: null,
           estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
-          estadoOperativo: f.estado_operativo ?? (f.estado === 'aprobada' ? 'pedido_generado' : 'sin_pedido'),
+          estadoOperativo: (leerEstadoOperativo(f.estado_operativo) as EstadoOperativo | null) ?? (f.estado === 'aprobada' ? 'pedido_generado' : 'sin_pedido'),
           pagos: pagos.get(f.id) ?? [],
           comentariosInternos: comentarios.get(f.id) ?? [],
           facturacion: {
@@ -420,6 +446,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           },
         };
         if (!f.fecha_emision_ausente) q.fechaEmision = f.fecha_emision;
+        if (f.fecha_aprobacion) q.fechaAprobacion = f.fecha_aprobacion;
         if (!f.origen_ausente) q.origen = f.origen_id ? f.origen_numero : null;
         const n = notas.get(f.id)?.[0];
         if (n) {
@@ -443,6 +470,9 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
               direccion: n.despacho_direccion,
               transporte: n.despacho_transporte,
               entregaComprometida: n.despacho_entrega,
+              // Solo si existen: una nota anterior a v22 (o migrada desde JSON) no trae estas claves.
+              ...(n.despacho_destino !== null && { destino: n.despacho_destino }),
+              ...(n.despacho_valor !== null && { valor: n.despacho_valor }),
             },
             observaciones: n.observaciones ?? null,
             anulada: !!n.anulada,
@@ -563,7 +593,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda,
       observaciones, despacho_direccion, despacho_transporte, despacho_entrega, reglas_json,
       estado_comercial, estado_operativo, despacho_destino, despacho_valor,
-      facturacion_estado, facturacion_tipo, facturacion_id_externo, facturacion_fecha
+      facturacion_estado, facturacion_tipo, facturacion_id_externo, facturacion_fecha, fecha_aprobacion
     ) VALUES (
       @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
       @cliente_telefono, @cliente_direccion, @cliente_comuna, @cliente_comuna_normalizada,
@@ -572,7 +602,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda,
       @observaciones, @despacho_direccion, @despacho_transporte, @despacho_entrega, @reglas_json,
       @estado_comercial, @estado_operativo, @despacho_destino, @despacho_valor,
-      @facturacion_estado, @facturacion_tipo, @facturacion_id_externo, @facturacion_fecha
+      @facturacion_estado, @facturacion_tipo, @facturacion_id_externo, @facturacion_fecha, @fecha_aprobacion
     ) ON CONFLICT(id) DO UPDATE SET
       numero = excluded.numero,
       estado = excluded.estado,
@@ -621,7 +651,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       facturacion_estado = excluded.facturacion_estado,
       facturacion_tipo = excluded.facturacion_tipo,
       facturacion_id_externo = excluded.facturacion_id_externo,
-      facturacion_fecha = excluded.facturacion_fecha
+      facturacion_fecha = excluded.facturacion_fecha,
+      fecha_aprobacion = excluded.fecha_aprobacion
   `,
   ).run({
     id: q.id,
@@ -673,6 +704,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     facturacion_tipo: q.facturacion?.tipo ?? null,
     facturacion_id_externo: q.facturacion?.identificadorExterno ?? null,
     facturacion_fecha: q.facturacion?.fecha ?? null,
+    fecha_aprobacion: q.fechaAprobacion ?? null,
     reglas_json: JSON.stringify(q.reglas ?? REGLAS),
     busqueda: textoBusqueda({
       numero: q.numero,
@@ -771,8 +803,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       `
       INSERT INTO notas_pedido (
         cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte,
-        despacho_entrega, observaciones, anulada
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        despacho_entrega, observaciones, anulada, despacho_destino, despacho_valor
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       q.id,
@@ -787,6 +819,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       q.nota.despacho.entregaComprometida,
       q.nota.observaciones,
       Number(q.nota.anulada),
+      q.nota.despacho.destino ?? null,
+      q.nota.despacho.valor ?? null,
     );
     insertarLineas(db, 'nota_lineas', q.id, q.nota.montos);
   }
@@ -804,6 +838,24 @@ export function guardarEstadoCompleto(db: Database.Database, estado: Estado) {
     );
     for (const q of estado.cotizaciones) persistirCotizacion(db, q);
   }).immediate();
+}
+
+/** Cuánto puede saltar un número de cotización elegido a mano sobre el último usado o reservado. */
+const SALTO_MAXIMO_NUMERO = 1000;
+/** Días que un borrador eliminado queda en la papelera antes de que `limpiar-borradores` lo borre (su `--dias`). */
+export const DIAS_PAPELERA = 30;
+
+/**
+ * Último número de cotización usado o reservado (el mayor entre el correlativo y los guardados): un número a mano
+ * debe ser mayor que él y no superarlo en más de `SALTO_MAXIMO_NUMERO`.
+ */
+function numeracionCotizacion(db: Database.Database) {
+  const correlativo = db.prepare('SELECT siguiente_cotizacion FROM correlativos WHERE id = 1').get() as
+    | { siguiente_cotizacion: number }
+    | undefined;
+  if (!correlativo) throw new Error('Faltan los correlativos en la base SQLite.');
+  const maximo = (db.prepare('SELECT COALESCE(MAX(numero), 0) AS n FROM cotizaciones').get() as { n: number }).n;
+  return { siguiente_cotizacion: correlativo.siguiente_cotizacion, ultimo: Math.max(maximo, correlativo.siguiente_cotizacion - 1) };
 }
 
 function correlativos(db: Database.Database) {
@@ -826,10 +878,59 @@ export function leerEstadoDeBase(db: Database.Database): Estado {
  */
 export class Unidad {
   private cache = new Map<string, Cotizacion>();
+  private versiones = new Map<string, string | null>();
+  private restauradas = new Set<string>();
+  restaurarBorrador(id: string, version: string) {
+    const fila = this.db.prepare("SELECT contenido FROM papelera WHERE tipo = 'borrador' AND id = ?").get(id) as { contenido: string } | undefined;
+    if (!fila) throw new ErrorUsuario('No se encontró el borrador en la papelera.', 'no_encontrada', 404);
+    const contenido = JSON.parse(fila.contenido) as { eventos?: unknown };
+    const q = cotizacionSchema.parse(contenido) as Cotizacion;
+    if (q.actualizada !== version || this.obtener(id)) throw new ErrorConflicto('El borrador cambió. Recarga la papelera.');
+    q.actualizada = new Date(Math.max(Date.now(), Date.parse(q.actualizada) + 1)).toISOString();
+    // La actividad anterior vuelve con el borrador, antes de lo que registre la restauración. Una entrada
+    // ilegible se omite: no impide restaurar.
+    const guardados = Array.isArray(contenido.eventos) ? (contenido.eventos as Partial<EventoCotizacion>[]) : [];
+    for (const e of guardados)
+      if (typeof e?.fecha === 'string' && typeof e.tipo === 'string')
+        this.eventos.push({ id, fecha: e.fecha, tipo: e.tipo as TipoEvento, usuario: e.usuario ?? null, detalle: e.detalle ?? null });
+    this.restauradas.add(id); this.guardar(q); return q;
+  }
+  private documentos: { id: string; archivo: string; html: string }[] = [];
+  guardarDocumento(id: string, archivo: string, html: string) { this.documentos.push({ id, archivo, html }); }
   private sucias = new Set<string>();
   private eliminadas = new Set<string>();
   private eventos: (EventoCotizacion & { id: string })[] = [];
   constructor(private db: Database.Database) {}
+
+  /** Fecha del último evento `tipo` ya guardado de una cotización; null si no hay. */
+  fechaEvento(id: string, tipo: TipoEvento): string | null {
+    const fila = this.db
+      .prepare('SELECT fecha FROM eventos WHERE cotizacion_id = ? AND tipo = ? ORDER BY id DESC LIMIT 1')
+      .get(id, tipo) as { fecha: string } | undefined;
+    return fila?.fecha ?? null;
+  }
+
+  /**
+   * Marca la cotización «en emisión» de `documento` hasta que se libere (`Almacen.liberarEmision`) o venza. Se
+   * toma en la misma transacción que reserva el número: una segunda emisión simultánea responde 409 sin gastar
+   * otro número. Devuelve la ficha que libera solo esta marca.
+   */
+  private marcarEmision(id: string, documento: 'cotizacion' | 'nota') {
+    const ahora = Date.now();
+    this.db.prepare('DELETE FROM emisiones_en_curso WHERE vence <= ?').run(new Date(ahora).toISOString());
+    if (this.db.prepare('SELECT 1 FROM emisiones_en_curso WHERE cotizacion_id = ?').get(id))
+      throw new ErrorConflicto(
+        documento === 'nota'
+          ? 'Ya se está generando la nota de pedido de esta cotización. Espera unos segundos y recarga.'
+          : 'Ya se está generando el PDF de esta cotización. Espera unos segundos y recarga.',
+        'ocupado',
+      );
+    const ficha = randomUUID();
+    this.db
+      .prepare('INSERT INTO emisiones_en_curso (cotizacion_id, documento, ficha, vence) VALUES (?, ?, ?, ?)')
+      .run(id, documento, ficha, new Date(ahora + EMISION_VIGENTE_MS).toISOString());
+    return ficha;
+  }
 
   /** Anota una entrada del registro de actividad; se escribe al confirmar, junto con la cotización. */
   registrarEvento(id: string, tipo: TipoEvento, usuario: string | null, detalle: string | null = null) {
@@ -841,6 +942,7 @@ export class Unidad {
     const enCache = this.cache.get(id);
     if (enCache) return enCache;
     const q = cargarUna(this.db, id);
+    this.versiones.set(id, q?.actualizada ?? null);
     if (q) this.cache.set(id, q);
     return q;
   }
@@ -898,6 +1000,7 @@ export class Unidad {
   }
 
   guardar(q: Cotizacion) {
+    if (!this.versiones.has(q.id)) this.versiones.set(q.id, (this.db.prepare('SELECT actualizada FROM cotizaciones WHERE id = ?').get(q.id) as { actualizada: string } | undefined)?.actualizada ?? null);
     this.eliminadas.delete(q.id);
     this.cache.set(q.id, q);
     this.sucias.add(q.id);
@@ -924,44 +1027,79 @@ export class Unidad {
       .immediate();
   }
 
-  reservarCotizacion(numeroSolicitado?: number) {
+  reservarCotizacion(numeroSolicitado?: number): number {
+    return this.db.transaction(() => this.siguienteCotizacion(numeroSolicitado)).immediate();
+  }
+
+  /** Marca la cotización `id` «en emisión» y reserva su número, en una transacción (ver `marcarEmision`). */
+  reservarCotizacionEnEmision(id: string, numeroSolicitado?: number) {
     return this.db
       .transaction(() => {
-        const correlativo = this.db
-          .prepare('SELECT siguiente_cotizacion FROM correlativos WHERE id = 1')
-          .get() as { siguiente_cotizacion: number } | undefined;
-        if (!correlativo) throw new Error('Faltan los correlativos en la base SQLite.');
-        const maximo = (
-          this.db.prepare('SELECT COALESCE(MAX(numero), 0) AS n FROM cotizaciones').get() as { n: number }
-        ).n;
-        const ultimo = Math.max(maximo, correlativo.siguiente_cotizacion - 1);
-        const numero = numeroSolicitado ?? ultimo + 1;
-        if (!Number.isSafeInteger(numero) || numero <= ultimo)
-          throw new ErrorConflicto(
-            `El número de cotización debe ser entero y mayor que el último usado (${ultimo}).`,
-            'numero_invalido',
-          );
-        this.db
-          .prepare('UPDATE correlativos SET siguiente_cotizacion = ? WHERE id = 1')
-          .run(Math.max(correlativo.siguiente_cotizacion, numero + 1));
-        return numero;
+        const ficha = this.marcarEmision(id, 'cotizacion');
+        return { numero: this.siguienteCotizacion(numeroSolicitado), ficha };
       })
       .immediate();
   }
 
-  reservarNota() {
-    return this.reservar('siguiente_nota');
+  /** Marca la cotización `id` «en emisión» de su nota de pedido y reserva el número de la nota. */
+  reservarNotaEnEmision(id: string) {
+    return this.db
+      .transaction(() => {
+        const ficha = this.marcarEmision(id, 'nota');
+        return { numero: this.siguienteNota(), ficha };
+      })
+      .immediate();
+  }
+
+  private siguienteCotizacion(numeroSolicitado?: number) {
+    const { siguiente_cotizacion, ultimo } = numeracionCotizacion(this.db);
+    const numero = numeroSolicitado ?? ultimo + 1;
+    if (!Number.isSafeInteger(numero) || numero <= ultimo || numero > ultimo + SALTO_MAXIMO_NUMERO)
+      throw new ErrorConflicto(
+        `El número de cotización debe ser entero y mayor que el último usado (${ultimo}) y no superar ${ultimo + SALTO_MAXIMO_NUMERO}.`,
+        'numero_invalido',
+      );
+    this.db
+      .prepare('UPDATE correlativos SET siguiente_cotizacion = ? WHERE id = 1')
+      .run(Math.max(siguiente_cotizacion, numero + 1));
+    return numero;
+  }
+
+  reservarNota(): number {
+    return this.db.transaction(() => this.siguienteNota()).immediate();
+  }
+
+  private siguienteNota() {
+    const fila = this.db.prepare('SELECT siguiente_nota AS siguiente, (SELECT COALESCE(MAX(numero), 0) + 1 FROM notas_pedido) AS maximo FROM correlativos WHERE id = 1').get() as { siguiente: number; maximo: number };
+    const numero = Math.max(fila.siguiente, fila.maximo);
+    this.db.prepare('UPDATE correlativos SET siguiente_nota = ? WHERE id = 1').run(numero + 1);
+    return numero;
   }
 
   confirmar() {
     if (!this.sucias.size && !this.eliminadas.size && !this.eventos.length) return;
     this.db
       .transaction(() => {
-        for (const id of this.eliminadas) this.db.prepare('DELETE FROM cotizaciones WHERE id = ?').run(id);
+        for (const [id, version] of this.versiones) {
+          const vigente = (this.db.prepare('SELECT actualizada FROM cotizaciones WHERE id = ?').get(id) as { actualizada: string } | undefined)?.actualizada ?? null;
+          if (vigente !== version) throw new ErrorConflicto('La cotización cambió durante la operación. Recarga y vuelve a intentar.');
+        }
+        for (const id of this.eliminadas) {
+          const q = cargarUna(this.db, id);
+          if (q?.estado !== 'borrador' || q.numero !== null) throw new ErrorConflicto('Solo los borradores sin número pueden ir a la papelera.', 'estado_invalido');
+          // La actividad se borra en cascada con la cotización: va con ella a la papelera para restaurarla.
+          const eventos = this.db
+            .prepare('SELECT fecha, usuario, tipo, detalle FROM eventos WHERE cotizacion_id = ? ORDER BY id')
+            .all(id) as EventoCotizacion[];
+          this.db.prepare("INSERT INTO papelera VALUES ('borrador', ?, ?, ?) ON CONFLICT(tipo,id) DO UPDATE SET contenido=excluded.contenido, eliminada=excluded.eliminada").run(id, JSON.stringify({ ...q, eventos }), new Date().toISOString());
+          this.db.prepare('DELETE FROM cotizaciones WHERE id = ?').run(id);
+        }
+        for (const id of this.restauradas) this.db.prepare("DELETE FROM papelera WHERE tipo = 'borrador' AND id = ?").run(id);
         // Primero las que ya existen o tienen número: una revisión nueva referencia a su original.
         const pendientes = [...this.sucias].map((id) => this.cache.get(id)!);
         pendientes.sort((a, b) => Number(a.origen != null) - Number(b.origen != null));
         for (const q of pendientes) persistirCotizacion(this.db, q);
+        for (const d of this.documentos) this.db.prepare('INSERT OR IGNORE INTO documentos_snapshot VALUES (?, ?, ?)').run(d.archivo, d.id, d.html);
         const insertar = this.db.prepare(
           'INSERT INTO eventos (cotizacion_id, fecha, usuario, tipo, detalle) VALUES (?, ?, ?, ?, ?)',
         );
@@ -1009,6 +1147,23 @@ export class Almacen {
 
   correlativos() {
     return correlativos(this.db);
+  }
+
+  /** Para el diálogo de emisión: último número usado y rango de un número elegido a mano. Solo lectura. */
+  numeracion() {
+    const { ultimo } = numeracionCotizacion(this.db);
+    return { ultimo, siguiente: ultimo + 1, tope: ultimo + SALTO_MAXIMO_NUMERO };
+  }
+
+  /** Quienes crearon cotizaciones (`creada_por`), para filtrar el historial por vendedora. */
+  vendedoras(): string[] {
+    return (
+      this.db
+        .prepare(
+          "SELECT DISTINCT creada_por AS nombre FROM cotizaciones WHERE COALESCE(TRIM(creada_por), '') <> '' ORDER BY creada_por COLLATE NOCASE",
+        )
+        .all() as { nombre: string }[]
+    ).map((f) => f.nombre);
   }
 
   obtener(id: string): Cotizacion | null {
@@ -1066,10 +1221,101 @@ export class Almacen {
     });
   }
 
+  /**
+   * Borradores en la papelera, del eliminado más reciente al más antiguo, con lo necesario para reconocerlos y
+   * restaurarlos. Una entrada ilegible no se puede restaurar: se omite.
+   */
+  papelera(limite = 200): BorradorEnPapelera[] {
+    return this.listarPapelera({ porPagina: limite }).borradores;
+  }
+
+  /**
+   * Página de la papelera de borradores, con búsqueda en el servidor por cliente, comuna, proyecto o producto
+   * (sin tildes ni mayúsculas, todas las palabras). El total cuenta solo las entradas legibles que coinciden: la
+   * papelera se vacía a los `DIAS_PAPELERA` días, así que recorrerla entera es acotado.
+   */
+  listarPapelera(filtros: { q?: string; pagina?: number; porPagina?: number } = {}): {
+    borradores: BorradorEnPapelera[];
+    total: number;
+    pagina: number;
+    porPagina: number;
+  } {
+    const porPagina = Math.min(Math.max(Math.trunc(filtros.porPagina ?? 50), 1), 200);
+    const pagina = Math.max(Math.trunc(filtros.pagina ?? 1), 1);
+    const terminos = normalizarTexto(filtros.q ?? '').split(' ').filter(Boolean).slice(0, 8);
+    const desde = (pagina - 1) * porPagina;
+    const borradores: BorradorEnPapelera[] = [];
+    let total = 0;
+    const filas = this.db
+      .prepare("SELECT contenido, eliminada FROM papelera WHERE tipo = 'borrador' ORDER BY eliminada DESC, id")
+      .iterate() as Iterable<{ contenido: string; eliminada: string }>;
+    for (const f of filas) {
+      let leida;
+      try {
+        leida = cotizacionSchema.safeParse(JSON.parse(f.contenido));
+      } catch {
+        continue;
+      }
+      if (!leida.success) continue;
+      const q = leida.data;
+      const productos = resumenProductos(q.solicitudes);
+      if (terminos.length) {
+        const texto = normalizarTexto(
+          [q.cliente.nombre, q.cliente.comuna, q.cliente.proyecto, q.cliente.rut, q.cliente.telefono, productos]
+            .filter(Boolean)
+            .join(' '),
+        );
+        if (!terminos.every((t) => texto.includes(t))) continue;
+      }
+      total++;
+      if (total <= desde || borradores.length >= porPagina) continue;
+      borradores.push({
+        id: q.id,
+        actualizada: q.actualizada,
+        eliminada: f.eliminada,
+        creada: q.creada,
+        creadaPor: q.creadaPor,
+        cliente: { nombre: q.cliente.nombre, comuna: q.cliente.comuna, proyecto: q.cliente.proyecto },
+        items: q.solicitudes.length,
+        productos,
+        origen: q.origen ?? null,
+        total: q.montos.total,
+      });
+    }
+    return { borradores, total, pagina, porPagina };
+  }
+
+  /** Entradas de la papelera (borradores y productos manuales) eliminadas hace más de `dias` días. */
+  papeleraAntigua(dias: number) {
+    const limite = new Date(Date.now() - dias * 86_400_000).toISOString();
+    return this.db
+      .prepare('SELECT tipo, id, contenido, eliminada FROM papelera WHERE eliminada < ? ORDER BY eliminada')
+      .all(limite) as { tipo: string; id: string; contenido: string; eliminada: string }[];
+  }
+
+  /** Borra de la papelera las entradas listadas; ignora las que se restauraron o se volvieron a eliminar. */
+  async vaciarPapelera(entradas: { tipo: string; id: string; eliminada: string }[]) {
+    return this.transaccion(() => {
+      const borrar = this.db.prepare('DELETE FROM papelera WHERE tipo = ? AND id = ? AND eliminada = ?');
+      return this.db.transaction(() => entradas.reduce((n, e) => n + borrar.run(e.tipo, e.id, e.eliminada).changes, 0))();
+    });
+  }
+
   /** Archivos de referencia del cliente que usa algún ítem de alguna cotización. */
   archivosReferencia(): Set<string> {
     const filas = this.db.prepare('SELECT DISTINCT archivo FROM referencias_item').all() as { archivo: string }[];
-    return new Set(filas.map((f) => f.archivo));
+    // Los borradores en la papelera se pueden restaurar: sus referencias siguen en uso. Una entrada ilegible no
+    // se puede restaurar, así que no protege nada ni detiene la limpieza.
+    const papelera = this.db.prepare("SELECT contenido FROM papelera WHERE tipo = 'borrador'").all() as { contenido: string }[];
+    const archivadas = papelera.flatMap((f) => {
+      try {
+        const q = cotizacionSchema.safeParse(JSON.parse(f.contenido));
+        return q.success ? q.data.solicitudes.flatMap((s) => s.referencias?.map((r) => r.archivo) ?? []) : [];
+      } catch {
+        return [];
+      }
+    });
+    return new Set([...filas.map((f) => f.archivo), ...archivadas]);
   }
 
   /** Cotización dueña de un PDF emitido (cotización o nota de pedido). */
@@ -1168,6 +1414,29 @@ export class Almacen {
       condiciones.push(`${FECHA_REFERENCIA} < ?`);
       params.push(inicioDiaSantiago(sumarDiasCalendario(filtros.hasta, 1)));
     }
+    const comerciales = (filtros.comerciales ?? []).filter((e) => e in etiquetaComercial);
+    if (comerciales.length) {
+      condiciones.push(
+        `(CASE WHEN c.estado = 'anulada' THEN 'rechazada' ELSE c.estado_comercial END) IN (${comerciales.map(() => '?').join(', ')})`,
+      );
+      params.push(...comerciales);
+    }
+    const operativos = (filtros.operativos ?? []).filter((e) => e in etiquetaOperativo);
+    if (operativos.length) {
+      condiciones.push(
+        `(CASE WHEN c.estado_operativo = 'produccion_terminada' THEN 'en_produccion' ELSE COALESCE(c.estado_operativo, 'sin_pedido') END) IN (${operativos.map(() => '?').join(', ')})`,
+      );
+      params.push(...operativos);
+    }
+    if (filtros.vendedora?.trim()) {
+      condiciones.push('c.creada_por = ?');
+      params.push(filtros.vendedora.trim());
+    }
+    if (filtros.vencenPronto) {
+      condiciones.push("c.estado = 'emitida' AND c.vence >= ? AND c.vence <= ?");
+      const hoy = fechaLocal(new Date()); params.push(hoy, sumarDiasCalendario(hoy, 7));
+    }
+    if (filtros.saldoPendiente) condiciones.push("c.estado = 'aprobada' AND (SELECT total FROM cotizacion_montos WHERE cotizacion_id = c.id) > COALESCE((SELECT SUM(monto) FROM pagos WHERE cotizacion_id = c.id), 0)");
     const donde = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
     return db.transaction(() => {
       const total = (
@@ -1256,12 +1525,7 @@ export class Almacen {
           total: f.total ?? 0,
           items: f.items,
           pendientes: f.pendientes,
-          productos: (productos.get(f.id) ?? [])
-            .map(
-              (p) =>
-                `${p.cantidad === null ? '' : `${p.cantidad} × `}${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}${p.cantidad === null ? ' (sin cantidad)' : ''}`,
-            )
-            .join(', '),
+          productos: resumenProductos(productos.get(f.id) ?? []),
           creada: f.creada,
           actualizada: f.actualizada,
           fecha: f.fecha_referencia,
@@ -1281,28 +1545,53 @@ export class Almacen {
               ? null
               : { numero: f.nota_numero, pdf: f.nota_pdf!, fecha: f.nota_fecha!, anulada: !!f.nota_anulada },
           estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
-          estadoOperativo: f.estado_operativo ?? 'sin_pedido',
+          estadoOperativo: (leerEstadoOperativo(f.estado_operativo) as EstadoOperativo | null) ?? 'sin_pedido',
           pagado: f.pagado,
           saldoPendiente: Math.max(0, (f.total ?? 0) - f.pagado),
           porcentajePagado: f.total ? Math.min(100, (100 * f.pagado) / f.total) : 0,
           pagos: f.cantidad_pagos,
+          facturacion: { estado: f.facturacion_estado },
         };
       });
       return { cotizaciones, total, pagina, porPagina };
     })();
   }
 
+  /** Libera la marca «en emisión» tomada con `ficha`; si ya venció y otra emisión la tomó, no la toca. */
+  liberarEmision(id: string, ficha: string) {
+    try {
+      this.db.prepare('DELETE FROM emisiones_en_curso WHERE cotizacion_id = ? AND ficha = ?').run(id, ficha);
+    } catch (error) {
+      // Si no se pudo borrar, la marca vence sola (EMISION_VIGENTE_MS): no se tapa el resultado de la emisión.
+      registrarError('almacen', `No se liberó la marca de emisión de ${id}: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Importa una planilla dentro del mismo bloqueo que las escrituras de cotizaciones (ver `guardarCatalogo`): no
+   * cambia el catálogo en medio de otra operación.
+   */
+  async guardarCatalogo(...args: Parameters<typeof guardarCatalogo> extends [unknown, ...infer R] ? R : never) {
+    return this.transaccion(() => guardarCatalogo(this.db, ...args));
+  }
+
+  /** «Volver a la planilla anterior» con el mismo bloqueo que `guardarCatalogo`. */
+  async restaurarImportacion(origen: OrigenCatalogo, version: string) {
+    return this.transaccion(() => new RepositorioCatalogoSqlite(this.db).restaurarImportacion(origen, version));
+  }
+
   async transaccion<T>(fn: (unidad: Unidad) => Promise<T> | T): Promise<T> {
     await mkdir(this.directorio, { recursive: true, mode: 0o700 });
     let release: () => Promise<void>;
+    let comprometido = false;
     try {
       release = await lockfile.lock(this.directorio, {
         realpath: false,
         lockfilePath: join(this.directorio, '.estado.lock'),
-        stale: 30000,
+        stale: LOCK_ESTADO_VIGENTE_MS,
         retries: { retries: 60, minTimeout: 100, maxTimeout: 500 },
         // Si el bloqueo se pierde (reloj, disco lento) se registra: lanzar aquí derribaría el proceso.
-        onCompromised: (error) => registrarError('almacen', `Bloqueo comprometido: ${error.message}`),
+        onCompromised: (error) => { comprometido = true; registrarError('almacen', `Bloqueo comprometido: ${error.message}`); },
       });
     } catch (e) {
       if ((e as NodeJS.ErrnoException).code === 'ELOCKED') throw new ErrorOcupado();
@@ -1311,6 +1600,7 @@ export class Almacen {
     try {
       const unidad = new Unidad(this.db);
       const resultado = await fn(unidad);
+      if (comprometido) throw new ErrorOcupado();
       unidad.confirmar();
       return resultado;
     } finally {
@@ -1327,8 +1617,34 @@ function sumarDiasCalendario(fecha: string, dias: number) {
   return d.toISOString().slice(0, 10);
 }
 
+/** «3 × HUILO HUILO PINO OREGON, MARCO (sin cantidad)»: los productos de una cotización en una línea. */
+function resumenProductos(lista: { modelo: string | null; madera: string | null; cantidad: number | null }[]) {
+  return lista
+    .map(
+      (p) =>
+        `${p.cantidad === null ? '' : `${p.cantidad} × `}${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}${p.cantidad === null ? ' (sin cantidad)' : ''}`,
+    )
+    .join(', ');
+}
+
+/** Borrador eliminado tal como lo lista la papelera del historial. */
+export interface BorradorEnPapelera {
+  id: string;
+  /** Versión guardada: `restaurar_borrador` la exige. */
+  actualizada: string;
+  eliminada: string;
+  creada: string;
+  creadaPor: string | null;
+  cliente: { nombre: string | null; comuna: string | null; proyecto: string | null };
+  items: number;
+  productos: string;
+  /** Número de la cotización emitida que revisaba; null si era una cotización nueva. */
+  origen: number | null;
+  total: number;
+}
+
 /** La cotización guardada no pasa la validación: se informa sin tumbar el resto del listado. */
-export class ErrorCotizacionDanada extends ErrorUsuario {
+class ErrorCotizacionDanada extends ErrorUsuario {
   constructor() {
     super(
       'La cotización guardada tiene datos dañados y no se puede abrir. Pide a quien administra el cotizador que la revise.',

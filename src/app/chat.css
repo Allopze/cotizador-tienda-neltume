@@ -110,6 +110,17 @@ p + .pregunta-opciones {
 .example:hover:not(:disabled) {
   background: var(--pale);
 }
+/* Enlace a la guía «Cómo funciona» en la pantalla vacía. */
+.welcome > .welcome-ayuda {
+  margin-top: 16px;
+  max-width: none;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+.welcome-ayuda a {
+  color: var(--green);
+  font-weight: 600;
+}
 .message {
   padding: 17px 0;
   border-top: 1px solid var(--line-soft);
@@ -414,6 +425,14 @@ p + .pregunta-opciones {
   grid-template-columns: repeat(2, minmax(120px, 1fr));
   gap: 8px;
   min-width: 380px;
+}
+/* Ajustes → Usuarios: el error de un campo y la contraseña de confirmación ocupan todo el ancho del editor. */
+.manual-editor > .catalog-error,
+.manual-editor > .manual-editor-ancho {
+  grid-column: 1 / -1;
+}
+.manual-editor > .catalog-error {
+  margin-top: 0;
 }
 .manual-editor label {
   display: grid;
@@ -799,20 +818,11 @@ p + .pregunta-opciones {
     padding: 10px 16px;
   }
 }
+/* Vista técnica de la configuración, dentro de «Avanzado». */
 .config-json {
-  margin-top: 24px;
-  border-top: 1px solid var(--line);
-  padding-top: 12px;
-}
-.config-json summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: var(--fs-xs);
-}
-.config-json pre {
   max-height: 320px;
   max-width: 720px;
-  margin-top: 10px;
+  margin: 0;
   padding: 12px;
   overflow: auto;
   border: 1px solid var(--line);
@@ -1126,7 +1136,8 @@ p + .pregunta-opciones {
   text-decoration: none;
   white-space: nowrap;
 }
-.ia-settings-button:hover:not(:disabled) {
+.ia-settings-button:hover:not(:disabled),
+.ia-settings-button[aria-current='page'] {
   background: var(--pale);
 }
 .ia-section {

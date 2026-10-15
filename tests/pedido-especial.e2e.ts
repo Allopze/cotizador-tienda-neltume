@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures-e2e';
 import { iniciarSesion } from './login-e2e';
 
 test('un pedido fuera de catálogo queda pendiente y se cotiza como especial con el precio indicado', async ({
@@ -17,10 +17,10 @@ test('un pedido fuera de catálogo queda pendiente y se cotiza como especial con
   await page.screenshot({ path: 'test-results/pedido-especial-pendiente.png', fullPage: true });
 
   await panel.getByRole('button', { name: /cotizar como especial/i }).click();
-  const precio = panel.getByLabel(/precio neto para cotizar como especial/i);
+  const precio = panel.getByLabel(/precio sin IVA para cotizar como especial/i);
   await precio.fill('0');
   await precio.press('Enter');
-  await expect(panel.getByRole('alert')).toContainText('precio unitario neto');
+  await expect(panel.getByRole('alert')).toContainText('precio unitario sin IVA');
   await precio.fill('450.000');
   await precio.press('Enter');
 
