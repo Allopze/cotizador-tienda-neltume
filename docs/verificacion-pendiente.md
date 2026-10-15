@@ -21,9 +21,16 @@ sigue pendiente.
 | 4    | `4e8d048`  | `/api/logo` y SVG, cuentas (contraseña propia, sesiones, inicios de sesión), Compose y túnel, deploy y `actualizar.sh`, limpieza de datos, `/api/salud` con Chromium y Starken, CSV por partes, papelera, filtros, clientes, accesibilidad. |
 | 5    | sin commit | Documentación (sección 5).                                                                                                                                                                                                                  |
 
-**Sigue pendiente** (fases siguientes): 6 · pruebas que faltan (sección 6); 7 · gasto e instalación (sección 7);
-8 · servidor, teléfonos y personas (sección 8); 9 · decisiones (sección 9); y mantenibilidad (sección 10). En el
-código queda un solo texto vivo de la sección 5: «rol estándar» en Ajustes → Usuarios.
+**Estado al 15 de octubre** (rama `test/lo-faltante`): la sección 6 quedó cerrada salvo lo que exige una persona
+(VoiceOver, revisión visual de los PDF, PC de la oficina), Firefox (no arranca en macOS 27), la resistencia de
+varias horas y revisar el ZIP real. Se corrigieron dos defectos: la cantidad editable mostraba la validación nativa
+del navegador en vez del mensaje propio (`f4ce96f`), y las fechas creaban un formateador por llamada, lo que llevaba
+el servidor a 1,7–2,1 GB con 20.000 cotizaciones (`92594da`, mediciones en [carga-2026-10-15.md](carga-2026-10-15.md)).
+El texto «rol estándar» de Ajustes → Usuarios ya no existe. `main` incluye la rama `feat/asistente-sin-corrector` y
+se borraron las siete ramas fusionadas.
+
+**Sigue pendiente:** 7 · gasto e instalación (sección 7); 8 · servidor, teléfonos y personas (sección 8); 9 ·
+decisiones (sección 9).
 
 **Dónde se hace:** **Mac** = en esta Mac sin gastar. **Permiso** = requiere gastar o instalar algo. **Externo** = requiere el servidor, teléfonos o personas.
 
@@ -123,7 +130,7 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 - ~~**Carpetas:**~~ (fase 5: todo en `/srv/cotizador-neltume`, explicado como la carpeta del deploy por SSH; los comentarios de `scripts/actualizar.sh` y `scripts/respaldo-diario.sh` siguen diciendo `/opt/…`) `docker/LEEME.md` (9 usos) y `docs/manual-operativo.md` (5) dicen `/opt/neltume-cotizador`, mientras el deploy usa `/srv/cotizador-neltume`.
 - ~~**Montaje externo de respaldos:**~~ (fase 5: receta en dos pasos, copia como root y `chown node`; falta ensayarla con Docker) con una carpeta 0700 y un uid del host distinto de 1000, la receta de `docker/LEEME.md:248` y `:293` fallaría (por lectura).
 - ~~**Puertos:**~~ (fase 5: tabla en LEEME, README y `.env.example`) 3000 por omisión y 3010 en `npm run deploy`, explicado pero sin unificar.
-- **Ajustes → Usuarios:** (sigue: `src/app/ajustes/usuarios.tsx:202` dice «las de rol estándar ven Ajustes en solo lectura» y `:261` muestra «Estándar» para un rol distinto de `admin`) todavía habla de «rol estándar» y muestra «Estándar» (`usuarios.tsx:158-159`, `:203`), aunque todas las cuentas son administradoras.
+- ~~**Ajustes → Usuarios:**~~ (cerrado: el texto ya no está en `usuarios.tsx`) (antes: `src/app/ajustes/usuarios.tsx:202` dice «las de rol estándar ven Ajustes en solo lectura» y `:261` muestra «Estándar» para un rol distinto de `admin`) todavía habla de «rol estándar» y muestra «Estándar» (`usuarios.tsx:158-159`, `:203`), aunque todas las cuentas son administradoras.
 - ~~**LEEME:**~~ (fase 5: sección Feriados; la receta de importar usa `docker compose run` desde `8152198`)
   - no menciona `npm run feriados` ni `NELTUME_FERIADOS_SYNC`;
   - la receta de `:189-192` usa `docker compose cp` y `npm run importar`.
@@ -229,7 +236,7 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 
 **Entrega**
 
-- **ZIP:** construir solo con lo que lleva el ZIP, `npm prune` y `next start`, y revisar su contenido real con `npm run deploy:zip -- --sin-ia`.
+- **ZIP:** construir solo con lo que lleva el ZIP, `npm prune` y `next start`, y revisar su contenido real con `npm run deploy:zip -- --sin-ia`. Lo corre el usuario: `deploy:zip` queda bloqueado para Claude igual que `deploy`. `scripts/carga-http.ts` ya no viaja en la entrega, igual que `carga.ts`.
 - ~~**Chromium:** consultar qué versión trae bookworm~~ (15 de octubre): `bookworm-security` trae
   155.0.8059.39-1~deb12u1 (igual que trixie-security y sid); Playwright 1.63 se prueba con Chromium 153.0.8010.12 y
   el Chrome de esta Mac es 155.0.8059.41. Se sigue generando el PDF con dos versiones por delante de Playwright.
@@ -275,7 +282,8 @@ Corrido el 14 de octubre (fase 7). Gasto total de IA ≈ US$0,63.
   - Pendiente, lo hace el usuario desde la aplicación (un script propio que lee la clave quedó bloqueado por
     regla): «Probar modelo» en Ajustes, provocar la caída al respaldo con un nombre de modelo inexistente, y alta de
     producto seguida de un pedido en el chat.
-  - Sin correr (opcional, ~US$2,3, requiere confirmar): semillas completas, variabilidad del caso 134 y grabar
+  - Sin correr (opcional, ~US$2,3; el 15 de octubre se aprobó, pero la corrida quedó bloqueada para Claude por
+    ser un gasto real: la corre el usuario con `npm run paridad:excel-ia -- --casos 250 --semilla N`): semillas completas, variabilidad del caso 134 y grabar
     las respuestas para repetirlas sin costo; el chat en el teléfono va con la sección 8.
 - ~~**Docker o Colima**~~ (Colima arm64, Docker 29, Compose 5.6; copia aislada `neltume-ensayo`, ya borrada):
   - ~~imagen arm64 (57 s, 562 MB) y amd64 con Rosetta (100 s, 561 MB)~~; SQLite y `print-to-pdf` en amd64;
@@ -369,7 +377,7 @@ Cerrado en la fase 9 (commit de refactor), salvo lo indicado:
   - ~~tres formateadores de pesos~~: `pesos` de `precios.ts`.
   - ~~observación de 500 o 1000~~: `LARGO_OBSERVACION_ITEM = 1000` en todas partes.
   - `tactil.css`: se quitaron reglas redundantes. Se conserva el `!important` de 16 px y 44 px en campos, porque hay selectores con clase que los bajarían (zoom en iOS y blancos chicos); queda documentado en la hoja. Los dos `color: var(--warm-text) !important` de `cotizacion.css` siguen pendientes de una revisión visual.
-- **Repositorio:** siete ramas ya fusionadas sin borrar. **Pendiente de tu confirmación.**
+- ~~**Repositorio:** siete ramas ya fusionadas sin borrar~~ (15 de octubre: borradas).
 
 ## 11. Excluido por alcance
 
