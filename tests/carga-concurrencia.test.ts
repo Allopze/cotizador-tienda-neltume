@@ -15,7 +15,8 @@ import { planillaPrincipal, xlsxBytes, type Celdas } from './fixture-xlsx';
 
 // Fase 6 · carga y concurrencia: respaldo en caliente con escrituras continuas, varios PDF a la vez con uno que
 // vence su plazo, 20.000 cotizaciones en el listado y el CSV por partes, y el pico de memoria de un libro grande
-// pero legítimo (bajo los topes de descompresión).
+// pero legítimo (bajo los topes de descompresión); dos vendedoras sobre la misma cotización y la memoria nativa de
+// las fechas. La carga por HTTP contra `next start` está en scripts/carga-http.ts.
 
 vi.mock('../src/servidor/acceso-autenticado', () => ({
   exigirSesion: vi.fn(async () => ({
@@ -148,6 +149,91 @@ describe('Respaldo en caliente', () => {
     expect(escrituras).toBeGreaterThan(0);
     console.info(`[carga] respaldo en caliente: ${escrituras} escrituras durante ${Math.round(duracion)} ms`);
   }, 120_000);
+});
+
+describe('Dos usuarias en la misma cotización', () => {
+  /** Segunda vendedora sobre la misma base (su propio Almacen, como cada solicitud de /api/accion). */
+  async function segunda(t: Awaited<ReturnType<typeof montar>>, llm = { interpretar: vi.fn() }) {
+    const { Almacen } = await import('../src/servidor/almacen');
+    const { Servicio } = await import('../src/servidor/servicio');
+    return new Servicio(catalogo, llm, new Almacen(), { nombre: 'Rosa', email: 'rosa@neltume.test' });
+  }
+  // Por el estado del error y no por su clase: cada prueba importa los módulos de nuevo (vi.resetModules).
+  const estado = (r: PromiseSettledResult<unknown>) =>
+    r.status === 'fulfilled' ? 200 : ((r.reason as { status?: number }).status ?? 500);
+
+  it('guardan a la vez con la misma versión: una gana, la otra recibe 409 y no pisa nada', async () => {
+    const t = await montar();
+    const rosa = await segunda(t);
+    const q = t.plantilla;
+    const resultados = await Promise.allSettled([
+      t.servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, cantidades: [{ indice: 0, cantidad: 5 }] }),
+      rosa.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, cliente: { telefono: '+56 9 1111 2222' } }),
+    ]);
+    expect(resultados.map(estado).sort()).toEqual([200, 409]);
+    const guardada = t.almacen.obtener(q.id)!;
+    const ganoPaula = resultados[0].status === 'fulfilled';
+    expect(guardada.solicitudes[0].cantidad).toBe(ganoPaula ? 5 : 2);
+    expect(guardada.cliente.telefono ?? null).toBe(ganoPaula ? (q.cliente.telefono ?? null) : '+56 9 1111 2222');
+    // La que perdió recarga y repite: quedan los dos cambios.
+    const perdedora = ganoPaula ? rosa : t.servicio;
+    await perdedora.ejecutar(
+      ganoPaula
+        ? { tipo: 'editar', id: q.id, actualizada: guardada.actualizada, cliente: { telefono: '+56 9 1111 2222' } }
+        : { tipo: 'editar', id: q.id, actualizada: guardada.actualizada, cantidades: [{ indice: 0, cantidad: 5 }] },
+    );
+    const final = t.almacen.obtener(q.id)!;
+    expect(final.solicitudes[0].cantidad).toBe(5);
+    expect(final.cliente.telefono).toBe('+56 9 1111 2222');
+  });
+
+  it('una escribe en el chat mientras la otra guarda: el mensaje responde 409 y lo guardado se conserva', async () => {
+    const t = await montar();
+    let soltar!: () => void;
+    const espera = new Promise<void>((r) => (soltar = r));
+    let consultada!: () => void;
+    const enConsulta = new Promise<void>((r) => (consultada = r));
+    // La IA de Rosa tarda: mientras tanto Paula guarda un cambio.
+    const rosa = await segunda(t, {
+      interpretar: vi.fn(async () => {
+        consultada();
+        await espera;
+        return { name: 'modificar_cotizacion', input: { items: [{ indice: 0, cambios: { cantidad: 9 } }] } };
+      }),
+    });
+    const q = t.plantilla;
+    const chat = rosa.ejecutar({ tipo: 'chat', id: q.id, actualizada: q.actualizada, mensaje: 'que sean 9' });
+    await enConsulta;
+    await t.servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, cantidades: [{ indice: 0, cantidad: 4 }] });
+    soltar();
+    await expect(chat).rejects.toMatchObject({ status: 409 });
+    const guardada = t.almacen.obtener(q.id)!;
+    expect(guardada.solicitudes[0].cantidad).toBe(4);
+    // El mensaje no quedó a medias en el historial.
+    expect(guardada.historial.some((m) => m.texto === 'que sean 9')).toBe(false);
+  });
+
+  it('emiten la misma cotización a la vez: un solo número y un solo PDF', async () => {
+    const t = await montar();
+    const rosa = await segunda(t);
+    const q = t.plantilla;
+    // Medida de hoja confirmada, como la dejaría la vendedora antes de emitir.
+    const lista = (await t.servicio.ejecutar({ tipo: 'editar', id: q.id, actualizada: q.actualizada, items: [{ indice: 0, cambios: { tipoMedida: 'hoja' } }] })).cotizacion;
+    const pdf = await import('../src/servidor/pdf');
+    const generar = vi.spyOn(pdf, 'generarPdf').mockResolvedValue(undefined as never);
+    const antes = t.almacen.correlativos().siguienteCotizacion;
+    const resultados = await Promise.allSettled([
+      t.servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: lista.actualizada }),
+      rosa.ejecutar({ tipo: 'emitir', id: q.id, actualizada: lista.actualizada }),
+    ]);
+    // La segunda devuelve la misma emitida (doble envío) o un 409, nunca otro número.
+    expect(resultados.map(estado).every((s) => s === 200 || s === 409)).toBe(true);
+    const numeros = new Set(resultados.flatMap((r) => (r.status === 'fulfilled' ? [r.value.cotizacion.numero] : [])));
+    expect(numeros.size).toBe(1);
+    expect(t.almacen.correlativos().siguienteCotizacion).toBe(antes + 1);
+    expect(generar.mock.calls.length).toBeLessThanOrEqual(1);
+    generar.mockRestore();
+  });
 });
 
 describe.skipIf(!chromiumPath())('Varios PDF a la vez con Chromium real', () => {
@@ -301,4 +387,26 @@ describe('Pico de memoria de un libro legítimo', () => {
     expect(m.picoMb).toBeLessThan(600);
     console.info(`[carga] COTIZADOR_2026.xlsx: pico RSS ${Math.round(m.picoMb)} MB (+${Math.round(m.subidaMb)} MB), ${Math.round(m.ms)} ms`);
   }, 120_000);
+});
+
+describe('Memoria nativa de las fechas', () => {
+  // Cada `new Intl.DateTimeFormat` con zona horaria reserva memoria de ICU que solo libera el recolector: creado por
+  // llamada (el historial calcula fechas por fila), el RSS de `next start` pasaba de 1 GB con 20.000 cotizaciones.
+  it('fechaLocal e inicioDiaSantiago no crean un Intl.DateTimeFormat por llamada', async () => {
+    const { fechaLocal, inicioDiaSantiago } = await import('../src/negocio/vigencia');
+    const espia = vi.spyOn(Intl, 'DateTimeFormat');
+    try {
+      for (let i = 0; i < 50; i++) {
+        fechaLocal(`2026-09-${String(1 + (i % 28)).padStart(2, '0')}T15:00:00.000Z`);
+        inicioDiaSantiago('2026-09-10');
+      }
+      expect(espia).not.toHaveBeenCalled();
+      // Siguen dando lo mismo: medianoche de Santiago en invierno (UTC−4) y en verano (UTC−3).
+      expect(fechaLocal('2026-09-10T02:30:00.000Z')).toBe('2026-09-09');
+      expect(inicioDiaSantiago('2026-07-01')).toBe('2026-07-01T04:00:00.000Z');
+      expect(inicioDiaSantiago('2026-12-01')).toBe('2026-12-01T03:00:00.000Z');
+    } finally {
+      espia.mockRestore();
+    }
+  });
 });

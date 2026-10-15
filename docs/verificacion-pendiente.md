@@ -209,24 +209,33 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 - **Importar:** la casilla de forzar (reducción bajo el 90 %) y un archivo que no es .xlsx.
 - **Migración desde JSON:** `guardarCatalogo` reescribe una fecha sin milisegundos, lo que haría fallar la verificación de `migrar:sqlite` (por lectura).
 
-**Carga**
+**Carga** (números en [`carga-2026-10-15.md`](carga-2026-10-15.md))
 
 - **Pruebas de carga:**
-  - script de carga mixta con 2 a 4 personas;
-  - carga HTTP con `ab` contra `next start`;
-  - resistencia de 2 a 8 h.
+  - ~~script de carga mixta con 2 a 4 personas~~ (`npm run carga -- --personas 4`);
+  - ~~carga HTTP con `ab` contra `next start`~~ (`npm run carga:http`, 20.000 cotizaciones: sin 5xx);
+  - resistencia de 2 a 8 h: corrida **acortada** a 18 min (antes del arreglo de memoria) y 15 min (después), sin
+    errores ni degradación; la de varias horas sigue pendiente (`npm run carga:http -- --sin-ab --minutos 240`).
+  - Corregido: `fechaLocal` e `inicioDiaSantiago` creaban un `Intl.DateTimeFormat` por llamada; con 20.000
+    cotizaciones el RSS de `next start` llegaba a 1,8–2,1 GB bajo `ab` (memoria de ICU que solo libera el
+    recolector). Ahora ~0,8 GB y estable.
 - **Concurrencia:**
-  - respaldo en caliente mientras se escribe;
-  - pico de memoria con un libro legítimo bajo el tope;
-  - varios PDF a la vez con uno vencido;
-  - dos usuarias en la misma cotización.
-- **Volumen:** 20.000 cotizaciones.
+  - ~~respaldo en caliente mientras se escribe~~;
+  - ~~pico de memoria con un libro legítimo bajo el tope~~;
+  - ~~varios PDF a la vez con uno vencido~~;
+  - ~~dos usuarias en la misma cotización~~ (`tests/carga-concurrencia.test.ts`: guardar a la vez, chat mientras la
+    otra guarda, emitir a la vez).
+- ~~**Volumen:** 20.000 cotizaciones~~ (listado, búsqueda, historial por HTTP y tamaño de la base).
 
 **Entrega**
 
 - **ZIP:** construir solo con lo que lleva el ZIP, `npm prune` y `next start`, y revisar su contenido real con `npm run deploy:zip -- --sin-ia`.
-- **Chromium:** consultar qué versión trae bookworm.
-- **Feriados:** probarlos con red real.
+- ~~**Chromium:** consultar qué versión trae bookworm~~ (15 de octubre): `bookworm-security` trae
+  155.0.8059.39-1~deb12u1 (igual que trixie-security y sid); Playwright 1.63 se prueba con Chromium 153.0.8010.12 y
+  el Chrome de esta Mac es 155.0.8059.41. Se sigue generando el PDF con dos versiones por delante de Playwright.
+- ~~**Feriados:** probarlos con red real~~ (`npm run feriados` en una base temporal): 2026 y 2027 sincronizados desde
+  api.boostr.cl; 2026 coincide con las reglas, 2027 suma el 17 de septiembre («Feriado Adicional Fiestas Patrias»)
+  que las reglas no calculan.
 
 **Evaluación de la IA, sin gastar**
 
@@ -234,8 +243,12 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 - **Herramientas:**
   - ~~guardar la salida de `evaluar:ia` en archivos~~ (`4ae617d`);
   - ~~esquema de casos con avisos y pendientes~~ (`4ae617d`);
-  - simular una «IA perfecta»;
-  - escenarios nuevos en el generador de paridad.
+  - ~~simular una «IA perfecta»~~ (`npm run evaluar:ia -- --ia-perfecta`, `src/asistente/perfecto.ts`,
+    `tests/ia-perfecta.test.ts`): 69/69 casos perfectos, 100 % por campo y 0 falsas alarmas en «avisar» y en
+    «corregir»; una IA que inventa una cantidad se ve en el puntaje y su error no es silencioso;
+  - ~~escenarios nuevos en el generador de paridad~~ (`--nuevos`: medidas pegadas, listas copiadas de un correo,
+    cambiar cantidad o madera, quitar o agregar un ítem, cliente después). Fuera de la bolsa predeterminada: la
+    semilla 3 genera los mismos 60 pedidos que antes. Sin correr con un modelo (cuesta).
 - ~~**Deploy:** umbrales de errores silenciosos~~ (`4ae617d`: `--max-silenciosos 0 --max-falsas 0.05` y advertencia con `--sin-ia`); umbrales de errores silenciosos y falsas alarmas; hoy `--min-perfectos 0.95` deja pasar 2 de 56 casos imperfectos y `--sin-ia` permite saltarse la evaluación.
 
 ## 7. Requiere gasto o instalar algo (permiso)

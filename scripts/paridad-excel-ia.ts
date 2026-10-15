@@ -5,7 +5,8 @@
 // escenarios variados: pedidos normales, marcos de todas las maderas, puertas «con su marco», medidas entre
 // escalones, milímetros, alias y errores de tipeo, alto antes que ancho, ruido, y pedidos vagos (sin madera,
 // sin alto, sin cantidad, fuera de rango, nombres dudosos) que deben quedar pendientes, a veces completados
-// en un segundo mensaje. Cada mensaje pasa por el mismo Servicio que la aplicación (IA de CommandCode con el
+// en un segundo mensaje. Con --nuevos se suman medidas pegadas, listas copiadas de un correo y correcciones en
+// un segundo mensaje (cambiar cantidad o madera, quitar o agregar un ítem, datos del cliente después). Cada mensaje pasa por el mismo Servicio que la aplicación (IA de CommandCode con el
 // modelo configurado, anclaje, catálogo vivo de la base y reglas de Ajustes), en una base temporal. Excel
 // recalcula la hoja «Cotización» con los productos que sí deben cotizarse y, en la columna %, el margen de
 // categoría que fija Ajustes (lo que escribiría el vendedor).
@@ -15,7 +16,7 @@
 //
 //   npm run paridad:excel-ia -- [--casos 200] [--semilla 1] [--paralelo 4] [--escenario marco,vago_sin_madera]
 //                               [--modelo id] [--anclaje corregir|avisar] [--ids 3,7] [--planilla ruta.xlsx]
-//                               [--solo-mensajes]
+//                               [--solo-mensajes] [--nuevos]
 //
 // Solo macOS con Excel. Llama al proveedor de IA (costo pequeño por mensaje). No crea cotizaciones en la base real.
 import { createHash, randomUUID } from 'node:crypto';
@@ -51,6 +52,8 @@ const { values } = parseArgs({
     ids: { type: 'string' },
     planilla: { type: 'string' },
     'solo-mensajes': { type: 'boolean', default: false },
+    /** Suma a la bolsa los escenarios nuevos (PESOS_NUEVOS); sin esto, cada semilla da los mismos pedidos que antes. */
+    nuevos: { type: 'boolean', default: false },
     /** Solo recalcula y guarda en caché lo que da Excel para estos pedidos (sin IA). */
     'solo-excel': { type: 'boolean', default: false },
   },
@@ -352,6 +355,72 @@ const ESCENARIOS: Record<string, () => Escenario> = {
     const items = [puertaNormal(), accesorioNormal('MARCO'), ESCENARIOS[elegir(vagos)]().items[0]];
     return juntar(items.sort(() => azar() - 0.5));
   },
+  // ---- Escenarios nuevos (PESOS_NUEVOS): fuera de la bolsa predeterminada para no cambiar las semillas ya corridas.
+  // Medidas pegadas a la unidad, como se escriben en el teléfono («80x210cm», «0.82x2.10mt»).
+  medida_pegada: () => {
+    const p = elegir(puertas),
+      q = cantidadAzar(),
+      ancho = anchoDentro(p);
+    const medida = elegir([
+      `${coma(ancho * 100)}x${coma(p.largo * 100)}${elegir(['cm', ' cm', ''])}`,
+      `${String(ancho)}x${String(p.largo)}${elegir(['mt', ' mts', 'm'])}`,
+    ]);
+    return solo(cotiza(p, q, `${cantidadTexto(q)} ${modeloTexto(p)} ${maderaTexto(p)} ${medida}`));
+  },
+  // Lista de un pedido real copiado de un correo: una línea por puerta, «und», metros con punto y «(hoja)».
+  lista_unidades: () => {
+    const items = Array.from({ length: entero(2, 4) }, () => {
+      const p = elegir(puertas),
+        q = entero(1, 4);
+      const und = elegir(['und', 'unid', q === 1 ? 'unidad' : 'unidades']);
+      return cotiza(p, q, `${q} ${und} ${elegir(['de ', ''])}${modeloTexto(p)} en ${maderaTexto(p)} de ${String(anchoDentro(p))}x${String(p.largo)} mt (hoja)`);
+    });
+    return { mensajes: [`${elegir(['COTIZAR', 'Cotizar', 'Cotizar a Juan Soto'])}\n${items.map((i) => i.frase).join('\n')}`], items };
+  },
+  // Correcciones en un segundo mensaje: la cotización final es la del cambio.
+  cambia_cantidad: () => {
+    const p = elegir(puertas),
+      q = cantidadAzar();
+    let nueva = entero(1, 20);
+    if (nueva === q) nueva = q + 1;
+    const frase = frasePuerta(p, q);
+    return {
+      mensajes: [frase, elegir([`mejor que sean ${nueva}`, `cambia la cantidad a ${nueva}`, `que sean ${nueva} mejor`])],
+      items: [cotiza(p, nueva, frase)],
+    };
+  },
+  cambia_madera: () => {
+    for (;;) {
+      const a = elegir(puertas);
+      const otras = puertas.filter((x) => x.modelo === a.modelo && x.medida === a.medida && x.largo === a.largo && letra(x) !== letra(a));
+      if (!otras.length) continue;
+      const b = elegir(otras),
+        q = cantidadAzar();
+      const frase = frasePuerta(a, q);
+      const madera = maderaTexto(b);
+      return {
+        mensajes: [frase, elegir([`cámbiala a ${madera}`, `mejor en ${madera}`, `en ${madera} mejor`])],
+        items: [cotiza(b, q, frase)],
+      };
+    }
+  },
+  quita_item: () => {
+    const puerta = puertaNormal(),
+      marco = accesorioNormal('MARCO');
+    const escenario = juntar([puerta, marco]);
+    escenario.mensajes.push(marco.tipo === 'cotiza' && marco.cantidad === 1 ? elegir(['quita el marco', 'saca el marco']) : elegir(['saca los marcos', 'quita los marcos', 'sin los marcos']));
+    return { mensajes: escenario.mensajes, items: [puerta] };
+  },
+  agrega_item: () => {
+    const puerta = puertaNormal(),
+      marco = accesorioNormal('MARCO');
+    return { mensajes: [puerta.frase, `${elegir(['agrega', 'súmale', 'y también'])} ${marco.frase}`], items: [puerta, marco] };
+  },
+  cliente_despues: () => {
+    const items = Array.from({ length: entero(1, 2) }, puertaNormal);
+    const cliente = elegir(['es para Pedro Soto de Osorno, proyecto Casa Lago', 'a nombre de María José Pérez, Temuco', 'cliente Constructora Los Ríos, rut 76.123.456-7']);
+    return { mensajes: [juntar(items).mensajes[0], cliente], items };
+  },
 };
 const PESOS: Record<string, number> = {
   normal: 4, marco: 6, marcos_varios: 3, puerta_con_marco: 3, entre_escalones: 2, milimetros: 1, vano_hoja: 1,
@@ -359,9 +428,17 @@ const PESOS: Record<string, number> = {
   vago_sin_modelo: 1, vago_accesorio_sin_largo: 1, vago_madera_desconocida: 1, vago_fuera_de_rango: 1,
   vago_nombre_dudoso: 1, vago_lo_de_siempre: 1, completa_madera: 1, completa_alto: 1, completa_cantidad: 1, mixto: 2,
 };
+/**
+ * Escenarios agregados después de las corridas pagadas: entran a la bolsa solo con --nuevos o nombrados en
+ * --escenario, para que una semilla ya corrida (p. ej. la 3) siga generando los mismos pedidos.
+ */
+const PESOS_NUEVOS: Record<string, number> = {
+  medida_pegada: 2, lista_unidades: 2, cambia_cantidad: 1, cambia_madera: 1, quita_item: 1, agrega_item: 1, cliente_despues: 1,
+};
 const filtro = values.escenario?.split(',').map((s) => s.trim());
 for (const e of filtro ?? []) if (!ESCENARIOS[e]) throw new Error(`Escenario desconocido: ${e}. Opciones: ${Object.keys(ESCENARIOS).join(', ')}`);
-const bolsa = Object.entries(PESOS).flatMap(([e, n]) => (!filtro || filtro.includes(e) ? Array(n).fill(e) : []));
+const pesos = filtro || values.nuevos ? { ...PESOS, ...PESOS_NUEVOS } : PESOS;
+const bolsa = Object.entries(pesos).flatMap(([e, n]) => (!filtro || filtro.includes(e) ? Array(n).fill(e) : []));
 interface Caso extends Escenario {
   id: number;
   escenario: string;

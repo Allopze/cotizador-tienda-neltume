@@ -22,6 +22,7 @@
     "evaluar:regresion": "tsx --env-file-if-exists=.env.local scripts/evaluar-ia.ts --min 0.95 --min-perfectos 0.95 --max-silenciosos 0 --max-falsas 0.05 --repeticiones 3",
     "paridad:excel": "tsx scripts/paridad-excel.ts",
     "carga": "tsx scripts/carga.ts",
+    "carga:http": "tsx scripts/carga-http.ts",
     "paridad:excel-ia": "tsx --env-file-if-exists=.env.local scripts/paridad-excel-ia.ts",
     "test": "vitest run && npm run test:e2e",
     "test:unit": "vitest run",
