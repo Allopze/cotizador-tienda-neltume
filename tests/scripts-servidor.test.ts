@@ -144,6 +144,20 @@ describe('docker/iniciar.sh', () => {
     expect(r.stderr).toMatch(/NELTUME_IP_HEADER debe ser .*\(ahora: 'X-Client-IP'\)/);
   });
 
+  it('deja datos y respaldos en 0700 aunque el volumen venga de una imagen anterior (0755)', async () => {
+    const base = await mkdtemp(join(tmpdir(), 'cotizador-volumenes-'));
+    try {
+      const datos = join(base, 'data');
+      const respaldos = join(base, 'respaldos');
+      for (const d of [datos, respaldos]) mkdirSync(d, { mode: 0o755 });
+      const r = await iniciar({ ...valido, NELTUME_DATA_DIR: datos, NELTUME_RESPALDO_DIR: respaldos });
+      expect(r.status, r.stderr).toBe(0);
+      for (const d of [datos, respaldos]) expect(statSync(d).mode & 0o777).toBe(0o700);
+    } finally {
+      await rm(base, { recursive: true, force: true });
+    }
+  });
+
   it('otros comandos (restaurar, usuarios) se ejecutan sin validar ni migrar', async () => {
     const r = await iniciar({}, ['npm', 'run', 'restaurar', '--', RESPALDO]);
     expect(r.status).toBe(0);
@@ -269,7 +283,8 @@ describe('scripts/actualizar.sh', () => {
     writeFileSync(pagina, '<html>Not Found</html>');
     const html = actualizar(['https://entregas.neltume.cl/entrega.zip'], { FALSO_CURL_ARCHIVO: pagina });
     expect(html.status).toBe(1);
-    expect(html.stderr).toMatch(/no es un ZIP válido/);
+    // El mensaje nombra la URL indicada, no la copia temporal de la descarga.
+    expect(html.stderr).toContain('https://entregas.neltume.cl/entrega.zip no es un ZIP válido');
 
     // Un archivo local que no es ZIP tampoco pasa.
     expect(actualizar([pagina]).stderr).toMatch(/no es un ZIP válido/);
@@ -486,6 +501,12 @@ describe('compose.yaml y .dockerignore', () => {
     expect(tunel).toMatch(/image: cloudflare\/cloudflared:\d{4}\.\d{1,2}\.\d+\n/);
     expect(tunel).not.toMatch(/cloudflared:latest/);
     expect(tunel).toContain('TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}');
+  });
+
+  it('la imagen crea datos y respaldos en 0700 a nombre de node: un volumen nuevo copia esos permisos', () => {
+    expect(readFileSync(join(raiz, 'Dockerfile'), 'utf8')).toMatch(
+      /^RUN install -d -m 700 -o node -g node \/app\/data \/app\/respaldos$/m,
+    );
   });
 
   it('.dockerignore excluye el build de las pruebas E2E', () => {

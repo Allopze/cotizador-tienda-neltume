@@ -240,27 +240,49 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 
 ## 7. Requiere gasto o instalar algo (permiso)
 
-- **IA con el modelo real**, unos US$3 en total:
-  - `npm run evaluar:regresion` (~US$0,30–0,40), la evaluación de cierre de la fase 2;
-  - paridad de DeepSeek en modo «avisar» (~US$0,11 con 60 casos, ~US$1,8 con cuatro semillas);
-  - los casos nuevos;
-  - variabilidad del caso 134;
-  - Qwen como respaldo;
-  - provocar la caída al respaldo;
-  - alta de producto y «Probar modelo»;
-  - el chat en el teléfono;
-  - grabar las respuestas para repetirlas sin costo (~US$0,45).
-- **Docker o Colima**, gratis pero hay que instalarlo:
-  - construir la imagen en arm64 y amd64;
-  - `up --wait` con el healthcheck;
-  - PDF con el Chromium de Debian;
-  - restauración en volúmenes;
-  - ensayar `deploy.mjs` y `actualizar.sh --volver` en una VM;
-  - límites de CPU y RAM;
-  - apagado brusco y lock huérfano;
-  - la receta de `docker compose cp`.
-- **Android Studio**, para el emulador.
-- **Credenciales de Starken QA.**
+Corrido el 14 de octubre (fase 7). Gasto total de IA ≈ US$0,63.
+
+- **IA con el modelo real:**
+  - ~~`npm run evaluar:regresion` con DeepSeek V4.1 Flash (≈US$0,48, 69 casos × 3)~~: precisión por campo 100 %,
+    69/69 casos perfectos, 0 errores silenciosos. Las 3 «falsas alarmas» del informe eran el aviso que el caso
+    `i7-precio-total` pide: el informe ya no cuenta como falsa alarma un aviso declarado en `esperado.avisos`
+    (corregido, con prueba). Falsas alarmas reales: 0/207.
+  - ~~Paridad de DeepSeek en «avisar», 60 casos de la semilla 3 (≈US$0,12)~~: 60/60 correctas, 0 graves, falsas
+    alarmas 2/60 (3,3 %, bajo el tope de 5 %). Las dos se corrigieron (ver «Anclaje» abajo).
+  - ~~Qwen 3.7 Flash como respaldo, en «avisar» (≈US$0,03)~~: 99,7 % por campo, 67/69 perfectos. Un error
+    silencioso (`i7-precio-total`: tomó el total como unitario sin aviso) y falsas alarmas de los mismos patrones
+    que DeepSeek; corregidos (ver «Anclaje»).
+  - **Anclaje corregido tras las corridas:** (1) en «avisar», «anoté la cantidad 1» ya no aparece por una cifra que el anclaje quitó y
+    dejó pendiente: cada ítem y campo se avisa una vez, y un valor inventado que sí queda se sigue avisando;
+    (2) una frase de la IA armada con trozos del mensaje en orden («una en lenga, ambas de 74x220») se ubica por
+    partes, y «dame 2 LOS LAGOS, una en lenga y otra en mara» ya no da «No registré»; (3) «$400.000 en total» se
+    detecta en el texto aunque la IA lo deje como unitario (error silencioso de Qwen). Pruebas en
+    `tests/chat-falsas-alarmas.test.ts`, `cobertura.test.ts` y `frases.test.ts`. Queda a decidir si el aviso «propuso
+    la cantidad 1… quedó pendiente» se oculta cuando la misma cantidad ya es una pregunta pendiente.
+  - Pendiente, lo hace el usuario desde la aplicación (un script propio que lee la clave quedó bloqueado por
+    regla): «Probar modelo» en Ajustes, provocar la caída al respaldo con un nombre de modelo inexistente, y alta de
+    producto seguida de un pedido en el chat.
+  - Sin correr (opcional, ~US$2,3, requiere confirmar): semillas completas, variabilidad del caso 134 y grabar
+    las respuestas para repetirlas sin costo; el chat en el teléfono va con la sección 8.
+- ~~**Docker o Colima**~~ (Colima arm64, Docker 29, Compose 5.6; copia aislada `neltume-ensayo`, ya borrada):
+  - ~~imagen arm64 (57 s, 562 MB) y amd64 con Rosetta (100 s, 561 MB)~~; SQLite y `print-to-pdf` en amd64;
+  - ~~`up --wait` sano en 6 s~~, primer arranque por la receta del LEEME, `/api/salud` completo;
+  - ~~PDF con el Chromium 155 de Debian~~: tildes, ñ, «×», totales y fuentes Liberation incrustadas;
+  - ~~respaldo, `respaldo-diario.sh` con `--link-dest` y restauración en volúmenes~~, también la receta del otro
+    disco con `--user root`;
+  - ~~`actualizar.sh` y `--volver`~~ (también con el respaldo borrado del volumen, desde `.version-anterior/`),
+    ~~el script remoto de `deploy.mjs`~~ en un «servidor» Linux simulado, lock compartido y ~~URL `https://`~~;
+  - ~~límites~~: 5 PDF + 3 xlsx grandes a la vez, pico 1027 MiB de 1536, sin OOM;
+  - ~~apagado brusco (`kill -9` con 6 emisiones)~~: base íntegra, números saltados (documentado);
+    ~~lock huérfano~~: la primera acción espera hasta ~30 s;
+  - ~~receta de importación~~ tal como está escrita.
+  - Corregido: `/app/data` y `/app/respaldos` quedaban en 0755 (ahora 0700 en la imagen y en `iniciar.sh`), el error
+    de `actualizar.sh` con URL nombraba la copia temporal, y el aviso de npm ensuciaba `docker compose logs`.
+  - Para vigilar: Chromium 155 de Debian frente al 153 de Playwright; Next no cierra ordenado con SIGTERM.
+  - No verificable aquí: la falla de permisos sin root (virtiofs de Colima la oculta), el proxy real y un deploy
+    por SSH (sección 8).
+- **Android Studio**, para el emulador: sin instalar (~10 GB, requiere confirmar).
+- **Credenciales de Starken QA:** no disponibles.
 - **Modelo guardado en Ajustes:** confirmarlo en la base local exige leer la tabla de ajustes.
 
 ## 8. Requiere el servidor, teléfonos o personas

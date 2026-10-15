@@ -141,6 +141,8 @@ command -v unzip >/dev/null 2>&1 || fallar 'falta el comando unzip en el servido
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
+# Lo que indicó la persona (archivo o URL), para los mensajes: tras descargar, $zip es la copia temporal.
+entrega="$zip"
 case "$zip" in
   https://*)
     command -v curl >/dev/null 2>&1 || fallar 'falta el comando curl en el servidor para descargar la entrega.'
@@ -153,8 +155,8 @@ case "$zip" in
   *) [ -f "$zip" ] || fallar "no existe el ZIP $zip." ;;
 esac
 # Un ZIP íntegro: una descarga cortada, una página de error HTML o un archivo cualquiera se rechazan aquí.
-unzip -tq "$zip" >/dev/null 2>&1 || fallar "$zip no es un ZIP válido (¿descarga incompleta?); no se cambió nada."
-unzip -q "$zip" -d "$tmp/codigo" || fallar "no se pudo descomprimir $zip."
+unzip -tq "$zip" >/dev/null 2>&1 || fallar "$entrega no es un ZIP válido (¿descarga incompleta?); no se cambió nada."
+unzip -q "$zip" -d "$tmp/codigo" || fallar "no se pudo descomprimir $entrega."
 for archivo in compose.yaml Dockerfile package.json docker/iniciar.sh; do
   [ -f "$tmp/codigo/$archivo" ] || fallar "el ZIP no parece una entrega del cotizador (falta $archivo)."
 done

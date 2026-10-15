@@ -24,6 +24,7 @@ import {
 import {
   MONTO_BAJO,
   montoEscrito,
+  montoTotal,
   montosDelTexto,
   porcentajeEscrito,
   textosSinPorcentajes,
@@ -216,6 +217,19 @@ function editadoEnElMensaje(aviso: string, items: SolicitudItem[], previos: Soli
   return partes.length > 1 && fraseDelMensaje(partes.at(-1)!, mensaje);
 }
 
+/**
+ * La lectura por frase sin los campos que el anclaje de cifras y nombres dejó vacíos: ya tienen su aviso («quedó
+ * pendiente…») y su pregunta. Así cada campo de un ítem se avisa una sola vez.
+ */
+function sinLoDejado(ia: SolicitudItem[], porFrase: SolicitudItem[], anclados: SolicitudItem[]) {
+  return porFrase.map((leido, i) => {
+    const dejados = (['modelo', 'madera', 'cantidad', 'ancho', 'alto'] as const).filter(
+      (c) => anclados[i]?.[c] == null && ia[i]?.[c] != null,
+    );
+    return dejados.length ? { ...leido, ...Object.fromEntries(dejados.map((c) => [c, null])) } : leido;
+  });
+}
+
 /** Solo un borrador cambia de versión con el historial: así no se invalidan selecciones de otras personas. */
 function registrar(q: Cotizacion, usuario: string, asistente: string) {
   q.historial.push({ rol: 'usuario', texto: usuario }, { rol: 'asistente', texto: asistente });
@@ -327,6 +341,11 @@ function preciosEscritos(ctx: ContextoChat, items: SolicitudItem[], mensaje: str
           ? `No apliqué el precio del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «a $450.000 + IVA».`
           : `No apliqué el precio del ${etiqueta}: no aparece escrito en su línea del pedido.`,
       );
+      return item;
+    }
+    // Un total de varias unidades nunca se toma como el precio de una, lo haya dejado vacío la IA o no.
+    if ((item.cantidad ?? 0) > 1 && montoTotal(leido.valor, lineas.length ? lineas : [mensaje])) {
+      avisos.push(`Escribiste un precio total para el ítem ${i + 1}; indica el valor por unidad.`);
       return item;
     }
     const neto = Math.round(precio.iva === 'incluido' ? leido.valor / (1 + reglas.iva) : leido.valor);
@@ -821,6 +840,11 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       const leidos = leidoPorFrase.avisos.filter(
         (a) => !editadoEnElMensaje(a, propuesta.items, q.solicitudes, accion.mensaje),
       );
+      const anclado = anclarCifras(corrige ? leidoPorFrase.items : propuesta.items, previos, textosIA, familia);
+      const nombres = anclarNombres(anclado.items, previos, textosIA, {
+        modelo: aliasModelosCatalogo(ctx.catalogo),
+        madera: aliasMaderasCatalogo(ctx.catalogo),
+      }, resolver);
       const porFrase = corrige
         ? {
             ...leidoPorFrase,
@@ -831,15 +855,15 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
             avisos: [
               // Sin corregir, la frase que no se ubicó se avisa igual: la lectura de la IA quedó sin revisar.
               ...marcar('campo', leidos.filter((a) => a.startsWith('No pude verificar'))),
-              ...marcar('campo', avisosDeCampos(propuesta.items, leidoPorFrase.items, familia)),
+              // Contra lo que queda en la cotización: una cifra o un nombre que el anclaje ya dejó pendiente tiene
+              // su propio aviso; no se avisa además como «anoté…» ni como «tu mensaje parece decir…».
+              ...marcar(
+                'campo',
+                avisosDeCampos(nombres.items, sinLoDejado(propuesta.items, leidoPorFrase.items, nombres.items), familia),
+              ),
               ...marcar('palabra', avisosDePalabras(propuesta.items, accion.mensaje, resolver)),
             ],
           };
-      const anclado = anclarCifras(porFrase.items, previos, textosIA, familia);
-      const nombres = anclarNombres(anclado.items, previos, textosIA, {
-        modelo: aliasModelosCatalogo(ctx.catalogo),
-        madera: aliasMaderasCatalogo(ctx.catalogo),
-      }, resolver);
       propuesta = {
         ...propuesta,
         items: nombres.items,

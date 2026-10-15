@@ -18,7 +18,8 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 \
     CHROMIUM_PATH=/usr/bin/chromium NELTUME_DATA_DIR=/app/data \
-    NELTUME_DB_PATH=/app/data/cotizador.sqlite NELTUME_RESPALDO_DIR=/app/respaldos
+    NELTUME_DB_PATH=/app/data/cotizador.sqlite NELTUME_RESPALDO_DIR=/app/respaldos \
+    NPM_CONFIG_UPDATE_NOTIFIER=false
 RUN apt-get update && apt-get install -y --no-install-recommends \
     chromium fonts-liberation fonts-dejavu-core ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -30,7 +31,8 @@ COPY --from=build --chown=node:node /app/src ./src
 COPY --from=build --chown=node:node /app/scripts ./scripts
 COPY --from=build --chown=node:node /app/package.json /app/package-lock.json /app/next.config.ts /app/tsconfig.json ./
 COPY --chmod=755 docker/iniciar.sh /usr/local/bin/neltume-iniciar
-RUN mkdir -p /app/data /app/respaldos && chown node:node /app/data /app/respaldos
+# 0700, como los crea la app: un volumen nuevo copia estos permisos de la imagen (iniciar.sh corrige los existentes).
+RUN install -d -m 700 -o node -g node /app/data /app/respaldos
 USER node
 EXPOSE 3000
 ENTRYPOINT ["neltume-iniciar"]

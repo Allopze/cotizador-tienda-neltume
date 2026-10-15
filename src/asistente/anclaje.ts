@@ -1,4 +1,4 @@
-import { planoFrase, ubicarFrase } from './frases';
+import { planoFrase, ubicarFrase, ubicarPartes } from './frases';
 import { claveEscuadria, metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
 import { familiaItem } from '../negocio/personalizados';
@@ -562,16 +562,22 @@ export function anclarFrases(
 ) {
   const texto = plano(mensaje);
   const antes = anteriores.join(' \n ');
-  const frases = items.map((item) => {
+  // Los trozos del mensaje que forman la frase de cada ítem: uno, o varios si la IA la armó con trozos (ver
+  // `ubicarPartes`); la frase los junta con «;».
+  const partes = items.map((item) => {
     const f = item.fuente ? plano(item.fuente) : '';
-    const tramo = f ? ubicarFrase(texto, f) : null;
-    return tramo ? texto.slice(...tramo) : null;
+    return (f && ubicarPartes(texto, f)?.map((tramo) => texto.slice(...tramo))) || null;
   });
+  const frases = partes.map((p) => p?.join(' ; ') ?? null);
   /** El mensaje sin las frases de los demás ítems (las que no contienen ni están contenidas en la propia). */
   const sinOtras = (i: number) =>
-    frases.reduce<string>((t, f, j) => {
+    partes.reduce<string>((t, otras, j) => {
       const propia = frases[i]!;
-      return j === i || !f || f.includes(propia) || propia.includes(f) ? t : t.split(f).join(' | ');
+      if (j === i || !otras) return t;
+      return otras.reduce(
+        (r, f) => (f.includes(propia) || propia.includes(f) ? r : r.split(f).join(' | ')),
+        t,
+      );
     }, texto);
   const conocida = (campo: 'modelo' | 'madera' | 'cantidad' | 'ancho' | 'alto', valor: string | number) =>
     previos.some((p) =>
@@ -762,8 +768,10 @@ export function anclarFrases(
       if (cantidad != null && !invalida) corregido('la cantidad', String(cantidad), String(dichas[0]));
     } else if (ajena) {
       resultado = { ...resultado, cantidad: null };
+      // Con un solo ítem, o si ninguna otra frase la dice, la cifra no es de otro ítem: no está en el mensaje.
+      const deOtro = frases.some((f, j) => j !== i && !!f && cifrasDelTexto(f).includes(cantidad));
       avisos.push(
-        `El asistente propuso la cantidad ${cantidad} para ${etiquetaItem}, pero esa cifra corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,
+        `El asistente propuso la cantidad ${cantidad} para ${etiquetaItem}, pero esa cifra ${deOtro ? 'corresponde a otro ítem del pedido' : 'no aparece en tu mensaje'}: quedó pendiente para que la confirmes.`,
       );
     }
 

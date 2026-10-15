@@ -28,6 +28,10 @@ if [ "${1:-}" = node ] && [ "${2:-}" = node_modules/next/dist/bin/next ]; then
     *) fallar "NELTUME_IP_HEADER debe ser cf-connecting-ip, x-real-ip, x-forwarded-for o ninguna (ahora: '${NELTUME_IP_HEADER}')." ;;
   esac
 
+  # Datos y respaldos solo para el usuario del cotizador, como los crea la app (0700). Los volúmenes creados con una
+  # imagen anterior quedaron en 0755; sin permiso (otro dueño) se sigue igual.
+  chmod 700 "${NELTUME_DATA_DIR:-/app/data}" "${NELTUME_RESPALDO_DIR:-/app/respaldos}" 2>/dev/null || true
+
   # Crea el esquema en instalaciones nuevas y migra las cuentas al actualizar.
   npm run auth:migrar
   # Un fallo aquí no impide atender: la página de inicio de sesión vuelve a generar el código si falta.

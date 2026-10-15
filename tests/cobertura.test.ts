@@ -214,3 +214,31 @@ describe('pedidos sin registrar', () => {
     expect(pareceUnPedidoAqui('despacho a Riñihue de 3 Molco lenga 80x200')).toBe(true);
   });
 });
+
+describe('reparto «2 Molco, una en lenga y otra en raulí» (caso 50 de la paridad con la IA)', () => {
+  const mensaje = 'dame 2 Molco, una en lenga y otra en raulí, ambas de 74x220';
+  it('la cantidad y el modelo que se reparten no son un pedido sin registrar', () => {
+    for (const frases of [
+      ['una en lenga', 'otra en raulí, ambas de 74x220'],
+      ['una en lenga', 'otra en raulí'],
+      // Frases armadas con trozos del mensaje: cada trozo se ubica.
+      ['una en lenga, ambas de 74x220', 'otra en raulí, ambas de 74x220'],
+      ['2 Molco, una en lenga, ambas de 74x220', 'otra en raulí, ambas de 74x220'],
+      ['dame 2 Molco, una en lenga... ambas de 74x220', 'otra en raulí'],
+      ['una en lenga y otra en raulí, ambas de 74x220', 'una en lenga y otra en raulí, ambas de 74x220'],
+    ])
+      expect(pedidosSinRegistrar(mensaje, frases, [], resolver), frases.join(' / ')).toEqual([]);
+  });
+  it('sin el reparto registrado, el trozo con el modelo sigue sin registrar', () => {
+    // Solo «una en lenga»: falta la otra, y el «2 Molco» no queda explicado.
+    expect(pedidosSinRegistrar(mensaje, ['una en lenga'], [], resolver)).toEqual(['dame 2 Molco']);
+    // Una frase con otro modelo no hereda el anterior.
+    expect(
+      pedidosSinRegistrar('2 Molco lenga 80x200, 3 Toledo raulí 90x210', ['3 Toledo raulí 90x210'], [], resolver),
+    ).toEqual(['2 Molco lenga 80x200']);
+    // Una continuación sin «una… otra…» no basta: «3 de 90x210» no explica la línea anterior.
+    expect(pedidosSinRegistrar('2 Molco lenga 80x200, 3 de 90x210', ['3 de 90x210'], [], resolver)).toEqual([
+      '2 Molco lenga 80x200',
+    ]);
+  });
+});

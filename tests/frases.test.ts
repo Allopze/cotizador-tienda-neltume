@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planoFrase, ubicacionesFrase, ubicarFrase } from '../src/asistente/frases';
+import { planoFrase, ubicacionesFrase, ubicarFrase, ubicarPartes } from '../src/asistente/frases';
 
 describe('planoFrase', () => {
   it('pega la «x» solo entre cifras', () => {
@@ -57,5 +57,24 @@ describe('ubicar una frase', () => {
     const texto = 'cliente Raúl ´ Pérez: 2 Molco lenga 80x200';
     const tramo = ubicarFrase(texto, '2 molco lenga 80x200');
     expect(tramo && texto.slice(...tramo)).toBe('2 Molco lenga 80x200');
+  });
+});
+
+describe('frases armadas con trozos del mensaje', () => {
+  const texto = 'dame 2 los lagos, una en lenga y otra en mara, ambas de 74x220';
+  it('ubica cada trozo, en orden', () => {
+    expect(ubicarPartes(texto, 'una en lenga, ambas de 74x220')?.map((t) => texto.slice(...t))).toEqual([
+      'una en lenga',
+      'ambas de 74x220',
+    ]);
+    expect(ubicarPartes(texto, 'dame 2 los lagos, una en lenga... ambas de 74x220')).toHaveLength(3);
+    // Entera, un solo tramo.
+    expect(ubicarPartes(texto, 'otra en mara, ambas de 74x220')).toHaveLength(1);
+  });
+  it('no la ubica si falta un trozo o van al revés; la coma decimal no corta', () => {
+    expect(ubicarPartes(texto, 'una en raulí, ambas de 74x220')).toBeNull();
+    expect(ubicarPartes(texto, 'ambas de 74x220, una en lenga')).toBeNull();
+    expect(ubicarPartes('2 molco 0,74 x 2,2', '2 molco 0,74 x 2,2')).toHaveLength(1);
+    expect(ubicarPartes('2 molco 0,74 x 2,2 lenga', 'molco 0,74 x 2,3')).toBeNull();
   });
 });

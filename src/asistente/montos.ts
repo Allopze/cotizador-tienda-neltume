@@ -158,6 +158,32 @@ export function montoEscrito(
   return { ok: false, ambiguo: textos.flatMap(montosAmbiguos)[0] ?? null };
 }
 
+/**
+ * Lo que dice que un monto es el total de varias unidades: «en total», «total», «por todo», «por las dos», «las dos»
+ * (no «las dos de 80x200»).
+ */
+const TOTAL =
+  /\b(?:en total|el total|total|por todo|todo por|(?:por )?(?:las|los) (?:dos|tres|cuatro|cinco|seis|\d+)(?! de)|por (?:ambas|ambos|todas|todos))\b/;
+/** Lo que dice que el monto es por unidad: gana a «total» en la misma parte («$200.000 c/u, $400.000 en total»). */
+const POR_UNIDAD = /c\/u|\bcada (?:una|uno)\b|\bpor (?:unidad|puerta|pieza)\b|\bunitario\b|\bc\/?u\b/;
+
+/**
+ * ¿El texto dice que `valor` es un total y no el precio de una unidad («2 molco lenga 80x200 a $400.000 en
+ * total»)? Se lee por partes (cortadas en líneas, «;» y «, »): vale si la parte con el monto dice «total» y no
+ * «c/u», o si la que sigue solo dice «en total». No depende de cómo la IA llenó el precio.
+ */
+export function montoTotal(valor: number, textos: string[]): boolean {
+  return textos.some((texto) => {
+    const partes = sinTildes(texto).split(/\n|;|,(?=\s)/);
+    return partes.some((parte, i) => {
+      if (!montosDelTexto(parte).includes(valor) || POR_UNIDAD.test(parte)) return false;
+      if (TOTAL.test(parte)) return true;
+      const siguiente = partes[i + 1]?.trim() ?? '';
+      return TOTAL.test(siguiente) && !montosDelTexto(siguiente).length;
+    });
+  });
+}
+
 /** «15», «12,5» o «12.5» (sin puntos de miles): un porcentaje tiene a lo más dos decimales. */
 const PORCENTAJE = String.raw`(?<![\d.,$])(\d{1,3}(?:[.,]\d{1,2})?)(?![.,]?\d)`;
 const PORCENTAJES = [

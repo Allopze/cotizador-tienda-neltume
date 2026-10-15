@@ -192,6 +192,11 @@ function coincideAviso(e: z.infer<typeof avisoEsperado>, a: AvisoObtenido) {
   );
 }
 
+/** El caso pide este aviso (`esperado.avisos` sin `ausente`): no es una falsa alarma aunque la corrida sea perfecta. */
+export function avisoPedido(caso: CasoEvaluacion | undefined, a: AvisoObtenido) {
+  return !!caso?.esperado.avisos?.some((e) => !e.ausente && coincideAviso(e, a));
+}
+
 export interface Diferencia {
   item: number | null;
   campo: string;

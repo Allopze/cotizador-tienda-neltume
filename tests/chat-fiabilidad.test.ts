@@ -204,10 +204,11 @@ describe('avisos del anclaje', () => {
       const mensaje = '*2 huilo huilo lenga 83x236*';
       const r = await chat(mensaje, lista(pedido('Huilo Huilo', { madera: 'MARA', fuente: '2 huilo huilo lenga 83x236' })));
       expect(r.avisos).not.toContain('No pude verificar el ítem 1 contra tu mensaje; revísalo.');
+      // «MARA» no está en el mensaje: el anclaje de nombres la deja pendiente y lo avisa una sola vez (no «anoté…»).
       if (modo === 'avisar')
-        expect(r.avisos).toContain(
-          'Revisa el ítem 1 (Huilo Huilo): anoté la madera «MARA», pero tu mensaje parece decir «LENGA».',
-        );
+        expect(r.avisos).toEqual([
+          'El asistente interpretó la madera del ítem 1 como «MARA», pero ese nombre no aparece en tu mensaje: quedó pendiente para que lo indiques.',
+        ]);
       else expect(r.cotizacion.montos.lineas.map((l) => l.producto.codigo)).toEqual(['HUI-L-3-A']);
     });
 

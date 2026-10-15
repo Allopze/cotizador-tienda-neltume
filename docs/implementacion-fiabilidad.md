@@ -142,15 +142,15 @@ Nada de esto se puede dar por hecho desde desarrollo:
 
 - [ ] Instalar el cron de `scripts/respaldo-diario.sh` en producción y revisar durante una semana que haya
       un respaldo por día en el otro disco y que `/api/salud` no avise de un respaldo viejo.
-- [ ] Probar `scripts/actualizar.sh` y `scripts/actualizar.sh --volver` con Docker real, con un ZIP de
-      `npm run deploy:zip`.
-- [ ] Hacer una restauración real dentro de Docker siguiendo `docker/LEEME.md → Restaurar`.
+- [x] Probar `scripts/actualizar.sh` y `scripts/actualizar.sh --volver` con Docker real, con un ZIP de
+      `npm run deploy:zip` (14 de octubre, Colima; ver `verificacion-pendiente.md` §7).
+- [x] Hacer una restauración real dentro de Docker siguiendo `docker/LEEME.md → Restaurar` (14 de octubre, Colima).
 - [ ] Confirmar en el servidor que el healthcheck nuevo de Compose (`/api/salud`, que ahora lanza Chromium) marca el
       contenedor como sano, y que el proxy no lo bloquea y reenvía `NELTUME_IP_HEADER` y `Content-Length`.
 - [ ] Primer `npm run deploy` observado con los commits del 14 de octubre (lo corre el usuario): migración al
       esquema 23, `.version-anterior/` renovado y `cloudflared` con la versión fija.
-- [ ] Ensayar con Docker la receta nueva de restaurar desde el otro disco (`--user root` y `chown`) y
-      `actualizar.sh` con una URL `https://`.
+- [x] Ensayar con Docker la receta nueva de restaurar desde el otro disco (`--user root` y `chown`) y
+      `actualizar.sh` con una URL `https://` (14 de octubre, Colima; la falla sin root no se reproduce en la Mac).
 - [ ] Migrar una copia de la base de producción y ensayar la vuelta atrás.
 - [ ] Observar las líneas `[asistente]` en producción dos semanas y comparar el costo estimado de la IA con el cobro
       real de CommandCode.
@@ -159,9 +159,11 @@ Nada de esto se puede dar por hecho desde desarrollo:
 - [ ] Aceptación con Paula y Paulette: recorrer el guion de cinco minutos del README sin ayuda y revisar
       los textos nuevos (ganancia, sin IVA, «Lo escribiste como…»), la guía y el punto 10 del manual operativo
       (emisión ocupada, anular bloqueado, fechas de pago, avisos de costo y de vano, clientes, papelera).
-- [ ] Evaluación de IA de pago al cierre de la fase 2 (`npm run evaluar:regresion`, ahora con los 13 casos nuevos y
-      los umbrales de silenciosos y falsas alarmas, y `npm run paridad:excel-ia -- --casos 60 --semilla 2`), con
-      presupuesto confirmado antes de correrla.
+- [x] Evaluación de IA de pago al cierre de la fase 2 (14 de octubre, ≈US$0,63): `evaluar:regresion` con DeepSeek
+      100 % por campo, 69/69, 0 silenciosos; paridad en «avisar» 60/60; Qwen como respaldo 67/69. Las falsas
+      alarmas y el error silencioso de Qwen se corrigieron (ver `verificacion-pendiente.md` §7).
+- [ ] «Probar modelo», caída al respaldo con un modelo inexistente y alta de producto con el chat, desde la
+      aplicación (lo hace el usuario).
 - [ ] Decisiones de Neltume todavía abiertas (sección 3 de `revision-2026-10-11.md`):
   - Ganancia de los marcos sólidos en Mara o Raulí: hoy 25 %, como accesorios; Oregón 85 % y Lenga 55 %
     (decisión 1, marcada «por confirmar» en `docs/reglas-negocio.md`).

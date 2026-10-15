@@ -1,4 +1,4 @@
-import { ubicarFrase as ubicar } from './frases';
+import { ubicarPartes } from './frases';
 import { metros } from '../catalogo/resolver';
 import {
   cantidadesDichas,
@@ -93,21 +93,43 @@ export function pedidosSinRegistrar(
   if (texto.length !== original.length) return null;
   const cubierto = new Array<boolean>(texto.length).fill(false);
   const tomados: [number, number][] = [];
-  const cubrir = (frase: string) => {
-    const tramo = frase.trim() ? ubicar(texto, frase, tomados) : null;
-    if (!tramo) return false;
-    cubierto.fill(true, ...tramo);
-    tomados.push(tramo);
+  /** Tramos de las frases de los ítems que no nombran un modelo («una en lenga»): continúan el pedido anterior. */
+  const sinModelo: [number, number][] = [];
+  const cubrir = (frase: string, deItem = false) => {
+    const tramos = frase.trim() ? ubicarPartes(texto, frase, tomados) : null;
+    if (!tramos) return false;
+    for (const tramo of tramos) {
+      cubierto.fill(true, ...tramo);
+      tomados.push(tramo);
+    }
+    if (deItem && !nombresDichos(sinTildes(frase), resolver.modelo, resolver.madera).resueltos.size)
+      sinModelo.push(...tramos);
     return true;
   };
-  const sinUbicar = [...frases].sort((a, b) => b.length - a.length).filter((f) => !cubrir(f));
-  otros.forEach(cubrir);
+  const sinUbicar = [...frases].sort((a, b) => b.length - a.length).filter((f) => !cubrir(f, true));
+  otros.forEach((f) => cubrir(f));
   // Trozos sin cubrir, cortados donde una persona separa productos: líneas, «;», «, », «. » y « y ».
   const trozos: string[] = [];
   let inicio = -1;
   const cerrar = (fin: number) => {
-    if (inicio >= 0) trozos.push(original.slice(inicio, fin));
+    if (inicio >= 0 && !encabezaReparto(fin)) trozos.push(original.slice(inicio, fin));
     inicio = -1;
+  };
+  /**
+   * «dame 2 LOS LAGOS, una en lenga y otra en mara»: la IA registró «una en lenga» y «otra en mara» como ítems sin
+   * nombrar el modelo, que toman del trozo que va justo antes. Ese trozo es la cabeza del reparto (lo mismo que lee
+   * `anclarFrases`), no un pedido sin registrar.
+   */
+  const encabezaReparto = (fin: number) => {
+    const seguidas: string[] = [];
+    for (let i = fin; ; ) {
+      const separador = /^(?:[\s,;:.]|y\s|e\s)+/.exec(texto.slice(i))?.[0].length ?? 0;
+      const tramo = sinModelo.find(([a]) => a === i + separador);
+      if (!tramo) break;
+      seguidas.push(texto.slice(...tramo));
+      i = tramo[1];
+    }
+    return /\bun[oa]\b.*\botr[oa]\b/.test(seguidas.join(' '));
   };
   for (let i = 0; i <= texto.length; i++) {
     const corte =

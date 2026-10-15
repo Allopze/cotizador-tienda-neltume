@@ -52,3 +52,31 @@ export function ubicarFrase(
   const todas = ubicacionesFrase(texto, frase);
   return todas.find(([a, b]) => !tomados.some(([c, d]) => a < d && c < b)) ?? todas[0] ?? null;
 }
+
+/**
+ * Dónde está la frase, también si la IA la armó con trozos del mensaje («una en lenga, ambas de 74x220» de «una en
+ * lenga y otra en mara, ambas de 74x220»): cada trozo (cortado en «,» que no es decimal, «;», «...» o «…») debe
+ * aparecer, en el mismo orden y sin cruzarse. null si no aparece así.
+ */
+export function ubicarPartes(
+  texto: string,
+  frase: string,
+  tomados: [number, number][] = [],
+): [number, number][] | null {
+  const entera = ubicarFrase(texto, frase, tomados);
+  if (entera) return [entera];
+  const partes = frase
+    .split(/(?<!\d),|,(?!\d)|;|…|\.{2,}/)
+    .map((p) => p.trim())
+    .filter((p) => /[a-zñ0-9]/i.test(p));
+  if (partes.length < 2) return null;
+  const tramos: [number, number][] = [];
+  for (const parte of partes) {
+    const desde = tramos.at(-1)?.[1] ?? 0;
+    const siguientes = ubicacionesFrase(texto, parte).filter(([a]) => a >= desde);
+    const libre = siguientes.find(([a, b]) => !tomados.some(([c, d]) => a < d && c < b)) ?? siguientes[0];
+    if (!libre) return null;
+    tramos.push(libre);
+  }
+  return tramos;
+}

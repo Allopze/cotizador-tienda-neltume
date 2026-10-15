@@ -1,4 +1,5 @@
 import {
+  avisoPedido,
   avisosDeRevision,
   resumen,
   type AvisoObtenido,
@@ -32,16 +33,21 @@ export interface MedicionAvisos {
   ejemplos: string[];
 }
 
-/** Avisos de revisión en corridas perfectas (falsas alarmas) y errores sin aviso (silenciosos). */
-export function medirAvisos(corridas: CorridaEvaluada[]): MedicionAvisos {
+/**
+ * Avisos de revisión en corridas perfectas (falsas alarmas) y errores sin aviso (silenciosos). Con `casos`, el aviso
+ * que el caso pide en `esperado.avisos` no cuenta como falsa alarma: avisar era lo correcto.
+ */
+export function medirAvisos(corridas: CorridaEvaluada[], casos: CasoEvaluacion[] = []): MedicionAvisos {
+  const porId = new Map(casos.map((c) => [c.id, c]));
+  const noPedidos = (r: CorridaEvaluada) => avisosDeRevision(r.avisos).filter((a) => !avisoPedido(porId.get(r.id), a));
   const respondidas = corridas.filter((r) => !r.error);
   const perfectas = respondidas.filter((r) => !r.diferencias.length);
-  const falsas = perfectas.filter((r) => avisosDeRevision(r.avisos).length);
+  const falsas = perfectas.filter((r) => noPedidos(r).length);
   const conErrores = respondidas.filter((r) => r.diferencias.length);
   const silenciosas = conErrores.filter((r) => !avisosDeRevision(r.avisos).length);
   const porCategoria: Record<string, number> = {};
   const ejemplos = new Set<string>();
-  for (const a of falsas.flatMap((r) => avisosDeRevision(r.avisos))) {
+  for (const a of falsas.flatMap(noPedidos)) {
     porCategoria[a.categoria] = (porCategoria[a.categoria] ?? 0) + 1;
     ejemplos.add(`[${a.categoria}] ${a.texto}`);
   }
@@ -116,7 +122,7 @@ export function armarInforme(datos: {
       avisos: muestra ? avisosDeRevision(muestra.avisos) : [],
     };
   });
-  const avisos = medirAvisos(corridas);
+  const avisos = medirAvisos(corridas, casos);
   return {
     fecha: datos.fecha.toISOString(),
     modelo: datos.modelo,

@@ -81,6 +81,25 @@ describe('informe de evaluar:ia', () => {
     expect(JSON.parse(JSON.stringify(informe))).toEqual(informe);
   });
 
+  it('el aviso que el caso pide en esperado.avisos no es falsa alarma; uno distinto sí', () => {
+    const totalPedido = casosSchema.parse([
+      {
+        id: 'i7',
+        descripcion: 'Precio en total',
+        mensajes: ['x'],
+        esperado: { items: [], avisos: [{ categoria: 'precio', texto: 'precio total' }] },
+      },
+    ]);
+    const avisoTotal = { categoria: 'otros', texto: 'Escribiste un precio total para el ítem 1; indica el valor por unidad.' };
+    expect(medirAvisos([corrida('i7', { avisos: [avisoTotal] })], totalPedido)).toMatchObject({ perfectas: 1, falsas: 0 });
+    expect(medirAvisos([corrida('i7', { avisos: [avisoTotal, avisoCifras] })], totalPedido)).toMatchObject({
+      falsas: 1,
+      porCategoria: { cifras: 1 },
+    });
+    // Sin los casos se cuenta como antes.
+    expect(medirAvisos([corrida('i7', { avisos: [avisoTotal] })])).toMatchObject({ falsas: 1 });
+  });
+
   it('una corrida sin respuesta de la IA no es silenciosa ni perfecta', () => {
     const caida = corrida('a', { aciertos: 0, diferencias: [diferencia], error: { codigo: 'ia_limite', mensaje: 'Límite.' } });
     expect(medirAvisos([caida])).toMatchObject({ perfectas: 0, conErrores: 0, silenciosas: 0 });
