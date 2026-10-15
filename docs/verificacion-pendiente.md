@@ -198,16 +198,16 @@ Todo cerrado en la fase 5 (documentación, sin commit), salvo el texto de `usuar
 
 **Importación y paridad**
 
-- **`npm run paridad:excel` sin IA:** la última corrida es del 5 de octubre. Hay que respaldar antes `reporte.md` y `diferencias.json`.
-- **Planillas de prueba:** falta un libro sintético de la planilla principal para los bordes (K4, #N/A, fórmulas sin valor guardado).
-- **Huecos de la paridad:**
-  - márgenes por categoría sin IA, otro IVA;
-  - descuentos, que no tienen oráculo en Excel;
-  - paridad contra el catálogo guardado (dos planillas y los productos manuales juntos).
-- **Formatos:** planilla en Strict Open XML; una hoja que figura en las relaciones pero falta en el zip.
-- **Volver a la planilla anterior:** importar dos veces la misma planilla (la «anterior» pasa a ser la misma) y que una importación fallida deje intactas `catalogo_anterior` y `catalogo_ediciones`.
-- **Importar:** la casilla de forzar (reducción bajo el 90 %) y un archivo que no es .xlsx.
-- **Migración desde JSON:** `guardarCatalogo` reescribe una fecha sin milisegundos, lo que haría fallar la verificación de `migrar:sqlite` (por lectura).
+- ~~**`npm run paridad:excel` sin IA:** la última corrida es del 5 de octubre. Hay que respaldar antes `reporte.md` y `diferencias.json`.~~ (15 de octubre, semilla 1: 814 cotizaciones, 8772 líneas, 1 diferencia, `excel_sin_precio` en LLAG-O-2-C, que Excel calcula como #N/A; `diferencias.json` idéntico al del 14 y al del 5 de octubre).
+- ~~**Planillas de prueba:** falta un libro sintético de la planilla principal para los bordes (K4, #N/A, fórmulas sin valor guardado)~~ (`16dc69f`: `planillaPrincipal()` de `tests/fixture-xlsx.ts`, en `tests/importar-principal.test.ts`).
+- ~~**Huecos de la paridad:**~~ (`tests/paridad-calculo.test.ts`)
+  - ~~márgenes por categoría sin IA, otro IVA~~ (IVA de 10 %, 0 % y 19 % contra valores sacados a mano);
+  - ~~descuentos, que no tienen oráculo en Excel~~ (por ítem en % y en monto, monto mayor que el precio, medio peso, general y flete, a mano);
+  - ~~paridad contra el catálogo guardado (dos planillas y los productos manuales juntos)~~ (lo guardado en SQLite y lo recién importado resuelven y cotizan igual).
+- ~~**Formatos:** planilla en Strict Open XML; una hoja que figura en las relaciones pero falta en el zip~~ (`16dc69f` y `8152198`).
+- ~~**Volver a la planilla anterior:** importar dos veces la misma planilla (la «anterior» pasa a ser la misma) y que una importación fallida deje intactas `catalogo_anterior` y `catalogo_ediciones`~~ (`8152198`, `tests/importar-catalogo.test.ts`).
+- ~~**Importar:** la casilla de forzar (reducción bajo el 90 %) y un archivo que no es .xlsx~~ (`8152198`).
+- ~~**Migración desde JSON:** `guardarCatalogo` reescribe una fecha sin milisegundos, lo que haría fallar la verificación de `migrar:sqlite` (por lectura)~~ (`8152198`: era real; la verificación compara con la fecha normalizada, `tests/sqlite.test.ts`).
 
 **Carga**
 
