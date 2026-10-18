@@ -174,7 +174,9 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   expect(cotizacionPdf).toContain('Juan Pérez');
   expect(cotizacionPdf).toContain(DESCRIPCION);
   expect(cotizacionPdf).not.toContain('Huilo Huilo Mara 0,8 a 0,85');
-  expect(cotizacionPdf).toContain('Medida solicitada: 835 × 2360 mm (Vano)');
+  // El panel muestra que es medida de vano (paso 1-2); al cliente se le informa la medida sin nombrar el vano.
+  expect(cotizacionPdf).toContain('Medida solicitada: 835 × 2360 mm');
+  expect(cotizacionPdf).not.toMatch(/vano/i);
   for (const monto of [unitario, especial.lineas[0].total, especial.neto, especial.iva, especial.total])
     expect(cotizacionPdf).toContain(pesos(monto));
   // Ni el precio de fábrica, ni la referencia de catálogo, ni nada de márgenes llegan al cliente.

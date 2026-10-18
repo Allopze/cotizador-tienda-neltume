@@ -214,10 +214,13 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     return `Producto personalizado, fuera de catálogo${referencias.length ? ` · Referencias del cliente: ${referencias.map((r) => r.nombre).join(', ')}` : ''}`;
   };
   const descripcion = (l: Linea) => {
+    // El vano (el hueco del muro) es un dato para fábrica que confundía al cliente: la cotización lo trata como una
+    // medida sin tipo y solo la nota de pedido lo nombra. En el panel se sigue viendo mientras se edita.
+    const tipoMedida = !nota && l.tipoMedida === 'vano' ? null : l.tipoMedida;
     // El nombre ya lleva la medida pedida; solo una descripción escrita a mano necesita repetirla aparte.
-    const tipoMedidaExplicita = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano';
-    const pedida = l.descripcionDocumento || tipoMedidaExplicita ? medidaPedida(l) : null;
-    const tipo = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano' ? `medida de ${l.tipoMedida}` : null;
+    const tipoMedidaExplicita = tipoMedida === 'hoja' || tipoMedida === 'vano';
+    const pedida = l.descripcionDocumento || tipoMedidaExplicita ? medidaPedida({ ...l, tipoMedida }) : null;
+    const tipo = tipoMedidaExplicita ? `medida de ${tipoMedida}` : null;
     const detalles = [
       pedida ? `Medida solicitada: ${pedida}` : tipo && `${tipo[0].toUpperCase()}${tipo.slice(1)}`,
       nota && referenciaFabrica(l),

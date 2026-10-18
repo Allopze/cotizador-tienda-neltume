@@ -134,8 +134,9 @@ describe('Plantillas', () => {
     expect(html).toContain('Revisión de la cotización:</b> N° 323');
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('Emitida por:</b> Paula');
-    // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio.
-    expect(html).toContain('Molco Pino Oregon 0,82 m × 2,00 m<br><small>Medida solicitada: 820 × 2000 mm (Vano)');
+    // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio. El vano no se repite aparte.
+    expect(html).toContain('Molco Pino Oregon 0,82 m × 2,00 m</td>');
+    expect(html).not.toContain('Medida solicitada');
     expect(html).not.toContain('0,80 a 0,85');
     expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
     expect(html).toContain('FLETE');
@@ -305,7 +306,9 @@ describe('Plantillas', () => {
     const html = await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 326, montos, fecha: '2026-09-28T12:00:00.000Z' });
     const texto = textoVisible(html);
     const [sinTipo, , sinMedida] = html.split('<tr><td>').slice(1).map(textoVisible);
-    expect(texto).toContain('Medida solicitada: 835 × 2000 mm (Vano)');
+    // Con descripción escrita, la medida se informa aparte, sin decir que es de vano.
+    expect(texto).toContain('Medida solicitada: 835 × 2000 mm');
+    expect(texto).not.toContain('(Vano)');
     expect(texto).toContain('Puerta con cerradura');
     expect(texto).toContain('Observación: Abre hacia adentro');
     // Sin descripción escrita, el nombre es el producto con la medida pedida, no el rango del catálogo.
@@ -322,6 +325,25 @@ describe('Plantillas', () => {
     // El código solo aparece en su columna, nunca dentro de la descripción.
     expect(veces(texto, 'MOL-O-3-A')).toBe(2);
     expect(veces(texto, 'MOLD-P-2')).toBe(1);
+  });
+
+  it('el vano es un dato para fábrica: la cotización no lo nombra y la nota de pedido sí', async () => {
+    await aislarBaseDatos();
+    const montos = cotizar(
+      [
+        { producto: puerta, cantidad: 1, anchoSolicitado: 0.82, altoSolicitado: 2, tipoMedida: 'vano' },
+        { producto: puerta, cantidad: 1, anchoSolicitado: 0.835, altoSolicitado: 2, tipoMedida: 'vano', descripcionDocumento: 'Puerta con cerradura' },
+      ],
+      undefined,
+    );
+    const fecha = '2026-09-28T12:00:00.000Z';
+    const paraCliente = textoVisible(await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 327, montos, fecha }));
+    expect(paraCliente).not.toMatch(/vano/i);
+    expect(veces(paraCliente, 'Medida solicitada')).toBe(1);
+    expect(paraCliente).toContain('Medida solicitada: 835 × 2000 mm');
+    const paraFabrica = textoVisible(await plantilla(cotizacion(), { tipo: 'nota', numero: 9, montos, fecha }));
+    expect(paraFabrica).toContain('Medida solicitada: 820 × 2000 mm (Vano)');
+    expect(paraFabrica).toContain('Medida solicitada: 835 × 2000 mm (Vano)');
   });
 
   it('la nota para fábrica suma la referencia de catálogo y la medida exacta, nunca el margen', async () => {
