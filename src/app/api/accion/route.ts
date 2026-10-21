@@ -4,6 +4,7 @@ import { Servicio, type DiagnosticoTurno } from '@/servidor/servicio';
 import { Almacen, DIAS_PAPELERA, type FiltrosListado } from '@/servidor/almacen';
 import { csvCotizaciones, MAX_EXPORTACION, partesExportacion } from '@/servidor/exportar';
 import { fechaLocal } from '@/negocio/vigencia';
+import { FABRICAS } from '@/negocio/estado';
 import { LARGO_OBSERVACION_ITEM, MARGEN_MAX, MARGEN_MIN, rangoMedidas } from '@/negocio/limites';
 import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
@@ -299,7 +300,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
   }).strict(),
   z.object({ tipo: z.literal('comentario'), id: z.uuid(), actualizada: version, texto: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ tipo: z.literal('comercial'), id: z.uuid(), actualizada: version, estado: z.enum(['seguimiento', 'rechazada']) }).strict(),
-  z.object({ tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version }).strict(),
+  z.object({ tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version, fabrica: z.enum(FABRICAS) }).strict(),
   z.object({
     tipo: z.literal('operacion'), id: z.uuid(), actualizada: version,
     paso: z.enum(['iniciar_produccion', 'produccion_terminada', 'lista_despacho', 'despachada', 'completada']),

@@ -1,13 +1,13 @@
 import Database from 'better-sqlite3';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA } from '../negocio/estado';
+import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA, FABRICAS } from '../negocio/estado';
 import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 23;
+export const VERSION_ESQUEMA = 24;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -440,6 +440,68 @@ function crearEsquema(db: Database.Database) {
         PRAGMA user_version = 23;
       `);
     }).immediate();
+  if (version < 24) migrarA24(db);
+}
+
+/**
+ * v24: dos fábricas, cada una con su correlativo de notas de pedido. El número de nota pasa a ser único por fábrica
+ * (reconstruye `notas_pedido` para quitar el UNIQUE de la columna). Las notas existentes quedan sin fábrica: no se
+ * sabe a cuál fue cada una, se asigna con `npm run notas`; entre ellas el número sigue siendo único.
+ * `correlativos.siguiente_nota` queda sin uso. Se puede repetir sin efecto.
+ */
+function migrarA24(db: Database.Database) {
+  const fabricas = FABRICAS.map((f) => `'${f}'`).join(', ');
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      const columnas = (db.pragma('table_info(notas_pedido)') as { name: string }[]).map((c) => c.name);
+      if (!columnas.includes('fabrica'))
+        db.exec(`
+        CREATE TABLE notas_pedido_v24 (
+          cotizacion_id TEXT PRIMARY KEY REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          fabrica TEXT CHECK (fabrica IN (${fabricas})),
+          numero INTEGER NOT NULL,
+          pdf TEXT NOT NULL,
+          fecha TEXT NOT NULL,
+          neto INTEGER NOT NULL,
+          iva INTEGER NOT NULL,
+          total INTEGER NOT NULL,
+          despacho_direccion TEXT,
+          despacho_transporte TEXT,
+          anulada INTEGER NOT NULL DEFAULT 0 CHECK (anulada IN (0, 1)),
+          despacho_entrega TEXT,
+          observaciones TEXT,
+          despacho_destino TEXT,
+          despacho_valor INTEGER,
+          UNIQUE (fabrica, numero)
+        );
+        INSERT INTO notas_pedido_v24 (
+          cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte, anulada,
+          despacho_entrega, observaciones, despacho_destino, despacho_valor
+        )
+        SELECT cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte, anulada,
+          despacho_entrega, observaciones, despacho_destino, despacho_valor
+        FROM notas_pedido;
+        DROP TABLE notas_pedido;
+        ALTER TABLE notas_pedido_v24 RENAME TO notas_pedido;
+      `);
+      db.exec(`
+        -- UNIQUE (fabrica, numero) no compara los NULL: las notas sin fábrica siguen sin repetir número entre ellas.
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_nota_sin_fabrica ON notas_pedido(numero) WHERE fabrica IS NULL;
+        CREATE TABLE IF NOT EXISTS correlativos_nota (
+          fabrica TEXT PRIMARY KEY CHECK (fabrica IN (${fabricas})),
+          siguiente INTEGER NOT NULL CHECK (siguiente > 0)
+        );
+        PRAGMA user_version = 24;
+      `);
+      const insertar = db.prepare('INSERT OR IGNORE INTO correlativos_nota (fabrica, siguiente) VALUES (?, ?)');
+      for (const f of FABRICAS) insertar.run(f, CORRELATIVO_NOTA);
+      if ((db.pragma('foreign_key_check') as unknown[]).length)
+        throw new Error('La migración de notas de pedido dejó referencias inválidas.');
+    }).immediate();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
 }
 
 /** Rehace la columna `busqueda` de todas las cotizaciones con `textoBusqueda` (v22: suma el teléfono). */

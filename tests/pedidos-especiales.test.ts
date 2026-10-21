@@ -328,7 +328,7 @@ describe('pedidos especiales en la nota de pedido', () => {
         monto: Math.ceil(q.montos.total * 0.5),
       })
     ).cotizacion;
-    q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).cotizacion;
     // La Molco a costo de fábrica, la especial con costo a ese costo, y la otra fuera (va «Por definir» en el PDF).
     expect(q.nota!.montos.lineas.map((l) => [l.indice, l.precioUnitario, l.total])).toEqual([
       [0, 100000, 200000],

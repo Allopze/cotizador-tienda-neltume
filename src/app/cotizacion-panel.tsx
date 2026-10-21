@@ -1,6 +1,7 @@
 'use client';
 import { Fragment, useEffect, useRef, useState, type RefObject } from 'react';
 import {
+  numeroNota,
   CODIGO_FLETE,
   cantidadFlete,
   descripcionFlete,
@@ -1521,7 +1522,7 @@ export function CotizacionPanel({
               )}
               {actual.nota && (
                 <Documento
-                  nombre={`Nota de pedido N° ${actual.nota.numero}`}
+                  nombre={`Nota de pedido ${numeroNota(actual.nota)}`}
                   archivo={actual.nota.pdf}
                   descargando={descargando}
                   descargar={acciones.descargar}

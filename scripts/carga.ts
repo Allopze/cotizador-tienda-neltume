@@ -109,7 +109,7 @@ async function ronda(persona: number, n: number) {
   if (n % 3 === 2) return; // Algunas quedan solo emitidas.
   if (!(await paso({ tipo: 'aprobar' }))) return;
   if (!(await paso({ tipo: 'pago', monto: anticipoMinimo(q.montos.total) }))) return;
-  if (!(await paso({ tipo: 'generar_nota' }))) return;
+  if (!(await paso({ tipo: 'generar_nota', fabrica: 'panguipulli' }))) return;
   const saldo = q.montos.total - (q.pagos ?? []).reduce((s, p) => s + p.monto, 0);
   if (saldo > 0) await paso({ tipo: 'pago', monto: saldo }, 'pago saldo');
 }
@@ -125,7 +125,7 @@ try {
   const importado = await importarPlanilla(planilla, await leerConfiguracionCatalogo());
   await new Almacen().guardarCatalogo(importado.catalogo, importado.configuracion);
   console.log(`Catálogo: ${importado.catalogo.productos.length} productos (${Math.round(performance.now() - t0)} ms). Base temporal: ${directorio}`);
-  const inicial = new Almacen().correlativos();
+  const inicial = { ...new Almacen().correlativos(), siguienteNota: new Almacen().correlativosNota().panguipulli };
   const inicio = performance.now();
   await Promise.all(
     Array.from({ length: personas }, async (_, persona) => {
@@ -139,7 +139,7 @@ try {
   const { cotizaciones } = await almacen.leer();
   const numeros = cotizaciones.map((q) => q.numero).filter((n): n is number => n !== null).sort((a, b) => a - b);
   const notas = cotizaciones.map((q) => q.nota?.numero).filter((n): n is number => n != null).sort((a, b) => a - b);
-  const final = almacen.correlativos();
+  const final = { ...almacen.correlativos(), siguienteNota: almacen.correlativosNota().panguipulli };
   const esperadosCot = Array.from({ length: final.siguienteCotizacion - inicial.siguienteCotizacion }, (_, i) => inicial.siguienteCotizacion + i);
   const esperadosNota = Array.from({ length: final.siguienteNota - inicial.siguienteNota }, (_, i) => inicial.siguienteNota + i);
   const quemadosCot = esperadosCot.filter((n) => !numeros.includes(n));

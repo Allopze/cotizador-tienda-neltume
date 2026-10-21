@@ -52,6 +52,7 @@ import {
 import type { Cliente, DescuentoItem, Familia, Producto, SolicitudItem } from '../catalogo/tipos';
 import { sanearCliente } from '../negocio/cliente';
 import {
+  numeroNota,
   cantidadFlete,
   descripcionFlete,
   unitarioFlete,
@@ -724,11 +725,11 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       if (!objetivo) return responder(`No existe la cotización N° ${numero}. Genera primero su PDF.`);
       if (objetivo.estado === 'anulada')
         return responder(
-          `La cotización N° ${numero} está anulada${objetivo.nota ? `, junto con su nota de pedido N° ${objetivo.nota.numero},` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+          `La cotización N° ${numero} está anulada${objetivo.nota ? `, junto con su nota de pedido ${numeroNota(objetivo.nota)},` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
         );
       if (objetivo.nota)
         return responder(
-          `La cotización N° ${numero} ya está aprobada con la nota de pedido N° ${objetivo.nota.numero}.`,
+          `La cotización N° ${numero} ya está aprobada con la nota de pedido ${numeroNota(objetivo.nota)}.`,
           { archivo: objetivo.nota.pdf },
         );
       if (objetivo.estado !== 'emitida')

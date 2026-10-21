@@ -300,7 +300,7 @@ describe('Persistencia y flujo del asistente', () => {
       })
     ).cotizacion;
     aprobada = (
-      await reiniciado.ejecutar({ tipo: 'generar_nota', id: aprobada.id, actualizada: aprobada.actualizada })
+      await reiniciado.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: aprobada.id, actualizada: aprobada.actualizada })
     ).cotizacion;
     expect(aprobada.nota?.montos.lineas[0].precioUnitario).toBe(999);
     expect(aprobada.nota?.numero).toBe(1);

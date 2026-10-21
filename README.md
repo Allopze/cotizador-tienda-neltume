@@ -202,6 +202,8 @@ El contrato completo de `/api/accion` y `/api/catalogo` está descrito en los ti
 - `src/servidor/`: flujo, persistencia, plantillas HTML y PDF A4 con Playwright.
 - `src/servidor/autenticacion.ts`: sesiones y verificación de acceso con Better Auth sobre la misma base SQLite.
 - `scripts/usuarios.ts`: alta, desactivación, activación y restablecimiento de cuentas desde terminal.
+- `tests/pantallas.ss.ts` (`npm run ss`): captura cada pantalla y cada estado de una cotización, en escritorio (1920 × 1080) y teléfono (390 × 844), con la base aislada de la E2E; quedan en `capturas/` (`SS_COMPLETA=1` captura la página entera).
+- `scripts/notas.ts` (`npm run notas`): próximo N° de nota de pedido de cada fábrica (Panguipulli y Santiago numeran por separado), fijarlo y asignar fábrica a las notas anteriores a la separación.
 - `src/servidor/primer-arranque.ts` y `src/app/api/primer-arranque/`: código de un solo uso y creación de la primera cuenta desde la página de inicio de sesión.
 - `src/servidor/auditoria-cuentas.ts`: registro de cambios de cuentas (tabla `auditoria_cuentas`).
 - `src/negocio/limites.ts`: límites comerciales en un solo lugar (rango de medidas por familia, margen, ajuste, descuento máximo y anticipo).

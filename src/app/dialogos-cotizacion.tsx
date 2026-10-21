@@ -4,6 +4,7 @@ import { Dialogo } from './dialogo';
 import type { Despacho } from './contrato';
 import { fechaLarga, numeroCotizacion } from './formato';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
+import { FABRICAS, nombreFabrica, productosFabrica, type Fabrica } from '@/negocio/estado';
 import { pesos } from '@/negocio/precios';
 import { pedirJSON } from './solicitud';
 
@@ -578,6 +579,100 @@ function FormRetroceso({
         </button>
         <button type="submit" className="button primary">
           Volver al paso anterior
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Nota de pedido: se elige a qué fábrica va; cada una numera sus notas por separado. */
+export function useNotaPedido() {
+  const [pendiente, setPendiente] = useState<{ resolver: (r: { fabrica: Fabrica } | null) => void } | null>(null);
+  const pedir = useCallback(
+    () => new Promise<{ fabrica: Fabrica } | null>((resolver) => setPendiente({ resolver })),
+    [],
+  );
+  const primera = useRef<HTMLInputElement>(null);
+  const cerrar = (r: { fabrica: Fabrica } | null) => {
+    pendiente?.resolver(r);
+    setPendiente(null);
+  };
+  const elemento = (
+    <Dialogo
+      abierto={!!pendiente}
+      alCerrar={() => cerrar(null)}
+      titulo="¿Generar la nota de pedido?"
+      eyebrow="OPERACIÓN"
+      className="dialogo-confirmacion"
+      focoInicial={primera}
+      alerta
+    >
+      {pendiente && <FormNotaPedido responder={cerrar} primera={primera} />}
+    </Dialogo>
+  );
+  return [pedir, elemento] as const;
+}
+function FormNotaPedido({
+  responder,
+  primera,
+}: {
+  responder: (r: { fabrica: Fabrica } | null) => void;
+  primera: RefObject<HTMLInputElement | null>;
+}) {
+  // Sin fábrica marcada: equivocarse manda el pedido a la fábrica que no lo hace y gasta un número suyo.
+  const [fabrica, setFabrica] = useState<Fabrica | null>(null);
+  const [error, setError] = useState('');
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (fabrica) responder({ fabrica });
+        else {
+          setError('Elige la fábrica que recibe el pedido.');
+          primera.current?.focus();
+        }
+      }}
+    >
+      <div className="dialogo-mensaje">
+        <p>Se asigna el siguiente N° de nota de pedido de esa fábrica (no se reutiliza) y se genera su PDF.</p>
+      </div>
+      <fieldset
+        className="dialogo-campos opciones-fabrica"
+        aria-describedby={error ? 'fabrica-error' : undefined}
+        aria-invalid={error ? true : undefined}
+      >
+        <legend className="ia-field-label">Fábrica</legend>
+        {FABRICAS.map((f, i) => (
+          <label key={f} className="opcion-fabrica">
+            <input
+              ref={i === 0 ? primera : undefined}
+              type="radio"
+              name="fabrica"
+              value={f}
+              checked={fabrica === f}
+              onChange={() => {
+                setFabrica(f);
+                setError('');
+              }}
+            />
+            <span>
+              <b>{nombreFabrica[f]}</b>
+              <small>{productosFabrica[f]}</small>
+            </span>
+          </label>
+        ))}
+        {error && (
+          <p className="campo-error" id="fabrica-error" role="alert">
+            {error}
+          </p>
+        )}
+      </fieldset>
+      <div className="dialogo-acciones">
+        <button type="button" className="button secondary" onClick={() => responder(null)}>
+          Cancelar
+        </button>
+        <button type="submit" className="button primary">
+          Generar nota de pedido
         </button>
       </div>
     </form>

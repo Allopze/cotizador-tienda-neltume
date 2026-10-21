@@ -20,7 +20,7 @@ async function textoPdf(ruta: string) {
   return texto;
 }
 
-const numeroDe = async (descarga: Promise<Download>, prefijo: 'cotizacion' | 'nota-pedido') => {
+const numeroDe = async (descarga: Promise<Download>, prefijo: 'cotizacion' | 'nota-pedido-panguipulli') => {
   const nombre = (await descarga).suggestedFilename();
   expect(nombre).toMatch(new RegExp(`^${prefijo}-\\d+\\.pdf$`));
   return Number(nombre.match(/\d+/)![0]);
@@ -217,10 +217,11 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   const descargaNota = page.waitForEvent('download');
   await flujo.getByRole('button', { name: 'Generar nota de pedido' }).click();
   // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
-  const numeroNota = await numeroDe(descargaNota, 'nota-pedido');
+  const numeroNota = await numeroDe(descargaNota, 'nota-pedido-panguipulli');
   await expect(estados).toContainText('Operación: Nota de pedido generada');
-  const notaPdf = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-${numeroNota}.pdf`);
+  const notaPdf = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-${numeroNota}.pdf`);
   expect(notaPdf).toContain(`NOTA DE PEDIDO N° ${numeroNota}`);
   expect(notaPdf).toMatch(new RegExp(`Ref\\. cotización:?\\s*N° ${numero}`));
   expect(notaPdf).toContain('Referencia de catálogo: HUIL-M-3-E');
@@ -331,7 +332,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(panel.getByText('Osorno', { exact: true })).toBeVisible();
   await expect(panel.getByRole('button', { name: /^Editar destino/ })).toHaveCount(0);
   await expect(panel.getByText(`Nota de pedido N° ${numeroNota}`)).toBeVisible();
-  for (const archivo of [`cotizacion-${numero}.pdf`, `nota-pedido-${numeroNota}.pdf`])
+  for (const archivo of [`cotizacion-${numero}.pdf`, `nota-pedido-panguipulli-${numeroNota}.pdf`])
     expect((await page.request.get(`/api/documento/${archivo}`)).ok()).toBe(true);
 
   const guardada = (await new Almacen(DIR_E2E).leer()).cotizaciones.find((q) => q.numero === numero)!;

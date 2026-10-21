@@ -149,6 +149,8 @@ if (sembrar) {
   msSiembra = performance.now() - m;
 }
 const inicial = almacen.correlativos();
+// La carga genera todas sus notas para Panguipulli.
+const inicialNota = almacen.correlativosNota().panguipulli;
 cerrarAlmacen();
 cerrarBaseDatos();
 console.log(
@@ -373,7 +375,7 @@ async function resistencia(cookies: string[], hasta: number) {
         }
         if (!(await paso({ tipo: 'aprobar' }))) continue;
         if (!(await paso({ tipo: 'pago', monto: anticipoMinimo(q.montos.total) }))) continue;
-        if (!(await paso({ tipo: 'generar_nota' }))) continue;
+        if (!(await paso({ tipo: 'generar_nota', fabrica: 'panguipulli' }))) continue;
         const saldo = q.montos.total - (q.pagos ?? []).reduce((s, p) => s + p.monto, 0);
         if (saldo > 0) await paso({ tipo: 'pago', monto: saldo }, 'pago saldo');
       }
@@ -531,7 +533,10 @@ try {
     const integridad = db.pragma('integrity_check', { simple: true });
     if (integridad !== 'ok') fallas.push(`integrity_check: ${integridad}`);
     const { siguiente_cotizacion, siguiente_nota } = db
-      .prepare('SELECT siguiente_cotizacion, siguiente_nota FROM correlativos WHERE id = 1')
+      .prepare(
+        `SELECT siguiente_cotizacion, (SELECT siguiente FROM correlativos_nota WHERE fabrica = 'panguipulli') AS siguiente_nota
+         FROM correlativos WHERE id = 1`,
+      )
       .get() as {
       siguiente_cotizacion: number;
       siguiente_nota: number;
@@ -542,13 +547,13 @@ try {
       ).map((r) => r.numero),
     );
     const notas = new Set(
-      (db.prepare('SELECT numero FROM notas_pedido').all() as { numero: number }[]).map((r) => r.numero),
+      (db.prepare("SELECT numero FROM notas_pedido WHERE fabrica = 'panguipulli'").all() as { numero: number }[]).map((r) => r.numero),
     );
     const quemados = [];
     for (let n = inicial.siguienteCotizacion; n < siguiente_cotizacion; n++)
       if (!numeros.has(n)) quemados.push(n);
     const quemadasNotas = [];
-    for (let n = inicial.siguienteNota; n < siguiente_nota; n++) if (!notas.has(n)) quemadasNotas.push(n);
+    for (let n = inicialNota; n < siguiente_nota; n++) if (!notas.has(n)) quemadasNotas.push(n);
     if (quemados.length) fallas.push(`Números de cotización quemados: ${quemados.join(', ')}`);
     if (quemadasNotas.length) fallas.push(`Números de nota quemados: ${quemadasNotas.join(', ')}`);
     const pdfs = (
@@ -561,7 +566,7 @@ try {
     const total = (db.prepare('SELECT COUNT(*) AS n FROM cotizaciones').get() as { n: number }).n;
     console.log(
       `\nAl terminar: ${total.toLocaleString('es-CL')} cotizaciones, ${siguiente_cotizacion - inicial.siguienteCotizacion} emitidas en la carga, ` +
-        `${siguiente_nota - inicial.siguienteNota} notas, ${pdfs.length} PDF; base ${mb(tamanoBase())} MB (con -wal).`,
+        `${siguiente_nota - inicialNota} notas, ${pdfs.length} PDF; base ${mb(tamanoBase())} MB (con -wal).`,
     );
   } finally {
     db.close();

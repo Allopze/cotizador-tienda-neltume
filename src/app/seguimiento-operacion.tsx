@@ -5,6 +5,7 @@ import {
   etiquetaComercial,
   etiquetaFacturacion,
   etiquetaOperativo,
+  numeroNota,
   pagoAnulable,
   retrocesoOperativo,
   rangoFechaOperacion,
@@ -16,7 +17,7 @@ import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import { pesos, porcentaje } from '@/negocio/precios';
 import { fechaChilena, fechaLocal } from '@/negocio/vigencia';
 import { useConfirmacion } from './dialogo';
-import { useRetroceso } from './dialogos-cotizacion';
+import { useNotaPedido, useRetroceso } from './dialogos-cotizacion';
 import { fechaLarga, numeroCotizacion } from './formato';
 import { SelectorDesplegable } from './selector-desplegable';
 
@@ -44,6 +45,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   const [comentario, setComentario] = useState('');
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirRetroceso, dialogoRetroceso] = useRetroceso();
+  const [pedirNota, dialogoNota] = useNotaPedido();
   const estado = actual.estado;
   const pagosRegistrados = actual.pagos ?? [];
   const pagado = pagosRegistrados.reduce((s, p) => s + p.monto, 0);
@@ -106,6 +108,11 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   }
   const operar = (paso: string, titulo: string, efecto: string, aceptar: string) =>
     void confirmarPaso(titulo, efecto, aceptar, { tipo: 'operacion', paso });
+  async function generarNota() {
+    if (ocupado) return;
+    const r = await pedirNota();
+    if (r) await flujo({ tipo: 'generar_nota', fabrica: r.fabrica });
+  }
   const previo = retrocesoOperativo(actual);
   async function volverAtras() {
     if (!previo || ocupado) return;
@@ -148,19 +155,13 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             titulo: 'Generar nota de pedido',
             detalle: 'El anticipo está registrado. Prepara el documento para fábrica.',
             etiqueta: 'Generar nota de pedido',
-            accion: () =>
-              void confirmarPaso(
-                '¿Generar la nota de pedido?',
-                'Se asigna el siguiente N° de nota de pedido (no se reutiliza) y se genera su PDF para fábrica.',
-                'Generar nota de pedido',
-                { tipo: 'generar_nota' },
-              ),
+            accion: () => void generarNota(),
           };
     if (pagado < pagoMinimoNP)
       return { titulo: 'Completar anticipo', detalle: `La producción requiere al menos ${pesos(pagoMinimoNP)} pagado.`, etiqueta: 'Ir a pagos', accion: irAPago };
     switch (operacionActual) {
       case 'pedido_generado':
-        return { titulo: 'Iniciar producción', detalle: `La nota de pedido N° ${actual.nota.numero} ya está generada. Registra el inicio cuando pase a fábrica.`, etiqueta: 'Iniciar producción', accion: () => operar('iniciar_produccion', '¿Iniciar producción?', 'La operación pasa a «En producción»: queda registrado que el pedido entró a fábrica.', 'Iniciar producción') };
+        return { titulo: 'Iniciar producción', detalle: `La nota de pedido ${numeroNota(actual.nota)} ya está generada. Registra el inicio cuando pase a fábrica.`, etiqueta: 'Iniciar producción', accion: () => operar('iniciar_produccion', '¿Iniciar producción?', 'La operación pasa a «En producción»: queda registrado que el pedido entró a fábrica.', 'Iniciar producción') };
       case 'en_produccion':
         return { titulo: 'Cerrar producción', detalle: 'Confirma que fábrica terminó el pedido.', etiqueta: 'Marcar producción terminada', accion: () => operar('produccion_terminada', '¿Producción terminada?', pagado < actual.montos.total ? `Queda registrado que fábrica terminó el pedido; faltan ${pesos(saldo)} para poder despacharlo.` : 'Queda registrado que fábrica terminó el pedido; ya está pagado y puede prepararse el despacho.', 'Marcar producción terminada') };
       case 'saldo_pendiente':
@@ -325,6 +326,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       {/* Fuera de la sección: sus botones no se confunden con los del seguimiento. */}
       {confirmacion}
       {dialogoRetroceso}
+      {dialogoNota}
     </>
   );
 }

@@ -5,8 +5,8 @@ import { copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { etiquetaDescuento } from '../negocio/descuento-cantidad';
-import type { Cotizacion, Despacho } from '../negocio/estado';
-import { CODIGO_FLETE, cantidadFlete, descripcionFlete, sinTransportista, unitarioFlete } from '../negocio/estado';
+import type { Cotizacion, Despacho, Fabrica } from '../negocio/estado';
+import { CODIGO_FLETE, cantidadFlete, descripcionFlete, nombreFabrica, sinTransportista, unitarioFlete } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import {
   ahorroLinea,
@@ -86,6 +86,8 @@ export function descripcionLegible(texto: string) {
 export interface DocumentoPdf {
   tipo: 'cotizacion' | 'nota';
   numero: number;
+  /** Solo nota: fábrica de destino; falta en las generadas antes de separar las fábricas. */
+  fabrica?: Fabrica;
   montos: Montos;
   fecha: string;
   /** Solo cotización: último día de validez YYYY-MM-DD. */
@@ -107,6 +109,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   const { numero, montos, fecha } = doc;
   const reglas = doc.reglas ?? q.reglas ?? REGLAS;
   const titulo = nota ? `NOTA DE PEDIDO N° ${numero}` : `COTIZACIÓN N° ${numero}`;
+  // Bajo el título y en su propia línea: es lo primero que mira quien reparte las notas entre fábricas.
+  const fabrica =
+    nota && doc.fabrica ? `<p class="fabrica">FÁBRICA ${nombreFabrica[doc.fabrica].toUpperCase()}</p>` : '';
   const c = q.cliente;
   type Campo = [string, string | null];
   const si = (etiqueta: string, valor: string | null | undefined): Campo[] =>
@@ -252,13 +257,13 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     }${nota ? '<td class="check"><i></i></td>' : ''}</tr>`;
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
     @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}
-    header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-bottom:2px solid #324536;padding-bottom:20px}header img{display:block;height:120px;width:auto}header>div:last-child{text-align:right}h1{font:700 20px Arial,sans-serif;letter-spacing:.03em;margin:4px 0 12px;color:#1c241e}header p{margin:4px 0 0}.empresa{font-size:10px;line-height:1.5;margin-top:10px;color:#3d443d}
+    header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-bottom:2px solid #324536;padding-bottom:20px}header img{display:block;height:120px;width:auto}header>div:last-child{text-align:right}h1{font:700 20px Arial,sans-serif;letter-spacing:.03em;margin:4px 0 12px;color:#1c241e}.fabrica{display:inline-block;margin:-4px 0 10px;padding:4px 10px;border:1.5px solid #324536;font:700 13px Arial,sans-serif;letter-spacing:.06em;color:#1c241e}header p{margin:4px 0 0}.empresa{font-size:10px;line-height:1.5;margin-top:10px;color:#3d443d}
     section{margin:22px 0;display:grid;grid-template-columns:1fr 1fr;gap:0 25px}section div div{min-height:15px;margin-bottom:11px}h2{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#324536;margin:0 0 10px;padding-bottom:5px;border-bottom:1px solid #deded6}
     table{width:100%;border-collapse:collapse;font-size:10px}thead{display:table-header-group}th{text-align:left;border-top:1px solid #324536;border-bottom:1px solid #324536;padding:10px 5px;font-size:9px}td{padding:11px 5px;border-bottom:1px solid #deded6;vertical-align:baseline}td small{font-size:9px;color:#4a524a}tr{break-inside:avoid}.num{text-align:right;white-space:nowrap}.codigo{white-space:nowrap;font-size:9px}.check{width:34px;text-align:center}.check i{display:inline-block;width:11px;height:11px;border:1px solid #324536;vertical-align:-2px}
     .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}.totales .original b{font-weight:400}.totales .ahorro,.descuento-item{color:#8a5a37}s.original{color:#6b716b;font-size:9px}
     footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6}.bloque{break-inside:avoid;margin-bottom:18px}.bloque p{margin:2px 0}.firmas{display:flex;gap:28px;margin-top:34px}.firma{flex:1;font-size:9px;color:#4a524a}.firma span{display:block;border-top:1px solid #242a24;margin-bottom:4px}.linea{display:flex;gap:8px;align-items:baseline;margin-bottom:12px}.linea span{flex:1;border-bottom:1px solid #9a9f98;height:12px}.observaciones{border:1px solid #9a9f98;min-height:64px;padding:6px 8px}.contacto{color:#4a524a}
     .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}.por-definir{font-size:9px;color:#4a524a;text-align:right;margin:-12px 0 20px}
-    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="${logo}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
+    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="${logo}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${fabrica}${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
     <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
     <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
     ${filas.map(filaProducto).join('')}${montos.flete ? `<tr><td>${filas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>

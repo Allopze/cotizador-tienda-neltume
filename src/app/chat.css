@@ -1430,6 +1430,39 @@ p + .pregunta-opciones {
   gap: 12px;
   margin-top: 14px;
 }
+.opciones-fabrica {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.opcion-fabrica {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  cursor: pointer;
+}
+.opcion-fabrica:hover,
+.opcion-fabrica:has(input:checked) {
+  background: var(--pale);
+}
+.opcion-fabrica:has(input:checked) {
+  border-color: var(--green);
+}
+.opcion-fabrica input {
+  margin-top: 3px;
+  accent-color: var(--green);
+}
+.opcion-fabrica span {
+  display: grid;
+  gap: 2px;
+}
+.opcion-fabrica small {
+  color: var(--subtle);
+  font-size: var(--fs-sm);
+}
 .ia-field textarea {
   width: 100%;
   padding: 8px 11px;

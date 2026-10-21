@@ -6,7 +6,8 @@ import { documentoAnulado } from '@/servidor/documentos';
 import { registrarError } from '@/servidor/errores';
 export const runtime = 'nodejs';
 
-const ARCHIVO_VALIDO = /^(cotizacion|nota-pedido)-\d+\.pdf$/;
+// Las notas anteriores a separar las fábricas no llevan la fábrica en el nombre.
+const ARCHIVO_VALIDO = /^(cotizacion|nota-pedido(-panguipulli|-santiago)?)-\d+\.pdf$/;
 const noEncontrado = () =>
   Response.json(
     { error: 'Documento no encontrado.' },

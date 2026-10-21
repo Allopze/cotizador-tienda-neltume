@@ -537,7 +537,7 @@ describe('PDF fuera del bloqueo del almacén', () => {
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total) });
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     const archivo = join(t.dir, 'pdf', t.actual().pdf!);
     await rm(archivo);
     await expect(t.intentar({ tipo: 'regenerar_pdf', documento: 'cotizacion' })).resolves.toMatchObject({

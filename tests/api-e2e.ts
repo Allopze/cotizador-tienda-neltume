@@ -102,7 +102,7 @@ export async function completarOperacion(request: APIRequestContext, aprobada: C
   let q = aprobada;
   const total = await totalDe(request, q.id);
   q = await accion(request, { tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: total });
-  q = await accion(request, { tipo: 'generar_nota', id: q.id, actualizada: q.actualizada });
+  q = await accion(request, { tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada });
   for (const paso of ['iniciar_produccion', 'produccion_terminada', 'lista_despacho'])
     q = await accion(request, { tipo: 'operacion', id: q.id, actualizada: q.actualizada, paso });
   q = await accion(request, {

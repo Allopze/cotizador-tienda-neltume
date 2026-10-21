@@ -116,6 +116,7 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await flujo.getByRole('button', { name: 'Registrar pago' }).click();
   await flujo.getByRole('button', { name: 'Generar nota de pedido' }).click();
   // Cada paso de la operación pide confirmación.
+  await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   await expect(estados).toContainText('Operación: Nota de pedido generada');
   // Con la nota generada, anular el anticipo advierte que la producción volverá a exigirlo.

@@ -117,7 +117,7 @@ describe('nota de pedido: destino y valor del despacho', () => {
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'pago', monto: Math.ceil(t.actual().montos.total / 2) });
     await t.ir({ tipo: 'despacho', despacho: { destino: 'Osorno' } });
-    const q = await t.ir({ tipo: 'generar_nota' });
+    const q = await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     expect(new Almacen(t.dir).obtener(q.id)!.nota!.despacho).toMatchObject({ destino: 'Osorno', valor: q.flete });
     // Nota anterior a v22 (o migrada desde JSON): las columnas quedan en NULL.
     t.db().prepare('UPDATE notas_pedido SET despacho_destino = NULL, despacho_valor = NULL').run();
@@ -140,7 +140,7 @@ describe('CSV del listado: pagos, operación y facturación', () => {
     await t.ir({ tipo: 'aprobar' });
     const anticipo = Math.ceil(t.actual().montos.total / 2);
     await t.ir({ tipo: 'pago', monto: anticipo });
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     const q = await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: '1234' });
     const [fila] = t.almacen.listar().cotizaciones;
     expect(fila.facturacion).toEqual({ estado: 'facturada' });

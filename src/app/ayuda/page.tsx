@@ -77,8 +77,9 @@ export default async function AyudaPage() {
               pedido.
             </li>
             <li>
-              <strong>Genera la nota de pedido para fábrica.</strong> «Generar nota de pedido» le da su número y crea
-              el PDF que va a fábrica.
+              <strong>Genera la nota de pedido para fábrica.</strong> «Generar nota de pedido» pide la fábrica
+              (Panguipulli para puertas sólidas, Santiago para enchapadas y prepintadas), le da el siguiente número de
+              esa fábrica y crea el PDF que va a ella.
             </li>
             <li>
               <strong>Producción.</strong> Pulsa «Iniciar producción» cuando el pedido entra a fábrica y «Marcar

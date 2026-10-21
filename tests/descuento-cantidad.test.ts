@@ -910,7 +910,7 @@ describe('documentos y nota de pedido', () => {
         monto: Math.ceil(q.montos.total * 0.5),
       })
     ).cotizacion;
-    const a = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada }))
+    const a = (await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada }))
       .cotizacion;
     expect(a.nota!.montos).toMatchObject({
       descuentoPorcentaje: 0,

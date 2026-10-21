@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
+  numeroNota,
   anticipoMinimo,
   esEditable,
   etiquetaEstado,
@@ -661,7 +662,7 @@ export function Cotizador({
       titulo: 'No se encontró el PDF',
       mensaje: (
         <p>
-          El archivo de {documento === 'nota' ? `la nota de pedido N° ${q.nota!.numero}` : `la cotización ${numeroCotizacion(q.numero)}`}{' '}
+          El archivo de {documento === 'nota' ? `la nota de pedido ${numeroNota(q.nota!)}` : `la cotización ${numeroCotizacion(q.numero)}`}{' '}
           ya no está en el servidor. Se puede regenerar con los mismos datos con que se emitió.
         </p>
       ),

@@ -17,7 +17,16 @@ import type {
   ResumenCotizacion,
   TipoEvento,
 } from '../negocio/estado';
-import { cantidadFlete, etiquetaComercial, etiquetaOperativo, leerEstadoOperativo, type EstadoOperativo } from '../negocio/estado';
+import {
+  cantidadFlete,
+  etiquetaComercial,
+  etiquetaOperativo,
+  FABRICAS,
+  leerEstadoOperativo,
+  nombreFabrica,
+  type EstadoOperativo,
+  type Fabrica,
+} from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { descuentoEsManual } from '../negocio/descuento-cantidad';
 import { REGLAS, type ReglasComerciales } from '../negocio/precios';
@@ -185,6 +194,7 @@ type FilaMontos = {
 };
 
 type FilaNota = {
+  fabrica: Fabrica | null;
   despacho_destino: string | null;
   despacho_valor: number | null;
   cotizacion_id: string;
@@ -454,6 +464,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           const subtotal = ls.reduce((s, l) => s + l.total, 0);
           q.nota = {
             numero: n.numero,
+            ...(n.fabrica !== null && { fabrica: n.fabrica }),
             pdf: n.pdf,
             fecha: n.fecha,
             montos: {
@@ -802,12 +813,13 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(
       `
       INSERT INTO notas_pedido (
-        cotizacion_id, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte,
+        cotizacion_id, fabrica, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte,
         despacho_entrega, observaciones, anulada, despacho_destino, despacho_valor
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
     ).run(
       q.id,
+      q.nota.fabrica ?? null,
       q.nota.numero,
       q.nota.pdf,
       q.nota.fecha,
@@ -856,6 +868,17 @@ function numeracionCotizacion(db: Database.Database) {
   if (!correlativo) throw new Error('Faltan los correlativos en la base SQLite.');
   const maximo = (db.prepare('SELECT COALESCE(MAX(numero), 0) AS n FROM cotizaciones').get() as { n: number }).n;
   return { siguiente_cotizacion: correlativo.siguiente_cotizacion, ultimo: Math.max(maximo, correlativo.siguiente_cotizacion - 1) };
+}
+
+/** Correlativo de notas de una fábrica y el mayor número que ya usa (0 si ninguno). */
+function numeracionNota(db: Database.Database, fabrica: Fabrica) {
+  const fila = db
+    .prepare(
+      'SELECT siguiente, (SELECT COALESCE(MAX(numero), 0) FROM notas_pedido WHERE fabrica = ?) AS ultimo FROM correlativos_nota WHERE fabrica = ?',
+    )
+    .get(fabrica, fabrica) as { siguiente: number; ultimo: number } | undefined;
+  if (!fila) throw new Error(`Falta el correlativo de notas de ${nombreFabrica[fabrica]} en la base SQLite.`);
+  return fila;
 }
 
 function correlativos(db: Database.Database) {
@@ -1041,12 +1064,12 @@ export class Unidad {
       .immediate();
   }
 
-  /** Marca la cotización `id` «en emisión» de su nota de pedido y reserva el número de la nota. */
-  reservarNotaEnEmision(id: string) {
+  /** Marca la cotización `id` «en emisión» de su nota de pedido y reserva el número de la nota en su fábrica. */
+  reservarNotaEnEmision(id: string, fabrica: Fabrica) {
     return this.db
       .transaction(() => {
         const ficha = this.marcarEmision(id, 'nota');
-        return { numero: this.siguienteNota(), ficha };
+        return { numero: this.siguienteNota(fabrica), ficha };
       })
       .immediate();
   }
@@ -1065,14 +1088,14 @@ export class Unidad {
     return numero;
   }
 
-  reservarNota(): number {
-    return this.db.transaction(() => this.siguienteNota()).immediate();
+  reservarNota(fabrica: Fabrica): number {
+    return this.db.transaction(() => this.siguienteNota(fabrica)).immediate();
   }
 
-  private siguienteNota() {
-    const fila = this.db.prepare('SELECT siguiente_nota AS siguiente, (SELECT COALESCE(MAX(numero), 0) + 1 FROM notas_pedido) AS maximo FROM correlativos WHERE id = 1').get() as { siguiente: number; maximo: number };
-    const numero = Math.max(fila.siguiente, fila.maximo);
-    this.db.prepare('UPDATE correlativos SET siguiente_nota = ? WHERE id = 1').run(numero + 1);
+  private siguienteNota(fabrica: Fabrica) {
+    const { siguiente, ultimo } = numeracionNota(this.db, fabrica);
+    const numero = Math.max(siguiente, ultimo + 1);
+    this.db.prepare('UPDATE correlativos_nota SET siguiente = ? WHERE fabrica = ?').run(numero + 1, fabrica);
     return numero;
   }
 
@@ -1147,6 +1170,71 @@ export class Almacen {
 
   correlativos() {
     return correlativos(this.db);
+  }
+
+  /** Próximo número de nota de pedido de cada fábrica (el que se asignará, sin reservarlo). */
+  correlativosNota() {
+    return Object.fromEntries(
+      FABRICAS.map((f) => {
+        const { siguiente, ultimo } = numeracionNota(this.db, f);
+        return [f, Math.max(siguiente, ultimo + 1)];
+      }),
+    ) as Record<Fabrica, number>;
+  }
+
+  /**
+   * Fija el próximo número de nota de una fábrica, p. ej. para seguir la numeración que ya traía en papel. Debe
+   * superar al último número usado por esa fábrica: nunca se repite un número.
+   */
+  fijarCorrelativoNota(fabrica: Fabrica, siguiente: number) {
+    this.db
+      .transaction(() => {
+        const { ultimo } = numeracionNota(this.db, fabrica);
+        if (!Number.isSafeInteger(siguiente) || siguiente <= ultimo || siguiente < 1)
+          throw new ErrorUsuario(
+            `El próximo número de nota de ${nombreFabrica[fabrica]} debe ser un entero mayor que el último usado (${ultimo}).`,
+          );
+        this.db.prepare('UPDATE correlativos_nota SET siguiente = ? WHERE fabrica = ?').run(siguiente, fabrica);
+      })
+      .immediate();
+  }
+
+  /** Notas generadas antes de separar las fábricas, que todavía no tienen una asignada. */
+  notasSinFabrica() {
+    return this.db
+      .prepare(
+        `SELECT n.numero, c.numero AS cotizacion, c.cliente_nombre AS cliente, n.fecha
+         FROM notas_pedido n JOIN cotizaciones c ON c.id = n.cotizacion_id
+         WHERE n.fabrica IS NULL ORDER BY n.numero`,
+      )
+      .all() as { numero: number; cotizacion: number | null; cliente: string | null; fecha: string }[];
+  }
+
+  /**
+   * Asigna la fábrica a una nota que no tiene. Su número no cambia (ni su PDF, que se generó sin fábrica), así
+   * que no puede chocar con una nota de esa fábrica con el mismo número.
+   */
+  asignarFabricaNota(numero: number, fabrica: Fabrica) {
+    this.db
+      .transaction(() => {
+        const nota = this.db
+          .prepare('SELECT cotizacion_id FROM notas_pedido WHERE numero = ? AND fabrica IS NULL')
+          .get(numero) as { cotizacion_id: string } | undefined;
+        if (!nota) throw new ErrorUsuario(`No hay una nota de pedido N° ${numero} sin fábrica asignada.`);
+        if (this.db.prepare('SELECT 1 FROM notas_pedido WHERE numero = ? AND fabrica = ?').get(numero, fabrica))
+          throw new ErrorUsuario(`${nombreFabrica[fabrica]} ya tiene una nota de pedido N° ${numero}.`);
+        this.db.prepare('UPDATE notas_pedido SET fabrica = ? WHERE cotizacion_id = ?').run(fabrica, nota.cotizacion_id);
+        // La cotización cambia: las pantallas abiertas la recargan en vez de sobrescribirla con la versión anterior.
+        const { actualizada } = this.db
+          .prepare('SELECT actualizada FROM cotizaciones WHERE id = ?')
+          .get(nota.cotizacion_id) as { actualizada: string };
+        const fecha = new Date(Math.max(Date.now(), Date.parse(actualizada) + 1)).toISOString();
+        this.db.prepare('UPDATE cotizaciones SET actualizada = ? WHERE id = ?').run(fecha, nota.cotizacion_id);
+        this.db
+          .prepare('INSERT INTO eventos (cotizacion_id, fecha, usuario, tipo, detalle) VALUES (?, ?, ?, ?, ?)')
+          .run(nota.cotizacion_id, fecha, null, 'seguimiento', `Nota de pedido N° ${numero} asignada a ${nombreFabrica[fabrica]}`);
+      })
+      .immediate();
   }
 
   /** Para el diálogo de emisión: último número usado y rango de un número elegido a mano. Solo lectura. */
@@ -1451,7 +1539,7 @@ export class Almacen {
           `
           SELECT c.*, ${FECHA_REFERENCIA} AS fecha_referencia, o.numero AS origen_numero, m.neto, m.iva, m.total, m.subtotal,
                  m.descuento AS descuento_monto, m.flete AS flete_monto,
-                 n.numero AS nota_numero, n.pdf AS nota_pdf, n.fecha AS nota_fecha, n.anulada AS nota_anulada,
+                 n.numero AS nota_numero, n.fabrica AS nota_fabrica, n.pdf AS nota_pdf, n.fecha AS nota_fecha, n.anulada AS nota_anulada,
                  (SELECT COUNT(*) FROM solicitudes s WHERE s.cotizacion_id = c.id) AS items,
                  (SELECT COUNT(*) FROM incompletos i WHERE i.cotizacion_id = c.id) AS pendientes,
                  COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.cotizacion_id = c.id), 0) AS pagado,
@@ -1473,6 +1561,7 @@ export class Almacen {
         descuento_monto: number | null;
         flete_monto: number | null;
         nota_numero: number | null;
+        nota_fabrica: Fabrica | null;
         nota_pdf: string | null;
         nota_fecha: string | null;
         nota_anulada: number | null;
@@ -1543,7 +1632,13 @@ export class Almacen {
           nota:
             f.nota_numero === null
               ? null
-              : { numero: f.nota_numero, pdf: f.nota_pdf!, fecha: f.nota_fecha!, anulada: !!f.nota_anulada },
+              : {
+                  numero: f.nota_numero,
+                  ...(f.nota_fabrica !== null && { fabrica: f.nota_fabrica }),
+                  pdf: f.nota_pdf!,
+                  fecha: f.nota_fecha!,
+                  anulada: !!f.nota_anulada,
+                },
           estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
           estadoOperativo: (leerEstadoOperativo(f.estado_operativo) as EstadoOperativo | null) ?? 'sin_pedido',
           pagado: f.pagado,

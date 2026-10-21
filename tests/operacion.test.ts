@@ -101,7 +101,7 @@ async function setup() {
   const conNota = async () => {
     await aprobada();
     await pagar(mitad());
-    return ir({ tipo: 'generar_nota' });
+    return ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
   };
   const operar = (paso: string, extra: Record<string, unknown> = {}) => ir({ tipo: 'operacion', paso, ...extra });
   /** Con nota, saldo pagado, producción terminada y lista para despacho. */
@@ -186,7 +186,7 @@ describe('anular un pago', () => {
       `${pesos(pago.monto)} · 2026-09-28 · Motivo: Monto mal ingresado · ${etiquetaOperativo.anticipo_pagado} → ${etiquetaOperativo.sin_pedido}`,
     );
     // Sin el 50 % la nota de pedido vuelve a estar bloqueada y se puede volver a registrar el pago.
-    await expect(t.intentar({ tipo: 'generar_nota' })).rejects.toThrow(/50 %/);
+    await expect(t.intentar({ tipo: 'generar_nota', fabrica: 'panguipulli' })).rejects.toThrow(/50 %/);
     await t.pagar(t.mitad());
     expect(t.actual()).toMatchObject({ estadoOperativo: 'anticipo_pagado' });
     expect(t.actual().pagos).toHaveLength(1);
@@ -290,7 +290,7 @@ describe('anular un pago', () => {
     await expect(
       t.servicio.ejecutar({ tipo: 'anular_pago', id: t.actual().id, actualizada: '2020-01-01T00:00:00.000Z', pagoId: id }),
     ).rejects.toThrow(/cambió desde que la abriste/);
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     await t.pagar(t.actual().montos.total - t.mitad());
     await t.operar('iniciar_produccion');
     await t.operar('produccion_terminada');
@@ -471,7 +471,7 @@ describe('despacho después de la aprobación', () => {
     await t.aprobada();
     await t.ir({ tipo: 'despacho', despacho: { transporte: 'Starken', destino: 'Osorno' } });
     await t.pagar(t.mitad());
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     const nota = structuredClone(t.recargada().nota);
     expect(nota?.despacho).toMatchObject({ transporte: 'Starken' });
     const pdfs = vi.mocked(plantilla).mock.calls.length;
@@ -489,7 +489,7 @@ describe('despacho después de la aprobación', () => {
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'despacho', despacho: { transporte: 'Starken' } });
     await t.pagar(t.mitad());
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     await t.pagar(t.actual().montos.total - t.mitad());
     await t.operar('iniciar_produccion');
     await t.operar('produccion_terminada');
@@ -625,7 +625,7 @@ describe('etiquetas legibles', () => {
     expect(t.ultimo('seguimiento')!.detalle).toBe('Estado comercial: En seguimiento');
     await t.ir({ tipo: 'aprobar' });
     await t.pagar(t.mitad());
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     await t.operar('iniciar_produccion');
     expect(t.ultimo('produccion')!.detalle).toBe('Nota de pedido generada → En producción');
     await t.pagar(t.actual().montos.total - t.mitad());
