@@ -36,3 +36,6 @@ compose.override.yaml
 
 # Copias de trabajo de los agentes de Claude Code
 .claude/worktrees/
+
+# Capturas de `npm run ss`.
+capturas/
