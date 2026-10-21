@@ -103,7 +103,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   // Cada paso de la operación pide confirmación.
   await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
-  expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-panguipulli-1.pdf');
+  expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-panguipulli-577.pdf');
   await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
   // Una aprobada no ofrece quitar ítems.
   await expect(page.getByRole('button', { name: /^Quitar ítem 1:/ })).toHaveCount(0);
@@ -114,8 +114,8 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     ],
     { ajuste: 0, iva: 0.19 },
   );
-  const nota = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-1.pdf`);
-  expect(nota).toContain('NOTA DE PEDIDO N° 1');
+  const nota = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-577.pdf`);
+  expect(nota).toContain('NOTA DE PEDIDO N° 577');
   expect(nota).toContain('FÁBRICA PANGUIPULLI');
   expect(nota).toMatch(/Ref\. cotización:?\s*N° 323/);
   expect(nota).toContain('Referencia de catálogo: HUIL-O-3-B');
@@ -124,7 +124,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   const estado = await new Almacen(DIR_E2E).leer();
   expect(estado.cotizaciones.find((q) => q.numero === 323)?.estado).toBe('aprobada');
   expect(estado.siguienteCotizacion).toBe(324);
-  expect(new Almacen(DIR_E2E).correlativosNota()).toEqual({ panguipulli: 2, santiago: 1 });
+  expect(new Almacen(DIR_E2E).correlativosNota()).toEqual({ panguipulli: 578, santiago: 59 });
   await page.reload();
   // Al recargar se vuelve al inicio sin una cotización creada.
   await expect(page.getByLabel('Vista previa de la cotización')).toBeVisible();

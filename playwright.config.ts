@@ -14,7 +14,7 @@ export default defineConfig({
   workers: 1,
   timeout: 60000,
   // La aceptación emite cotizaciones y notas: corre al final para no mover los correlativos que otras
-  // pruebas esperan (la primera cotización es la 323 y la primera nota, la 1).
+  // pruebas esperan (la primera cotización es la 323 y la primera nota de Panguipulli, la 577).
   // «webkit-iphone» repite las pruebas del teléfono en WebKit (Safari) con el iPhone 13; requiere
   // `npx playwright install webkit`. «webkit» y «firefox» repiten en escritorio los campos que siguen numéricos, con
   // el navegador en inglés (así una burbuja de validación nativa se notaría); requieren

@@ -373,7 +373,13 @@ export interface Estado {
   cotizaciones: Cotizacion[];
 }
 export const CORRELATIVO_COTIZACION = 323;
+/** Correlativo único de notas anterior a las fábricas (esquema < 24 y estado.json): ya no se usa. */
 export const CORRELATIVO_NOTA = 1;
+/**
+ * Primer número de nota de pedido de cada fábrica: sigue la numeración que traía cada una al empezar a usar el
+ * cotizador. Se aplica una sola vez, al crear el correlativo (migración v24); después se cambia con `npm run notas`.
+ */
+export const CORRELATIVOS_NOTA: Record<Fabrica, number> = { panguipulli: 577, santiago: 59 };
 export const estadoInicial = (): Estado => ({
   siguienteCotizacion: CORRELATIVO_COTIZACION,
   siguienteNota: CORRELATIVO_NOTA,

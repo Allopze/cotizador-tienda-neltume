@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
-import type { Cotizacion, Fabrica } from '../src/negocio/estado';
+import { CORRELATIVOS_NOTA, type Cotizacion, type Fabrica } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { generarPdf, plantilla } from '../src/servidor/pdf';
 import { Servicio } from '../src/servidor/servicio';
@@ -286,7 +286,7 @@ describe('3.5 · regenerar un PDF perdido', () => {
     q = await t.pagar(q, t.mitad(q));
     vi.mocked(plantilla).mockResolvedValueOnce('<html>Nota N° 1 original</html>');
     q = await t.ir(q, { tipo: 'generar_nota', fabrica: 'panguipulli' });
-    const nota = join(t.dir, 'pdf', 'nota-pedido-panguipulli-1.pdf');
+    const nota = join(t.dir, 'pdf', `nota-pedido-panguipulli-${CORRELATIVOS_NOTA.panguipulli}.pdf`);
     await rm(nota);
     await t.ir(q, { tipo: 'regenerar_pdf', documento: 'nota' });
     expect(await readFile(nota, 'utf8')).toBe('<html>Nota N° 1 original</html>');
@@ -427,16 +427,17 @@ describe('3.6 · caminos de vuelta', () => {
 describe('3.9 · nota de pedido', () => {
   it('reservarNota toma el mayor entre el contador y MAX(numero)+1', async () => {
     const t = await setup();
-    expect((await t.conNota()).nota?.numero).toBe(1);
+    const primera = CORRELATIVOS_NOTA.panguipulli;
+    expect((await t.conNota()).nota?.numero).toBe(primera);
     // Un respaldo viejo restaurado deja el contador atrás de las notas guardadas.
     t.almacen.baseDatos().prepare("UPDATE correlativos_nota SET siguiente = 1 WHERE fabrica = 'panguipulli'").run();
     const segunda = await t.conNota();
-    expect(segunda.nota?.numero).toBe(2);
-    expect(t.almacen.correlativosNota().panguipulli).toBe(3);
+    expect(segunda.nota?.numero).toBe(primera + 1);
+    expect(t.almacen.correlativosNota().panguipulli).toBe(primera + 2);
     // Con el contador adelante (una nota que falló tras reservar), manda el contador.
-    t.almacen.baseDatos().prepare("UPDATE correlativos_nota SET siguiente = 10 WHERE fabrica = 'panguipulli'").run();
-    await expect(t.almacen.transaccion((u) => u.reservarNota('panguipulli'))).resolves.toBe(10);
-    expect(t.almacen.correlativosNota()).toEqual({ panguipulli: 11, santiago: 1 });
+    t.almacen.baseDatos().prepare('UPDATE correlativos_nota SET siguiente = ? WHERE fabrica = ?').run(primera + 10, 'panguipulli');
+    await expect(t.almacen.transaccion((u) => u.reservarNota('panguipulli'))).resolves.toBe(primera + 10);
+    expect(t.almacen.correlativosNota()).toEqual({ panguipulli: primera + 11, santiago: CORRELATIVOS_NOTA.santiago });
   });
 
   it('el destino y el valor del despacho de la nota se guardan en la base y se leen', async () => {
@@ -555,27 +556,27 @@ describe('3.10 · notas de pedido por fábrica', () => {
     const t = await setup();
     const antigua = await t.conNota();
     const db = t.almacen.baseDatos();
-    db.prepare("UPDATE notas_pedido SET fabrica = NULL, numero = 40, pdf = 'nota-pedido-40.pdf' WHERE cotizacion_id = ?").run(antigua.id);
+    db.prepare("UPDATE notas_pedido SET fabrica = NULL, numero = 900, pdf = 'nota-pedido-900.pdf' WHERE cotizacion_id = ?").run(antigua.id);
     expect(t.leer(antigua.id).nota).not.toHaveProperty('fabrica');
-    expect(t.almacen.notasSinFabrica()).toMatchObject([{ numero: 40, cliente: 'Ana Soto' }]);
+    expect(t.almacen.notasSinFabrica()).toMatchObject([{ numero: 900, cliente: 'Ana Soto' }]);
     // Las notas sin fábrica siguen sin repetir número entre ellas.
     const otra = await t.conNota();
     expect(() =>
-      db.prepare('UPDATE notas_pedido SET fabrica = NULL, numero = 40 WHERE cotizacion_id = ?').run(otra.id),
+      db.prepare('UPDATE notas_pedido SET fabrica = NULL, numero = 900 WHERE cotizacion_id = ?').run(otra.id),
     ).toThrow(/UNIQUE/);
 
-    t.almacen.fijarCorrelativoNota('santiago', 40);
+    t.almacen.fijarCorrelativoNota('santiago', 900);
     await t.conNota(undefined, 'santiago');
-    expect(() => t.almacen.asignarFabricaNota(40, 'santiago')).toThrow('Santiago ya tiene una nota de pedido N° 40.');
-    expect(() => t.almacen.asignarFabricaNota(41, 'panguipulli')).toThrow('No hay una nota de pedido N° 41 sin fábrica');
+    expect(() => t.almacen.asignarFabricaNota(900, 'santiago')).toThrow('Santiago ya tiene una nota de pedido N° 900.');
+    expect(() => t.almacen.asignarFabricaNota(901, 'panguipulli')).toThrow('No hay una nota de pedido N° 901 sin fábrica');
     const version = t.leer(antigua.id).actualizada;
-    t.almacen.asignarFabricaNota(40, 'panguipulli');
-    expect(t.leer(antigua.id).nota).toMatchObject({ numero: 40, fabrica: 'panguipulli', pdf: 'nota-pedido-40.pdf' });
+    t.almacen.asignarFabricaNota(900, 'panguipulli');
+    expect(t.leer(antigua.id).nota).toMatchObject({ numero: 900, fabrica: 'panguipulli', pdf: 'nota-pedido-900.pdf' });
     expect(t.leer(antigua.id).actualizada > version).toBe(true);
-    expect(t.eventos(antigua.id).at(-1)?.detalle).toBe('Nota de pedido N° 40 asignada a Panguipulli');
+    expect(t.eventos(antigua.id).at(-1)?.detalle).toBe('Nota de pedido N° 900 asignada a Panguipulli');
     expect(t.almacen.notasSinFabrica()).toEqual([]);
     // El correlativo de Panguipulli pasa por encima de la nota asignada.
     t.almacen.baseDatos().prepare("UPDATE correlativos_nota SET siguiente = 1 WHERE fabrica = 'panguipulli'").run();
-    expect(t.almacen.correlativosNota().panguipulli).toBe(41);
+    expect(t.almacen.correlativosNota().panguipulli).toBe(901);
   });
 });

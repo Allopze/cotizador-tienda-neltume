@@ -78,13 +78,14 @@ Usuarios avisa cuando queda una sola.
 ### Correlativos de notas de pedido
 
 Cada nota de pedido va a una fábrica, que se elige al generarla: **Panguipulli** (puertas sólidas) o **Santiago**
-(enchapadas y prepintadas). Cada una tiene su propio correlativo. Para ver el próximo número de cada fábrica, fijarlo
-(p. ej. para seguir la numeración en papel) o asignar la fábrica a una nota generada antes de separarlas:
+(enchapadas y prepintadas). Cada una tiene su propio correlativo, que parte en la numeración que traía en papel:
+**N° 577** Panguipulli y **N° 59** Santiago (se fija solo, una vez, al actualizar a esta versión). Para ver el próximo
+número de cada fábrica, cambiarlo o asignar la fábrica a una nota generada antes de separarlas:
 
 ```sh
 cd /srv/cotizador-neltume
 docker compose exec cotizador npm run notas
-docker compose exec cotizador npm run notas -- correlativo panguipulli 577   # la próxima será la N° 577
+docker compose exec cotizador npm run notas -- correlativo panguipulli 600   # la próxima será la N° 600
 docker compose exec cotizador npm run notas -- asignar 12 santiago           # la nota N° 12 antigua fue a Santiago
 ```
 

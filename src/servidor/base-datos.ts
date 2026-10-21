@@ -1,7 +1,7 @@
 import Database from 'better-sqlite3';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA, FABRICAS } from '../negocio/estado';
+import { CORRELATIVO_COTIZACION, CORRELATIVO_NOTA, CORRELATIVOS_NOTA, FABRICAS } from '../negocio/estado';
 import { REGLAS } from '../negocio/precios';
 import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
@@ -446,7 +446,8 @@ function crearEsquema(db: Database.Database) {
 /**
  * v24: dos fábricas, cada una con su correlativo de notas de pedido. El número de nota pasa a ser único por fábrica
  * (reconstruye `notas_pedido` para quitar el UNIQUE de la columna). Las notas existentes quedan sin fábrica: no se
- * sabe a cuál fue cada una, se asigna con `npm run notas`; entre ellas el número sigue siendo único.
+ * sabe a cuál fue cada una, se asigna con `npm run notas`; entre ellas el número sigue siendo único. Cada fábrica
+ * parte en su número de `CORRELATIVOS_NOTA`.
  * `correlativos.siguiente_nota` queda sin uso. Se puede repetir sin efecto.
  */
 function migrarA24(db: Database.Database) {
@@ -495,7 +496,8 @@ function migrarA24(db: Database.Database) {
         PRAGMA user_version = 24;
       `);
       const insertar = db.prepare('INSERT OR IGNORE INTO correlativos_nota (fabrica, siguiente) VALUES (?, ?)');
-      for (const f of FABRICAS) insertar.run(f, CORRELATIVO_NOTA);
+      // Una sola vez: si el correlativo ya existe (migración repetida), no se toca.
+      for (const f of FABRICAS) insertar.run(f, CORRELATIVOS_NOTA[f]);
       if ((db.pragma('foreign_key_check') as unknown[]).length)
         throw new Error('La migración de notas de pedido dejó referencias inválidas.');
     }).immediate();

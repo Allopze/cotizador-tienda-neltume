@@ -4,7 +4,7 @@ import { access, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Servicio } from '../src/servidor/servicio';
-import type { Cotizacion } from '../src/negocio/estado';
+import { CORRELATIVOS_NOTA, type Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import { generarPdf, plantilla } from '../src/servidor/pdf';
@@ -303,7 +303,7 @@ describe('Persistencia y flujo del asistente', () => {
       await reiniciado.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: aprobada.id, actualizada: aprobada.actualizada })
     ).cotizacion;
     expect(aprobada.nota?.montos.lineas[0].precioUnitario).toBe(999);
-    expect(aprobada.nota?.numero).toBe(1);
+    expect(aprobada.nota?.numero).toBe(CORRELATIVOS_NOTA.panguipulli);
     expect(plantilla).toHaveBeenCalledTimes(3);
     await expect(
       reiniciado.ejecutar({ tipo: 'quitar', id: aprobada.id, actualizada: aprobada.actualizada, indice: 0 }),

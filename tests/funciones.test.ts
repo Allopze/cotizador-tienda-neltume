@@ -9,7 +9,7 @@ import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { ErrorIA } from '../src/asistente/errores';
 import { clienteVacio, type Catalogo, type Producto, type SolicitudItem } from '../src/catalogo/tipos';
 import { resolverItem } from '../src/catalogo/resolver';
-import { CORRELATIVO_COTIZACION, type Cotizacion } from '../src/negocio/estado';
+import { CORRELATIVO_COTIZACION, CORRELATIVOS_NOTA, type Cotizacion } from '../src/negocio/estado';
 import { calcularVence, fechaLocal, sumarDiasHabiles } from '../src/negocio/vigencia';
 import { normalizarRut } from '../src/negocio/cliente';
 import { plantilla } from '../src/servidor/pdf';
@@ -448,7 +448,7 @@ describe('Nuevas acciones', () => {
       status: 409,
       codigo: 'cotizacion_vencida',
     });
-    expect(almacen.correlativosNota().panguipulli).toBe(1);
+    expect(almacen.correlativosNota().panguipulli).toBe(CORRELATIVOS_NOTA.panguipulli);
     expect(almacen.listar().cotizaciones[0].vencida).toBe(true);
     const r = await servicio.ejecutar({
       tipo: 'aprobar',

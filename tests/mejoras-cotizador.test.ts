@@ -1,3 +1,4 @@
+import { CORRELATIVOS_NOTA } from '../src/negocio/estado';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -336,7 +337,7 @@ describe('flujo persistido de venta y producción', () => {
     q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
     expect(q.estado).toBe('aprobada');
     expect(q.nota).toBeNull();
-    expect(almacen.correlativosNota().panguipulli).toBe(1);
+    expect(almacen.correlativosNota().panguipulli).toBe(CORRELATIVOS_NOTA.panguipulli);
     await expect(servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
 
     const mitad = Math.ceil(q.montos.total * 0.5);
@@ -348,7 +349,7 @@ describe('flujo persistido de venta y producción', () => {
     expect(q.estadoOperativo).toBe('pedido_generado');
 
     q = new Almacen(dir).obtener(q.id)!;
-    expect([q.pagos?.length, q.pagos?.reduce((s, p) => s + p.monto, 0), q.nota?.numero]).toEqual([2, mitad, 1]);
+    expect([q.pagos?.length, q.pagos?.reduce((s, p) => s + p.monto, 0), q.nota?.numero]).toEqual([2, mitad, CORRELATIVOS_NOTA.panguipulli]);
     const comentario = await servicio.ejecutar({ tipo: 'comentario', id: q.id, actualizada: q.actualizada, texto: 'Coordinar despacho con cliente' });
     q = comentario.cotizacion;
     const pagarSaldo = q.montos.total - mitad;

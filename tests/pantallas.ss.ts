@@ -3,7 +3,6 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { SECCIONES } from '../src/app/catalogo/secciones';
 import { seccionesVisibles } from '../src/app/ajustes/secciones';
-import { Almacen } from '../src/servidor/almacen';
 import { accion, completarOperacion, crearBorrador, crearEmitida, totalDe } from './api-e2e';
 import { ADMIN_E2E, DIR_E2E, iniciarSesion } from './login-e2e';
 
@@ -17,10 +16,6 @@ type Escenarios = Record<'borrador' | 'emitida' | 'aprobada' | 'conAnticipo' | '
 async function escenarios(page: Page): Promise<Escenarios> {
   if (existsSync(ESCENARIOS)) return JSON.parse(readFileSync(ESCENARIOS, 'utf8'));
   const r = page.request;
-  // Los números de nota que trae cada fábrica al empezar a usar el cotizador.
-  const almacen = new Almacen(DIR_E2E);
-  almacen.fijarCorrelativoNota('panguipulli', 577);
-  almacen.fijarCorrelativoNota('santiago', 59);
   const pagar = async (q: Awaited<ReturnType<typeof crearEmitida>>, parte: number) =>
     accion(r, { tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil((await totalDe(r, q.id)) * parte) });
 
