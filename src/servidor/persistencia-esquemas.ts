@@ -3,7 +3,7 @@ import { descuentoEsManual, MAX_DESDE_PUERTAS } from '../negocio/descuento-canti
 import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
 import { LARGO_OBSERVACION_ITEM, MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
-import { leerEstadoOperativo } from '../negocio/estado';
+import { FABRICAS, leerEstadoOperativo } from '../negocio/estado';
 
 const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
 /**
@@ -247,6 +247,7 @@ export const cotizacionSchema = z.looseObject({
   nota: z
     .object({
       numero: z.number().int(),
+      fabrica: z.enum(FABRICAS).optional(),
       pdf: z.string(),
       montos: montosSchema,
       fecha: z.string(),

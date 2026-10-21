@@ -154,9 +154,9 @@ describe('Pares de acciones con el número ya reservado', () => {
     await t.ir({ tipo: 'aprobar' });
     const anticipo = Math.ceil(t.actual().montos.total / 2);
     await t.ir({ tipo: 'pago', monto: anticipo });
-    const antes = t.almacen.correlativos();
+    const antes = t.almacen.correlativosNota();
     const pdf = pdfDemorado();
-    const nota = t.ejecutar({ tipo: 'generar_nota' });
+    const nota = t.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     await pdf.empezado;
     await t.ir({ tipo: 'pago', monto: 1000 });
     pdf.soltar();
@@ -164,7 +164,7 @@ describe('Pares de acciones con el número ya reservado', () => {
     const q = t.recargada();
     expect(q.nota).toBeNull();
     expect(q.pagos?.map((p) => p.monto)).toEqual([anticipo, 1000]);
-    expect(t.almacen.correlativos().siguienteNota).toBe(antes.siguienteNota + 1);
+    expect(t.almacen.correlativosNota().panguipulli).toBe(antes.panguipulli + 1);
     expect(t.marcas()).toEqual([]);
     expect(await t.pdfs()).toEqual([]);
   });
@@ -175,7 +175,7 @@ describe('Pares de acciones con el número ya reservado', () => {
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'pago', monto: Math.ceil(t.actual().montos.total / 2) });
     const pdf = pdfDemorado();
-    const nota = t.ejecutar({ tipo: 'generar_nota' });
+    const nota = t.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     await pdf.empezado;
     await t.ir({ tipo: 'anular', motivo: 'El cliente desistió' });
     pdf.soltar();

@@ -1,4 +1,4 @@
-import { etiquetaEstado, etiquetaOperativo, type ResumenCotizacion } from '../negocio/estado';
+import { etiquetaEstado, etiquetaOperativo, nombreFabrica, type ResumenCotizacion } from '../negocio/estado';
 import { fechaLocal } from '../negocio/vigencia';
 
 /**
@@ -49,6 +49,7 @@ const COLUMNAS: [string, (q: ResumenCotizacion) => string | number | null][] = [
   ['Revisión de', (q) => q.origen],
   ['Reemplazada por', (q) => q.reemplazadaPor],
   ['Nota de pedido', (q) => (q.nota ? `${q.nota.numero}${q.nota.anulada ? ' (anulada)' : ''}` : null)],
+  ['Fábrica', (q) => (q.nota?.fabrica ? nombreFabrica[q.nota.fabrica] : null)],
   ['Creada por', (q) => q.creadaPor],
   ['Emitida por', (q) => q.emitidaPor],
   ['Aprobada por', (q) => q.aprobadaPor],

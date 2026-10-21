@@ -171,7 +171,7 @@ describe('descripción de documento y observaciones de línea', () => {
     q = (await servicio.ejecutar({ tipo: 'emitir', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5) })).cotizacion;
-    q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).cotizacion;
     const nota = recargada().nota!.montos.lineas[0];
     expect(nota).toMatchObject({ descripcionDocumento: descripcionEditada, cantidad: 4, precioUnitario: 100_000, margen: 0 });
     expect(nota.producto.descripcion).toBe(puerta().descripcion);
@@ -336,14 +336,14 @@ describe('flujo persistido de venta y producción', () => {
     q = (await servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
     expect(q.estado).toBe('aprobada');
     expect(q.nota).toBeNull();
-    expect(almacen.correlativos().siguienteNota).toBe(1);
-    await expect(servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
+    expect(almacen.correlativosNota().panguipulli).toBe(1);
+    await expect(servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
 
     const mitad = Math.ceil(q.montos.total * 0.5);
     q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.floor(mitad * 0.98), observacion: 'Anticipo' })).cotizacion;
-    await expect(servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
+    await expect(servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).rejects.toThrow(/50 %/);
     q = (await servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: mitad - Math.floor(mitad * 0.98) })).cotizacion;
-    q = (await servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).cotizacion;
     expect(q.nota?.montos.lineas[0]).toMatchObject({ precioUnitario: 100_000, precioFabrica: 100_000, margen: 0, margenPersonalizado: false });
     expect(q.estadoOperativo).toBe('pedido_generado');
 

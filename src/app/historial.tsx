@@ -2,6 +2,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  numeroNota,
   etiquetaComercial,
   etiquetaEstado,
   etiquetaOperativo,
@@ -698,7 +699,7 @@ function Fila({
           <small>
             {plural(q.items, 'ítem')}
             {q.pendientes ? ` · ${plural(q.pendientes, 'pendiente')}` : ''}
-            {q.nota ? ` · Nota N° ${q.nota.numero}${q.nota.anulada ? ' (anulada)' : ''}` : ''}
+            {q.nota ? ` · Nota ${numeroNota(q.nota)}${q.nota.anulada ? ' (anulada)' : ''}` : ''}
           </small>
           <small>Actualizada {fechaCorta(q.actualizada)}</small>
           {autor && <small>por {autor}</small>}

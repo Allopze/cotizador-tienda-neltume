@@ -23,6 +23,7 @@ export async function documentoAnulado(almacen: Almacen, archivo: string) {
         {
           tipo: 'nota',
           numero: q.nota!.numero,
+          fabrica: q.nota!.fabrica,
           montos: q.nota!.montos,
           fecha: q.nota!.fecha,
           autor: q.aprobadaPor,
@@ -81,6 +82,7 @@ export async function regenerarDocumento(almacen: Almacen, q: Cotizacion, tipo: 
         ? {
             tipo,
             numero: q.nota!.numero,
+            fabrica: q.nota!.fabrica,
             montos: q.nota!.montos,
             fecha: q.nota!.fecha,
             despacho: q.nota!.despacho,

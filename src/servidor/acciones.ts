@@ -1,7 +1,7 @@
 // Tipos de la API de `Servicio`: las acciones que recibe y lo que responde. Viven aparte para que los módulos que
 // arman una acción (chat.ts, edicion.ts) los usen sin importar el servicio completo.
 import type { Cliente, Familia, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
-import type { Cotizacion, Despacho, Mensaje } from '../negocio/estado';
+import type { Cotizacion, Despacho, Fabrica, Mensaje } from '../negocio/estado';
 import type { TarifaStarkenAplicada } from '../negocio/starken';
 import type { OpcionCotizacion } from './referencias';
 
@@ -93,7 +93,7 @@ export type Accion =
   | { tipo: 'despacho'; id: string; actualizada: string; despacho: Partial<Despacho> }
   | { tipo: 'comentario'; id: string; actualizada: string; texto: string }
   | { tipo: 'comercial'; id: string; actualizada: string; estado: 'seguimiento' | 'rechazada' }
-  | { tipo: 'generar_nota'; id: string; actualizada: string }
+  | { tipo: 'generar_nota'; id: string; actualizada: string; fabrica: Fabrica }
   | { tipo: 'operacion'; id: string; actualizada: string; paso: 'iniciar_produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada'; despacho?: Partial<Despacho> }
   | { tipo: 'facturacion'; id: string; actualizada: string; estado: 'pendiente' | 'facturada'; tipoDocumento?: 'factura' | 'boleta' | null; identificadorExterno?: string | null; fecha?: string | null };
 

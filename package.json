@@ -13,6 +13,7 @@
     "migrar:sqlite": "tsx scripts/migrar-sqlite.ts",
     "auth:migrar": "tsx scripts/migrar-auth.ts",
     "usuarios": "tsx scripts/usuarios.ts",
+    "notas": "tsx scripts/notas.ts",
     "limpiar-borradores": "tsx scripts/limpiar-borradores.ts",
     "respaldar": "tsx scripts/respaldar.ts",
     "restaurar": "tsx scripts/restaurar.ts",

@@ -7,7 +7,7 @@ import { etiquetaOperativo, puedeAnular, rangoFechaOperacion, type Cotizacion } 
 import { bajoElCosto, precioEnRango, rangoPrecio } from '../src/negocio/limites';
 import { cotizar } from '../src/negocio/precios';
 import { Almacen, cerrarAlmacen, EMISION_VIGENTE_MS } from '../src/servidor/almacen';
-import { abrirBaseDatos, cerrarBaseDatos } from '../src/servidor/base-datos';
+import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { cotizacionSchema } from '../src/servidor/persistencia-esquemas';
 import { generarPdf } from '../src/servidor/pdf';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
@@ -133,9 +133,9 @@ describe('#1 · doble emisión', () => {
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'pago', monto: t.anticipo() });
-    const antes = t.almacen.correlativos();
+    const antes = t.almacen.correlativosNota();
     const soltar = pdfDemorado();
-    const dos = [t.ejecutar({ tipo: 'generar_nota' }), t.ejecutar({ tipo: 'generar_nota' })];
+    const dos = [t.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli' }), t.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli' })];
     expect(await primeraEnTerminar(dos)).toBe('error');
     expect(t.marcas()).toHaveLength(1);
     soltar();
@@ -143,8 +143,8 @@ describe('#1 · doble emisión', () => {
     expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
     const fallida = resultados.find((r): r is PromiseRejectedResult => r.status === 'rejected')!;
     expect(fallida.reason).toMatchObject({ status: 409, message: expect.stringMatching(/^Ya se está generando la nota de pedido/) });
-    expect(t.almacen.correlativos()).toEqual({ ...antes, siguienteNota: antes.siguienteNota + 1 });
-    expect(t.recargada().nota?.numero).toBe(antes.siguienteNota);
+    expect(t.almacen.correlativosNota()).toEqual({ ...antes, panguipulli: antes.panguipulli + 1 });
+    expect(t.recargada().nota).toMatchObject({ numero: antes.panguipulli, fabrica: 'panguipulli' });
     expect(t.marcas()).toEqual([]);
   });
 
@@ -333,11 +333,11 @@ describe('#12 y #42 · fechas de pagos y facturas en hora de Chile', () => {
     const db = abrirBaseDatos(ruta);
     db.exec('DROP TABLE emisiones_en_curso; ALTER TABLE cotizaciones DROP COLUMN fecha_aprobacion; PRAGMA user_version = 22;');
     cerrarBaseDatos(ruta);
-    expect(abrirBaseDatos(ruta).pragma('user_version', { simple: true })).toBe(23);
+    expect(abrirBaseDatos(ruta).pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
     expect(new Almacen(t.dir).obtener(t.actual().id)!.fechaAprobacion).toBe('2026-10-05T15:00:00.000Z');
     abrirBaseDatos(ruta).pragma('user_version = 22');
     cerrarBaseDatos(ruta);
-    expect(abrirBaseDatos(ruta).pragma('user_version', { simple: true })).toBe(23);
+    expect(abrirBaseDatos(ruta).pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
   });
 
   it('quitar la aprobación borra su fecha', async () => {
@@ -406,7 +406,7 @@ describe('#39 · el estado «produccion_terminada» ya no existe', () => {
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'pago', monto: t.anticipo() });
-    await t.ir({ tipo: 'generar_nota' });
+    await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     t.almacen
       .baseDatos()
       .prepare("UPDATE cotizaciones SET estado_operativo = 'produccion_terminada' WHERE id = ?")

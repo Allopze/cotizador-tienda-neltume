@@ -112,7 +112,7 @@ async function aprobarPagarYGenerarNota(servicio: Servicio, q: Cotizacion) {
       monto: Math.ceil(actual.montos.total * 0.5),
     })
   ).cotizacion;
-  return servicio.ejecutar({ tipo: 'generar_nota', id: actual.id, actualizada: actual.actualizada });
+  return servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: actual.id, actualizada: actual.actualizada });
 }
 
 describe('C1: cantidades inválidas del modelo', () => {
@@ -391,7 +391,7 @@ describe('Nuevas acciones', () => {
       await servicio.ejecutar({ tipo: 'pago', id: a.id, actualizada: a.actualizada, monto: Math.ceil(a.montos.total * 0.5) })
     ).cotizacion;
     a = (
-      await servicio.ejecutar({ tipo: 'generar_nota', id: a.id, actualizada: a.actualizada })
+      await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: a.id, actualizada: a.actualizada })
     ).cotizacion;
     expect(a.nota!.despacho).toMatchObject({ direccion: 'Los Carrera #450', transporte: 'Camión propio' });
     expect(vi.mocked(plantilla).mock.calls.at(-1)![1]).toMatchObject({ tipo: 'nota', autor: 'Paula' });
@@ -448,7 +448,7 @@ describe('Nuevas acciones', () => {
       status: 409,
       codigo: 'cotizacion_vencida',
     });
-    expect(almacen.correlativos().siguienteNota).toBe(1);
+    expect(almacen.correlativosNota().panguipulli).toBe(1);
     expect(almacen.listar().cotizaciones[0].vencida).toBe(true);
     const r = await servicio.ejecutar({
       tipo: 'aprobar',

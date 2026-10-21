@@ -61,12 +61,16 @@ test('operación: la nota y cada paso se confirman, se vuelve un paso con motivo
   // La nota de pedido consume un número: se confirma y Escape la cancela sin generarla.
   await flujo.getByRole('button', { name: 'Generar nota de pedido' }).click();
   const nota = page.getByRole('alertdialog', { name: '¿Generar la nota de pedido?' });
-  await expect(nota).toContainText('Se asigna el siguiente N° de nota de pedido');
-  await expect(nota.getByRole('button', { name: 'Cancelar' })).toBeFocused();
+  await expect(nota).toContainText('Se asigna el siguiente N° de nota de pedido de esa fábrica');
+  await expect(nota.getByRole('radio', { name: /Panguipulli/ })).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(nota).toHaveCount(0);
   await expect(estados).not.toContainText('Nota de pedido generada');
   await flujo.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  // Sin fábrica elegida no se genera.
+  await nota.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  await expect(nota.getByRole('alert')).toHaveText('Elige la fábrica que recibe el pedido.');
+  await nota.getByRole('radio', { name: /Santiago/ }).check();
   await nota.getByRole('button', { name: 'Generar nota de pedido' }).click();
   await expect(estados).toContainText('Operación: Nota de pedido generada');
 

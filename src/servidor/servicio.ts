@@ -36,6 +36,7 @@ import {
   etiquetaComercial,
   etiquetaFacturacion,
   etiquetaOperativo,
+  numeroNota,
   pagoAnulable,
   retrocesoOperativo,
   puedeAnular,
@@ -44,6 +45,7 @@ import {
   totalPagado,
   type Cotizacion,
   type Despacho,
+  type Fabrica,
   type Facturacion,
 } from '../negocio/estado';
 import {
@@ -468,7 +470,7 @@ export class Servicio {
     const aprobada = u.serie(q.id).find((s) => s.id !== q.id && s.estado === 'aprobada');
     if (aprobada)
       throw new ErrorConflicto(
-        `La cotización N° ${aprobada.numero} de esta misma serie ya fue aprobada${aprobada.nota ? ` (nota de pedido N° ${aprobada.nota.numero})` : ''}. Duplica la cotización si necesitas un pedido nuevo.`,
+        `La cotización N° ${aprobada.numero} de esta misma serie ya fue aprobada${aprobada.nota ? ` (nota de pedido ${numeroNota(aprobada.nota)})` : ''}. Duplica la cotización si necesitas un pedido nuevo.`,
         'serie_aprobada',
       );
   }
@@ -759,7 +761,7 @@ export class Servicio {
     }
     q.historial.push({
       rol: 'asistente',
-      texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido N° ${q.nota.numero}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}${pagado ? `. ${pagado}` : ''}.`,
+      texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido ${numeroNota(q.nota)}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}${pagado ? `. ${pagado}` : ''}.`,
     });
     q.actualizada = marca(q.actualizada);
     u.guardar(q);
@@ -1567,7 +1569,7 @@ export class Servicio {
       // Antes que la nota: una aprobada que después se anuló no se informa como aprobada.
       if (q.estado === 'anulada')
         throw new ErrorConflicto(
-          `La cotización N° ${q.numero} está anulada${q.nota ? ` junto con su nota de pedido N° ${q.nota.numero}` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+          `La cotización N° ${q.numero} está anulada${q.nota ? ` junto con su nota de pedido ${numeroNota(q.nota)}` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
           'estado_invalido',
         );
       if (q.nota) return { listo: q };
@@ -1627,7 +1629,7 @@ export class Servicio {
     // Al reservar y al confirmar, lo revisado sigue vigente: nadie generó la nota ni cambió la cotización.
     const vigente = (u: Unidad) => {
       const q = this.obtener(u, accion.id);
-      if (q.nota) throw new ErrorConflicto(`Otra persona aprobó esta cotización (nota N° ${q.nota.numero}).`);
+      if (q.nota) throw new ErrorConflicto(`Otra persona aprobó esta cotización (nota ${numeroNota(q.nota)}).`);
       if (q.actualizada !== version || q.estado !== 'aprobada') throw new ErrorConflicto(VERSION_OBSOLETA);
       this.verificarSerieNoAprobada(q, u);
       return q;
@@ -1636,10 +1638,10 @@ export class Servicio {
     await prepararPdf();
     const { numero, ficha } = await this.almacen.transaccion((u) => {
       vigente(u);
-      return u.reservarNotaEnEmision(accion.id);
+      return u.reservarNotaEnEmision(accion.id, accion.fabrica);
     });
     try {
-      return await this.generarNotaReservada(numero, copia, montos, vigente);
+      return await this.generarNotaReservada({ numero, fabrica: accion.fabrica }, copia, montos, vigente);
     } finally {
       this.almacen.liberarEmision(accion.id, ficha);
     }
@@ -1647,7 +1649,7 @@ export class Servicio {
 
   /** Segunda mitad de `generarNotaPedido`, con el número ya reservado y la marca «en emisión» tomada. */
   private async generarNotaReservada(
-    numero: number,
+    { numero, fabrica }: { numero: number; fabrica: Fabrica },
     copia: Cotizacion,
     montos: Montos,
     vigente: (u: Unidad) => Cotizacion,
@@ -1657,13 +1659,14 @@ export class Servicio {
       transporte: null,
       entregaComprometida: null,
     };
-    const archivo = `nota-pedido-${numero}.pdf`,
+    const archivo = `nota-pedido-${fabrica}-${numero}.pdf`,
       fecha = new Date().toISOString();
     const html = await plantilla(
       copia,
       {
         tipo: 'nota',
         numero,
+        fabrica,
         montos,
         fecha,
         autor: this.autor,
@@ -1688,6 +1691,7 @@ export class Servicio {
         };
         q.nota = {
           numero,
+          fabrica,
           pdf: archivo,
           montos,
           fecha,
@@ -1699,12 +1703,12 @@ export class Servicio {
         q.estadoComercial = 'vendida';
         q.historial.push({
           rol: 'asistente',
-          texto: `Nota de pedido N° ${numero} generada después de registrar el anticipo.`,
+          texto: `Nota de pedido ${numeroNota(q.nota)} generada después de registrar el anticipo.`,
         });
         q.actualizada = marca(q.actualizada);
         u.guardar(q);
         u.guardarDocumento(q.id, archivo, html);
-        u.registrarEvento(q.id, 'nota_generada', this.autor, `Nota de pedido N° ${numero} · precio fábrica`);
+        u.registrarEvento(q.id, 'nota_generada', this.autor, `Nota de pedido ${numeroNota(q.nota)} · precio fábrica`);
         // Las demás emitidas de la serie ya no pueden aprobarse: una sola nota por pedido.
         this.reemplazarSerie(u, q);
         return { cotizacion: q, archivo };

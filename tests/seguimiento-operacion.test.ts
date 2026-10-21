@@ -91,7 +91,7 @@ describe('seguimiento de la operación: caminos de vuelta', () => {
       t.ir(q, { tipo: 'operacion', paso, ...extra });
     const conNota = async () => {
       const q = await aprobada();
-      return t.ir(await pagar(q, mitad(q)), { tipo: 'generar_nota' });
+      return t.ir(await pagar(q, mitad(q)), { tipo: 'generar_nota', fabrica: 'panguipulli' });
     };
     const saldo = (q: Cotizacion) => q.montos.total - mitad(q);
     const despachada = async () => {

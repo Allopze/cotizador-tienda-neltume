@@ -109,8 +109,22 @@ export function etiquetaFacturacion(f: Facturacion | undefined) {
   const documento = f.tipo === 'boleta' ? 'Boleta' : 'Factura';
   return `Facturada · ${documento}${f.identificadorExterno ? ` N° ${f.identificadorExterno}` : ''}`;
 }
+/** Fábricas que reciben notas de pedido; cada una lleva su propio correlativo. */
+export const FABRICAS = ['panguipulli', 'santiago'] as const;
+export type Fabrica = (typeof FABRICAS)[number];
+export const nombreFabrica: Record<Fabrica, string> = { panguipulli: 'Panguipulli', santiago: 'Santiago' };
+/** Lo que fabrica cada una, para elegir a cuál va la nota. */
+export const productosFabrica: Record<Fabrica, string> = {
+  panguipulli: 'Puertas sólidas',
+  santiago: 'Puertas enchapadas y prepintadas',
+};
 export interface NotaPedido {
   numero: number;
+  /**
+   * Fábrica de destino: su número es único dentro de ella. Falta en las notas generadas antes de separar las
+   * fábricas, hasta que se les asigne una con `npm run notas`.
+   */
+  fabrica?: Fabrica;
   pdf: string;
   montos: Montos;
   fecha: string;
@@ -119,6 +133,9 @@ export interface NotaPedido {
   /** La cotización aprobada se anuló después: la nota ya no es válida para fábrica. */
   anulada: boolean;
 }
+/** «N° 12 · Panguipulli»; una nota sin fábrica asignada va solo con su número. */
+export const numeroNota = (n: Pick<NotaPedido, 'numero' | 'fabrica'>) =>
+  `N° ${n.numero}${n.fabrica ? ` · ${nombreFabrica[n.fabrica]}` : ''}`;
 export interface Cotizacion {
   id: string;
   numero: number | null;
@@ -289,7 +306,7 @@ export interface ResumenCotizacion {
   aprobadaPor: string | null;
   anuladaPor: string | null;
   fechaAnulacion: string | null;
-  nota: { numero: number; pdf: string; fecha: string; anulada: boolean } | null;
+  nota: (Pick<NotaPedido, 'numero' | 'fabrica' | 'pdf' | 'fecha' | 'anulada'>) | null;
   estadoComercial?: EstadoComercial;
   estadoOperativo?: EstadoOperativo;
   pagado?: number;

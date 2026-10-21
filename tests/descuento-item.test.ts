@@ -270,7 +270,7 @@ describe('descuento especial por ítem en el servicio', () => {
     let q = (await t.servicio.ejecutar({ tipo: 'emitir', id: t.q.id, actualizada: t.q.actualizada })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5) })).cotizacion;
-    q = (await t.servicio.ejecutar({ tipo: 'generar_nota', id: q.id, actualizada: q.actualizada })).cotizacion;
+    q = (await t.servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).cotizacion;
     const nota = new Almacen(t.dir).obtener(q.id)!.nota!;
     expect(nota.montos.lineas.map((l) => [l.precioUnitario, l.descuentoItem, l.total])).toEqual([
       [100_000, undefined, 200_000],
