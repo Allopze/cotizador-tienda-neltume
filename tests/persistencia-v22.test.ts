@@ -118,10 +118,10 @@ describe('nota de pedido: destino y valor del despacho', () => {
     await t.ir({ tipo: 'pago', monto: Math.ceil(t.actual().montos.total / 2) });
     await t.ir({ tipo: 'despacho', despacho: { destino: 'Osorno' } });
     const q = await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
-    expect(new Almacen(t.dir).obtener(q.id)!.nota!.despacho).toMatchObject({ destino: 'Osorno', valor: q.flete });
+    expect(new Almacen(t.dir).obtener(q.id)!.notas[0].despacho).toMatchObject({ destino: 'Osorno', valor: q.flete });
     // Nota anterior a v22 (o migrada desde JSON): las columnas quedan en NULL.
     t.db().prepare('UPDATE notas_pedido SET despacho_destino = NULL, despacho_valor = NULL').run();
-    const despacho = new Almacen(t.dir).obtener(q.id)!.nota!.despacho;
+    const despacho = new Almacen(t.dir).obtener(q.id)!.notas[0].despacho;
     expect(Object.keys(despacho)).not.toContain('destino');
     expect(Object.keys(despacho)).not.toContain('valor');
   });
@@ -162,7 +162,7 @@ describe('CSV del listado: pagos, operación y facturación', () => {
       cliente: { ...clienteVacio(), nombre: 'Ana' },
       total: 119000,
       productos: '',
-      nota: null,
+      notas: [],
     } as unknown as ResumenCotizacion;
     expect(valores(csvCotizaciones([fila]))).toMatchObject({
       Pagado: '0',

@@ -15,6 +15,9 @@ export type CodigoError =
   | 'mensaje_procesado'
   | 'pdf_no_disponible'
   | 'numero_invalido'
+  | 'numero_usado'
+  | 'fabrica_sin_asignar'
+  | 'sin_permiso'
   | 'archivo_invalido';
 
 export class ErrorUsuario extends Error {

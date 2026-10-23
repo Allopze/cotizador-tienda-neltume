@@ -33,6 +33,7 @@ vi.mock('playwright', () => ({
           setDefaultTimeout: () => {},
           route: async () => {},
           setContent: async () => {},
+          evaluate: async () => {},
           pdf: async ({ path }: { path: string }) => {
             await new Promise((r) => setTimeout(r, navegador.demora));
             if (navegador.falla) throw new Error(navegador.falla);
@@ -47,7 +48,7 @@ vi.mock('playwright', () => ({
     })),
   },
 }));
-const { descripcionLegible, generarPdf, medidaPedida, plantilla, prepararPdf } =
+const { descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, prepararPdf } =
   await import('../src/servidor/pdf');
 
 const puerta: Producto = {
@@ -89,7 +90,7 @@ const cotizacion = (): Cotizacion => ({
   motivoAnulacion: null,
   reemplazadaPor: null,
   versionCatalogo: null,
-  nota: null,
+  notas: [],
 });
 const dirs: string[] = [];
 afterEach(async () => {
@@ -131,20 +132,22 @@ describe('Plantillas', () => {
       vence: '2026-10-12',
       autor: 'Paula',
     });
-    expect(html).toContain('Revisión de la cotización:</b> N° 323');
+    expect(html).toContain('<dt class="k">Revisión de</dt><dd>N° 323</dd>');
+    expect(html).toContain('<dt class="k">Válida hasta</dt><dd>12 de octubre de 2026</dd>');
     expect(html).toContain('válida hasta el 12-10-2026');
-    expect(html).toContain('Emitida por:</b> Paula');
+    expect(html).toContain('<dt class="k">Emitida por</dt><dd>Paula</dd>');
     // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio. El vano no se repite aparte.
-    expect(html).toContain('Molco Pino Oregon 0,82 m × 2,00 m</td>');
+    expect(html).toContain('<b>Molco Pino Oregon 0,82 m × 2,00 m</b><span class="cod">MOL-O-3-A</span>');
+    // Con el dibujo de línea del modelo, como referencia que se incrusta al imprimir.
+    expect(html).toContain('<image href="neltume-dibujo:molco.png"');
     expect(html).not.toContain('Medida solicitada');
     expect(html).not.toContain('0,80 a 0,85');
-    expect(html).toMatch(/DESCUENTO 10 %.*−\$25\.000/);
-    expect(html).toContain('FLETE');
+    expect(html).toMatch(/Descuento 10 %.*−\$25\.000/);
     // El flete es una línea del detalle y el subtotal la incluye; el descuento es solo de los productos.
-    expect(html).toMatch(/<td class="codigo">FLETE<\/td><td>Flete \/ despacho<\/td><td class="num">1<\/td><td class="num">\$15\.000<\/td><td class="num">\$15\.000/);
-    expect(html).toMatch(/SUBTOTAL<\/span><b>\$265\.000/);
-    expect(html).toContain('SOBRE PRODUCTOS');
-    expect(html).not.toContain('Flete por despacho</td>');
+    expect(html).toMatch(/<b>Flete \/ despacho<\/b><span class="cod">FLETE<\/span><\/div><\/div><\/td><td class="r cant">1<\/td><td class="r unit">\$15\.000<\/td><td class="r tot">\$15\.000/);
+    expect(html).toContain('<dt>Subtotal</dt><dd>$265.000</dd>');
+    expect(html).toContain('sobre productos');
+    expect(html).not.toContain('Flete por despacho</b>');
     // El flete ya está en el detalle: no se pide consultar el valor del despacho.
     expect(html).not.toContain('Consultar valor despacho');
   });
@@ -163,7 +166,7 @@ describe('Plantillas', () => {
     const html = await plantilla(cotizacion(), {
       tipo: 'cotizacion', numero: 325, montos, fecha: '2026-09-28T12:00:00.000Z',
     });
-    const [conDescuento, sinDescuento] = html.split('<tr><td>').slice(1).map(textoVisible);
+    const [conDescuento, sinDescuento] = html.split('<tr><td class="n">').slice(1).map(textoVisible);
     // Unitario $125.000 → −$18.750 → $106.250; la línea de 2 pasa de $250.000 a $212.500.
     expect(conDescuento).toMatch(/\$125\.000\s+\$106\.250/);
     expect(conDescuento).toMatch(/\$250\.000\s+\$212\.500/);
@@ -172,16 +175,16 @@ describe('Plantillas', () => {
     // La otra línea sigue a su precio, sin tachar ni rótulos de descuento.
     expect(sinDescuento).not.toMatch(/Descuento especial/);
     expect(veces(html, '<s class="original">')).toBe(2);
-    const totales = textoVisible(html.split('<div class="totales">')[1]);
-    expect(totales).toMatch(/SUBTOTAL ORIGINAL\s+\$375\.000/);
-    expect(totales).toMatch(/AHORRO DESC\. ESPECIALES\s+−\$37\.500/);
-    expect(totales).toMatch(/SUBTOTAL\s+\$337\.500/);
-    expect(totales).toMatch(/DESCUENTO 10 %\s+−\$33\.750/);
+    const totales = textoVisible(html.split('<dl class="totales">')[1]);
+    expect(totales).toMatch(/Subtotal original\s+\$375\.000/);
+    expect(totales).toMatch(/Ahorro desc\. especiales\s+−\$37\.500/);
+    expect(totales).toMatch(/Subtotal\s+\$337\.500/);
+    expect(totales).toMatch(/Descuento 10 %\s+−\$33\.750/);
     // Sin descuentos especiales, el resumen queda como siempre.
     const sin = await plantilla(cotizacion(), {
       tipo: 'cotizacion', numero: 325, montos: cotizar([{ producto: puerta, cantidad: 1 }]), fecha: '2026-09-28T12:00:00.000Z',
     });
-    expect(sin).not.toMatch(/SUBTOTAL ORIGINAL|AHORRO|class="original"/);
+    expect(sin).not.toMatch(/Subtotal original|Ahorro|class="original"/);
   });
 
   it('el PDF mantiene el orden de las líneas que recibió la cotización', async () => {
@@ -214,14 +217,14 @@ describe('Plantillas', () => {
         ),
       );
     const automatico = await pdf({ descuentoManual: false });
-    expect(automatico).toMatch(/DESC\. POR CANTIDAD 5 %\s+−\$/);
-    expect(automatico).not.toContain('DESCUENTO POR CANTIDAD');
+    expect(automatico).toMatch(/Desc\. por cantidad 5 %\s+−\$/);
+    expect(automatico).not.toMatch(/descuento por cantidad/i);
     const manual = await pdf({ descuentoManual: true });
-    expect(manual).toMatch(/DESCUENTO 5 %\s+−\$/);
-    expect(manual).not.toContain('POR CANTIDAD');
+    expect(manual).toMatch(/Descuento 5 %\s+−\$/);
+    expect(manual).not.toMatch(/por cantidad/i);
     // Sin tramos en las reglas (cotizaciones anteriores) sigue igual.
     const anterior = await pdf({ descuentoManual: false }, REGLAS);
-    expect(anterior).toMatch(/DESCUENTO 5 %\s+−\$/);
+    expect(anterior).toMatch(/Descuento 5 %\s+−\$/);
     for (const texto of [automatico, manual, anterior]) expect(texto).not.toMatch(/margen/i);
   });
 
@@ -236,8 +239,9 @@ describe('Plantillas', () => {
       autor: 'Paulette',
       despacho: { direccion: 'Los Carrera #450', transporte: ' otro ' },
     });
-    expect(html).toContain('Dirección de despacho:</b> Los Carrera #450');
-    expect(html).not.toMatch(/Medio de transporte:<\/b>\s*otro/i);
+    expect(html).toContain('<dt>Dirección de despacho</dt><dd>Los Carrera #450</dd>');
+    expect(html).toContain('<dt>Transporte</dt><dd>Por confirmar</dd>');
+    expect(html).not.toMatch(/<dd>\s*otro\s*<\/dd>/i);
   });
 
   it('la nota imprime giro, despacho, transporte y quién aprobó', async () => {
@@ -254,15 +258,17 @@ describe('Plantillas', () => {
       autor: 'Paulette',
       despacho: { direccion: 'Los Carrera #450', transporte: 'Camión' },
     });
-    expect(html).toContain('Giro:</b> Constructora');
-    expect(html).toContain('Dirección de despacho:</b> Los Carrera #450');
-    expect(html).toContain('Medio de transporte:</b> Camión');
-    expect(html).toContain('Aprobada por:</b> Paulette');
-    expect(html).toContain('Molco Pino Oregon 0,83 m × 2,00 m<br><small>Medida solicitada: 830 × 2000 mm (Hoja)');
+    expect(html).toContain('<dt>Giro</dt><dd>Constructora</dd>');
+    expect(html).toContain('<dt>Dirección de despacho</dt><dd>Los Carrera #450</dd>');
+    expect(html).toContain('<dt>Transporte</dt><dd>Camión</dd>');
+    expect(html).toContain('<dt class="k">Aprobada por</dt><dd>Paulette</dd>');
+    expect(html).toContain('<b>Molco Pino Oregon 0,83 m × 2,00 m</b><span class="medida">Medida solicitada: 830 × 2000 mm (Hoja)</span>');
+    // El plano lleva las cotas de la medida pedida, en milímetros.
+    expect(html).toMatch(/<svg class="plano"[^]*>830<\/text>[^]*>2000<\/text><\/svg>/);
     // Fábrica ve además la referencia de catálogo (el rango que se cobra).
     expect(html).toContain('Referencia de catálogo: MOL-O-3-A');
-    expect(html).not.toContain('DESCUENTO');
-    expect(html).toContain('Ref. cotización:</b> N° 325');
+    expect(textoVisible(html)).not.toMatch(/descuento/i);
+    expect(html).toContain('<dt class="k">Cotización</dt><dd>N° 325</dd>');
     expect(html).toContain('Recibido por fábrica');
     expect(html).not.toContain('GRACIAS');
   });
@@ -305,7 +311,7 @@ describe('Plantillas', () => {
     );
     const html = await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 326, montos, fecha: '2026-09-28T12:00:00.000Z' });
     const texto = textoVisible(html);
-    const [sinTipo, , sinMedida] = html.split('<tr><td>').slice(1).map(textoVisible);
+    const [sinTipo, , sinMedida] = html.split('<tr><td class="n">').slice(1).map(textoVisible);
     // Con descripción escrita, la medida se informa aparte, sin decir que es de vano.
     expect(texto).toContain('Medida solicitada: 835 × 2000 mm');
     expect(texto).not.toContain('(Vano)');
@@ -327,23 +333,30 @@ describe('Plantillas', () => {
     expect(veces(texto, 'MOLD-P-2')).toBe(1);
   });
 
-  it('el vano es un dato para fábrica: la cotización no lo nombra y la nota de pedido sí', async () => {
+  it('hoja o vano es un dato para fábrica: la cotización no lo nombra y la nota de pedido sí', async () => {
     await aislarBaseDatos();
     const montos = cotizar(
       [
         { producto: puerta, cantidad: 1, anchoSolicitado: 0.82, altoSolicitado: 2, tipoMedida: 'vano' },
         { producto: puerta, cantidad: 1, anchoSolicitado: 0.835, altoSolicitado: 2, tipoMedida: 'vano', descripcionDocumento: 'Puerta con cerradura' },
+        { producto: puerta, cantidad: 1, anchoSolicitado: 0.84, altoSolicitado: 2, tipoMedida: 'hoja' },
+        { producto: puerta, cantidad: 1, anchoSolicitado: 0.8, altoSolicitado: 2, tipoMedida: 'hoja', descripcionDocumento: 'Puerta de baño' },
       ],
       undefined,
     );
     const fecha = '2026-09-28T12:00:00.000Z';
     const paraCliente = textoVisible(await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 327, montos, fecha }));
-    expect(paraCliente).not.toMatch(/vano/i);
-    expect(veces(paraCliente, 'Medida solicitada')).toBe(1);
+    expect(paraCliente).not.toMatch(/vano|hoja/i);
+    // La medida pedida va aparte solo con una descripción escrita a mano: si no, el nombre ya la lleva.
+    expect(veces(paraCliente, 'Medida solicitada')).toBe(2);
     expect(paraCliente).toContain('Medida solicitada: 835 × 2000 mm');
+    expect(paraCliente).toContain('Medida solicitada: 800 × 2000 mm');
+    expect(paraCliente).toContain('Molco Pino Oregon 0,84 m × 2,00 m');
     const paraFabrica = textoVisible(await plantilla(cotizacion(), { tipo: 'nota', numero: 9, montos, fecha }));
     expect(paraFabrica).toContain('Medida solicitada: 820 × 2000 mm (Vano)');
     expect(paraFabrica).toContain('Medida solicitada: 835 × 2000 mm (Vano)');
+    expect(paraFabrica).toContain('Medida solicitada: 840 × 2000 mm (Hoja)');
+    expect(paraFabrica).toContain('Medida solicitada: 800 × 2000 mm (Hoja)');
   });
 
   it('la nota para fábrica suma la referencia de catálogo y la medida exacta, nunca el margen', async () => {
@@ -400,13 +413,13 @@ describe('Plantillas', () => {
     // La nota valoriza solo la Molco, a costo de fábrica.
     const montos = cotizar([{ producto: puerta, cantidad: 2, indice: 1 }], { ajuste: 0, iva: 0.19 });
     const html = await plantilla(q, { tipo: 'nota', numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' });
-    const [primera, segunda] = html.split('<tr><td>').slice(1).map(textoVisible);
+    const [primera, segunda] = html.split('<tr><td class="n">').slice(1).map(textoVisible);
     expect(primera).toMatch(/Puerta japonesa[\s\S]*Por definir\s+Por definir/i);
     expect(segunda).toContain('Molco');
     const texto = textoVisible(html);
     expect(texto).toContain('Las líneas «Por definir» son pedidos especiales sin costo de fábrica');
     expect(texto).not.toContain('$450.000');
-    expect(texto).toMatch(/TOTAL\s+\$238\.000/);
+    expect(texto).toMatch(/Total\s+\$238\.000/);
   });
 
   it('las descripciones en mayúsculas se muestran legibles y las escuadrías llevan unidad', () => {
@@ -422,6 +435,31 @@ describe('Plantillas', () => {
     expect(medidaPedida(linea!)).toBe('2x4 pulg. × 2,10 m');
   });
 
+  it('cada nota nombra a la otra nota de la cotización, y una puerta sin modelo 3D lleva el esquema genérico', async () => {
+    await aislarBaseDatos();
+    const huilo = { ...puerta, codigo: 'HUIL-O-3-A', modelo: 'Huilo Huilo', descripcion: 'HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2 MT' };
+    const montos = cotizar([{ producto: huilo, cantidad: 2, anchoSolicitado: 0.8, altoSolicitado: 2 }], { ajuste: 0, iva: 0.19 });
+    const html = await plantilla(cotizacion(), {
+      tipo: 'nota', numero: 577, fabrica: 'panguipulli', montos, fecha: '2026-09-28T12:00:00.000Z',
+      otrasNotas: [{ fabrica: 'santiago', numero: 59, items: 1 }],
+    });
+    expect(textoVisible(html)).toMatch(/La cotización N° 325 tiene 2 notas de pedido\. La otra va a Santiago,\s+N° 59\s+, con 1 ítem\./);
+    expect(html).toContain('<p class="fabrica"><b>Fábrica Panguipulli</b></p>');
+    expect(html).toContain('Recibido por fábrica Panguipulli');
+    // Huilo Huilo no tiene modelo 3D: esquema genérico, con las cotas igual.
+    expect(html).not.toContain('neltume-dibujo:');
+    expect(html).toMatch(/<g class="generico">[^]*>800<\/text>[^]*>2000<\/text>/);
+  });
+
+  it('al imprimir, los dibujos y las fuentes de la plantilla se incrustan; una referencia sin archivo queda igual', async () => {
+    const html = await inyectarRecursos(
+      '<style>@font-face{src:url(neltume-fuente:host-grotesk.woff2)}</style><svg><image href="neltume-dibujo:molco.png"/><image href="neltume-dibujo:no-existe.png"/></svg>',
+    );
+    expect(html).toMatch(/url\(data:font\/woff2;base64,[A-Za-z0-9+/=]{1000,}\)/);
+    expect(html).toMatch(/href="data:image\/png;base64,[A-Za-z0-9+/=]{1000,}"/);
+    expect(html).toContain('href="neltume-dibujo:no-existe.png"');
+  });
+
   it('las condiciones comerciales configuradas se imprimen y la aceptación se omite si está anulada', async () => {
     await aislarBaseDatos();
     vi.stubEnv('NELTUME_CONDICIONES_PAGO', '50 % anticipo');
@@ -432,12 +470,13 @@ describe('Plantillas', () => {
     // Sin flete, el despacho se consulta aparte.
     expect(html).toContain('Consultar valor despacho.');
     expect(html).not.toContain('Plazo de entrega');
-    expect(html).toContain('Aceptación del cliente');
+    expect(html).toContain('Para aceptar esta cotización');
     const anulada = await plantilla(cotizacion(), {
       ...doc,
       anulada: { fecha: null, motivo: null, por: null },
     });
-    expect(anulada).not.toContain('Aceptación del cliente');
+    expect(anulada).not.toContain('Para aceptar esta cotización');
+    expect(anulada).toContain('COTIZACIÓN ANULADA');
     vi.unstubAllEnvs();
   });
 });

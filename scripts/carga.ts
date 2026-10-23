@@ -138,7 +138,10 @@ try {
   const almacen = new Almacen();
   const { cotizaciones } = await almacen.leer();
   const numeros = cotizaciones.map((q) => q.numero).filter((n): n is number => n !== null).sort((a, b) => a - b);
-  const notas = cotizaciones.map((q) => q.nota?.numero).filter((n): n is number => n != null).sort((a, b) => a - b);
+  // La carga genera las notas en Panguipulli: su correlativo es el que se revisa.
+  const notas = cotizaciones
+    .flatMap((q) => q.notas.filter((n) => n.fabrica === 'panguipulli').map((n) => n.numero))
+    .sort((a, b) => a - b);
   const final = { ...almacen.correlativos(), siguienteNota: almacen.correlativosNota().panguipulli };
   const esperadosCot = Array.from({ length: final.siguienteCotizacion - inicial.siguienteCotizacion }, (_, i) => inicial.siguienteCotizacion + i);
   const esperadosNota = Array.from({ length: final.siguienteNota - inicial.siguienteNota }, (_, i) => inicial.siguienteNota + i);
@@ -150,7 +153,7 @@ try {
   if (quemadosNota.length) fallas.push(`Números de nota quemados: ${quemadosNota.join(', ')}`);
   if (new Set(numeros).size !== numeros.length) fallas.push('Hay números de cotización repetidos.');
   const sinPdf = cotizaciones.filter(
-    (q) => (q.pdf && !existsSync(join(directorio, 'pdf', q.pdf))) || (q.nota && !existsSync(join(directorio, 'pdf', q.nota.pdf))),
+    (q) => (q.pdf && !existsSync(join(directorio, 'pdf', q.pdf))) || q.notas.some((n) => !existsSync(join(directorio, 'pdf', n.pdf))),
   );
   if (sinPdf.length) fallas.push(`${sinPdf.length} documentos emitidos sin su PDF.`);
   const integridad = almacen.baseDatos().pragma('integrity_check', { simple: true });

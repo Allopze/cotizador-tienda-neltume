@@ -126,16 +126,42 @@ export interface NotaPedido {
    */
   fabrica?: Fabrica;
   pdf: string;
+  /** Solo las líneas de esta fábrica, a precio de fábrica. */
   montos: Montos;
   fecha: string;
   despacho: Despacho;
   observaciones?: string | null;
   /** La cotización aprobada se anuló después: la nota ya no es válida para fábrica. */
   anulada: boolean;
+  /** Cuándo entró el pedido a esta fábrica (ISO); null o ausente si todavía no. */
+  inicioProduccion?: string | null;
+  /** Cuándo la fábrica terminó su parte (ISO); null o ausente si todavía no. */
+  terminoProduccion?: string | null;
 }
 /** «N° 12 · Panguipulli»; una nota sin fábrica asignada va solo con su número. */
 export const numeroNota = (n: Pick<NotaPedido, 'numero' | 'fabrica'>) =>
   `N° ${n.numero}${n.fabrica ? ` · ${nombreFabrica[n.fabrica]}` : ''}`;
+/** «N° 577 · Panguipulli y N° 59 · Santiago»: las notas de una cotización en una frase. */
+export const numerosNotas = (notas: Pick<NotaPedido, 'numero' | 'fabrica'>[]) => {
+  const textos = notas.map(numeroNota);
+  return textos.length > 1 ? `${textos.slice(0, -1).join(', ')} y ${textos.at(-1)}` : (textos[0] ?? '');
+};
+/** «la nota de pedido N° 577 · Panguipulli» o «las notas de pedido N° 577 · Panguipulli y N° 59 · Santiago». */
+export const textoNotas = (notas: Pick<NotaPedido, 'numero' | 'fabrica'>[]) =>
+  `${notas.length > 1 ? 'las notas de pedido' : 'la nota de pedido'} ${numerosNotas(notas)}`;
+/** Las notas en el orden de `FABRICAS`; una sin fábrica (anterior a separarlas) va primero. */
+export const ordenarNotas = <T extends Pick<NotaPedido, 'fabrica'>>(notas: T[]) =>
+  [...notas].sort((a, b) => (a.fabrica ? FABRICAS.indexOf(a.fabrica) + 1 : 0) - (b.fabrica ? FABRICAS.indexOf(b.fabrica) + 1 : 0));
+export type EtapaProduccion = 'pendiente' | 'en_produccion' | 'terminada';
+export const etapaProduccion = (n: Pick<NotaPedido, 'inicioProduccion' | 'terminoProduccion'>): EtapaProduccion =>
+  n.terminoProduccion ? 'terminada' : n.inicioProduccion ? 'en_produccion' : 'pendiente';
+export const etiquetaEtapa: Record<EtapaProduccion, string> = {
+  pendiente: 'Sin iniciar',
+  en_produccion: 'En producción',
+  terminada: 'Producción terminada',
+};
+/** Nombre de la fábrica de una nota, o «la fábrica» si es anterior a separarlas. */
+export const fabricaDeNota = (n: Pick<NotaPedido, 'fabrica'>) => (n.fabrica ? nombreFabrica[n.fabrica] : 'la fábrica');
 export interface Cotizacion {
   id: string;
   numero: number | null;
@@ -196,7 +222,11 @@ export interface Cotizacion {
   reemplazadaPor: number | null;
   /** Versión del catálogo (sha256:fecha) con la que se calcularon los montos al emitir. */
   versionCatalogo: string | null;
-  nota: NotaPedido | null;
+  /**
+   * Notas de pedido, una por fábrica, en el orden de `FABRICAS`. Se generan juntas, una vez registrado el anticipo,
+   * y cada una lleva solo las líneas asignadas a su fábrica (`SolicitudItem.fabrica`). Vacía antes de generarlas.
+   */
+  notas: NotaPedido[];
   /** Fases comerciales y operativas separadas del estado del documento. */
   estadoComercial?: EstadoComercial;
   estadoOperativo?: EstadoOperativo;
@@ -229,15 +259,56 @@ export function descripcionFlete(q: Pick<Cotizacion, 'fleteDescripcion' | 'despa
     .join(' · ');
 }
 type FaseOperativa = Pick<Cotizacion, 'estado' | 'estadoOperativo'>;
+/** Estado operativo guardado o, si falta (datos antiguos), el que corresponde a tener o no notas de pedido. */
+export const operacionDe = (q: Pick<Cotizacion, 'estadoOperativo' | 'notas'>): EstadoOperativo =>
+  q.estadoOperativo ?? (q.notas.length ? 'pedido_generado' : 'sin_pedido');
+/**
+ * Estado operativo de la producción según el avance de cada fábrica: «En producción» desde que una empieza y, cuando
+ * todas terminaron, saldo pendiente o pagada. Sin ninguna iniciada, «Nota de pedido generada».
+ */
+export function operacionPorProduccion(notas: Pick<NotaPedido, 'inicioProduccion' | 'terminoProduccion' | 'anulada'>[], pagado: number, total: number): EstadoOperativo {
+  const vigentes = notas.filter((n) => !n.anulada);
+  if (vigentes.length && vigentes.every((n) => n.terminoProduccion)) return pagado < total ? 'saldo_pendiente' : 'pagada';
+  return vigentes.some((n) => n.inicioProduccion) ? 'en_produccion' : 'pedido_generado';
+}
+/** Mientras la operación está en estas etapas, la producción avanza (y retrocede) nota por nota. */
+const ETAPAS_PRODUCCION = new Set<EstadoOperativo>(['pedido_generado', 'en_produccion', 'saldo_pendiente', 'pagada']);
+/**
+ * El último paso de producción registrado (el inicio o el término de una fábrica): el que deshace «Volver al paso
+ * anterior» mientras el pedido está en fábrica. null si ninguna fábrica empezó.
+ */
+export function ultimoPasoProduccion<T extends Pick<NotaPedido, 'inicioProduccion' | 'terminoProduccion' | 'anulada'>>(notas: T[]) {
+  let ultimo: { nota: T; paso: 'inicioProduccion' | 'terminoProduccion'; fecha: string } | null = null;
+  for (const nota of notas) {
+    if (nota.anulada) continue;
+    const paso = nota.terminoProduccion ? 'terminoProduccion' : nota.inicioProduccion ? 'inicioProduccion' : null;
+    if (paso && (!ultimo || nota[paso]! >= ultimo.fecha)) ultimo = { nota, paso, fecha: nota[paso]! };
+  }
+  return ultimo;
+}
 /**
  * Lo que anuncia «Volver al paso anterior» (de qué paso a cuál) y el destino que aplica `retroceder_operacion`: solo
- * en una aprobada con un paso anterior. null si no hay a dónde volver.
+ * en una aprobada con un paso anterior. null si no hay a dónde volver. En fábrica, deshace el último inicio o término
+ * de una fábrica (`nota`, con el campo que se borra); después de producir, vuelve al paso anterior de la operación.
  */
-export function retrocesoOperativo(q: FaseOperativa & Pick<Cotizacion, 'nota'>) {
+export function retrocesoOperativo(q: FaseOperativa & Pick<Cotizacion, 'notas' | 'pagos' | 'montos'>) {
   if (q.estado !== 'aprobada') return null;
-  const actual = q.estadoOperativo ?? (q.nota ? 'pedido_generado' : 'sin_pedido');
+  const actual = operacionDe(q);
+  const ultimo = ETAPAS_PRODUCCION.has(actual) ? ultimoPasoProduccion(q.notas) : null;
+  if (ultimo && (actual === 'en_produccion' || ultimo.paso === 'terminoProduccion')) {
+    const notas = q.notas.map((n) => (n === ultimo.nota ? { ...n, [ultimo.paso]: null } : n));
+    const destino = operacionPorProduccion(notas, totalPagado(q), q.montos.total);
+    const fabrica = fabricaDeNota(ultimo.nota);
+    // Con una sola nota se nombra la etapa de la operación, como antes de separar las fábricas.
+    const una = q.notas.filter((n) => !n.anulada).length === 1;
+    const desde = una ? etiquetaOperativo[actual] : `${etiquetaEtapa[etapaProduccion(ultimo.nota)]} en ${fabrica}`;
+    const hasta = una
+      ? etiquetaOperativo[destino]
+      : `${ultimo.paso === 'terminoProduccion' ? etiquetaEtapa.en_produccion : etiquetaEtapa.pendiente} en ${fabrica}`;
+    return { desde, hasta, destino, nota: { fabrica: ultimo.nota.fabrica ?? null, campo: ultimo.paso } };
+  }
   const destino = PASO_ANTERIOR[actual];
-  return destino ? { desde: etiquetaOperativo[actual], hasta: etiquetaOperativo[destino], destino } : null;
+  return destino ? { desde: etiquetaOperativo[actual], hasta: etiquetaOperativo[destino], destino, nota: null } : null;
 }
 /** Un pago se anula mientras la operación no llegue a «Lista para despacho» (ahí el saldo ya está pagado). */
 export const pagoAnulable = (q: FaseOperativa) =>
@@ -306,7 +377,7 @@ export interface ResumenCotizacion {
   aprobadaPor: string | null;
   anuladaPor: string | null;
   fechaAnulacion: string | null;
-  nota: (Pick<NotaPedido, 'numero' | 'fabrica' | 'pdf' | 'fecha' | 'anulada'>) | null;
+  notas: Pick<NotaPedido, 'numero' | 'fabrica' | 'pdf' | 'fecha' | 'anulada'>[];
   estadoComercial?: EstadoComercial;
   estadoOperativo?: EstadoOperativo;
   pagado?: number;
@@ -340,6 +411,8 @@ export type TipoEvento =
   | 'produccion'
   | 'produccion_terminada'
   | 'nota_generada'
+  | 'fabricas'
+  | 'numero_cambiado'
   | 'despachada'
   | 'lista_despacho'
   | 'completada'
@@ -362,6 +435,8 @@ export const etiquetaEvento: Record<TipoEvento, string> = {
   produccion: 'Producción iniciada',
   produccion_terminada: 'Producción terminada',
   nota_generada: 'Nota de pedido generada',
+  fabricas: 'Fábricas asignadas',
+  numero_cambiado: 'Número cambiado',
   despachada: 'Despachada',
   lista_despacho: 'Lista para despacho',
   completada: 'Completada',

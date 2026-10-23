@@ -162,7 +162,7 @@ describe('Pares de acciones con el número ya reservado', () => {
     pdf.soltar();
     await expect(nota).rejects.toMatchObject({ status: 409 });
     const q = t.recargada();
-    expect(q.nota).toBeNull();
+    expect(q.notas).toEqual([]);
     expect(q.pagos?.map((p) => p.monto)).toEqual([anticipo, 1000]);
     expect(t.almacen.correlativosNota().panguipulli).toBe(antes.panguipulli + 1);
     expect(t.marcas()).toEqual([]);
@@ -180,7 +180,7 @@ describe('Pares de acciones con el número ya reservado', () => {
     await t.ir({ tipo: 'anular', motivo: 'El cliente desistió' });
     pdf.soltar();
     await expect(nota).rejects.toMatchObject({ status: 409 });
-    expect(t.recargada()).toMatchObject({ estado: 'anulada', nota: null, motivoAnulacion: 'El cliente desistió' });
+    expect(t.recargada()).toMatchObject({ estado: 'anulada', notas: [], motivoAnulacion: 'El cliente desistió' });
     expect(t.marcas()).toEqual([]);
   });
 });
@@ -254,8 +254,8 @@ describe('Emitir de noche en Chile (21:00–23:59)', () => {
     expect(q.vence).toBe(sumarDiasHabiles('2026-10-14', q.reglas?.vigenciaDiasHabiles ?? 10));
     expect(q.vence).not.toBe(sumarDiasHabiles('2026-10-15', q.reglas?.vigenciaDiasHabiles ?? 10));
     const html = vi.mocked(generarPdf).mock.calls[0][2];
-    expect(html).toContain('14-10-2026');
-    expect(html).not.toContain('15-10-2026');
+    expect(html).toContain('<dt class="k">Fecha</dt><dd>14 de octubre de 2026</dd>');
+    expect(html).not.toContain('15 de octubre de 2026');
     expect(q.estado).toBe('emitida');
   });
 });

@@ -1,5 +1,6 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import lockfile from 'proper-lockfile';
@@ -24,6 +25,8 @@ import {
   FABRICAS,
   leerEstadoOperativo,
   nombreFabrica,
+  operacionDe,
+  ordenarNotas,
   type EstadoOperativo,
   type Fabrica,
 } from '../negocio/estado';
@@ -177,6 +180,8 @@ type FilaLinea = {
   descuento_tipo: DescuentoItem['tipo'] | null;
   descuento_valor: number | null;
   descuento_unitario: number | null;
+  /** Solo en `nota_lineas`: la fábrica de la nota a la que pertenece la línea (null en las anteriores a separarlas). */
+  fabrica?: Fabrica | null;
 };
 
 type FilaPago = Pago & { cotizacion_id: string };
@@ -209,6 +214,8 @@ type FilaNota = {
   despacho_entrega: string | null;
   observaciones: string | null;
   anulada: number;
+  inicio_produccion: string | null;
+  termino_produccion: string | null;
 };
 
 function reglasDesdeJson(valor: string | null): ReglasComerciales {
@@ -321,7 +328,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
     const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null; costo_fabrica: number | null; descuento_tipo: DescuentoItem['tipo'] | null; descuento_valor: number | null }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, costo_fabrica, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor FROM solicitudes $FILTRO
+      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, costo_fabrica, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor, fabrica FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
     const referencias = hijos<ReferenciaItem & { cotizacion_id: string; item_orden: number }>(`
       SELECT cotizacion_id, item_orden, archivo, nombre, tipo, tamano, fecha FROM referencias_item $FILTRO
@@ -376,6 +383,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
             ...(fila.descuento_tipo && fila.descuento_valor !== null
               ? { descuento: { tipo: fila.descuento_tipo, valor: fila.descuento_valor } }
               : {}),
+            ...(fila.fabrica ? { fabrica: fila.fabrica } : {}),
           };
           if (fila.precio_unitario !== null) s.precioUnitario = fila.precio_unitario;
           if (s.cantidad === null || cantidadValida(s.cantidad)) return s;
@@ -443,7 +451,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           motivoAnulacion: f.motivo_anulacion,
           reemplazadaPor: f.reemplazada_por,
           versionCatalogo: f.version_catalogo,
-          nota: null,
+          notas: [],
           estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
           estadoOperativo: (leerEstadoOperativo(f.estado_operativo) as EstadoOperativo | null) ?? (f.estado === 'aprobada' ? 'pedido_generado' : 'sin_pedido'),
           pagos: pagos.get(f.id) ?? [],
@@ -458,37 +466,41 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
         if (!f.fecha_emision_ausente) q.fechaEmision = f.fecha_emision;
         if (f.fecha_aprobacion) q.fechaAprobacion = f.fecha_aprobacion;
         if (!f.origen_ausente) q.origen = f.origen_id ? f.origen_numero : null;
-        const n = notas.get(f.id)?.[0];
-        if (n) {
-          const ls = (lineasNota.get(f.id) ?? []).map(lineaDesdeFila);
-          const subtotal = ls.reduce((s, l) => s + l.total, 0);
-          q.nota = {
-            numero: n.numero,
-            ...(n.fabrica !== null && { fabrica: n.fabrica }),
-            pdf: n.pdf,
-            fecha: n.fecha,
-            montos: {
-              lineas: ls,
-              subtotal,
-              descuentoPorcentaje: 0,
-              descuento: 0,
-              flete: 0,
-              neto: n.neto,
-              iva: n.iva,
-              total: n.total,
-            },
-            despacho: {
-              direccion: n.despacho_direccion,
-              transporte: n.despacho_transporte,
-              entregaComprometida: n.despacho_entrega,
-              // Solo si existen: una nota anterior a v22 (o migrada desde JSON) no trae estas claves.
-              ...(n.despacho_destino !== null && { destino: n.despacho_destino }),
-              ...(n.despacho_valor !== null && { valor: n.despacho_valor }),
-            },
-            observaciones: n.observaciones ?? null,
-            anulada: !!n.anulada,
-          };
-        }
+        const lineasDeNotas = lineasNota.get(f.id) ?? [];
+        q.notas = ordenarNotas(
+          (notas.get(f.id) ?? []).map((n) => {
+            const ls = lineasDeNotas.filter((l) => (l.fabrica ?? null) === n.fabrica).map(lineaDesdeFila);
+            const subtotal = ls.reduce((s, l) => s + l.total, 0);
+            return {
+              numero: n.numero,
+              ...(n.fabrica !== null && { fabrica: n.fabrica }),
+              pdf: n.pdf,
+              fecha: n.fecha,
+              montos: {
+                lineas: ls,
+                subtotal,
+                descuentoPorcentaje: 0,
+                descuento: 0,
+                flete: 0,
+                neto: n.neto,
+                iva: n.iva,
+                total: n.total,
+              },
+              despacho: {
+                direccion: n.despacho_direccion,
+                transporte: n.despacho_transporte,
+                entregaComprometida: n.despacho_entrega,
+                // Solo si existen: una nota anterior a v22 (o migrada desde JSON) no trae estas claves.
+                ...(n.despacho_destino !== null && { destino: n.despacho_destino }),
+                ...(n.despacho_valor !== null && { valor: n.despacho_valor }),
+              },
+              observaciones: n.observaciones ?? null,
+              anulada: !!n.anulada,
+              inicioProduccion: n.inicio_produccion,
+              terminoProduccion: n.termino_produccion,
+            };
+          }),
+        );
         const valida = cotizacionSchema.safeParse(q);
         if (!valida.success) throw new Error(valida.error.issues.map((i) => i.path.join('.')).join(', '));
         resultado.push(q);
@@ -511,11 +523,16 @@ function cargarUna(db: Database.Database, id: string): Cotizacion | null {
   return null;
 }
 
+/**
+ * Inserta las líneas de unos montos. Las de una nota de pedido (`nota`) llevan su fábrica y siguen el orden desde
+ * `nota.desde`: todas las notas de una cotización comparten la numeración de `nota_lineas`.
+ */
 function insertarLineas(
   db: Database.Database,
   tabla: 'cotizacion_lineas' | 'nota_lineas',
   id: string,
   montos: Montos,
+  nota?: { fabrica: Fabrica | null; desde: number },
 ) {
   const insertar = db.prepare(`
     INSERT INTO ${tabla} (
@@ -523,19 +540,20 @@ function insertarLineas(
       largo, precio_neto, descripcion, fila_origen, cantidad, precio_unitario, total,
       indice, ancho_solicitado, alto_solicitado, medida_solicitada, precio_unitario_personalizado,
       precio_fabrica, margen, margen_personalizado, precio_cliente, tipo_medida, observaciones, descripcion_documento,
-      descuento_tipo, descuento_valor, descuento_unitario
+      descuento_tipo, descuento_valor, descuento_unitario${nota ? ', fabrica' : ''}
     ) VALUES (
       @cotizacion_id, @orden, @codigo, @modelo, @familia, @tipo, @madera, @medida,
       @ancho_min, @ancho_max, @alto_min, @alto_max, @largo, @precio_neto, @descripcion, @fila_origen,
       @cantidad, @precio_unitario, @total, @indice, @ancho_solicitado, @alto_solicitado, @medida_solicitada,
       @precio_unitario_personalizado, @precio_fabrica, @margen, @margen_personalizado, @precio_cliente, @tipo_medida, @observaciones, @descripcion_documento,
-      @descuento_tipo, @descuento_valor, @descuento_unitario
+      @descuento_tipo, @descuento_valor, @descuento_unitario${nota ? ', @fabrica' : ''}
     )
   `);
   montos.lineas.forEach((l, orden) =>
     insertar.run({
       cotizacion_id: id,
-      orden,
+      orden: orden + (nota?.desde ?? 0),
+      ...(nota ? { fabrica: nota.fabrica } : {}),
       codigo: l.producto.codigo,
       modelo: l.producto.modelo,
       familia: l.producto.familia,
@@ -708,7 +726,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     despacho_transporte: q.despacho?.transporte ?? null,
     despacho_entrega: q.despacho?.entregaComprometida ?? null,
     estado_comercial: q.estadoComercial ?? (q.estado === 'aprobada' ? 'aprobada' : q.estado === 'emitida' ? 'enviada' : 'pendiente'),
-    estado_operativo: q.estadoOperativo ?? (q.nota ? 'pedido_generado' : 'sin_pedido'),
+    estado_operativo: operacionDe(q),
     despacho_destino: q.despacho?.destino ?? null,
     despacho_valor: q.despacho ? q.despacho.valor ?? q.flete : null,
     facturacion_estado: q.facturacion?.estado ?? 'pendiente',
@@ -742,8 +760,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, costo_fabrica, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @costo_fabrica, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor)
+    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, costo_fabrica, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor, fabrica)
+    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @costo_fabrica, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor, @fabrica)
   `);
   const insReferencia = db.prepare(`
     INSERT INTO referencias_item (cotizacion_id, item_orden, orden, archivo, nombre, tipo, tamano, fecha)
@@ -772,6 +790,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       fuente: s.fuente ?? null,
       descuento_tipo: s.descuento?.tipo ?? null,
       descuento_valor: s.descuento?.valor ?? null,
+      fabrica: s.fabrica ?? null,
     }),
   );
   q.solicitudes.forEach((s, i) =>
@@ -809,32 +828,37 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     q.montos.flete,
   );
   insertarLineas(db, 'cotizacion_lineas', q.id, q.montos);
-  if (q.nota) {
-    db.prepare(
-      `
-      INSERT INTO notas_pedido (
-        cotizacion_id, fabrica, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte,
-        despacho_entrega, observaciones, anulada, despacho_destino, despacho_valor
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-    ).run(
+  const insNota = db.prepare(
+    `
+    INSERT INTO notas_pedido (
+      cotizacion_id, fabrica, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte,
+      despacho_entrega, observaciones, anulada, despacho_destino, despacho_valor, inicio_produccion, termino_produccion
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `,
+  );
+  let desde = 0;
+  for (const nota of q.notas) {
+    insNota.run(
       q.id,
-      q.nota.fabrica ?? null,
-      q.nota.numero,
-      q.nota.pdf,
-      q.nota.fecha,
-      q.nota.montos.neto,
-      q.nota.montos.iva,
-      q.nota.montos.total,
-      q.nota.despacho.direccion,
-      q.nota.despacho.transporte,
-      q.nota.despacho.entregaComprometida,
-      q.nota.observaciones,
-      Number(q.nota.anulada),
-      q.nota.despacho.destino ?? null,
-      q.nota.despacho.valor ?? null,
+      nota.fabrica ?? null,
+      nota.numero,
+      nota.pdf,
+      nota.fecha,
+      nota.montos.neto,
+      nota.montos.iva,
+      nota.montos.total,
+      nota.despacho.direccion,
+      nota.despacho.transporte,
+      nota.despacho.entregaComprometida,
+      nota.observaciones,
+      Number(nota.anulada),
+      nota.despacho.destino ?? null,
+      nota.despacho.valor ?? null,
+      nota.inicioProduccion ?? null,
+      nota.terminoProduccion ?? null,
     );
-    insertarLineas(db, 'nota_lineas', q.id, q.nota.montos);
+    insertarLineas(db, 'nota_lineas', q.id, nota.montos, { fabrica: nota.fabrica ?? null, desde });
+    desde += nota.montos.lineas.length;
   }
 }
 
@@ -848,7 +872,8 @@ export function guardarEstadoCompleto(db: Database.Database, estado: Estado) {
       estado.siguienteCotizacion,
       estado.siguienteNota,
     );
-    for (const q of estado.cotizaciones) persistirCotizacion(db, q);
+    // Las validadas: una cotización del JSON con la `nota` única de antes llega convertida a `notas`.
+    for (const q of parsed.data.cotizaciones) persistirCotizacion(db, q as Cotizacion);
   }).immediate();
 }
 
@@ -1064,15 +1089,103 @@ export class Unidad {
       .immediate();
   }
 
-  /** Marca la cotización `id` «en emisión» de su nota de pedido y reserva el número de la nota en su fábrica. */
-  reservarNotaEnEmision(id: string, fabrica: Fabrica) {
+  /**
+   * Marca la cotización `id` «en emisión» de sus notas de pedido y reserva, en una transacción, el número de la nota
+   * de cada fábrica (en el orden de `fabricas`).
+   */
+  reservarNotasEnEmision(id: string, fabricas: Fabrica[]) {
     return this.db
       .transaction(() => {
         const ficha = this.marcarEmision(id, 'nota');
-        return { numero: this.siguienteNota(fabrica), ficha };
+        return { numeros: fabricas.map((f) => this.siguienteNota(f)), ficha };
       })
       .immediate();
   }
+
+  /** Cotización dueña de la nota de pedido `numero` de `fabrica`. */
+  porNota(fabrica: Fabrica, numero: number): Cotizacion | null {
+    const fila = this.db
+      .prepare('SELECT cotizacion_id AS id FROM notas_pedido WHERE fabrica = ? AND numero = ?')
+      .get(fabrica, numero) as { id: string } | undefined;
+    return fila ? this.obtener(fila.id) : null;
+  }
+
+  /**
+   * Comprueba que `numero` sirva como nuevo número de la cotización `id`: entero, libre (ninguna otra lo usa) y sin
+   * superar en más de `SALTO_MAXIMO_NUMERO` al último usado o reservado. Un número menor que el último sirve si nunca
+   * se usó (un salto que dejó una emisión fallida).
+   */
+  validarNumeroCotizacion(id: string, numero: number) {
+    const { ultimo } = numeracionCotizacion(this.db);
+    if (!Number.isSafeInteger(numero) || numero < 1 || numero > ultimo + SALTO_MAXIMO_NUMERO)
+      throw new ErrorUsuario(
+        `El número de cotización debe ser un entero entre 1 y ${ultimo + SALTO_MAXIMO_NUMERO} (hasta 1.000 sobre el último usado, ${ultimo}).`,
+        'numero_invalido',
+      );
+    const otra = this.db.prepare('SELECT id FROM cotizaciones WHERE numero = ? AND id <> ?').get(numero, id);
+    if (otra) throw new ErrorConflicto(`La cotización N° ${numero} ya existe: elige un número libre.`, 'numero_usado');
+  }
+
+  /** Lo mismo que `validarNumeroCotizacion` para la nota de `fabrica`: el número es libre dentro de esa fábrica. */
+  validarNumeroNota(fabrica: Fabrica, numero: number, cotizacionId: string) {
+    const n = numeracionNota(this.db, fabrica);
+    const ultimo = Math.max(n.ultimo, n.siguiente - 1);
+    if (!Number.isSafeInteger(numero) || numero < 1 || numero > ultimo + SALTO_MAXIMO_NUMERO)
+      throw new ErrorUsuario(
+        `El número de nota de ${nombreFabrica[fabrica]} debe ser un entero entre 1 y ${ultimo + SALTO_MAXIMO_NUMERO} (hasta 1.000 sobre el último usado, ${ultimo}).`,
+        'numero_invalido',
+      );
+    const otra = this.db
+      .prepare('SELECT 1 FROM notas_pedido WHERE fabrica = ? AND numero = ? AND cotizacion_id <> ?')
+      .get(fabrica, numero, cotizacionId);
+    if (otra)
+      throw new ErrorConflicto(
+        `${nombreFabrica[fabrica]} ya tiene una nota de pedido N° ${numero}: elige un número libre.`,
+        'numero_usado',
+      );
+  }
+
+  /**
+   * Tras cambiar a mano un número de cotización o de nota: si quedó en o sobre el siguiente del correlativo, este
+   * sigue desde el número nuevo + 1, para que la próxima emisión no lo repita. Uno menor no mueve el correlativo.
+   */
+  avanzarCorrelativo(documento: { tipo: 'cotizacion' } | { tipo: 'nota'; fabrica: Fabrica }, numero: number) {
+    if (documento.tipo === 'cotizacion')
+      this.db
+        .prepare('UPDATE correlativos SET siguiente_cotizacion = MAX(siguiente_cotizacion, ?) WHERE id = 1')
+        .run(numero + 1);
+    else
+      this.db
+        .prepare('UPDATE correlativos_nota SET siguiente = MAX(siguiente, ?) WHERE fabrica = ?')
+        .run(numero + 1, documento.fabrica);
+  }
+
+  /**
+   * La cotización `q` pasó del número `anterior` al actual: las que la nombran por número (`reemplazadaPor`, y el
+   * `origen` de las ya cargadas en esta unidad) pasan a nombrar el nuevo. El `origen` guardado apunta por id y no
+   * cambia.
+   */
+  renumerarReferencias(q: Cotizacion, anterior: number) {
+    const ids = (
+      this.db.prepare('SELECT id FROM cotizaciones WHERE reemplazada_por = ? AND id <> ?').all(anterior, q.id) as {
+        id: string;
+      }[]
+    ).map((f) => f.id);
+    for (const id of ids) {
+      const otra = this.obtener(id);
+      if (!otra || otra.reemplazadaPor !== anterior) continue;
+      otra.reemplazadaPor = q.numero;
+      otra.actualizada = new Date(Math.max(Date.now(), Date.parse(otra.actualizada) + 1)).toISOString();
+      this.guardar(otra);
+    }
+    for (const otra of this.cache.values()) if (otra.id !== q.id && otra.origen === anterior) otra.origen = q.numero;
+  }
+
+  /** Un documento reemplazado por otro con otro nombre: su snapshot se borra al confirmar. */
+  descartarDocumento(archivo: string) {
+    this.descartados.push(archivo);
+  }
+  private descartados: string[] = [];
 
   private siguienteCotizacion(numeroSolicitado?: number) {
     const { siguiente_cotizacion, ultimo } = numeracionCotizacion(this.db);
@@ -1100,7 +1213,7 @@ export class Unidad {
   }
 
   confirmar() {
-    if (!this.sucias.size && !this.eliminadas.size && !this.eventos.length) return;
+    if (!this.sucias.size && !this.eliminadas.size && !this.eventos.length && !this.descartados.length) return;
     this.db
       .transaction(() => {
         for (const [id, version] of this.versiones) {
@@ -1122,6 +1235,7 @@ export class Unidad {
         const pendientes = [...this.sucias].map((id) => this.cache.get(id)!);
         pendientes.sort((a, b) => Number(a.origen != null) - Number(b.origen != null));
         for (const q of pendientes) persistirCotizacion(this.db, q);
+        for (const archivo of this.descartados) this.db.prepare('DELETE FROM documentos_snapshot WHERE archivo = ?').run(archivo);
         for (const d of this.documentos) this.db.prepare('INSERT OR IGNORE INTO documentos_snapshot VALUES (?, ?, ?)').run(d.archivo, d.id, d.html);
         const insertar = this.db.prepare(
           'INSERT INTO eventos (cotizacion_id, fecha, usuario, tipo, detalle) VALUES (?, ?, ?, ?, ?)',
@@ -1133,6 +1247,7 @@ export class Unidad {
     this.sucias.clear();
     this.eliminadas.clear();
     this.eventos = [];
+    this.descartados = [];
   }
 }
 
@@ -1140,7 +1255,8 @@ export class Unidad {
  * Fecha que describe cada cotización en el listado: anulación, aprobación, emisión o, en un borrador,
  * su última edición. Ordena, agrupa y filtra con el mismo criterio que se muestra en pantalla.
  */
-const FECHA_REFERENCIA = 'COALESCE(c.fecha_anulacion, n.fecha, c.fecha_emision, c.actualizada)';
+const FECHA_REFERENCIA =
+  'COALESCE(c.fecha_anulacion, (SELECT MIN(n.fecha) FROM notas_pedido n WHERE n.cotizacion_id = c.id), c.fecha_emision, c.actualizada)';
 
 const mapaEstados = new Set<EstadoCotizacion>(['borrador', 'emitida', 'aprobada', 'reemplazada', 'anulada']);
 
@@ -1223,7 +1339,16 @@ export class Almacen {
         if (!nota) throw new ErrorUsuario(`No hay una nota de pedido N° ${numero} sin fábrica asignada.`);
         if (this.db.prepare('SELECT 1 FROM notas_pedido WHERE numero = ? AND fabrica = ?').get(numero, fabrica))
           throw new ErrorUsuario(`${nombreFabrica[fabrica]} ya tiene una nota de pedido N° ${numero}.`);
-        this.db.prepare('UPDATE notas_pedido SET fabrica = ? WHERE cotizacion_id = ?').run(fabrica, nota.cotizacion_id);
+        this.db
+          .prepare('UPDATE notas_pedido SET fabrica = ? WHERE cotizacion_id = ? AND fabrica IS NULL')
+          .run(fabrica, nota.cotizacion_id);
+        // Sus líneas y los ítems de la cotización (una nota de antes los llevaba todos) quedan en esa fábrica.
+        this.db
+          .prepare('UPDATE nota_lineas SET fabrica = ? WHERE cotizacion_id = ? AND fabrica IS NULL')
+          .run(fabrica, nota.cotizacion_id);
+        this.db
+          .prepare('UPDATE solicitudes SET fabrica = ? WHERE cotizacion_id = ? AND fabrica IS NULL')
+          .run(fabrica, nota.cotizacion_id);
         // La cotización cambia: las pantallas abiertas la recargan en vez de sobrescribirla con la versión anterior.
         const { actualizada } = this.db
           .prepare('SELECT actualizada FROM cotizaciones WHERE id = ?')
@@ -1237,10 +1362,32 @@ export class Almacen {
       .immediate();
   }
 
-  /** Para el diálogo de emisión: último número usado y rango de un número elegido a mano. Solo lectura. */
+  /**
+   * Para los diálogos de emisión y de cambio de número: el último número de cotización usado y el rango de uno
+   * elegido a mano, y lo mismo para las notas de cada fábrica. Solo lectura.
+   */
   numeracion() {
     const { ultimo } = numeracionCotizacion(this.db);
-    return { ultimo, siguiente: ultimo + 1, tope: ultimo + SALTO_MAXIMO_NUMERO };
+    const notas = Object.fromEntries(
+      FABRICAS.map((f) => {
+        const n = numeracionNota(this.db, f);
+        const ultimo = Math.max(n.ultimo, n.siguiente - 1);
+        return [f, { ultimo, siguiente: ultimo + 1, tope: ultimo + SALTO_MAXIMO_NUMERO }];
+      }),
+    ) as Record<Fabrica, { ultimo: number; siguiente: number; tope: number }>;
+    return { ultimo, siguiente: ultimo + 1, tope: ultimo + SALTO_MAXIMO_NUMERO, notas };
+  }
+
+  /**
+   * Nombre libre para un PDF nuevo, `base.pdf` o, si ya existe ese archivo o su snapshot, `base-2.pdf`, `base-3.pdf`…:
+   * un documento emitido nunca se sobrescribe (ver `generarPdf`).
+   */
+  archivoLibre(base: string) {
+    const existeSnapshot = this.db.prepare('SELECT 1 FROM documentos_snapshot WHERE archivo = ?');
+    for (let n = 1; ; n++) {
+      const archivo = n === 1 ? `${base}.pdf` : `${base}-${n}.pdf`;
+      if (!existsSync(join(this.directorio, 'pdf', archivo)) && !existeSnapshot.get(archivo)) return archivo;
+    }
   }
 
   /** Quienes crearon cotizaciones (`creada_por`), para filtrar el historial por vendedora. */
@@ -1432,8 +1579,9 @@ export class Almacen {
         .prepare(
           `
           SELECT c.id, c.numero, c.estado, c.actualizada, c.fecha_emision, c.cliente_nombre,
-                 c.cliente_proyecto, c.cliente_comuna, n.fecha AS nota_fecha
-          FROM cotizaciones c LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id
+                 c.cliente_proyecto, c.cliente_comuna,
+                 (SELECT MIN(n.fecha) FROM notas_pedido n WHERE n.cotizacion_id = c.id) AS nota_fecha
+          FROM cotizaciones c
           ORDER BY c.orden
         `,
         )
@@ -1530,7 +1678,7 @@ export class Almacen {
       const total = (
         db
           .prepare(
-            `SELECT COUNT(*) AS n FROM cotizaciones c LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id ${donde}`,
+            `SELECT COUNT(*) AS n FROM cotizaciones c ${donde}`,
           )
           .get(...params) as { n: number }
       ).n;
@@ -1539,7 +1687,6 @@ export class Almacen {
           `
           SELECT c.*, ${FECHA_REFERENCIA} AS fecha_referencia, o.numero AS origen_numero, m.neto, m.iva, m.total, m.subtotal,
                  m.descuento AS descuento_monto, m.flete AS flete_monto,
-                 n.numero AS nota_numero, n.fabrica AS nota_fabrica, n.pdf AS nota_pdf, n.fecha AS nota_fecha, n.anulada AS nota_anulada,
                  (SELECT COUNT(*) FROM solicitudes s WHERE s.cotizacion_id = c.id) AS items,
                  (SELECT COUNT(*) FROM incompletos i WHERE i.cotizacion_id = c.id) AS pendientes,
                  COALESCE((SELECT SUM(p.monto) FROM pagos p WHERE p.cotizacion_id = c.id), 0) AS pagado,
@@ -1547,7 +1694,6 @@ export class Almacen {
           FROM cotizaciones c
           LEFT JOIN cotizaciones o ON o.id = c.origen_id
           LEFT JOIN cotizacion_montos m ON m.cotizacion_id = c.id
-          LEFT JOIN notas_pedido n ON n.cotizacion_id = c.id
           ${donde}
           ORDER BY fecha_referencia DESC, c.orden DESC
           LIMIT ? OFFSET ?
@@ -1560,11 +1706,6 @@ export class Almacen {
         subtotal: number | null;
         descuento_monto: number | null;
         flete_monto: number | null;
-        nota_numero: number | null;
-        nota_fabrica: Fabrica | null;
-        nota_pdf: string | null;
-        nota_fecha: string | null;
-        nota_anulada: number | null;
         fecha_referencia: string;
         items: number;
         pendientes: number;
@@ -1584,6 +1725,23 @@ export class Almacen {
           modelo: string | null;
           madera: string | null;
           cantidad: number | null;
+        }[],
+      );
+      const notas = agrupar(
+        db
+          .prepare(
+            `
+            SELECT cotizacion_id, numero, fabrica, pdf, fecha, anulada FROM notas_pedido
+            WHERE cotizacion_id IN (SELECT value FROM json_each(?))
+          `,
+          )
+          .all(JSON.stringify(filas.map((f) => f.id))) as {
+          cotizacion_id: string;
+          numero: number;
+          fabrica: Fabrica | null;
+          pdf: string;
+          fecha: string;
+          anulada: number;
         }[],
       );
       const cotizaciones = filas.map((f): ResumenCotizacion => {
@@ -1629,16 +1787,15 @@ export class Almacen {
           aprobadaPor: f.aprobada_por,
           anuladaPor: f.anulada_por,
           fechaAnulacion: f.fecha_anulacion,
-          nota:
-            f.nota_numero === null
-              ? null
-              : {
-                  numero: f.nota_numero,
-                  ...(f.nota_fabrica !== null && { fabrica: f.nota_fabrica }),
-                  pdf: f.nota_pdf!,
-                  fecha: f.nota_fecha!,
-                  anulada: !!f.nota_anulada,
-                },
+          notas: ordenarNotas(
+            (notas.get(f.id) ?? []).map((n) => ({
+              numero: n.numero,
+              ...(n.fabrica !== null && { fabrica: n.fabrica }),
+              pdf: n.pdf,
+              fecha: n.fecha,
+              anulada: !!n.anulada,
+            })),
+          ),
           estadoComercial: estadoComercialGuardado(f.estado, f.estado_comercial),
           estadoOperativo: (leerEstadoOperativo(f.estado_operativo) as EstadoOperativo | null) ?? 'sin_pedido',
           pagado: f.pagado,

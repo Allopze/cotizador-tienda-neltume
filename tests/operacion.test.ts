@@ -472,12 +472,12 @@ describe('despacho después de la aprobación', () => {
     await t.ir({ tipo: 'despacho', despacho: { transporte: 'Starken', destino: 'Osorno' } });
     await t.pagar(t.mitad());
     await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
-    const nota = structuredClone(t.recargada().nota);
-    expect(nota?.despacho).toMatchObject({ transporte: 'Starken' });
+    const nota = structuredClone(t.recargada().notas);
+    expect(nota[0].despacho).toMatchObject({ transporte: 'Starken' });
     const pdfs = vi.mocked(plantilla).mock.calls.length;
     await t.ir({ tipo: 'despacho', despacho: { transporte: 'Transportes Paredes', destino: 'Puerto Montt' } });
     expect(t.recargada().despacho).toMatchObject({ transporte: 'Transportes Paredes', destino: 'Puerto Montt' });
-    expect(t.recargada().nota).toEqual(nota);
+    expect(t.recargada().notas).toEqual(nota);
     expect(vi.mocked(plantilla).mock.calls.length).toBe(pdfs);
   });
 
@@ -563,7 +563,7 @@ describe('anular una cotización', () => {
     expect(t.actual().estadoComercial).toBe('vendida');
     await t.ir({ tipo: 'anular', motivo: 'El cliente desistió' });
     expect(t.recargada()).toMatchObject({ estado: 'anulada', estadoComercial: 'rechazada' });
-    expect(t.recargada().nota?.anulada).toBe(true);
+    expect(t.recargada().notas[0]?.anulada).toBe(true);
     for (const accion of [
       { tipo: 'operacion', paso: 'iniciar_produccion' },
       { tipo: 'despacho', despacho: { destino: 'Osorno' } },

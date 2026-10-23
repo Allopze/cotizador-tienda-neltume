@@ -9,7 +9,7 @@ import { cotizar } from '../src/negocio/precios';
 import { Almacen, guardarEstadoCompleto } from '../src/servidor/almacen';
 import { abrirBaseDatos, cerrarBaseDatos, VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { migrarJsonASqlite } from '../src/servidor/migracion-sqlite';
-import { completarEstadoLegado } from '../src/servidor/persistencia-esquemas';
+import { completarEstadoLegado, estadoPersistidoSchema } from '../src/servidor/persistencia-esquemas';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 
 const directorios: string[] = [];
@@ -116,7 +116,8 @@ describe('Persistencia SQLite', () => {
       directorioRespaldo: backup,
     });
     expect(resultado.yaMigrada).toBe(false);
-    expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
+    // La nota única de entonces queda como la lista `notas` (ver `notasDesdeNota`).
+    expect(await new Almacen(dir, rutaDb).leer()).toEqual(estadoPersistidoSchema.parse(completarEstadoLegado(estado)));
     const db = abrirBaseDatos(rutaDb);
     expect(new RepositorioCatalogoSqlite(db).todos()).toEqual(catalogo.productos);
     expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
@@ -137,7 +138,8 @@ describe('Persistencia SQLite', () => {
       directorioRespaldo: backup,
     });
     expect(repetida.yaMigrada).toBe(true);
-    expect(await new Almacen(dir, rutaDb).leer()).toEqual(completarEstadoLegado(estado));
+    // La nota única de entonces queda como la lista `notas` (ver `notasDesdeNota`).
+    expect(await new Almacen(dir, rutaDb).leer()).toEqual(estadoPersistidoSchema.parse(completarEstadoLegado(estado)));
   });
 
   it('migra un catálogo con «HUILO HUILO» y una fecha sin milisegundos: la verificación compara como se guarda', async () => {

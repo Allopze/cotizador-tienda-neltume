@@ -48,8 +48,9 @@ const COLUMNAS: [string, (q: ResumenCotizacion) => string | number | null][] = [
   ['Facturación', (q) => deVenta(q, () => (q.facturacion?.estado === 'facturada' ? 'Facturada' : 'Pendiente'))],
   ['Revisión de', (q) => q.origen],
   ['Reemplazada por', (q) => q.reemplazadaPor],
-  ['Nota de pedido', (q) => (q.nota ? `${q.nota.numero}${q.nota.anulada ? ' (anulada)' : ''}` : null)],
-  ['Fábrica', (q) => (q.nota?.fabrica ? nombreFabrica[q.nota.fabrica] : null)],
+  // Una cotización con notas para las dos fábricas las lista juntas, en el mismo orden en ambas columnas.
+  ['Nota de pedido', (q) => (q.notas.length ? q.notas.map((n) => `${n.numero}${n.anulada ? ' (anulada)' : ''}`).join(' / ') : null)],
+  ['Fábrica', (q) => (q.notas.some((n) => n.fabrica) ? q.notas.map((n) => (n.fabrica ? nombreFabrica[n.fabrica] : 'Sin asignar')).join(' / ') : null)],
   ['Creada por', (q) => q.creadaPor],
   ['Emitida por', (q) => q.emitidaPor],
   ['Aprobada por', (q) => q.aprobadaPor],

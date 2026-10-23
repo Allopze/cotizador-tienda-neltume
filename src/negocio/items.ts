@@ -201,6 +201,8 @@ export function fusionarItems(previos: SolicitudItem[], nuevos: SolicitudItem[],
       // La IA no ve las referencias del cliente, el descuento especial ni sabe qué ítem es personalizado: los
       // conserva el mismo ítem.
       ...(previo.descuento ? { descuento: previo.descuento } : {}),
+      // La fábrica la asigna la persona: la lista completa no la trae y el mismo ítem la conserva.
+      ...(nuevo.fabrica === undefined && previo.fabrica ? { fabrica: previo.fabrica } : {}),
       // Un personalizado sigue siéndolo mientras no pase a nombrar un modelo del catálogo.
       ...(previo.referencias?.length ? { referencias: previo.referencias } : {}),
       ...(previo.personalizado && identidades.despues.modelo === ''

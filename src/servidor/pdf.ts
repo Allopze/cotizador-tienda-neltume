@@ -1,5 +1,5 @@
 import { chromium, type Browser, type Page } from 'playwright';
-import { constants } from 'node:fs';
+import { constants, readFileSync } from 'node:fs';
 import type Database from 'better-sqlite3';
 import { copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -24,6 +24,7 @@ import {
 import { fechaChilena } from '../negocio/vigencia';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
+import { metros } from '../catalogo/resolver';
 import { CODIGO_PERSONALIZADO } from '../negocio/personalizados';
 import { chromiumPath } from './chromium';
 import { datosEmpresa } from './empresa';
@@ -97,119 +98,165 @@ export interface DocumentoPdf {
   despacho?: Despacho | null;
   reglas?: ReglasComerciales;
   observaciones?: string | null;
+  /** Solo nota: las otras notas de la misma cotización (una por fábrica), para que cada fábrica sepa de la otra. */
+  otrasNotas?: { fabrica?: Fabrica; numero: number; items: number }[];
   /** Documento anulado: se imprime con una marca visible y la fecha y el motivo de la anulación. */
   anulada?: { fecha: string | null; motivo: string | null; por: string | null } | null;
 }
 
 const fechaDocumento = (iso: string) =>
   new Date(iso).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
+/** «23 de octubre de 2026»: fecha del encabezado. Una fecha sin hora (YYYY-MM-DD) se toma tal cual. */
+const fechaLarga = (fecha: string) =>
+  new Date(/^\d{4}-\d{2}-\d{2}$/.test(fecha) ? `${fecha}T12:00:00.000Z` : fecha).toLocaleDateString('es-CL', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+    timeZone: 'America/Santiago',
+  });
+
+/** Recursos de los PDF: fuentes y dibujos de los modelos (ver scripts/dibujos/generar.sh). */
+const RECURSOS = join(/* turbopackIgnore: true */ process.cwd(), 'src/servidor/pdf-recursos');
+interface Dibujo {
+  archivo: string;
+  /** Tamaño del PNG en píxeles. */
+  px: [number, number];
+  /** Dónde está la hoja dentro del dibujo, como fracción del ancho y del alto: sus cotas van en la nota. */
+  hoja: { izq: number; der: number; arriba: number; abajo: number } | null;
+}
+let dibujos: Map<string, Dibujo> | null = null;
+/** Dibujos por modelo del catálogo (normalizado). Sin el manifiesto, ninguno: las puertas usan el esquema genérico. */
+function dibujosModelos() {
+  if (!dibujos) {
+    dibujos = new Map();
+    try {
+      const manifiesto = JSON.parse(readFileSync(join(RECURSOS, 'dibujos', 'dibujos.json'), 'utf8')) as Record<string, Dibujo>;
+      for (const [modelo, d] of Object.entries(manifiesto)) dibujos.set(normalizarModelo(modelo), d);
+    } catch {
+      // Sin dibujos el documento se imprime igual, con el esquema genérico de puerta.
+    }
+  }
+  return dibujos;
+}
+const normalizarModelo = (m: string) =>
+  m
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, '');
+/** Hoja del esquema genérico de puerta (en el mismo lienzo de 455 × 900 que los dibujos del catálogo). */
+const GENERICO: Dibujo = { archivo: '', px: [455, 900], hoja: { izq: 0.14, der: 0.86, arriba: 0.07, abajo: 0.985 } };
+/** Esquema genérico para una puerta sin modelo 3D: marco, hoja y manilla, con el mismo trazo que los dibujos. */
+const trazoGenerico = () =>
+  `<g class="generico"><path d="M14 890V14H441V890"/><rect x="${0.14 * 455}" y="${0.07 * 900}" width="${0.72 * 455}" height="${0.915 * 900}"/><path d="M${0.86 * 455 - 40} 470v70"/></g>`;
+
+/**
+ * Dibujo de la línea: el del modelo si hay uno (una puerta del catálogo o el marco), el esquema genérico para otra
+ * puerta (también un pedido especial de puerta) y ninguno para molduras, piezas T y accesorios especiales.
+ */
+function dibujoDe(l: Linea): Dibujo | null {
+  const familia = l.producto.familia;
+  if (familia !== 'PUERTA' && familia !== 'MARCO') return null;
+  const propio = l.producto.codigo === CODIGO_PERSONALIZADO ? null : dibujosModelos().get(normalizarModelo(familia === 'MARCO' ? 'MARCO' : l.producto.modelo));
+  return propio ?? (familia === 'PUERTA' ? GENERICO : null);
+}
+/** Imagen del dibujo: la referencia `neltume-dibujo:` se reemplaza por el PNG al imprimir (ver `inyectarRecursos`). */
+const imagenDibujo = (d: Dibujo) =>
+  d.archivo
+    ? `<image href="neltume-dibujo:${d.archivo}" x="0" y="0" width="${d.px[0]}" height="${d.px[1]}"/>`
+    : trazoGenerico();
+/** Dibujo de la línea en la cotización, sin cotas. */
+const dibujoCotizacion = (d: Dibujo | null) =>
+  d ? `<svg class="dibujo" viewBox="0 0 ${d.px[0]} ${d.px[1]}" aria-hidden="true">${imagenDibujo(d)}</svg>` : '';
+/**
+ * Plano de la línea en la nota: el dibujo con las cotas de la medida pedida (en mm), cuando es una puerta con ancho y
+ * alto. Las cotas van sobre la hoja del dibujo.
+ */
+function planoNota(d: Dibujo | null, l: Linea) {
+  if (!d) return '';
+  const [w, h] = d.px;
+  const ancho = l.producto.familia === 'PUERTA' ? l.anchoSolicitado : null;
+  const alto = l.producto.familia === 'PUERTA' ? l.altoSolicitado : null;
+  if (!d.hoja || ancho === null || alto === null)
+    return `<svg class="plano" viewBox="0 0 ${w} ${h}" aria-hidden="true">${imagenDibujo(d)}</svg>`;
+  const mm = (m: number) => Math.round((metros(m, 'PUERTA') ?? m) * 1000);
+  const x0 = d.hoja.izq * w, x1 = d.hoja.der * w, y0 = d.hoja.arriba * h, y1 = d.hoja.abajo * h;
+  const xv = w + 40, yh = h + 40, t = 16;
+  return `<svg class="plano" viewBox="0 0 ${w + 205} ${h + 190}" aria-hidden="true">${imagenDibujo(d)}<path class="cota" d="M${x0} ${yh}H${x1}M${x0} ${yh - t}V${yh + t}M${x1} ${yh - t}V${yh + t}M${xv} ${y0}V${y1}M${xv - t} ${y0}H${xv + t}M${xv - t} ${y1}H${xv + t}"/><text x="${(x0 + x1) / 2}" y="${yh + 145}" text-anchor="middle">${mm(ancho)}</text><text x="${xv + 125}" y="${(y0 + y1) / 2}" text-anchor="middle" transform="rotate(-90 ${xv + 125} ${(y0 + y1) / 2})">${mm(alto)}</text></svg>`;
+}
 
 export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.Database = abrirBaseDatos()) {
   const nota = doc.tipo === 'nota';
   const { numero, montos, fecha } = doc;
   const reglas = doc.reglas ?? q.reglas ?? REGLAS;
-  const titulo = nota ? `NOTA DE PEDIDO N° ${numero}` : `COTIZACIÓN N° ${numero}`;
-  // Bajo el título y en su propia línea: es lo primero que mira quien reparte las notas entre fábricas.
-  const fabrica =
-    nota && doc.fabrica ? `<p class="fabrica">FÁBRICA ${nombreFabrica[doc.fabrica].toUpperCase()}</p>` : '';
+  const tipo = nota ? 'Nota de pedido' : 'Cotización';
   const c = q.cliente;
-  type Campo = [string, string | null];
-  const si = (etiqueta: string, valor: string | null | undefined): Campo[] =>
-    valor ? [[etiqueta, valor]] : [];
-  // Columnas explícitas: la identidad del cliente se lee junta y, en la nota, el despacho queda aparte.
-  const columnas: [Campo[], Campo[]] = nota
-    ? [
-        [
-          ['Nombre', c.nombre],
-          ['RUT', c.rut],
-          ['Giro', c.giro],
-          ['Dirección', c.direccion],
-          ['Ciudad / Comuna', c.comuna],
-          ['Teléfono', c.telefono],
-        ],
-        [
-          ['Dirección de despacho', doc.despacho?.direccion ?? null],
-          // Un «Otro» guardado antes de que se exigiera el nombre no se imprime.
-          ['Medio de transporte', sinTransportista(doc.despacho?.transporte) ? null : doc.despacho!.transporte!.trim()],
-          ...si('Proyecto', c.proyecto),
-        ],
-      ]
-    : [
-        [['Nombre', c.nombre], ...si('RUT', c.rut), ...si('Giro', c.giro), ...si('Teléfono', c.telefono)],
-        [['Proyecto', c.proyecto], ...si('Dirección', c.direccion), ['Ciudad / Comuna', c.comuna]],
-      ];
-  const encabezados = nota ? ['Cliente', 'Despacho'] : null;
-  const metadatos: Campo[] = [
-    ['Fecha', fechaDocumento(fecha)],
-    ...(nota
-      ? si('Ref. cotización', `N° ${q.numero}`)
-      : si('Revisión de la cotización', q.origen ? `N° ${q.origen}` : null)),
-    ...(nota
-      ? [...si('Aprobada por', doc.autor), ...si('Cotización emitida por', q.emitidaPor)]
-      : si('Emitida por', doc.autor)),
-  ];
-  const campo = ([k, v]: Campo) => `<div><b>${k}:</b> ${esc(v)}</div>`;
-  const fila = (etiqueta: string, valor: string, clase = '') =>
-    `<p${clase ? ` class="${clase}"` : ''}><span>${etiqueta}</span><b>${valor}</b></p>`;
-  // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
-  // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
-  const { ahorro, subtotalOriginal } = resumenDescuentosItems(montos);
-  const totales = [
-    ...(ahorro
-      ? [
-          fila('SUBTOTAL ORIGINAL', pesos(subtotalOriginal + montos.flete), 'original'),
-          fila('AHORRO DESC. ESPECIALES', `−${pesos(ahorro)}`, 'ahorro'),
-        ]
-      : []),
-    fila('SUBTOTAL', pesos(montos.subtotal + montos.flete)),
-    ...(montos.descuento
-      ? [
-          fila(
-            `${etiquetaDescuento({ descuento: q.descuento, descuentoManual: q.descuentoManual, reglas }, { corta: true }).toUpperCase()} ${porcentaje(montos.descuentoPorcentaje)}${montos.flete ? ' SOBRE PRODUCTOS' : ''}`,
-            `−${pesos(montos.descuento)}`,
-          ),
-        ]
-      : []),
-    ...(montos.descuento ? [fila('NETO', pesos(montos.neto))] : []),
-    fila(`I.V.A. ${porcentajeIva(reglas.iva)}`, pesos(montos.iva)),
-    fila('TOTAL', pesos(montos.total), 'total'),
-  ].join('');
-  const validez = doc.vence
-    ? `Cotización válida hasta el ${fechaChilena(doc.vence)} (${reglas.vigenciaDiasHabiles} días hábiles).`
-    : `Cotización válida por ${reglas.vigenciaDiasHabiles} días hábiles.`;
   const empresa = datosEmpresa(db);
   // El logo va como referencia: el HTML que se guarda como snapshot de cada documento no repite el SVG en base64.
   const logo = registrarLogo(await logoVigente(db));
   const observaciones = doc.observaciones ?? q.observaciones;
-  const datosNeltume = [
-    empresa.nombre && `<b>${esc(empresa.nombre)}</b>`,
-    empresa.rut && `RUT ${esc(empresa.rut)}`,
-    empresa.direccion && esc(empresa.direccion),
-    [empresa.telefono && `Tel. ${esc(empresa.telefono)}`, empresa.web && esc(empresa.web)]
-      .filter(Boolean)
-      .join(' · '),
-  ].filter(Boolean);
-  const anulacion = doc.anulada
-    ? `<div class="anulada-marca" aria-hidden="true">ANULADA</div><p class="anulada-aviso">${nota ? 'NOTA DE PEDIDO ANULADA' : 'COTIZACIÓN ANULADA'}${doc.anulada.fecha ? ` el ${fechaDocumento(doc.anulada.fecha)}` : ''}${doc.anulada.por ? ` por ${esc(doc.anulada.por)}` : ''}${doc.anulada.motivo ? `. Motivo: ${esc(doc.anulada.motivo)}` : ''}. No es válida${nota ? ' para fábrica' : ''}.</p>`
+  type Campo = [string, string | null | undefined];
+  const datos = (campos: Campo[]) => {
+    const conValor = campos.filter(([, v]) => v);
+    return conValor.length
+      ? `<dl class="datos">${conValor.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd>`).join('')}</dl>`
+      : '';
+  };
+  const parte = (etiqueta: string, titulo: string, campos: Campo[]) =>
+    `<div class="parte"><p class="k">${etiqueta}</p><h2>${esc(titulo)}</h2>${datos(campos)}</div>`;
+  const meta = (campos: Campo[]) =>
+    `<dl class="meta">${campos
+      .filter(([, v]) => v)
+      .map(([k, v]) => `<div><dt class="k">${k}</dt><dd>${esc(v)}</dd></div>`)
+      .join('')}</dl>`;
+  const transporte = sinTransportista(doc.despacho?.transporte) ? null : doc.despacho!.transporte!.trim();
+
+  // Encabezado: el número es lo que se busca; los datos de Neltume van al pie de cada página.
+  const fabrica = nota && doc.fabrica ? `<p class="fabrica"><b>Fábrica ${nombreFabrica[doc.fabrica]}</b></p>` : '';
+  const cabecera = `<header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">${tipo}</p><h1>N° ${numero}</h1>${fabrica}${meta(
+    nota
+      ? [
+          ['Fecha', fechaLarga(fecha)],
+          ['Cotización', q.numero !== null ? `N° ${q.numero}` : null],
+          ['Aprobada por', doc.autor],
+          ['Emitida por', q.emitidaPor],
+        ]
+      : [
+          ['Fecha', fechaLarga(fecha)],
+          ['Válida hasta', doc.vence ? fechaLarga(doc.vence) : null],
+          ['Revisión de', q.origen ? `N° ${q.origen}` : null],
+          ['Emitida por', doc.autor],
+        ],
+  )}</div></header>`;
+  // Cada fábrica sabe que la cotización tiene otra nota, y cuál.
+  const otras = (doc.otrasNotas ?? []).map(
+    (o) => `${o.fabrica ? nombreFabrica[o.fabrica] : 'otra fábrica'}, <b>N° ${o.numero}</b>, con ${o.items} ítem${o.items === 1 ? '' : 's'}`,
+  );
+  const avisoOtras = nota && otras.length
+    ? `<p class="otras">La cotización N° ${q.numero} tiene ${otras.length + 1} notas de pedido. ${otras.length > 1 ? 'Las otras van' : 'La otra va'} a ${otras.join(' y ')}.</p>`
     : '';
-  const firma = (rotulo: string) => `<div class="firma"><span></span>${rotulo}</div>`;
-  const condiciones = [
-    validez,
-    ...(empresa.datosBancarios ? [`<b>Datos para transferencia:</b> ${esc(empresa.datosBancarios)}`] : []),
-    'No se considera: Instalación, pintura, barniz, protecciones metálicas, vidrios ni estructura para correderas.',
-    'No se consideran elementos no indicados en la cotización.',
-    'Valores puestos en fábrica.',
-    // Con el flete en el detalle, «consultar el despacho» contradiría el documento.
-    ...(montos.flete ? [] : ['Consultar valor despacho.']),
-    ...(empresa.plazoEntrega ? [`<b>Plazo de entrega:</b> ${esc(empresa.plazoEntrega)}`] : []),
-    ...(empresa.condicionesPago ? [esc(empresa.condicionesPago)] : []),
-  ];
-  // La cotización cierra con la aceptación seguida de sus condiciones; la nota, con lo que fábrica
-  // completa a mano: entrega comprometida, observaciones y recepción.
-  const bloqueCondiciones = `<div class="bloque"><h2>Condiciones</h2>${condiciones.map((p) => `<p>${p}</p>`).join('')}</div>`;
-  const cierre = nota
-    ? `<div class="bloque"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida:</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="observaciones"><b>Observaciones:</b>${observaciones ? `<p>${esc(observaciones)}</p>` : ''}</div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma('Recibido por fábrica')}</div>`}</div>`
-    : `${observaciones ? `<div class="bloque"><h2>Observaciones</h2><p>${esc(observaciones)}</p></div>` : ''}${doc.anulada ? '' : `<div class="bloque"><h2>Aceptación del cliente</h2><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></div>`}${bloqueCondiciones}`;
+  const partes = nota
+    ? `<section class="partes">${parte('Cliente', c.nombre || 'Sin nombre', [
+        ['RUT', c.rut],
+        ['Giro', c.giro],
+        ['Dirección', [c.direccion, c.comuna].filter(Boolean).join(', ')],
+        ['Teléfono', c.telefono],
+      ])}${parte('Despacho', c.proyecto || doc.despacho?.destino || 'Despacho', [
+        ['Dirección de despacho', doc.despacho?.direccion],
+        ['Transporte', transporte ?? 'Por confirmar'],
+        ['Destino', c.proyecto ? doc.despacho?.destino : null],
+        ['Entrega', doc.despacho?.entregaComprometida || 'Por comprometer'],
+      ])}</section>`
+    : `<section class="partes">${parte('Cliente', c.nombre || 'Sin nombre', [
+        ['RUT', c.rut],
+        ['Giro', c.giro],
+        ['Teléfono', c.telefono],
+      ])}${parte('Obra', c.proyecto || c.comuna || 'Sin indicar', [
+        ['Dirección', c.direccion],
+        ['Comuna', c.proyecto ? c.comuna : null],
+        ['Despacho', montos.flete ? 'Incluido en esta cotización' : 'Se cotiza aparte'],
+      ])}</section>`;
+
   // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
   // Un producto fuera de catálogo no tiene referencia de catálogo: fábrica ve las referencias que entregó el cliente.
   const referenciaFabrica = (l: Linea) => {
@@ -218,30 +265,35 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     const referencias = l.indice === null ? [] : (q.solicitudes[l.indice]?.referencias ?? []);
     return `Producto personalizado, fuera de catálogo${referencias.length ? ` · Referencias del cliente: ${referencias.map((r) => r.nombre).join(', ')}` : ''}`;
   };
-  const descripcion = (l: Linea) => {
-    // El vano (el hueco del muro) es un dato para fábrica que confundía al cliente: la cotización lo trata como una
-    // medida sin tipo y solo la nota de pedido lo nombra. En el panel se sigue viendo mientras se edita.
-    const tipoMedida = !nota && l.tipoMedida === 'vano' ? null : l.tipoMedida;
+  const producto = (l: Linea) => {
+    // Hoja o vano es un dato para fábrica: la cotización no lo nombra (el vano, el hueco del muro, confundía al
+    // cliente) y solo la nota de pedido lo dice. En el panel se sigue viendo mientras se edita.
+    const tipoMedida = nota ? l.tipoMedida : null;
     // El nombre ya lleva la medida pedida; solo una descripción escrita a mano necesita repetirla aparte.
     const tipoMedidaExplicita = tipoMedida === 'hoja' || tipoMedida === 'vano';
     const pedida = l.descripcionDocumento || tipoMedidaExplicita ? medidaPedida({ ...l, tipoMedida }) : null;
-    const tipo = tipoMedidaExplicita ? `medida de ${tipoMedida}` : null;
+    const tipoTexto = tipoMedidaExplicita ? `medida de ${tipoMedida}` : null;
     const detalles = [
-      pedida ? `Medida solicitada: ${pedida}` : tipo && `${tipo[0].toUpperCase()}${tipo.slice(1)}`,
-      nota && referenciaFabrica(l),
+      pedida ? `Medida solicitada: ${pedida}` : tipoTexto && `${tipoTexto[0].toUpperCase()}${tipoTexto.slice(1)}`,
       l.observaciones && `Observación: ${l.observaciones}`,
     ];
-    return `${esc(descripcionLegible(descripcionLinea(l)))}${detalles.map((d) => (d ? `<br><small>${esc(d)}</small>` : '')).join('')}${conDescuentoItem(l) && l.descuentoItem ? `<br><small class="descuento-item">Descuento especial ${esc(textoDescuentoItem(l.descuentoItem))}: −${pesos(l.descuentoUnitario!)} c/u · Ahorro ${pesos(ahorroLinea(l))}</small>` : ''}`;
+    return `<b>${esc(descripcionLegible(descripcionLinea(l)))}</b>${detalles.map((d) => (d ? `<span${d.startsWith('Medida') ? ' class="medida"' : ''}>${esc(d)}</span>` : '')).join('')}${
+      conDescuentoItem(l) && l.descuentoItem
+        ? `<span class="descuento-item">Descuento especial ${esc(textoDescuentoItem(l.descuentoItem))}: −${pesos(l.descuentoUnitario!)} c/u · Ahorro ${pesos(ahorroLinea(l))}</span>`
+        : ''
+    }<span class="cod">${esc(nota ? referenciaFabrica(l) : l.producto.codigo)}</span>`;
   };
   // Con descuento especial, el precio original queda tachado sobre el rebajado (unitario y total de la línea).
   const conOriginal = (l: Linea, original: number, final: number) =>
-    conDescuentoItem(l) ? `<s class="original">${pesos(original)}</s><br><b>${pesos(final)}</b>` : pesos(final);
-  // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma.
+    conDescuentoItem(l) ? `<s class="original">${pesos(original)}</s> <span>${pesos(final)}</span>` : pesos(final);
+  // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma. Solo los
+  // de su fábrica: los de la otra van en su propia nota (uno sin fábrica es de una nota anterior a separarlas).
   const porDefinir = nota
     ? q.montos.lineas.filter(
         (l) =>
           l.indice != null &&
           !!q.solicitudes[l.indice]?.personalizado &&
+          (!doc.fabrica || (q.solicitudes[l.indice].fabrica ?? doc.fabrica) === doc.fabrica) &&
           !montos.lineas.some((m) => m.indice === l.indice),
       )
     : [];
@@ -249,27 +301,144 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     ...montos.lineas.map((l) => ({ l, definida: true })),
     ...porDefinir.map((l) => ({ l, definida: false })),
   ].sort((a, b) => (a.l.indice ?? 0) - (b.l.indice ?? 0));
-  const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) =>
-    `<tr><td>${i + 1}</td><td class="codigo">${esc(l.producto.codigo)}</td><td>${descripcion(l)}</td><td class="num">${l.cantidad}</td>${
-      definida
-        ? `<td class="num">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="num">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
-        : '<td class="num">Por definir</td><td class="num">Por definir</td>'
-    }${nota ? '<td class="check"><i></i></td>' : ''}</tr>`;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${titulo}</title><style>
-    @page{size:A4;margin:16mm 15mm 20mm}*{box-sizing:border-box}body{font:11px Arial,sans-serif;color:#242a24;margin:0;background:#fff}b{font-weight:600}
-    header{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;border-bottom:2px solid #324536;padding-bottom:20px}header img{display:block;height:120px;width:auto}header>div:last-child{text-align:right}h1{font:700 20px Arial,sans-serif;letter-spacing:.03em;margin:4px 0 12px;color:#1c241e}.fabrica{display:inline-block;margin:-4px 0 10px;padding:4px 10px;border:1.5px solid #324536;font:700 13px Arial,sans-serif;letter-spacing:.06em;color:#1c241e}header p{margin:4px 0 0}.empresa{font-size:10px;line-height:1.5;margin-top:10px;color:#3d443d}
-    section{margin:22px 0;display:grid;grid-template-columns:1fr 1fr;gap:0 25px}section div div{min-height:15px;margin-bottom:11px}h2{font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:#324536;margin:0 0 10px;padding-bottom:5px;border-bottom:1px solid #deded6}
-    table{width:100%;border-collapse:collapse;font-size:10px}thead{display:table-header-group}th{text-align:left;border-top:1px solid #324536;border-bottom:1px solid #324536;padding:10px 5px;font-size:9px}td{padding:11px 5px;border-bottom:1px solid #deded6;vertical-align:baseline}td small{font-size:9px;color:#4a524a}tr{break-inside:avoid}.num{text-align:right;white-space:nowrap}.codigo{white-space:nowrap;font-size:9px}.check{width:34px;text-align:center}.check i{display:inline-block;width:11px;height:11px;border:1px solid #324536;vertical-align:-2px}
-    .totales{width:255px;margin:20px 0 24px auto;break-inside:avoid}.totales p{display:flex;justify-content:space-between;margin:9px 0}.total{border-top:2px solid #324536;padding-top:12px;font-size:15px}.totales .original b{font-weight:400}.totales .ahorro,.descuento-item{color:#8a5a37}s.original{color:#6b716b;font-size:9px}
-    footer{font-size:10px;border-top:1px solid #aaa;padding-top:16px;line-height:1.6}.bloque{break-inside:avoid;margin-bottom:18px}.bloque p{margin:2px 0}.firmas{display:flex;gap:28px;margin-top:34px}.firma{flex:1;font-size:9px;color:#4a524a}.firma span{display:block;border-top:1px solid #242a24;margin-bottom:4px}.linea{display:flex;gap:8px;align-items:baseline;margin-bottom:12px}.linea span{flex:1;border-bottom:1px solid #9a9f98;height:12px}.observaciones{border:1px solid #9a9f98;min-height:64px;padding:6px 8px}.contacto{color:#4a524a}
-    .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:bold 110px Arial,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}.anulada-aviso{border:2px solid #aa1e1e;color:#aa1e1e;padding:8px 10px;margin:14px 0 0;font-weight:600}.por-definir{font-size:9px;color:#4a524a;text-align:right;margin:-12px 0 20px}
-    </style></head><body>${anulacion}<header><div><img alt="Neltume" src="${logo}">${datosNeltume.length ? `<div class="empresa">${datosNeltume.map((d) => `<div>${d}</div>`).join('')}</div>` : ''}</div><div><h1>${titulo}</h1>${fabrica}${metadatos.map(([k, v]) => `<p><b>${k}:</b> ${esc(v)}</p>`).join('')}</div></header>
-    <section>${columnas.map((col, i) => `<div>${encabezados ? `<h2>${encabezados[i]}</h2>` : ''}${col.map(campo).join('')}</div>`).join('')}</section>
-    <table><thead><tr><th>ITEM</th><th>CÓDIGO</th><th>DESCRIPCIÓN</th><th class="num">CANT.</th><th class="num">PRECIO UNIT.</th><th class="num">TOTAL</th>${nota ? '<th class="check">LISTO</th>' : ''}</tr></thead><tbody>
-    ${filas.map(filaProducto).join('')}${montos.flete ? `<tr><td>${filas.length + 1}</td><td class="codigo">${CODIGO_FLETE}</td><td>${esc(descripcionFlete(q))}</td><td class="num">${cantidadFlete(q)}</td><td class="num">${pesos(unitarioFlete(q))}</td><td class="num">${pesos(montos.flete)}</td>${nota ? '<td class="check"></td>' : ''}</tr>` : ''}</tbody></table>
-    <div class="totales">${totales}</div>${porDefinir.length ? '<p class="por-definir">Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.</p>' : ''}
-    <footer>${cierre}<p class="contacto">Para preguntas referentes a esta ${nota ? 'nota de pedido' : 'cotización'} contactarnos a: ${esc(empresa.correo)}</p></footer></body></html>`;
+  const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) => {
+    const dibujo = dibujoDe(l);
+    const precios = definida
+      ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
+      : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
+    return nota
+      ? `<tr><td class="n">${i + 1}</td><td class="plano-c">${planoNota(dibujo, l)}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}<td class="listo"><i></i></td></tr>`
+      : `<tr><td class="n">${i + 1}</td><td><div class="prod${dibujo ? '' : ' sin-dibujo'}">${dibujoCotizacion(dibujo)}<div>${producto(l)}</div></div></td><td class="r cant">${l.cantidad}</td>${precios}</tr>`;
+  };
+  const filaFlete = montos.flete
+    ? `<tr><td class="n">${filas.length + 1}</td><td><div class="prod sin-dibujo"><div><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></div></div></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
+    : '';
+  const tabla = nota
+    ? `<table><thead><tr><th class="n">N°</th><th class="plano-c">Plano</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio fábrica</th><th class="r tot">Total</th><th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
+    : `<table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
+
+  // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
+  // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
+  const { ahorro, subtotalOriginal } = resumenDescuentosItems(montos);
+  const fila = (etiqueta: string, valor: string, clase = '') =>
+    `<div${clase ? ` class="${clase}"` : ''}><dt>${etiqueta}</dt><dd>${valor}</dd></div>`;
+  const totales = [
+    ...(ahorro
+      ? [
+          fila('Subtotal original', pesos(subtotalOriginal + montos.flete), 'original'),
+          fila('Ahorro desc. especiales', `−${pesos(ahorro)}`, 'ahorro'),
+        ]
+      : []),
+    fila(nota ? 'Neto' : 'Subtotal', pesos(montos.subtotal + montos.flete)),
+    ...(montos.descuento
+      ? [
+          fila(
+            `${etiquetaDescuento({ descuento: q.descuento, descuentoManual: q.descuentoManual, reglas }, { corta: true })} ${porcentaje(montos.descuentoPorcentaje)}${montos.flete ? ' sobre productos' : ''}`,
+            `−${pesos(montos.descuento)}`,
+          ),
+          fila('Neto', pesos(montos.neto)),
+        ]
+      : []),
+    fila(`IVA ${porcentajeIva(reglas.iva)}`, pesos(montos.iva)),
+    fila('Total', pesos(montos.total), 'total'),
+  ].join('');
+  const valores = nota
+    ? 'Valores a precio de fábrica, sin la ganancia de venta. Las cotas del plano son la medida pedida de cada puerta, en milímetros (de hoja o de vano, como indica la línea).'
+    : 'Valores en pesos chilenos, puestos en fábrica.';
+  const cierreTotales = `<section class="cierre"><p class="valores">${valores}${porDefinir.length ? '<br><br>Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.' : ''}</p><dl class="totales">${totales}</dl></section>`;
+
+  const anulacion = doc.anulada
+    ? `<div class="anulada-marca" aria-hidden="true">ANULADA</div><p class="anulada-aviso">${nota ? 'NOTA DE PEDIDO ANULADA' : 'COTIZACIÓN ANULADA'}${doc.anulada.fecha ? ` el ${fechaDocumento(doc.anulada.fecha)}` : ''}${doc.anulada.por ? ` por ${esc(doc.anulada.por)}` : ''}${doc.anulada.motivo ? `. Motivo: ${esc(doc.anulada.motivo)}` : ''}. No es válida${nota ? ' para fábrica' : ''}.</p>`
+    : '';
+  const firma = (rotulo: string) => `<div class="firma">${rotulo}</div>`;
+  const validez = doc.vence
+    ? `Cotización válida hasta el ${fechaChilena(doc.vence)} (${reglas.vigenciaDiasHabiles} días hábiles).`
+    : `Cotización válida por ${reglas.vigenciaDiasHabiles} días hábiles.`;
+  const condicion = (titulo: string, texto: string) => `<div><b>${titulo}</b><p>${texto}</p></div>`;
+  const condiciones = [
+    condicion('Validez', validez),
+    condicion(
+      'No incluye',
+      'No se considera: Instalación, pintura, barniz, protecciones metálicas, vidrios ni estructura para correderas. No se consideran elementos no indicados en la cotización.',
+    ),
+    // Con el flete en el detalle, «consultar el despacho» contradiría el documento.
+    ...(montos.flete ? [] : [condicion('Despacho', 'Consultar valor despacho.')]),
+    ...(empresa.plazoEntrega ? [condicion('Plazo de entrega', esc(empresa.plazoEntrega))] : []),
+    ...(empresa.condicionesPago ? [condicion('Pago', esc(empresa.condicionesPago))] : []),
+    ...(empresa.datosBancarios ? [condicion('Datos para transferencia', esc(empresa.datosBancarios))] : []),
+  ];
+  // La cotización cierra con sus observaciones, cómo aceptarla y las condiciones; la nota, con lo que fábrica
+  // completa a mano: entrega comprometida, observaciones y recepción.
+  const cierre = nota
+    ? `<section class="fab"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="obs"><b>Observaciones</b><div>${observaciones ? esc(observaciones) : ''}</div></div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma(`Recibido por fábrica${doc.fabrica ? ` ${nombreFabrica[doc.fabrica]}` : ''}`)}</div>`}</section>`
+    : `${observaciones ? `<section class="observaciones"><h2>Observaciones</h2><p>${esc(observaciones)}</p></section>` : ''}<section class="condiciones"><h2>Condiciones</h2><div class="cond">${condiciones.join('')}</div></section>${
+        doc.anulada
+          ? ''
+          : `<section class="aceptar"><h2>Para aceptar esta cotización</h2><p>Responde este correo${empresa.telefono ? ` o escríbenos al ${esc(empresa.telefono)}` : ''} indicando el N° ${numero}. Si prefieres, fírmala y envíanos una foto.</p><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></section>`
+      }`;
+  // Datos de Neltume al pie de cada página, junto al número de página (ver `generarPdf`): también a quién preguntar.
+  const pie = [empresa.nombre, empresa.rut && `RUT ${empresa.rut}`, empresa.direccion, empresa.telefono && `Tel. ${empresa.telefono}`, empresa.correo, empresa.web]
+    .filter(Boolean)
+    .join(' · ');
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N° ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
 }
+
+/**
+ * Estilos de los documentos, con el sistema de la aplicación: Newsreader en títulos y cifras grandes, Host Grotesk en
+ * el texto. Las fuentes van como referencia `neltume-fuente:` y se incrustan al imprimir: el servidor imprime sin red.
+ */
+const ESTILOS = `
+/* El guion de este Host Grotesk es más corto que el original, que se leía como raya en códigos y RUT (ver
+   scripts/fuentes-pdf.py). */
+@font-face{font-family:'Host Grotesk';src:url(neltume-fuente:host-grotesk.woff2) format('woff2');font-weight:300 800}
+@font-face{font-family:'Newsreader';src:url(neltume-fuente:newsreader.woff2) format('woff2');font-weight:200 800}
+@page{size:A4;margin:14mm 14mm 17mm}
+:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec}
+*{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+body{margin:0;font:400 9.2pt/1.45 'Host Grotesk',Helvetica,Arial,sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;font-feature-settings:'calt' 0;background:#fff}
+h1,h2,h3,p,dl,dd{margin:0}b{font-weight:500}
+.k{font-size:7.3pt;color:var(--muted);letter-spacing:.01em}
+.cab{display:grid;grid-template-columns:1fr auto;align-items:end;gap:10mm;padding-bottom:4.5mm;border-bottom:.7pt solid var(--green)}
+.cab img{height:17mm;width:auto;display:block}
+.cab .tipo{font:400 11pt 'Newsreader',Georgia,serif;color:var(--muted);text-align:right}
+.cab h1{font:400 29pt/.92 'Newsreader',Georgia,serif;letter-spacing:-.022em;text-align:right;margin-top:1mm}
+.fabrica{text-align:right;margin-top:2.5mm}.fabrica b{background:var(--green);color:#fff;font-size:10pt;padding:1.2mm 3mm;letter-spacing:.01em}
+.meta{display:grid;grid-auto-flow:column;gap:0 8mm;margin-top:3.5mm;justify-content:end;text-align:right}.meta dd{font-weight:500;font-size:8.8pt}
+.otras{margin-top:2.5mm;padding:2.4mm 3.5mm;background:var(--soft);font-size:8.2pt}
+.partes{display:grid;grid-template-columns:1.15fr 1fr;gap:12mm;padding:4mm 0 3mm}
+.parte h2{font:400 15pt/1.1 'Newsreader',Georgia,serif;letter-spacing:-.012em;margin-top:1mm}
+.datos{display:grid;grid-template-columns:auto 1fr;gap:.9mm 4mm;margin-top:2.6mm;font-size:8.6pt}.datos dt{color:var(--muted)}
+table{width:100%;border-collapse:collapse}thead{display:table-header-group}
+th{font-weight:500;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:.7pt solid var(--ink)}
+td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr{break-inside:avoid}
+.r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted);font-size:8pt}.cant{width:13mm}td.cant{font-weight:500}.unit{width:27mm}.tot{width:29mm;font-weight:500}
+div.prod{display:grid;grid-template-columns:10mm 1fr;gap:4mm;align-items:center}div.prod.sin-dibujo{grid-template-columns:1fr}div.prod.sin-dibujo>div{padding-left:14mm}
+.dibujo{width:10mm;height:12.5mm;display:block}
+.prod b{display:block;font-size:9.6pt}.prod span{display:block;color:var(--muted);font-size:8.2pt;line-height:1.35}.prod .medida{color:var(--ink);font-weight:500}.prod .cod{font-size:7.3pt;letter-spacing:.03em;margin-top:.6mm}
+.prod .descuento-item{color:#8a5a37}s.original{color:var(--muted);font-size:8pt}
+.plano-c{width:26mm}.plano{height:18mm;width:auto;display:block}
+/* En la nota, el plano y la casilla «Listo» dejan menos ancho: los precios se acotan para que el producto no se corte. */
+.nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}.plano text{font:500 125px 'Host Grotesk',Helvetica,sans-serif;fill:var(--ink)}.plano .cota{stroke:var(--ink);stroke-width:3;fill:none}
+.generico{fill:none;stroke:var(--green);stroke-width:6;stroke-linejoin:round;stroke-linecap:round}
+td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:inline-block;width:4mm;height:4mm;border:.7pt solid var(--ink);vertical-align:middle}
+.cierre{display:grid;grid-template-columns:1fr 68mm;gap:12mm;margin-top:3mm;align-items:start;break-inside:avoid}
+.valores{font-size:8.2pt;color:var(--muted);max-width:80mm;padding-top:1.2mm}
+.totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9pt}.totales dt{color:var(--muted)}
+.totales .original dd{color:var(--muted)}.totales .ahorro dd{color:#8a5a37}
+.totales .total{border-top:.7pt solid var(--ink);margin-top:1.5mm;padding-top:2.4mm;align-items:baseline}
+.totales .total dt{font:400 12pt 'Newsreader',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Newsreader',Georgia,serif;letter-spacing:-.015em;color:var(--green)}
+.observaciones,.condiciones{margin-top:3mm;break-inside:avoid}
+.observaciones h2,.condiciones h2{font:400 12pt 'Newsreader',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:8.6pt;white-space:pre-line}
+.cond{display:grid;grid-template-columns:repeat(3,1fr);gap:0 6mm;font-size:7.9pt}.cond div{padding:2mm 0;border-top:.5pt solid var(--line)}.cond b{display:block}.cond p{color:var(--muted)}
+.aceptar{margin-top:3mm;padding:3mm 5mm 3.5mm;background:var(--soft);break-inside:avoid}.aceptar h2{font:400 14pt 'Newsreader',Georgia,serif;letter-spacing:-.01em}.aceptar>p{margin-top:1.2mm;font-size:8.8pt}
+.firmas{display:grid;grid-template-columns:repeat(3,1fr);gap:7mm;margin-top:5mm}.fab .firmas{grid-template-columns:1fr 1fr;gap:10mm;margin-top:6mm}
+.firma{border-top:.5pt solid var(--ink);padding-top:1.4mm;font-size:7.3pt;color:var(--muted)}
+.fab{margin-top:3.5mm;padding:3.5mm 5mm 4mm;background:var(--soft);break-inside:avoid}.fab h2{font:400 14pt 'Newsreader',Georgia,serif;letter-spacing:-.01em}
+.linea{display:flex;gap:3mm;align-items:baseline;margin-top:3mm;font-size:8.6pt}.linea b{white-space:nowrap}.linea span{flex:1;border-bottom:.5pt solid var(--muted);min-height:4mm}
+.obs{margin-top:3mm;font-size:8.6pt}.obs div{margin-top:1.2mm;min-height:10mm;border:.5pt solid var(--muted);background:#fff;padding:1.5mm 2mm;white-space:pre-line}
+.anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:600 110px 'Host Grotesk',Helvetica,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}
+.anulada-aviso{border:.7pt solid #aa1e1e;color:#aa1e1e;padding:2.4mm 3.5mm;margin-bottom:3mm;font-weight:500}
+`;
 
 /**
  * Logo de los documentos. La plantilla escribe `src="neltume-logo:<sha256>"` en lugar del SVG en base64, y el SVG se
@@ -328,6 +497,46 @@ export function compactarLogo(html: string) {
     /<img alt="Neltume" src="data:image\/svg\+xml;base64,([A-Za-z0-9+/=]+)">/g,
     (_, base64: string) => `<img alt="Neltume" src="${referenciaLogo(Buffer.from(base64, 'base64'))}">`,
   );
+}
+
+const RECURSO = /(src|href)="neltume-dibujo:([a-z0-9-]+\.png)"|url\(neltume-fuente:([a-z0-9-]+\.woff2)\)/g;
+const recursosLeidos = new Map<string, string>();
+/** Archivo de `pdf-recursos` en base64 (se lee una vez por proceso); null si no está. */
+async function recursoBase64(ruta: string) {
+  if (!recursosLeidos.has(ruta))
+    try {
+      recursosLeidos.set(ruta, (await readFile(join(RECURSOS, ruta))).toString('base64'));
+    } catch {
+      return null;
+    }
+  return recursosLeidos.get(ruta)!;
+}
+
+/**
+ * Reemplaza las referencias a los dibujos de los modelos (`neltume-dibujo:`) y a las fuentes (`neltume-fuente:`) por
+ * su contenido en base64, como el logo: el snapshot guarda solo las referencias y el servidor imprime sin red. Una
+ * referencia cuyo archivo no está queda tal cual: el documento se imprime sin ese dibujo o con la fuente de respaldo.
+ */
+export async function inyectarRecursos(html: string): Promise<string> {
+  const contenidos = new Map<string, string | null>();
+  for (const m of html.matchAll(RECURSO)) {
+    const ruta = m[2] ? `dibujos/${m[2]}` : `fuentes/${m[3]}`;
+    if (!contenidos.has(ruta)) contenidos.set(ruta, await recursoBase64(ruta));
+  }
+  return html.replace(RECURSO, (todo, atributo: string | undefined, dibujo: string | undefined, fuente: string | undefined) => {
+    const base64 = contenidos.get(dibujo ? `dibujos/${dibujo}` : `fuentes/${fuente}`);
+    if (!base64) return todo;
+    return dibujo ? `${atributo}="data:image/png;base64,${base64}"` : `url(data:font/woff2;base64,${base64})`;
+  });
+}
+
+/**
+ * Pie de cada página: los datos de Neltume que trae el documento (`<meta name="neltume-pie">`, ya escapados) y el número
+ * de página. Un documento anterior (un snapshot sin esa marca) lleva solo el número, como se imprimió.
+ */
+function piePagina(html: string) {
+  const datos = html.match(/<meta name="neltume-pie" content="([^"]*)">/)?.[1] ?? '';
+  return `<div style="width:100%;padding:0 14mm;font:7px Helvetica,Arial,sans-serif;color:#58615a;display:flex;justify-content:space-between;gap:12px"><span>${datos}</span><span style="white-space:nowrap">Página <span class="pageNumber"></span> de <span class="totalPages"></span></span></div>`;
 }
 
 // Un solo Chromium reutilizado entre documentos: lanzarlo cuesta más que imprimir. Se cierra tras un
@@ -424,7 +633,9 @@ export async function generarPdf(
   await mkdir(carpeta, { recursive: true, mode: 0o700 });
   await chmod(carpeta, 0o700);
   const temporal = join(carpeta, `.${randomUUID()}.pdf`);
-  const documento = await inyectarLogo(html, opciones.logoDe && (await logoVigente(opciones.logoDe)));
+  const documento = await inyectarRecursos(
+    await inyectarLogo(html, opciones.logoDe && (await logoVigente(opciones.logoDe))),
+  );
   let pagina: Page | undefined;
   let vencido = false;
   let temporizador: NodeJS.Timeout | undefined;
@@ -438,6 +649,8 @@ export async function generarPdf(
     page.setDefaultTimeout(plazoMs);
     await page.route('**/*', (route) => route.abort());
     await page.setContent(documento, { waitUntil: 'load', timeout: plazoMs });
+    // Las fuentes incrustadas se cargan aparte: se imprime recién con ellas, no con la de respaldo.
+    await page.evaluate(() => document.fonts.ready);
     await page.pdf({
       path: temporal,
       format: 'A4',
@@ -446,8 +659,7 @@ export async function generarPdf(
       // Numeración en el margen inferior: en documentos largos cada hoja dice cuántas son.
       displayHeaderFooter: true,
       headerTemplate: '<span></span>',
-      footerTemplate:
-        '<div style="width:100%;padding:0 15mm;font:8px Arial,sans-serif;color:#6b716b;text-align:right">Página <span class="pageNumber"></span> de <span class="totalPages"></span></div>',
+      footerTemplate: piePagina(html),
     });
   })();
   let fallo = false;

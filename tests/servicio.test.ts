@@ -289,7 +289,7 @@ describe('Persistencia y flujo del asistente', () => {
     await expect(aprobar(reiniciado, original)).rejects.toThrow('reemplazada');
     let aprobada = (await aprobar(reiniciado, revision)).cotizacion;
     expect(aprobada.montos.total).toBe(copia.montos.total);
-    expect(aprobada.nota).toBeNull();
+    expect(aprobada.notas).toEqual([]);
     const mitad = Math.ceil(aprobada.montos.total * 0.5);
     aprobada = (
       await reiniciado.ejecutar({
@@ -302,15 +302,17 @@ describe('Persistencia y flujo del asistente', () => {
     aprobada = (
       await reiniciado.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: aprobada.id, actualizada: aprobada.actualizada })
     ).cotizacion;
-    expect(aprobada.nota?.montos.lineas[0].precioUnitario).toBe(999);
-    expect(aprobada.nota?.numero).toBe(CORRELATIVOS_NOTA.panguipulli);
+    expect(aprobada.notas[0]?.montos.lineas[0].precioUnitario).toBe(999);
+    expect(aprobada.notas[0]?.numero).toBe(CORRELATIVOS_NOTA.panguipulli);
     expect(plantilla).toHaveBeenCalledTimes(3);
     await expect(
       reiniciado.ejecutar({ tipo: 'quitar', id: aprobada.id, actualizada: aprobada.actualizada, indice: 0 }),
     ).rejects.toThrow('aprobada');
-    await expect(reiniciado.ejecutar({ tipo: 'chat', id: aprobada.id, mensaje: 'cambia' })).rejects.toThrow(
-      'aprobada',
-    );
+    // Por chat, una aprobada solo reparte fábricas o cambia números: otro cambio se responde sin aplicarlo.
+    const respuesta = await reiniciado.ejecutar({ tipo: 'chat', id: aprobada.id, mensaje: 'cambia' });
+    expect(respuesta.cotizacion).toMatchObject({ estado: 'aprobada', solicitudes: aprobada.solicitudes });
+    expect(respuesta.cotizacion.historial.at(-1)?.texto).toContain('aprobada y no se puede editar');
+    aprobada = respuesta.cotizacion;
     await aprobar(reiniciado, aprobada);
     expect(generarPdf).toHaveBeenCalledTimes(3);
     expect(new Almacen(dir).correlativos().siguienteCotizacion).toBe(325);
@@ -449,13 +451,13 @@ describe('Persistencia y flujo del asistente', () => {
       .cotizacion;
     await aprobar(servicio, (await emitir(servicio, lista)).cotizacion);
     llm.interpretar.mockClear();
-    await expect(
-      servicio.ejecutar({
-        tipo: 'chat',
-        mensaje: 'Modifica la cotización N° 323: ahora son 8 puertas',
-      }),
-    ).rejects.toThrow('aprobada');
-    expect(llm.interpretar).not.toHaveBeenCalled();
+    // Se consulta a la IA (podría pedir repartir fábricas o cambiar un número), pero el pedido no cambia.
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: 'Modifica la cotización N° 323: ahora son 8 puertas',
+    });
+    expect(r.cotizacion).toMatchObject({ numero: 323, estado: 'aprobada', solicitudes: [{ cantidad: 3 }] });
+    expect(r.cotizacion.historial.at(-1)?.texto).toContain('aprobada y no se puede editar');
   });
 
   it('sin una referencia encontrada crea solo la cotización nueva para el mensaje', async () => {

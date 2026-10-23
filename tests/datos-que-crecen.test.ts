@@ -28,6 +28,7 @@ vi.mock('playwright', () => ({
           setContent: async (html: string) => {
             contenido = html;
           },
+          evaluate: async () => {},
           pdf: async ({ path }: { path: string }) => {
             const { writeFile: escribir } = await import('node:fs/promises');
             await escribir(path, contenido);

@@ -117,12 +117,14 @@ describe('Sin Chromium no se gastan números', () => {
     await t.ir({ tipo: 'aprobar' });
     await t.ir({ tipo: 'pago', monto: anticipoMinimo(t.actual().montos.total) });
     const antes = t.almacen.correlativos();
+    const antesNotas = t.almacen.correlativosNota();
     await expect(t.intentar({ tipo: 'generar_nota', fabrica: 'panguipulli' })).rejects.toMatchObject(sinChromium(t.chromium));
     await expect(t.intentar({ tipo: 'generar_nota', fabrica: 'panguipulli' })).rejects.toMatchObject(sinChromium(t.chromium));
     expect(t.almacen.correlativos()).toEqual(antes);
+    expect(t.almacen.correlativosNota()).toEqual(antesNotas);
     expect(t.recargada()).toMatchObject({
       estado: 'aprobada',
-      nota: null,
+      notas: [],
       actualizada: t.actual().actualizada,
     });
   });
