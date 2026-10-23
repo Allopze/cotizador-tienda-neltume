@@ -54,10 +54,12 @@ test('guía «Cómo funciona»: desde la pantalla vacía y el menú de cuenta, e
     page.getByRole('link', { name: 'Cómo funciona', exact: true, includeHidden: true }),
   ).toHaveAttribute('aria-current', 'page');
 
-  // En escritorio el enlace está a la vista en la cabecera, sin desbordarla.
+  // En escritorio el menú de cuenta es el mismo y la cabecera no se desborda.
   for (const width of [820, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.getByRole('button', { name: /Cuenta/ }).click();
     await expect(page.getByRole('banner').getByRole('link', { name: 'Cómo funciona', exact: true })).toBeVisible();
     await sinScrollHorizontal(page);
+    await page.keyboard.press('Escape');
   }
 });

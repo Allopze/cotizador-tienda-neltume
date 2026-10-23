@@ -1485,7 +1485,6 @@ export function Cotizador({
           <div id="chat-contenido" className="chat-contenido">
             <div className="panel-heading">
               <div>
-                <p className="eyebrow">01 / CONVERSACIÓN</p>
                 <h2>{aprobada ? 'Conversación original' : 'Cuéntame el pedido'}</h2>
               </div>
               {mostrarNueva && (

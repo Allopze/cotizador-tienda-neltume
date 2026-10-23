@@ -16,9 +16,9 @@ type Editar = (cambios: CambiosEdicion, campo: string) => Promise<boolean>;
 
 // En pantalla el margen se llama «ganancia» (sobre el costo de fábrica): es la palabra que usan las vendedoras.
 const ORIGEN: Record<OrigenMargen, string> = {
-  linea: ' — cambiada a mano en esta línea',
-  cotizacion: ' — cambiada a mano para toda la cotización',
-  precio: ' — según el precio unitario fijado a mano',
+  linea: ' · cambiada a mano en esta línea',
+  cotizacion: ' · cambiada a mano para toda la cotización',
+  precio: ' · según el precio unitario fijado a mano',
   categoria: '',
 };
 

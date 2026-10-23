@@ -151,7 +151,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(total).toHaveText(pesos(especial.total));
   await expect(page.getByTestId('neto')).toHaveText(pesos(especial.neto));
   await expect(
-    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 42 % — cambiada a mano en esta línea', {
+    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 42 % · cambiada a mano en esta línea', {
       exact: true,
     }),
   ).toBeVisible();
@@ -322,7 +322,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await expect(panel.locator('td strong').first()).toHaveText(DESCRIPCION);
   await expect(panel.getByText('HUIL-M-3-E', { exact: true })).toBeVisible();
   await expect(
-    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 42 % — cambiada a mano en esta línea', {
+    panel.getByText('Ganancia estándar: 55 % · Ganancia aplicada: 42 % · cambiada a mano en esta línea', {
       exact: true,
     }),
   ).toBeVisible();

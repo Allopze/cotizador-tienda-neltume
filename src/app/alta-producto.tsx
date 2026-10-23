@@ -369,7 +369,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
 
       <section className="alta-bloque" aria-labelledby={`${uid}-asistente`}>
         <h3 id={`${uid}-asistente`} className="eyebrow">
-          DESCRIBIR CON EL ASISTENTE <span className="alta-opcional">· opcional</span>
+          Describir con el asistente <span className="alta-opcional">· opcional</span>
         </h3>
         {!asistente ? (
           <p className="muted">El asistente no está configurado: completa los datos en el formulario.</p>
@@ -421,7 +421,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
 
       <form ref={formulario} className="alta-bloque alta-formulario" onSubmit={revisar} noValidate aria-labelledby={`${uid}-datos`}>
         <h3 id={`${uid}-datos`} className="eyebrow">
-          DATOS DEL PRODUCTO
+          Datos del producto
         </h3>
         <div className="alta-campos">
           <div className="alta-campo">
@@ -489,7 +489,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
       {propuesta && (
         <div className="catalog-preview" ref={revision} tabIndex={-1} aria-labelledby={`${uid}-revision`}>
           <p className="eyebrow" id={`${uid}-revision`}>
-            REVISIÓN ANTES DE GUARDAR
+            Revisión antes de guardar
           </p>
           <h3>{nombreProducto(propuesta.descripcion)}</h3>
           <dl>

@@ -1,7 +1,7 @@
 @import 'tailwindcss';
 :root {
   color-scheme: light;
-  --ink: #263a30;
+  --ink: #1d2b24;
   /* Texto secundario: ≥4.9:1 sobre todos los fondos claros de la interfaz. */
   --muted: #5f665c;
   /* Texto terciario (placeholders, metadatos): ≥5:1 sobre blanco, papel y panel. */
@@ -30,13 +30,17 @@
   --disabled-bg: #e3e6dc;
   --fs-xs: 0.75rem;
   --fs-sm: 0.8125rem;
-  --fs-md: 0.875rem;
+  --fs-md: 0.9375rem;
   --fs-lg: 1rem;
   /* Tres tamaños serif: título de pantalla, título de panel y subtítulo. */
-  --serif: Georgia, 'Times New Roman', serif;
-  --serif-1: 1.875rem;
-  --serif-2: 1.5625rem;
-  --serif-3: 1.1875rem;
+  --sans: var(--font-sans), system-ui, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  --serif: var(--font-serif), Georgia, 'Times New Roman', serif;
+  --serif-1: 2.25rem;
+  --serif-2: 1.75rem;
+  --serif-3: 1.3125rem;
+  /* Botón tonal (el secundario) y su hover. */
+  --tonal: #e8e9e1;
+  --tonal-hover: #dcded4;
   /* Dos alturas de control: normal y compacto. */
   --control: 44px;
   --control-sm: 36px;
@@ -48,7 +52,7 @@
   --curve-out: cubic-bezier(0.22, 1, 0.36, 1);
   --curve-in: cubic-bezier(0.4, 0, 1, 1);
   /* Espaciado único de las etiquetas en mayúsculas. */
-  --tracking-label: 1.2px;
+  --tracking-label: 0.02em;
 }
 * {
   box-sizing: border-box;
@@ -60,8 +64,11 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--ink);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--sans);
   font-size: var(--fs-md);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  -webkit-font-smoothing: antialiased;
 }
 /* «smaller» del navegador dejaba textos secundarios en 9,6–11,2px: nunca bajo 12px. */
 small {
@@ -92,7 +99,7 @@ textarea:focus-visible,
 input:focus-visible,
 select:focus-visible,
 [tabindex='-1']:focus-visible {
-  outline: 2px solid var(--warm);
+  outline: 2px solid var(--green);
   outline-offset: 4px;
 }
 /* Los campos llevan el anillo pegado: con 4px de aire se separaba del borde y parecía otra caja. */
@@ -154,23 +161,41 @@ kbd {
 }
 .header-nav {
   display: flex;
-  gap: 26px;
-  font-size: var(--fs-xs);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  gap: 28px;
+  font-size: var(--fs-md);
 }
 .header-nav a {
+  position: relative;
   padding: 6px 0;
-  border-bottom: 1px solid transparent;
   color: var(--muted);
   text-decoration: none;
+  transition: color var(--motion-fast);
+}
+/* El subrayado entra desde la izquierda: un tercio al pasar el mouse y completo en la pantalla actual. */
+.header-nav a::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 2px;
+  background: var(--green);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--motion-enter) var(--curve-out);
 }
 .header-nav a:hover {
   color: var(--ink);
 }
+.header-nav a:hover::after {
+  transform: scaleX(0.35);
+}
 .header-nav a[aria-current='page'] {
   color: var(--ink);
-  border-bottom-color: var(--ink);
+  font-weight: 500;
+}
+.header-nav a[aria-current='page']::after {
+  transform: scaleX(1);
 }
 /* Encabezado de pantalla: misma altura y espaciado en Cotizar, Historial, Catálogo y Ajustes. */
 .page-heading {
@@ -200,8 +225,8 @@ kbd {
   margin-bottom: 12px;
 }
 h1 {
-  font: var(--serif-1) / 1.15 var(--serif);
-  letter-spacing: -1px;
+  font: 400 var(--serif-1) / 1.08 var(--serif);
+  letter-spacing: -0.022em;
 }
 /* Tarjeta blanca con borde: el área de trabajo de cada pantalla. */
 .superficie {
@@ -210,36 +235,43 @@ h1 {
 }
 .button {
   min-height: var(--control);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   padding: 11px 19px;
   font-size: var(--fs-sm);
-  font-weight: 600;
+  font-weight: 500;
+  letter-spacing: -0.005em;
   display: inline-flex;
-  gap: 12px;
+  gap: 10px;
   justify-content: center;
   align-items: center;
   text-decoration: none;
+  transition:
+    background var(--motion-fast) var(--curve-out),
+    color var(--motion-fast),
+    transform 90ms var(--curve-out);
 }
+.button:active:not(:disabled) {
+  transform: translateY(1px) scale(0.985);
+}
+/* Tres pesos: primario relleno, secundario tonal (sin caja) y destructivo. Deshabilitado es el mismo botón más tenue. */
 .button.secondary {
-  background: transparent;
+  background: var(--tonal);
   color: var(--ink);
 }
 .button.secondary:hover:not(:disabled) {
-  background: var(--pale);
+  background: var(--tonal-hover);
 }
 .button.primary {
   background: var(--green);
   color: #fff;
-  border-color: var(--green);
 }
 .button.primary:hover:not(:disabled) {
   background: var(--green-hover);
 }
 .button:disabled,
 .button.primary:disabled {
-  background: var(--disabled-bg);
-  border-color: var(--disabled-bg);
-  color: var(--muted);
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 .button.small {
   min-height: var(--control-sm);
@@ -599,7 +631,6 @@ h1 {
     Helvetica,
     sans-serif;
   letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
   color: var(--muted);
   padding: 22px 12px 8px;
   margin: 0;
@@ -833,9 +864,7 @@ button[type='submit'].button.peligro:not(:disabled) {
 }
 /* Deshabilitado se ve deshabilitado: sin el rojo que lo hace parecer disponible. */
 .button.peligro:disabled {
-  background: var(--disabled-bg);
-  border-color: var(--disabled-bg);
-  color: var(--subtle);
+  opacity: 0.42;
 }
 /* Campo con edición en línea (panel, totales, catálogo). */
 /* Variante discreta: el valor es el botón; el lápiz aparece al pasar o enfocar. */

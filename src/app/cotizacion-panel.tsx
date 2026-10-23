@@ -406,7 +406,6 @@ export function CotizacionPanel({
       >
         <div className="panel-heading">
           <div>
-            <p className="eyebrow">02 / COTIZACIÓN</p>
             <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
               Vista previa
             </h2>
@@ -561,7 +560,6 @@ export function CotizacionPanel({
     <section id="panel-cotizacion" className={`quote-panel estado-${estado}`} aria-label="Cotización en curso">
       <div className="panel-heading">
         <div>
-          <p className="eyebrow">02 / COTIZACIÓN</p>
           <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
             {/* Una revisión sin emitir se nombra por la cotización que reemplaza, no «Sin número». */}
             {!actual.numero && actual.origen
@@ -1692,10 +1690,10 @@ export function CotizacionPanel({
                         </button>
                         <span>
                           {campos.length
-                            ? ` — falta ${textoFaltan(campos)}`
+                            ? ` · falta ${textoFaltan(campos)}`
                             : fueraDeRegla(actual, p.indice)
-                              ? ' — revisar el precio o el descuento'
-                              : ' — revisar'}
+                              ? ' · revisar el precio o el descuento'
+                              : ' · revisar'}
                         </span>
                       </li>
                     );

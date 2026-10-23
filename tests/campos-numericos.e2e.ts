@@ -88,7 +88,7 @@ test('ganancia de la línea: fuera de rango avisa sin guardar y un valor válido
   await margen.fill('30');
   await margen.press('Enter');
   await expect(
-    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 30 % — cambiada a mano en esta línea', { exact: true }),
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 30 % · cambiada a mano en esta línea', { exact: true }),
   ).toBeVisible();
   await expect(margen).toHaveValue('30');
 });

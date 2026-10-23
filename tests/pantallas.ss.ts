@@ -127,8 +127,8 @@ test('07 aprobada', async ({ page }, info) => {
 
 test('08 diálogo nota de pedido', async ({ page }, info) => {
   await abrir(page, info, (await escenarios(page)).conAnticipo, 'Seguimiento');
-  await page.getByLabel('Cotización en curso').locator('.quote-workflow').getByRole('button', { name: 'Generar nota de pedido' }).click();
-  await expect(page.getByRole('alertdialog', { name: '¿Generar la nota de pedido?' })).toBeVisible();
+  await page.getByLabel('Cotización en curso').locator('.quote-workflow').getByRole('button', { name: /^Generar notas? de pedido$/ }).click();
+  await expect(page.getByRole('alertdialog', { name: '¿Generar las notas de pedido?' })).toBeVisible();
   await capturar(page, info, '08-dialogo-nota-pedido');
 });
 

@@ -71,7 +71,6 @@ function DialogoAbierto({
       <div className="dialogo-cuerpo">
         <header className="dialogo-cabecera">
           <div>
-            {eyebrow && <p className="eyebrow">{eyebrow}</p>}
             <h2 id={idTitulo}>{titulo}</h2>
           </div>
           <button
