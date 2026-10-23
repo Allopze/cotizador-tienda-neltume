@@ -479,7 +479,7 @@ describe('margen especial de la cotización en el servicio', () => {
     q = (await t.servicio.ejecutar({ tipo: 'aprobar', id: q.id, actualizada: q.actualizada })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil(q.montos.total * 0.5) })).cotizacion;
     q = (await t.servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).cotizacion;
-    const nota = new Almacen(t.dir).obtener(q.id)!.nota!;
+    const nota = new Almacen(t.dir).obtener(q.id)!.notas[0];
     expect(nota.montos.lineas.map((l) => [l.precioUnitario, l.precioFabrica, l.margen, l.margenPersonalizado])).toEqual([
       [100_000, 100_000, 0, false],
       [100_000, 100_000, 0, false],

@@ -8,7 +8,7 @@ test('agregar un producto a mano en la misma pantalla que el alta asistida', asy
 
   // Las dos vías conviven: la descripción asistida y el formulario.
   await expect(page.getByLabel('Describe el producto')).toBeVisible();
-  const datos = page.getByRole('form', { name: 'DATOS DEL PRODUCTO' });
+  const datos = page.getByRole('form', { name: 'Datos del producto' });
   await datos.getByRole('combobox', { name: 'Familia' }).click();
   await datos.getByRole('option', { name: 'Puerta' }).click();
   await datos.getByLabel('Modelo').fill('Roble');

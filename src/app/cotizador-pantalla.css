@@ -122,8 +122,8 @@
 }
 .quote-item-title {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  gap: 10px;
 }
 .quote-item-title strong {
   min-width: 0;
@@ -419,7 +419,7 @@
 .quote-toolbar {
   position: fixed;
   z-index: 25;
-  bottom: 16px;
+  bottom: 0;
   left: max(56px, calc((100vw - 1438px) / 2));
   right: max(56px, calc((100vw - 1438px) / 2));
   display: flex;
@@ -428,7 +428,7 @@
   padding: 16px 24px;
   border: 1px solid var(--line-strong);
   background: var(--surface);
-  box-shadow: 0 6px 30px rgb(38 58 48 / 12%);
+  box-shadow: 0 -8px 24px rgb(29 43 36 / 8%);
 }
 .quote-toolbar-total {
   display: grid;
@@ -862,7 +862,6 @@ html:has(.pantalla-cotizador.con-pedido) {
   font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
 }
 .item-referencias-lista {
   display: grid;

@@ -320,7 +320,7 @@ function Formulario({
         {editable && (
           <section className="ia-key-settings" aria-labelledby="ia-clave-titulo">
             <h3 id="ia-clave-titulo" className="eyebrow">
-              CLAVE API DE COMMANDCODE
+              Clave API de CommandCode
             </h3>
             <p className="catalog-modal-intro">
               {estado.commandcodeClaveFuente === 'entorno'

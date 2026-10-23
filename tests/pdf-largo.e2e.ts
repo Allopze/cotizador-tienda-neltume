@@ -87,15 +87,15 @@ test('una cotización de 25 ítems con descripciones largas no corta los totales
   expect(dondeEsta('26')).toHaveLength(1);
 
   // Totales: subtotal, IVA y total en una misma página.
-  const totales = ['SUBTOTAL', 'TOTAL'].map((t) => dondeEsta(t));
+  const totales = ['Subtotal', 'Total'].map((t) => dondeEsta(t));
   for (const t of totales) expect(t.length).toBeGreaterThanOrEqual(1);
   const paginaTotales = totales[1].at(-1)!.pagina;
   expect(totales[0].at(-1)!.pagina, 'subtotal y total en la misma página').toBe(paginaTotales);
-  const iva = dondeEsta(/^I\.V\.A\./);
+  const iva = dondeEsta(/^IVA /);
   expect(iva.at(-1)?.pagina, 'el IVA junto al total').toBe(paginaTotales);
 
   // Firmas: el título y los tres rótulos juntos.
-  const firmas = [/^aceptación del cliente$/i, /^Nombre y RUT$/, /^Firma$/, /^Fecha$/].map((t) => dondeEsta(t));
+  const firmas = [/^Para aceptar esta cotización$/, /^Nombre y RUT$/, /^Firma$/, /^Fecha$/].map((t) => dondeEsta(t));
   for (const [i, f] of firmas.entries()) expect(f.length, `rótulo de firma ${i}`).toBeGreaterThanOrEqual(1);
   const paginaFirmas = firmas[0].at(-1)!.pagina;
   for (const f of firmas) expect(f.at(-1)!.pagina, 'firmas en una sola página').toBe(paginaFirmas);
@@ -103,8 +103,9 @@ test('una cotización de 25 ítems con descripciones largas no corta los totales
 
   // Nada del contenido baja hasta el pie «Página N de M» ni se sale de la hoja.
   for (const [i, pg] of paginas.entries()) {
-    const pie = pg.lineas.filter((l) => /^Página/.test(l.texto) || /^\d+$/.test(l.texto) || l.texto === 'de');
     const yPie = Math.min(...pg.lineas.filter((l) => /^Página/.test(l.texto)).map((l) => l.y));
+    // El pie es una línea: los datos de Neltume y «Página N de M».
+    const pie = pg.lineas.filter((l) => Math.abs(l.y - yPie) < 4);
     expect(Number.isFinite(yPie), `pie de la página ${i + 1}`).toBe(true);
     for (const l of pg.lineas) {
       expect(l.y, `«${l.texto}» dentro de la página ${i + 1}`).toBeGreaterThan(0);

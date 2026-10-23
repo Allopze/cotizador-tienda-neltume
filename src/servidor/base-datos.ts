@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 24;
+export const VERSION_ESQUEMA = 25;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -441,6 +441,7 @@ function crearEsquema(db: Database.Database) {
       `);
     }).immediate();
   if (version < 24) migrarA24(db);
+  if (version < 25) migrarA25(db);
 }
 
 /**
@@ -500,6 +501,90 @@ function migrarA24(db: Database.Database) {
       for (const f of FABRICAS) insertar.run(f, CORRELATIVOS_NOTA[f]);
       if ((db.pragma('foreign_key_check') as unknown[]).length)
         throw new Error('La migración de notas de pedido dejó referencias inválidas.');
+    }).immediate();
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+}
+
+/**
+ * v25: una nota de pedido por fábrica. `notas_pedido` deja de tener una fila por cotización (se reconstruye sin esa
+ * clave: el par cotización–fábrica y el número dentro de cada fábrica siguen siendo únicos) y cada nota lleva su
+ * propio inicio y término de producción. Las líneas de las notas y los ítems de la cotización guardan su fábrica.
+ * Para las notas existentes, el inicio y el término salen del estado operativo de su cotización, con la fecha del
+ * evento que los registró (o la de la nota, si no está), y sus ítems quedan asignados a la fábrica de la nota.
+ * Se puede repetir sin efecto.
+ */
+function migrarA25(db: Database.Database) {
+  const fabricas = FABRICAS.map((f) => `'${f}'`).join(', ');
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.transaction(() => {
+      const columnas = (tabla: string) => (db.pragma(`table_info(${tabla})`) as { name: string }[]).map((c) => c.name);
+      if (!columnas('notas_pedido').includes('inicio_produccion'))
+        db.exec(`
+        CREATE TABLE notas_pedido_v25 (
+          cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          fabrica TEXT CHECK (fabrica IN (${fabricas})),
+          numero INTEGER NOT NULL,
+          pdf TEXT NOT NULL,
+          fecha TEXT NOT NULL,
+          neto INTEGER NOT NULL,
+          iva INTEGER NOT NULL,
+          total INTEGER NOT NULL,
+          despacho_direccion TEXT,
+          despacho_transporte TEXT,
+          anulada INTEGER NOT NULL DEFAULT 0 CHECK (anulada IN (0, 1)),
+          despacho_entrega TEXT,
+          observaciones TEXT,
+          despacho_destino TEXT,
+          despacho_valor INTEGER,
+          inicio_produccion TEXT,
+          termino_produccion TEXT,
+          UNIQUE (fabrica, numero),
+          UNIQUE (cotizacion_id, fabrica)
+        );
+        INSERT INTO notas_pedido_v25 (
+          cotizacion_id, fabrica, numero, pdf, fecha, neto, iva, total, despacho_direccion, despacho_transporte, anulada,
+          despacho_entrega, observaciones, despacho_destino, despacho_valor, inicio_produccion, termino_produccion
+        )
+        SELECT n.cotizacion_id, n.fabrica, n.numero, n.pdf, n.fecha, n.neto, n.iva, n.total, n.despacho_direccion,
+          n.despacho_transporte, n.anulada, n.despacho_entrega, n.observaciones, n.despacho_destino, n.despacho_valor,
+          CASE WHEN c.estado_operativo IN ('en_produccion', 'produccion_terminada', 'saldo_pendiente', 'pagada',
+                                           'lista_despacho', 'despachada', 'completada')
+            THEN COALESCE((SELECT MAX(e.fecha) FROM eventos e WHERE e.cotizacion_id = n.cotizacion_id AND e.tipo = 'produccion'), n.fecha)
+          END,
+          CASE WHEN c.estado_operativo IN ('saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada')
+            THEN COALESCE(
+              (SELECT MAX(e.fecha) FROM eventos e WHERE e.cotizacion_id = n.cotizacion_id AND e.tipo = 'produccion_terminada'),
+              (SELECT MAX(e.fecha) FROM eventos e WHERE e.cotizacion_id = n.cotizacion_id AND e.tipo = 'produccion'),
+              n.fecha)
+          END
+        FROM notas_pedido n JOIN cotizaciones c ON c.id = n.cotizacion_id;
+        DROP TABLE notas_pedido;
+        ALTER TABLE notas_pedido_v25 RENAME TO notas_pedido;
+      `);
+      if (!columnas('nota_lineas').includes('fabrica'))
+        db.exec(`
+        ALTER TABLE nota_lineas ADD COLUMN fabrica TEXT;
+        UPDATE nota_lineas SET fabrica = (SELECT n.fabrica FROM notas_pedido n WHERE n.cotizacion_id = nota_lineas.cotizacion_id);
+      `);
+      if (!columnas('solicitudes').includes('fabrica'))
+        db.exec(`
+        ALTER TABLE solicitudes ADD COLUMN fabrica TEXT CHECK (fabrica IN (${fabricas}));
+        UPDATE solicitudes SET fabrica = (
+          SELECT n.fabrica FROM notas_pedido n WHERE n.cotizacion_id = solicitudes.cotizacion_id AND n.fabrica IS NOT NULL
+        );
+      `);
+      db.exec(`
+        -- UNIQUE no compara los NULL: entre las notas sin fábrica el número sigue sin repetirse, y una cotización tiene
+        -- a lo más una (las anteriores a separar las fábricas eran una por cotización).
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_nota_sin_fabrica ON notas_pedido(numero) WHERE fabrica IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_nota_cotizacion_sin_fabrica ON notas_pedido(cotizacion_id) WHERE fabrica IS NULL;
+        PRAGMA user_version = 25;
+      `);
+      if ((db.pragma('foreign_key_check') as unknown[]).length)
+        throw new Error('La migración de notas de pedido por fábrica dejó referencias inválidas.');
     }).immediate();
   } finally {
     db.pragma('foreign_keys = ON');

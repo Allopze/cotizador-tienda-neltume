@@ -36,6 +36,10 @@ const RANGO_LARGO = rangoMedidas('MOLDURA');
 const anchoMetros = z.number().finite().min(RANGO_ANCHO.min).max(RANGO_ANCHO.max);
 const altoMetros = z.number().finite().min(RANGO_LARGO.min).max(RANGO_LARGO.max);
 const version = z.iso.datetime();
+/** Fábrica de cada ítem, por su índice; null la quita. */
+const asignacionesSchema = z
+  .array(z.object({ indice: z.number().int().nonnegative().max(99), fabrica: z.enum(FABRICAS).nullable() }).strict())
+  .max(100);
 const texto = (max: number) => z.string().max(max).nullable().optional();
 const clienteParcial = z
   .object({
@@ -177,7 +181,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
     .strict(),
   z.object({ tipo: z.literal('restaurar_borrador'), id: z.uuid(), actualizada: version }).strict(),
   z.object({ tipo: z.literal('desaprobar'), id: z.uuid(), actualizada: version }).strict(),
-  z.object({ tipo: z.literal('regenerar_pdf'), id: z.uuid(), actualizada: version, documento: z.enum(['cotizacion', 'nota']) }).strict(),
+  z.object({ tipo: z.literal('regenerar_pdf'), id: z.uuid(), actualizada: version, documento: z.enum(['cotizacion', 'nota']), fabrica: z.enum(FABRICAS).optional() }).strict(),
   z.object({ tipo: z.literal('retroceder_operacion'), id: z.uuid(), actualizada: version, motivo: z.string().trim().min(1).max(300) }).strict(),
   z.object({
     tipo: z.literal('reordenar'),
@@ -300,10 +304,19 @@ const accionSchema = z.discriminatedUnion('tipo', [
   }).strict(),
   z.object({ tipo: z.literal('comentario'), id: z.uuid(), actualizada: version, texto: z.string().trim().min(1).max(2000) }).strict(),
   z.object({ tipo: z.literal('comercial'), id: z.uuid(), actualizada: version, estado: z.enum(['seguimiento', 'rechazada']) }).strict(),
-  z.object({ tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version, fabrica: z.enum(FABRICAS) }).strict(),
+  z.object({
+    tipo: z.literal('generar_nota'), id: z.uuid(), actualizada: version, fabrica: z.enum(FABRICAS).optional(),
+    asignaciones: asignacionesSchema.optional(),
+  }).strict(),
+  z.object({ tipo: z.literal('asignar_fabricas'), id: z.uuid(), actualizada: version, asignaciones: asignacionesSchema.min(1) }).strict(),
+  z.object({
+    tipo: z.literal('cambiar_numero'), id: z.uuid(), actualizada: version, documento: z.enum(['cotizacion', 'nota']),
+    fabrica: z.enum(FABRICAS).optional(), numero: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  }).strict(),
   z.object({
     tipo: z.literal('operacion'), id: z.uuid(), actualizada: version,
     paso: z.enum(['iniciar_produccion', 'produccion_terminada', 'lista_despacho', 'despachada', 'completada']),
+    fabrica: z.enum(FABRICAS).optional(),
     despacho: despachoSchema.optional(),
   }).strict(),
   z.object({
@@ -505,7 +518,8 @@ export async function POST(req: Request) {
   const parsed = accionSchema.safeParse(cuerpo.valor);
   if (!parsed.success)
     return Response.json({ error: 'Solicitud inválida.', codigo: 'solicitud_invalida' }, { status: 400 });
-  if ((parsed.data.tipo === 'regenerar_pdf' || (parsed.data.tipo === 'emitir' && parsed.data.numero !== undefined)) && sesion.usuario.rol !== 'admin')
+  // Elegir números a mano (al emitir o después, desde el documento) y regenerar PDF es de cuentas administradoras.
+  if ((parsed.data.tipo === 'regenerar_pdf' || parsed.data.tipo === 'cambiar_numero' || (parsed.data.tipo === 'emitir' && parsed.data.numero !== undefined)) && sesion.usuario.rol !== 'admin')
     return sinPermiso();
   try {
     const catalogo = await cargarCatalogo();
@@ -517,6 +531,7 @@ export async function POST(req: Request) {
       llm = new LLMFijo();
     } else llm = crearLLM();
     const { nombre, email } = sesion.usuario;
+    const admin = sesion.usuario.rol === 'admin';
     const inicio = Date.now();
     // Cada mensaje del chat deja en el registro del servidor solo conteos y tiempo, nunca el texto: sirve para
     // observar el asistente en uso (cuántos avisos y de qué tipo).
@@ -526,7 +541,7 @@ export async function POST(req: Request) {
       console.info('[asistente]', JSON.stringify({ herramienta: d.herramienta, modelo: d.modelo, respaldo: d.respaldo, avisos, ms: Date.now() - inicio }));
     };
     return Response.json(
-      { ...await new Servicio(catalogo, llm, new Almacen(), { nombre, email }, registrarTurno).ejecutar(parsed.data),
+      { ...await new Servicio(catalogo, llm, new Almacen(), { nombre, email, admin }, registrarTurno).ejecutar(parsed.data),
         ...(parsed.data.tipo === 'chat' ? { diagnostico: { modelo: llm.modeloEfectivo ?? null, respaldo: llm.usoRespaldo ?? false, ms: Date.now() - inicio } } : {}) },
       {
         headers: sinCache,

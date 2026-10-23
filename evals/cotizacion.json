@@ -1733,5 +1733,87 @@
         }
       ]
     }
+  },
+  {
+    "id": "fabrica-dicha-al-pedir",
+    "descripcion": "La persona dice qué fábrica hace cada producto al pedirlo: se registra en cada ítem",
+    "mensajes": [
+      "2 molco lenga de 80x200 para la fábrica de Panguipulli y 3 coz coz prepintadas de 80x200, esas las hace la fábrica de Santiago"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "fabrica": "panguipulli"
+        },
+        {
+          "modelo": "COZ COZ",
+          "madera": "PREPINTADA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3,
+          "fabrica": "santiago"
+        }
+      ]
+    }
+  },
+  {
+    "id": "fabrica-reparto-despues",
+    "descripcion": "El reparto entre fábricas llega en un segundo mensaje y se asigna a los ítems ya registrados",
+    "mensajes": [
+      "2 molco lenga de 80x200 y 3 coz coz prepintadas de 80x200",
+      "las Coz Coz van a la fábrica de Santiago y las Molco a Panguipulli"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "MOLCO",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 2,
+          "fabrica": "panguipulli"
+        },
+        {
+          "modelo": "COZ COZ",
+          "madera": "PREPINTADA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3,
+          "fabrica": "santiago"
+        }
+      ]
+    }
+  },
+  {
+    "id": "fabrica-no-se-deduce",
+    "descripcion": "Santiago como comuna del cliente no es la fábrica, y la fábrica no se deduce por la terminación",
+    "mensajes": [
+      "3 coz coz prepintadas de 80x200 para Juan Pérez, de Santiago"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "COZ COZ",
+          "madera": "PREPINTADA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 3
+        }
+      ],
+      "cliente": {
+        "nombre": "Juan Pérez",
+        "comuna": "Santiago"
+      }
+    }
   }
 ]

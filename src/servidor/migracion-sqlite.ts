@@ -46,9 +46,9 @@ function verificarEstado(estado: Estado) {
       if (numeros.has(q.numero)) throw new Error(`El número de cotización ${q.numero} está duplicado.`);
       numeros.add(q.numero);
     }
-    if (q.nota) {
-      if (notas.has(q.nota.numero)) throw new Error(`El número de nota ${q.nota.numero} está duplicado.`);
-      notas.add(q.nota.numero);
+    for (const nota of q.notas) {
+      if (notas.has(nota.numero)) throw new Error(`El número de nota ${nota.numero} está duplicado.`);
+      notas.add(nota.numero);
     }
     if (q.origen != null && !estado.cotizaciones.some((origen) => origen.numero === q.origen))
       throw new Error(`La cotización de origen ${q.origen} no existe.`);

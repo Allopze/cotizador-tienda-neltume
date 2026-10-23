@@ -39,7 +39,7 @@ function cotizacion(id: string, numero: number, nombre = 'María José', cantida
     motivoAnulacion: null,
     reemplazadaPor: null,
     versionCatalogo: null,
-    nota: null,
+    notas: [],
   };
 }
 

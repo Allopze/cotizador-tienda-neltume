@@ -28,7 +28,8 @@ export type Accion =
   | { tipo: 'reordenar'; id: string; actualizada: string; desde: number; hasta: number }
   | { tipo: 'restaurar_borrador'; id: string; actualizada: string }
   | { tipo: 'desaprobar'; id: string; actualizada: string }
-  | { tipo: 'regenerar_pdf'; id: string; actualizada: string; documento: 'cotizacion' | 'nota' }
+  /** Recupera un PDF perdido; el de una nota se indica con su fábrica (sin ella, la única nota). */
+  | { tipo: 'regenerar_pdf'; id: string; actualizada: string; documento: 'cotizacion' | 'nota'; fabrica?: Fabrica }
   | { tipo: 'retroceder_operacion'; id: string; actualizada: string; motivo: string }
   | { tipo: 'restaurar_items'; id: string; actualizada: string; items: SolicitudItem[] }
   | {
@@ -93,9 +94,27 @@ export type Accion =
   | { tipo: 'despacho'; id: string; actualizada: string; despacho: Partial<Despacho> }
   | { tipo: 'comentario'; id: string; actualizada: string; texto: string }
   | { tipo: 'comercial'; id: string; actualizada: string; estado: 'seguimiento' | 'rechazada' }
-  | { tipo: 'generar_nota'; id: string; actualizada: string; fabrica: Fabrica }
-  | { tipo: 'operacion'; id: string; actualizada: string; paso: 'iniciar_produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada'; despacho?: Partial<Despacho> }
+  /**
+   * Genera las notas de pedido, una por fábrica, con las líneas asignadas a cada una. `asignaciones` fija antes la
+   * fábrica de esos ítems; `fabrica` recibe los que siguen sin asignar. Sin fábrica para algún ítem, no se genera nada.
+   */
+  | { tipo: 'generar_nota'; id: string; actualizada: string; fabrica?: Fabrica; asignaciones?: AsignacionFabrica[] }
+  /** Asigna (o quita, con null) la fábrica de cada ítem. No crea una revisión: la cotización del cliente no cambia. */
+  | { tipo: 'asignar_fabricas'; id: string; actualizada: string; asignaciones: AsignacionFabrica[] }
+  /**
+   * Cambia el número de la cotización emitida o de una de sus notas (la de `fabrica`) y vuelve a generar su PDF; al
+   * cambiar el de la cotización, también los de sus notas, que la nombran.
+   */
+  | { tipo: 'cambiar_numero'; id: string; actualizada: string; documento: 'cotizacion' | 'nota'; fabrica?: Fabrica; numero: number }
+  /** Los pasos de producción se registran por fábrica (`fabrica`); sin ella, en todas las notas que corresponda. */
+  | { tipo: 'operacion'; id: string; actualizada: string; paso: 'iniciar_produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada'; fabrica?: Fabrica; despacho?: Partial<Despacho> }
   | { tipo: 'facturacion'; id: string; actualizada: string; estado: 'pendiente' | 'facturada'; tipoDocumento?: 'factura' | 'boleta' | null; identificadorExterno?: string | null; fecha?: string | null };
+
+/** Fábrica de un ítem (por su índice en la cotización); null la quita. */
+export interface AsignacionFabrica {
+  indice: number;
+  fabrica: Fabrica | null;
+}
 
 /** Datos de un producto fuera de catálogo, tal como se escriben al agregarlo. Las medidas van en metros. */
 export interface ProductoPersonalizado {
@@ -125,10 +144,21 @@ export interface CambiosCotizacion {
 export interface Resultado {
   cotizacion: Cotizacion;
   archivo?: string;
+  /** Al generar las notas de pedido: el PDF de cada una (`archivo` es el de la primera). */
+  archivos?: string[];
   /** Opciones de cotización cuando la referencia del mensaje coincide con varios registros. */
   seleccion?: OpcionCotizacion[];
   /** Aprobación pedida por chat: la interfaz debe confirmarla con la acción explícita `aprobar`. */
   confirmar?: { id: string; numero: number; actualizada: string; vence: string | null; vencida: boolean };
+  /** Cambio de número pedido por chat: la interfaz lo confirma con la acción explícita `cambiar_numero`. */
+  confirmarNumero?: {
+    id: string;
+    actualizada: string;
+    documento: 'cotizacion' | 'nota';
+    fabrica?: Fabrica;
+    actual: number;
+    numero: number;
+  };
   /** Avisos no bloqueantes: precios que cambiaron al emitir, RUT inválido, cantidades descartadas. */
   avisos?: string[];
   cambios?: CambiosCotizacion;
@@ -143,6 +173,8 @@ export interface Resultado {
 export interface UsuarioServicio {
   nombre: string;
   email: string;
+  /** Cuenta administradora: la única que cambia números de documentos (también al pedirlo por chat). */
+  admin?: boolean;
 }
 /**
  * De dónde sale un aviso del chat: la lectura por frase (`campo`, `palabra`), una cifra o un nombre que no está

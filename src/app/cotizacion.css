@@ -69,7 +69,7 @@
   outline: none;
 }
 .quote-panel h2:focus-visible {
-  outline: 2px solid var(--warm);
+  outline: 2px solid var(--green);
   outline-offset: 4px;
 }
 .status {
@@ -77,27 +77,27 @@
   display: inline-block;
   line-height: 1.3;
   padding: 5px 9px;
-  background: #f1f1e9;
-  color: var(--muted);
+  /* Más oscuro que el fondo de la fila al pasar el mouse (--pale): la etiqueta no desaparece. */
+  background: #e3e5da;
+  color: var(--ink);
   white-space: nowrap;
 }
+/* Estados en la misma familia: borrador neutro, emitida verde suave, aprobada verde, anulada tierra. */
 .status.aprobada {
-  background: #e4eeda;
-  color: #3c6240;
+  background: #cfe0c8;
+  color: #1f3a28;
 }
 .status.emitida {
-  background: #e2ebf3;
-  color: #2f506b;
+  background: #e2eadd;
+  color: var(--green);
 }
 .status.reemplazada {
-  background: #efece4;
+  background: #ece8dc;
   color: #6a5a3c;
 }
 .status.anulada {
-  background: #f6e3de;
+  background: #f3e1db;
   color: #8a3a2c;
-  text-decoration: line-through;
-  text-decoration-thickness: 1px;
 }
 .status.vencida {
   background: var(--amber-bg);
@@ -149,7 +149,6 @@
 .client .campo-etiqueta {
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
   color: var(--muted);
   display: block;
   margin-bottom: 6px;
@@ -178,7 +177,6 @@
   color: var(--muted);
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
 }
 .quote-dispatch-fields .campo-valor-boton {
   width: 100%;
@@ -310,7 +308,8 @@
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-md);
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
 }
 .items-top {
   display: flex;
@@ -465,8 +464,9 @@ td small {
   align-items: center;
   gap: 6px 8px;
 }
+/* El nombre en su línea y las acciones debajo: con «Cambiar N°» y una nota por fábrica, en la misma fila se cortaban. */
 .quote-docs .doc-nombre {
-  flex: 1 1 160px;
+  flex: 1 1 100%;
   font-size: var(--fs-sm);
 }
 .review-note {
@@ -494,6 +494,13 @@ td small {
 }
 .celda-monto {
   font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+/* Sin editar, el importe es un texto (`.campo-valor`) y se alinea a la derecha con su encabezado. */
+.celda-monto .campo-valor,
+.celda-monto .campo-discreto {
+  display: flex;
+  justify-content: flex-end;
 }
 @media (max-width: 520px) {
   .quote-dispatch-fields {
@@ -1006,7 +1013,6 @@ td small {
   color: var(--muted);
   font-size: var(--fs-xs);
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: var(--tracking-label);
 }
 .workflow-next h4 {
@@ -1103,7 +1109,8 @@ td small {
   gap: 10px;
 }
 .workflow-comment textarea {
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
 }
 .catalog-import {
   max-width: 1050px;
@@ -1337,4 +1344,81 @@ td small {
 /* «Volver al paso anterior» acompaña a la acción principal sin competir con ella. */
 .workflow-next .workflow-atras {
   margin-top: 0;
+}
+
+/* Notas de pedido: una por fábrica, cada una con su avance de producción. */
+.workflow-notas {
+  display: grid;
+  gap: 8px;
+}
+.workflow-notas h4 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.workflow-notas p {
+  margin: 0;
+}
+.workflow-notas > .button {
+  justify-self: start;
+}
+.workflow-notas ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workflow-notas li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+.workflow-nota {
+  display: grid;
+  flex: 1 1 180px;
+  gap: 2px;
+  min-width: 0;
+}
+.workflow-nota span {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-notas .workflow-nota + .status {
+  flex: none;
+}
+
+/* Triángulos nativos de <details>: un chevron propio que gira al abrir. */
+.item-provenance summary,
+.catalog-import-preview summary,
+.gestion-eliminados summary {
+  list-style: none;
+}
+.item-provenance summary::-webkit-details-marker,
+.catalog-import-preview summary::-webkit-details-marker,
+.gestion-eliminados summary::-webkit-details-marker {
+  display: none;
+}
+.item-provenance summary::before,
+.catalog-import-preview summary::before,
+.gestion-eliminados summary::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 9px 2px 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform var(--motion-fast) var(--curve-out);
+}
+.item-provenance[open] > summary::before,
+.catalog-import-preview details[open] > summary::before,
+.gestion-eliminados[open] > summary::before {
+  transform: rotate(45deg);
 }

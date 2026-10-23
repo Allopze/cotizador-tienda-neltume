@@ -57,9 +57,9 @@ test('el cotizador permite scroll de página y conserva su barra de acciones', a
   const total = Number(((await page.getByTestId('total').textContent()) ?? '').replace(/\D/g, ''));
   await panel.getByLabel(/^Monto recibido/).fill(String(Math.ceil(total * 0.5)));
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
-  await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  await panel.getByRole('button', { name: /^Generar notas? de pedido$/ }).click();
   // Cada paso de la operación pide confirmación.
-  await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Todo a Panguipulli' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   await sinScrollHorizontal();
   await panel.getByRole('button', { name: 'Descargar nota de pedido' }).scrollIntoViewIfNeeded();

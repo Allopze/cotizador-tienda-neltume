@@ -336,11 +336,11 @@ test('operación táctil a 390 px: diálogos de la nota y de producción caben y
     }
     await sinScrollHorizontal(page, aceptar);
   };
-  await flujo.getByRole('button', { name: 'Generar nota de pedido' }).tap();
-  const nota = page.getByRole('alertdialog', { name: '¿Generar la nota de pedido?' });
+  await flujo.getByRole('button', { name: /^Generar notas? de pedido$/ }).tap();
+  const nota = page.getByRole('alertdialog', { name: '¿Generar las notas de pedido?' });
   await dialogoCabe(nota, 'Generar nota de pedido');
   await page.screenshot({ path: 'test-results/movil-dialogo-nota.png' });
-  await nota.getByRole('radio', { name: /Panguipulli/ }).tap();
+  await nota.getByRole('button', { name: 'Todo a Panguipulli' }).tap();
   await nota.getByRole('button', { name: 'Generar nota de pedido', exact: true }).tap();
   await expect(estados).toContainText('Operación: Nota de pedido generada');
 

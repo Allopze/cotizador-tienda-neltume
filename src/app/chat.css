@@ -246,7 +246,8 @@ p + .pregunta-opciones {
   border: 0;
   background: transparent;
   padding: 15px;
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
   min-height: 90px;
   font:
     var(--fs-md) / 1.6 Arial,
@@ -554,7 +555,6 @@ p + .pregunta-opciones {
   color: var(--muted);
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
 }
 /* Cada lista es una tabla: un solo encabezado arriba, columnas al ancho de su contenido. */
 .config-tabla {
@@ -923,7 +923,8 @@ p + .pregunta-opciones {
   width: 100%;
   min-height: 76px;
   padding: 12px;
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
   border: 0;
   background: transparent;
   color: var(--ink);
@@ -1471,7 +1472,8 @@ p + .pregunta-opciones {
   color: var(--ink);
   font: inherit;
   font-size: var(--fs-md);
-  resize: vertical;
+  resize: none;
+  field-sizing: content;
 }
 @media (max-width: 520px) {
   .usuario-form-grid {
@@ -1640,4 +1642,60 @@ p + .pregunta-opciones {
   margin-bottom: 4px;
   font-weight: 600;
   color: var(--ink);
+}
+
+/* Reparto entre fábricas: cada ítem elige la suya. */
+.dialogo-reparto .reparto-todas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.reparto-lineas {
+  display: grid;
+  gap: 6px;
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.reparto-lineas li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.reparto-producto {
+  display: grid;
+  flex: 1 1 200px;
+  gap: 2px;
+  min-width: 0;
+}
+.reparto-producto b {
+  font-weight: 600;
+}
+.reparto-producto small {
+  color: var(--subtle);
+  font-size: var(--fs-sm);
+}
+.reparto-opciones {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.reparto-opciones .opcion-fabrica {
+  align-items: center;
+  padding: 6px 10px;
+}
+.reparto-opciones .opcion-fabrica input {
+  margin-top: 0;
+}
+.reparto-resumen {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
 }

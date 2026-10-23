@@ -144,7 +144,7 @@ describe('#1 · doble emisión', () => {
     const fallida = resultados.find((r): r is PromiseRejectedResult => r.status === 'rejected')!;
     expect(fallida.reason).toMatchObject({ status: 409, message: expect.stringMatching(/^Ya se está generando la nota de pedido/) });
     expect(t.almacen.correlativosNota()).toEqual({ ...antes, panguipulli: antes.panguipulli + 1 });
-    expect(t.recargada().nota).toMatchObject({ numero: antes.panguipulli, fabrica: 'panguipulli' });
+    expect(t.recargada().notas[0]).toMatchObject({ numero: antes.panguipulli, fabrica: 'panguipulli' });
     expect(t.marcas()).toEqual([]);
   });
 

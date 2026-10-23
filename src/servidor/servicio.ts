@@ -35,10 +35,19 @@ import {
   despachoEditable,
   etiquetaComercial,
   etiquetaFacturacion,
+  etiquetaEtapa,
   etiquetaOperativo,
+  etapaProduccion,
+  FABRICAS,
+  fabricaDeNota,
+  nombreFabrica,
   numeroNota,
+  numerosNotas,
+  operacionDe,
+  operacionPorProduccion,
   pagoAnulable,
   retrocesoOperativo,
+  textoNotas,
   puedeAnular,
   rangoFechaOperacion,
   sinTransportista,
@@ -47,6 +56,7 @@ import {
   type Despacho,
   type Fabrica,
   type Facturacion,
+  type NotaPedido,
 } from '../negocio/estado';
 import {
   cotizar,
@@ -62,7 +72,15 @@ import {
 } from '../negocio/precios';
 import { calcularVence, estaVencida, fechaChilena, fechaLocal } from '../negocio/vigencia';
 import { esStarken, netoDesdeIva } from '../negocio/starken';
-import type { Accion, CambiosCotizacion, DiagnosticoTurno, ItemCambio, Resultado, UsuarioServicio } from './acciones';
+import type {
+  Accion,
+  AsignacionFabrica,
+  CambiosCotizacion,
+  DiagnosticoTurno,
+  ItemCambio,
+  Resultado,
+  UsuarioServicio,
+} from './acciones';
 import { Almacen, type Unidad } from './almacen';
 import { sanearReferencias } from './archivos-referencia';
 import { procesarChat, type ContextoChat } from './chat';
@@ -81,6 +99,7 @@ import {
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
 import { prepararFeriados } from './feriados-sync';
 import { generarPdf, plantilla, prepararPdf } from './pdf';
+import { documentoCotizacion, documentoNota } from './documentos';
 import { itemsVigentes } from './items-vigentes';
 import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { verificarTarifa, huellaBulto } from './starken-firma';
@@ -88,6 +107,7 @@ import { verificarTarifa, huellaBulto } from './starken-firma';
 export { ErrorUsuario, textoCambios };
 export type {
   Accion,
+  AsignacionFabrica,
   CambiosCotizacion,
   CategoriaAviso,
   DiagnosticoTurno,
@@ -136,6 +156,7 @@ function fechaElegida(fecha: string): string | null {
  */
 export class Servicio {
   private readonly autor: string | null;
+  private readonly admin: boolean;
   constructor(
     private catalogo: CatalogoConsultable,
     private llm: LLM,
@@ -145,6 +166,8 @@ export class Servicio {
     private diagnostico?: (d: DiagnosticoTurno) => void,
   ) {
     this.autor = usuario ? usuario.nombre || usuario.email : null;
+    // Sin usuario (pruebas, scripts) no hay una sesión que restringir.
+    this.admin = usuario ? !!usuario.admin : true;
   }
 
   private nueva(): Cotizacion {
@@ -180,7 +203,7 @@ export class Servicio {
       motivoAnulacion: null,
       reemplazadaPor: null,
       versionCatalogo: null,
-      nota: null,
+      notas: [],
       estadoComercial: 'pendiente',
       estadoOperativo: 'sin_pedido',
       pagos: [],
@@ -449,7 +472,7 @@ export class Servicio {
       fechaEmision: null,
       vence: null,
       origen: q.numero,
-      nota: null,
+      notas: [],
       creada: fecha,
       actualizada: fecha,
       creadaPor: this.autor,
@@ -470,7 +493,7 @@ export class Servicio {
     const aprobada = u.serie(q.id).find((s) => s.id !== q.id && s.estado === 'aprobada');
     if (aprobada)
       throw new ErrorConflicto(
-        `La cotización N° ${aprobada.numero} de esta misma serie ya fue aprobada${aprobada.nota ? ` (nota de pedido ${numeroNota(aprobada.nota)})` : ''}. Duplica la cotización si necesitas un pedido nuevo.`,
+        `La cotización N° ${aprobada.numero} de esta misma serie ya fue aprobada${aprobada.notas.length ? ` (${textoNotas(aprobada.notas)})` : ''}. Duplica la cotización si necesitas un pedido nuevo.`,
         'serie_aprobada',
       );
   }
@@ -555,6 +578,14 @@ export class Servicio {
         return this.aprobar(accion);
       case 'generar_nota':
         return this.generarNotaPedido(accion);
+      case 'asignar_fabricas':
+        return this.almacen.transaccion((u) => {
+          const q = this.obtener(u, accion.id);
+          this.verificarVersion(q, accion.actualizada);
+          return { cotizacion: this.asignarFabricas(q, u, accion.asignaciones).cotizacion };
+        });
+      case 'cambiar_numero':
+        return this.cambiarNumero(accion);
       case 'pago':
         return this.registrarPago(accion);
       case 'restaurar_borrador':
@@ -588,13 +619,13 @@ export class Servicio {
           this.verificarVersion(q, accion.actualizada);
           return q;
         });
-        const { archivo, regenerado, avisos } = await regenerarDocumento(this.almacen, q, accion.documento);
+        const { archivo, regenerado, avisos } = await regenerarDocumento(this.almacen, q, accion.documento, accion.fabrica);
         if (!regenerado) return { cotizacion: q, archivo, avisos };
         return this.almacen.transaccion((u): Resultado => {
           const actual = this.obtener(u, accion.id);
           // Un cambio entretanto (un comentario, un pago) no lo invalida: sigue siendo el documento de la cotización y
           // se registra con su versión actual. Si ya no es su documento, se pide recargar y el archivo queda.
-          const propio = (accion.documento === 'nota' ? actual.nota?.pdf : actual.pdf) === archivo;
+          const propio = accion.documento === 'nota' ? actual.notas.some((n) => n.pdf === archivo) : actual.pdf === archivo;
           if (!propio) throw new ErrorConflicto(VERSION_OBSOLETA);
           u.registrarEvento(actual.id, 'modificada', this.autor, 'PDF regenerado');
           return { cotizacion: actual, archivo, avisos };
@@ -606,18 +637,24 @@ export class Servicio {
           const q = this.obtener(u, accion.id);
           this.verificarVersion(q, accion.actualizada);
           this.exigirAprobada(q);
+          let retroceso = '';
           if (accion.tipo === 'desaprobar') {
-            if (q.nota || q.pagos?.length || q.facturacion?.estado === 'facturada') throw new ErrorConflicto('Solo puedes quitar la aprobación sin nota, pagos ni factura.', 'estado_invalido');
+            if (q.notas.length || q.pagos?.length || q.facturacion?.estado === 'facturada') throw new ErrorConflicto('Solo puedes quitar la aprobación sin nota, pagos ni factura.', 'estado_invalido');
             q.estado = 'emitida'; q.estadoComercial = 'enviada'; q.aprobadaPor = null; delete q.fechaAprobacion;
           } else {
             if (!accion.motivo.trim()) throw new ErrorUsuario('Indica el motivo del retroceso.');
             const previo = retrocesoOperativo(q);
             if (!previo) throw new ErrorConflicto('No hay un paso operativo anterior disponible.', 'estado_invalido');
+            // En fábrica se deshace el último inicio o término registrado, en la nota de esa fábrica.
+            const nota = previo.nota && q.notas.find((n) => !n.anulada && (n.fabrica ?? null) === previo.nota!.fabrica);
+            if (nota) nota[previo.nota!.campo] = null;
             q.estadoOperativo = previo.destino;
             this.estadoPorPagos(q);
+            // Con varias fábricas, la actividad dice en cuál se deshizo el paso.
+            if (nota && q.notas.filter((n) => !n.anulada).length > 1) retroceso = ` · ${previo.desde} → ${previo.hasta}`;
           }
           q.actualizada = marca(q.actualizada); u.guardar(q);
-          u.registrarEvento(q.id, 'modificada', this.autor, accion.tipo === 'desaprobar' ? 'Aprobación retirada' : `Paso operativo anterior: ${accion.motivo}`);
+          u.registrarEvento(q.id, 'modificada', this.autor, accion.tipo === 'desaprobar' ? 'Aprobación retirada' : `Paso operativo anterior: ${accion.motivo}${retroceso}`);
           return { cotizacion: q };
         });
       case 'anular_pago':
@@ -742,7 +779,7 @@ export class Servicio {
     q.anuladaPor = this.autor;
     q.fechaAnulacion = fecha;
     q.motivoAnulacion = motivo;
-    if (q.nota) q.nota.anulada = true;
+    for (const nota of q.notas) nota.anulada = true;
     // Una revisión en borrador de esta emitida ya no revisa nada: sigue como cotización nueva.
     const avisos: string[] = [];
     const revision = q.numero !== null ? u.revisionAbierta(q) : null;
@@ -761,7 +798,7 @@ export class Servicio {
     }
     q.historial.push({
       rol: 'asistente',
-      texto: `Cotización N° ${q.numero} anulada${q.nota ? ` junto con la nota de pedido ${numeroNota(q.nota)}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}${pagado ? `. ${pagado}` : ''}.`,
+      texto: `Cotización N° ${q.numero} anulada${q.notas.length ? ` junto con ${textoNotas(q.notas)}` : ''}${motivo ? `. Motivo: ${motivo}` : ''}${pagado ? `. ${pagado}` : ''}.`,
     });
     q.actualizada = marca(q.actualizada);
     u.guardar(q);
@@ -1254,7 +1291,7 @@ export class Servicio {
     return this.almacen.transaccion((u): Resultado => {
       const q = this.obtener(u, accion.id);
       if (q.estado === 'aprobada')
-        return { cotizacion: q, ...(q.nota ? { archivo: q.nota.pdf } : {}) };
+        return { cotizacion: q, ...(q.notas.length ? { archivo: q.notas[0].pdf } : {}) };
       if (q.estado === 'anulada')
         throw new ErrorConflicto('Esta cotización está anulada y no se puede aprobar.', 'estado_invalido');
       if (q.estado === 'reemplazada')
@@ -1330,8 +1367,8 @@ export class Servicio {
   /** Estados operativos que dependen solo de lo pagado: el anticipo antes de la nota, el saldo después de producir. */
   private estadoPorPagos(q: Cotizacion) {
     const pagado = totalPagado(q);
-    const operacion = q.estadoOperativo ?? (q.nota ? 'pedido_generado' : 'sin_pedido');
-    if (!q.nota && (operacion === 'sin_pedido' || operacion === 'anticipo_pagado'))
+    const operacion = operacionDe(q);
+    if (!q.notas.length && (operacion === 'sin_pedido' || operacion === 'anticipo_pagado'))
       q.estadoOperativo = pagado >= anticipoMinimo(q.montos.total) ? 'anticipo_pagado' : 'sin_pedido';
     else if (operacion === 'saldo_pendiente' || operacion === 'pagada')
       q.estadoOperativo = pagado >= q.montos.total ? 'pagada' : 'saldo_pendiente';
@@ -1473,15 +1510,27 @@ export class Servicio {
       this.verificarVersion(q, accion.actualizada);
       const pagado = totalPagado(q);
       const paso = accion.paso;
+      const produccion = paso === 'iniciar_produccion' || paso === 'produccion_terminada';
+      if (accion.fabrica && !produccion)
+        throw new ErrorUsuario('Solo el inicio y el término de producción se registran por fábrica.');
+      // Cada fábrica inicia y termina su nota por separado; sin fábrica, el paso va a todas las que corresponda.
+      const notas = q.notas.filter((n) => !n.anulada && (!accion.fabrica || n.fabrica === accion.fabrica));
+      if (accion.fabrica && !notas.length)
+        throw new ErrorConflicto(`La cotización no tiene una nota de pedido para ${nombreFabrica[accion.fabrica]}.`, 'estado_invalido');
+      const etapa = paso === 'iniciar_produccion' ? 'pendiente' : 'en_produccion';
+      let objetivo = produccion ? notas.filter((n) => etapaProduccion(n) === etapa) : [];
+      // Un pedido «En producción» sin fechas por fábrica (datos de antes de llevarlas) termina en todas sus notas.
+      if (paso === 'produccion_terminada' && q.estadoOperativo === 'en_produccion' && !objetivo.length && q.notas.every((n) => !n.inicioProduccion))
+        objetivo = notas;
       const esPasoValido =
-        (paso === 'iniciar_produccion' && !!q.nota && q.estadoOperativo === 'pedido_generado') ||
-        (paso === 'produccion_terminada' && q.estadoOperativo === 'en_produccion') ||
+        (paso === 'iniciar_produccion' && (q.estadoOperativo === 'pedido_generado' || q.estadoOperativo === 'en_produccion') && objetivo.length > 0) ||
+        (paso === 'produccion_terminada' && q.estadoOperativo === 'en_produccion' && objetivo.length > 0) ||
         (paso === 'lista_despacho' && q.estadoOperativo === 'pagada' && pagado >= q.montos.total) ||
         (paso === 'despachada' && q.estadoOperativo === 'lista_despacho') ||
         (paso === 'completada' && q.estadoOperativo === 'despachada');
       if (!esPasoValido) throw new ErrorConflicto('Esta acción no está disponible para el estado actual.', 'estado_invalido');
       // Anular un pago después de la nota puede dejar el pedido bajo el anticipo: la producción lo exige de nuevo.
-      if ((paso === 'iniciar_produccion' || paso === 'produccion_terminada') && pagado < anticipoMinimo(q.montos.total))
+      if (produccion && pagado < anticipoMinimo(q.montos.total))
         throw new ErrorConflicto(
           `La producción se habilita con al menos ${ANTICIPO_TEXTO} pagado (${pesos(anticipoMinimo(q.montos.total))}); hay ${pesos(pagado)} registrados.`,
           'estado_invalido',
@@ -1503,13 +1552,22 @@ export class Servicio {
           ...editado.cambiados.filter((c) => c.campo === 'direccion' || c.campo === 'entregaComprometida').map((c) => c.texto),
         ].join(' · ');
       }
-      q.estadoOperativo = ({
-        iniciar_produccion: 'en_produccion',
-        produccion_terminada: pagado < q.montos.total ? 'saldo_pendiente' : 'pagada',
-        lista_despacho: 'lista_despacho',
-        despachada: 'despachada',
-        completada: 'completada',
-      }[paso]) as NonNullable<Cotizacion['estadoOperativo']>;
+      if (produccion) {
+        const fecha = new Date().toISOString();
+        for (const n of objetivo) {
+          if (paso === 'produccion_terminada') n.inicioProduccion ??= fecha;
+          n[paso === 'iniciar_produccion' ? 'inicioProduccion' : 'terminoProduccion'] = fecha;
+        }
+        q.estadoOperativo = operacionPorProduccion(q.notas, pagado, q.montos.total);
+        // Con varias fábricas, la actividad dice cuál avanzó.
+        if (q.notas.filter((n) => !n.anulada).length > 1)
+          logistica = ` · ${objetivo.map((n) => `${fabricaDeNota(n)} (nota ${numeroNota(n)}): ${etiquetaEtapa[etapaProduccion(n)]}`).join(' · ')}`;
+      } else
+        q.estadoOperativo = ({
+          lista_despacho: 'lista_despacho',
+          despachada: 'despachada',
+          completada: 'completada',
+        } as const)[paso];
       q.actualizada = marca(q.actualizada);
       u.guardar(q);
       const evento: Record<typeof paso, 'produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada'> = {
@@ -1563,95 +1621,142 @@ export class Servicio {
     });
   }
 
-  private async generarNotaPedido(accion: Extract<Accion, { tipo: 'generar_nota' }>): Promise<Resultado> {
-    const preparado = await this.almacen.transaccion((u): Preparado<{ montos: Montos }> => {
-      const q = this.obtener(u, accion.id);
-      // Antes que la nota: una aprobada que después se anuló no se informa como aprobada.
-      if (q.estado === 'anulada')
-        throw new ErrorConflicto(
-          `La cotización N° ${q.numero} está anulada${q.nota ? ` junto con su nota de pedido ${numeroNota(q.nota)}` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
-          'estado_invalido',
-        );
-      if (q.nota) return { listo: q };
-      // Aprobar es irreversible: exige una cotización ya emitida y revisada, nunca emite de paso.
-      if (q.estado !== 'aprobada' || !q.pdf || q.numero === null)
-        throw new ErrorConflicto(
-          'Registra la aprobación del cliente antes de preparar la nota de pedido.',
-          'estado_invalido',
-        );
-      this.verificarVersion(q, accion.actualizada);
-      const pagado = totalPagado(q);
-      if (pagado < anticipoMinimo(q.montos.total))
-        throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos ${ANTICIPO_TEXTO} (${pesos(anticipoMinimo(q.montos.total))}).`, 'estado_invalido');
-      this.verificarSerieNoAprobada(q, u);
-      // La nota usa los precios guardados sin ajuste, sin descuento ni flete, y a precio de fábrica:
-      // ni el margen especial de la cotización ni el de las líneas (no se pasan) intervienen.
-      // Un pedido especial va a su costo de fábrica si se conoce; sin él, la nota lo imprime «Por definir» y no
-      // lo suma (fábrica lo valoriza). Nunca va con el precio de venta al cliente.
-      const lineas = q.montos.lineas.flatMap((l) => {
-        const s = l.indice != null ? q.solicitudes[l.indice] : undefined;
-        if (!s?.personalizado) return [l];
-        return s.costoFabrica ? [{ ...l, producto: { ...l.producto, precioNeto: s.costoFabrica } }] : [];
-      });
-      const montos = !lineas.length ? montosVacios() : cotizar(
-        lineas.map((l) => ({
-          producto: l.producto,
-          cantidad: l.cantidad,
-          indice: l.indice,
-          anchoSolicitado: l.anchoSolicitado,
-          altoSolicitado: l.altoSolicitado,
-          medidaSolicitada: l.medidaSolicitada,
-          // La nota de pedido usa el costo de fábrica, no el precio personalizado de venta.
-          precioUnitario: null,
-          tipoMedida: l.tipoMedida,
-          observaciones: l.observaciones,
-          descripcionDocumento: l.descripcionDocumento,
-        })),
-        {
-          ...(q.reglas ?? REGLAS),
-          ajuste: 0,
-          margenes: Object.fromEntries(Object.keys(MARGENES_INICIALES).map((k) => [k, 0])) as typeof MARGENES_INICIALES,
-        },
+  /**
+   * Fábrica de cada línea valorizada de `q` con las `asignaciones` aplicadas y, para las que siguen sin asignar,
+   * `porOmision`. Lanza `fabrica_sin_asignar` si a alguna le falta: ninguna nota se genera a medias.
+   */
+  private repartoFabricas(q: Cotizacion, asignaciones: AsignacionFabrica[] = [], porOmision?: Fabrica) {
+    const elegidas = new Map(q.solicitudes.map((s, i) => [i, s.fabrica ?? null]));
+    for (const a of asignaciones) {
+      if (!q.solicitudes[a.indice]) throw new ErrorUsuario(`No existe el ítem ${a.indice + 1}.`);
+      elegidas.set(a.indice, a.fabrica);
+    }
+    const reparto = new Map<Fabrica, Linea[]>();
+    const faltan: string[] = [];
+    for (const l of q.montos.lineas) {
+      const fabrica = (l.indice !== null ? elegidas.get(l.indice) : null) ?? porOmision;
+      if (!fabrica) faltan.push(l.indice !== null ? this.describir(q.solicitudes[l.indice]) : l.producto.codigo);
+      else reparto.set(fabrica, [...(reparto.get(fabrica) ?? []), l]);
+    }
+    if (faltan.length)
+      throw new ErrorUsuario(
+        `Asigna la fábrica de cada ítem antes de generar las notas de pedido. Falta: ${faltan.join('; ')}.`,
+        'fabrica_sin_asignar',
       );
-      const copia = structuredClone(q);
-      const despacho: Despacho = q.despacho ?? { direccion: null, transporte: null };
-      copia.despacho = {
-        direccion: limpiarTexto(despacho.direccion, 300),
-        transporte: limpiarTexto(despacho.transporte, 120),
-        entregaComprometida: limpiarTexto(despacho.entregaComprometida, 120),
-        destino: despacho.destino ?? null,
-        valor: q.flete,
-      };
-      return { listo: null, copia, montos, version: q.actualizada };
+    // Lo que queda guardado en los ítems: las asignaciones y la fábrica por omisión en los que no tenían.
+    const fabricas = new Map([...elegidas].map(([i, f]) => [i, f ?? porOmision ?? null]));
+    return { reparto: FABRICAS.filter((f) => reparto.has(f)).map((f) => ({ fabrica: f, lineas: reparto.get(f)! })), fabricas };
+  }
+
+  /**
+   * Montos de una nota: las líneas de su fábrica con los precios guardados, sin descuento ni flete, y a precio de
+   * fábrica: ni el margen especial de la cotización ni el de las líneas intervienen. Un pedido especial va a su
+   * costo de fábrica si se conoce; sin él, la nota lo imprime «Por definir» y no lo suma (fábrica lo valoriza).
+   * Nunca va con el precio de venta al cliente.
+   */
+  private montosNota(q: Cotizacion, lineasFabrica: Linea[]): Montos {
+    const lineas = lineasFabrica.flatMap((l) => {
+      const s = l.indice != null ? q.solicitudes[l.indice] : undefined;
+      if (!s?.personalizado) return [l];
+      return s.costoFabrica ? [{ ...l, producto: { ...l.producto, precioNeto: s.costoFabrica } }] : [];
     });
-    if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.nota!.pdf };
-    const { copia, montos, version } = preparado;
-    // Al reservar y al confirmar, lo revisado sigue vigente: nadie generó la nota ni cambió la cotización.
+    if (!lineas.length) return montosVacios();
+    return cotizar(
+      lineas.map((l) => ({
+        producto: l.producto,
+        cantidad: l.cantidad,
+        indice: l.indice,
+        anchoSolicitado: l.anchoSolicitado,
+        altoSolicitado: l.altoSolicitado,
+        medidaSolicitada: l.medidaSolicitada,
+        // La nota de pedido usa el costo de fábrica, no el precio personalizado de venta.
+        precioUnitario: null,
+        tipoMedida: l.tipoMedida,
+        observaciones: l.observaciones,
+        descripcionDocumento: l.descripcionDocumento,
+      })),
+      {
+        ...(q.reglas ?? REGLAS),
+        ajuste: 0,
+        margenes: Object.fromEntries(Object.keys(MARGENES_INICIALES).map((k) => [k, 0])) as typeof MARGENES_INICIALES,
+      },
+    );
+  }
+
+  private async generarNotaPedido(accion: Extract<Accion, { tipo: 'generar_nota' }>): Promise<Resultado> {
+    const preparado = await this.almacen.transaccion(
+      (u): Preparado<{ notas: { fabrica: Fabrica; montos: Montos; items: number }[]; fabricas: Map<number, Fabrica | null> }> => {
+        const q = this.obtener(u, accion.id);
+        // Antes que la nota: una aprobada que después se anuló no se informa como aprobada.
+        if (q.estado === 'anulada')
+          throw new ErrorConflicto(
+            `La cotización N° ${q.numero} está anulada${q.notas.length ? ` junto con ${textoNotas(q.notas)}` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+            'estado_invalido',
+          );
+        if (q.notas.length) return { listo: q };
+        // Aprobar es irreversible: exige una cotización ya emitida y revisada, nunca emite de paso.
+        if (q.estado !== 'aprobada' || !q.pdf || q.numero === null)
+          throw new ErrorConflicto(
+            'Registra la aprobación del cliente antes de preparar la nota de pedido.',
+            'estado_invalido',
+          );
+        this.verificarVersion(q, accion.actualizada);
+        const pagado = totalPagado(q);
+        if (pagado < anticipoMinimo(q.montos.total))
+          throw new ErrorConflicto(`La nota de pedido se habilita al registrar al menos ${ANTICIPO_TEXTO} (${pesos(anticipoMinimo(q.montos.total))}).`, 'estado_invalido');
+        this.verificarSerieNoAprobada(q, u);
+        const { reparto, fabricas } = this.repartoFabricas(q, accion.asignaciones, accion.fabrica);
+        const notas = reparto.map(({ fabrica, lineas }) => ({ fabrica, montos: this.montosNota(q, lineas), items: lineas.length }));
+        const copia = structuredClone(q);
+        // Cada nota imprime los ítems con la fábrica que se le asignó (los «Por definir» de su fábrica, por ejemplo).
+        copia.solicitudes.forEach((s, i) => (s.fabrica = fabricas.get(i) ?? null));
+        const despacho: Despacho = q.despacho ?? { direccion: null, transporte: null };
+        copia.despacho = {
+          direccion: limpiarTexto(despacho.direccion, 300),
+          transporte: limpiarTexto(despacho.transporte, 120),
+          entregaComprometida: limpiarTexto(despacho.entregaComprometida, 120),
+          destino: despacho.destino ?? null,
+          valor: q.flete,
+        };
+        return { listo: null, copia, notas, fabricas, version: q.actualizada };
+      },
+    );
+    if (preparado.listo) return { cotizacion: preparado.listo, archivo: preparado.listo.notas[0].pdf };
+    const { copia, notas, fabricas, version } = preparado;
+    // Al reservar y al confirmar, lo revisado sigue vigente: nadie generó las notas ni cambió la cotización.
     const vigente = (u: Unidad) => {
       const q = this.obtener(u, accion.id);
-      if (q.nota) throw new ErrorConflicto(`Otra persona aprobó esta cotización (nota ${numeroNota(q.nota)}).`);
+      if (q.notas.length) throw new ErrorConflicto(`Otra persona generó ${textoNotas(q.notas)} de esta cotización.`);
       if (q.actualizada !== version || q.estado !== 'aprobada') throw new ErrorConflicto(VERSION_OBSOLETA);
       this.verificarSerieNoAprobada(q, u);
       return q;
     };
     // Igual que al emitir: Chromium se comprueba fuera del bloqueo y antes de gastar un número de nota.
     await prepararPdf();
-    const { numero, ficha } = await this.almacen.transaccion((u) => {
+    const { numeros, ficha } = await this.almacen.transaccion((u) => {
       vigente(u);
-      return u.reservarNotaEnEmision(accion.id, accion.fabrica);
+      return u.reservarNotasEnEmision(
+        accion.id,
+        notas.map((n) => n.fabrica),
+      );
     });
     try {
-      return await this.generarNotaReservada({ numero, fabrica: accion.fabrica }, copia, montos, vigente);
+      return await this.generarNotasReservadas(
+        notas.map((n, i) => ({ ...n, numero: numeros[i] })),
+        copia,
+        fabricas,
+        vigente,
+      );
     } finally {
       this.almacen.liberarEmision(accion.id, ficha);
     }
   }
 
-  /** Segunda mitad de `generarNotaPedido`, con el número ya reservado y la marca «en emisión» tomada. */
-  private async generarNotaReservada(
-    { numero, fabrica }: { numero: number; fabrica: Fabrica },
+  /** Segunda mitad de `generarNotaPedido`, con los números ya reservados y la marca «en emisión» tomada. */
+  private async generarNotasReservadas(
+    notas: { numero: number; fabrica: Fabrica; montos: Montos; items: number }[],
     copia: Cotizacion,
-    montos: Montos,
+    fabricas: Map<number, Fabrica | null>,
     vigente: (u: Unidad) => Cotizacion,
   ): Promise<Resultado> {
     const despacho: Despacho = copia.despacho ?? {
@@ -1659,62 +1764,242 @@ export class Servicio {
       transporte: null,
       entregaComprometida: null,
     };
-    const archivo = `nota-pedido-${fabrica}-${numero}.pdf`,
-      fecha = new Date().toISOString();
-    const html = await plantilla(
-      copia,
-      {
-        tipo: 'nota',
-        numero,
-        fabrica,
-        montos,
-        fecha,
-        autor: this.autor,
-        despacho,
-        reglas: copia.reglas,
-        observaciones: copia.observaciones,
-      },
-      this.almacen.baseDatos(),
-    );
-    await generarPdf(this.almacen.directorio, archivo, html);
+    const fecha = new Date().toISOString();
+    const generados: { nota: NotaPedido; html: string }[] = [];
     try {
+      for (const { numero, fabrica, montos } of notas) {
+        const archivo = `nota-pedido-${fabrica}-${numero}.pdf`;
+        const html = await plantilla(
+          copia,
+          {
+            tipo: 'nota',
+            numero,
+            fabrica,
+            montos,
+            fecha,
+            autor: this.autor,
+            despacho,
+            reglas: copia.reglas,
+            observaciones: copia.observaciones,
+            // Cada fábrica sabe que la cotización tiene otra nota, con su número.
+            otrasNotas: notas.filter((o) => o.fabrica !== fabrica).map((o) => ({ fabrica: o.fabrica, numero: o.numero, items: o.items })),
+          },
+          this.almacen.baseDatos(),
+        );
+        await generarPdf(this.almacen.directorio, archivo, html);
+        generados.push({
+          html,
+          nota: {
+            numero,
+            fabrica,
+            pdf: archivo,
+            montos,
+            fecha,
+            despacho: {
+              direccion: despacho.direccion,
+              transporte: despacho.transporte,
+              ...(despacho.entregaComprometida ? { entregaComprometida: despacho.entregaComprometida } : {}),
+              // Como al recargar desde SQLite: la nota trae el destino solo si lo hay.
+              ...(despacho.destino ? { destino: despacho.destino } : {}),
+              valor: despacho.valor ?? copia.flete,
+            },
+            observaciones: copia.observaciones,
+            anulada: false,
+            inicioProduccion: null,
+            terminoProduccion: null,
+          },
+        });
+      }
       return await this.almacen.transaccion((u): Resultado => {
         const q = vigente(u);
         q.despacho = despacho;
-        const notaDespacho: Despacho = {
-          direccion: despacho.direccion,
-          transporte: despacho.transporte,
-          ...(despacho.entregaComprometida ? { entregaComprometida: despacho.entregaComprometida } : {}),
-          // Como al recargar desde SQLite: la nota trae el destino solo si lo hay.
-          ...(despacho.destino ? { destino: despacho.destino } : {}),
-          valor: despacho.valor ?? q.flete,
-        };
-        q.nota = {
-          numero,
-          fabrica,
-          pdf: archivo,
-          montos,
-          fecha,
-          despacho: notaDespacho,
-          observaciones: copia.observaciones,
-          anulada: false,
-        };
+        q.solicitudes.forEach((s, i) => (s.fabrica = fabricas.get(i) ?? null));
+        q.notas = generados.map((g) => g.nota);
         q.estadoOperativo = 'pedido_generado';
         q.estadoComercial = 'vendida';
-        q.historial.push({
-          rol: 'asistente',
-          texto: `Nota de pedido ${numeroNota(q.nota)} generada después de registrar el anticipo.`,
-        });
+        const generadas = notas.length > 1 ? `Notas de pedido ${numerosNotas(q.notas)} generadas` : `Nota de pedido ${numeroNota(q.notas[0])} generada`;
+        q.historial.push({ rol: 'asistente', texto: `${generadas} después de registrar el anticipo.` });
         q.actualizada = marca(q.actualizada);
         u.guardar(q);
-        u.guardarDocumento(q.id, archivo, html);
-        u.registrarEvento(q.id, 'nota_generada', this.autor, `Nota de pedido ${numeroNota(q.nota)} · precio fábrica`);
-        // Las demás emitidas de la serie ya no pueden aprobarse: una sola nota por pedido.
+        for (const { nota, html } of generados) {
+          u.guardarDocumento(q.id, nota.pdf, html);
+          u.registrarEvento(q.id, 'nota_generada', this.autor, `Nota de pedido ${numeroNota(nota)} · precio fábrica`);
+        }
+        // Las demás emitidas de la serie ya no pueden aprobarse: un solo pedido por serie.
         this.reemplazarSerie(u, q);
-        return { cotizacion: q, archivo };
+        return { cotizacion: q, archivo: q.notas[0].pdf, archivos: q.notas.map((n) => n.pdf) };
       });
     } catch (error) {
-      await rm(join(this.almacen.directorio, 'pdf', archivo), { force: true });
+      for (const { nota } of generados) await rm(join(this.almacen.directorio, 'pdf', nota.pdf), { force: true });
+      throw error;
+    }
+  }
+
+  /**
+   * Asigna la fábrica de cada ítem (null la quita) en un borrador, una emitida o una aprobada sin notas de pedido.
+   * No es un cambio de la cotización del cliente: no crea una revisión ni toca su PDF. Devuelve el texto de lo
+   * asignado (vacío si nada cambió); quien llama confirma la versión.
+   */
+  asignarFabricas(q: Cotizacion, u: Unidad, asignaciones: AsignacionFabrica[]) {
+    if (q.estado === 'reemplazada' || q.estado === 'anulada') this.exigirEditable(q);
+    if (q.notas.length)
+      throw new ErrorConflicto(
+        `${q.notas.length > 1 ? `Las notas de pedido ${numerosNotas(q.notas)} ya se generaron` : `La nota de pedido ${numeroNota(q.notas[0])} ya se generó`}: el reparto entre fábricas no se puede cambiar.`,
+        'no_editable',
+      );
+    const cambios: string[] = [];
+    const vistos = new Set<number>();
+    for (const { indice, fabrica } of asignaciones) {
+      const s = q.solicitudes[indice];
+      if (!s) throw new ErrorUsuario(`No existe el ítem ${indice + 1}.`);
+      if (vistos.has(indice)) throw new ErrorUsuario(`El ítem ${indice + 1} viene dos veces.`);
+      vistos.add(indice);
+      if ((s.fabrica ?? null) === fabrica) continue;
+      s.fabrica = fabrica;
+      cambios.push(`${this.describir(s)} → ${fabrica ? nombreFabrica[fabrica] : 'sin fábrica'}`);
+    }
+    if (!cambios.length) return { cotizacion: q, texto: '' };
+    q.actualizada = marca(q.actualizada);
+    u.guardar(q);
+    const texto = cambios.join(' · ');
+    u.registrarEvento(q.id, 'fabricas', this.autor, texto);
+    return { cotizacion: q, texto };
+  }
+
+  /**
+   * El documento cuyo número se cambiaría (la cotización o la nota de `fabrica`) y su número actual, comprobando que
+   * se pueda: solo una cuenta administradora, en una cotización emitida o aprobada, y en una nota con fábrica. Con
+   * `numero`, valida además que el nuevo esté libre y dentro del rango. Lo usa también el chat antes de proponerlo.
+   */
+  documentoRenumerable(
+    u: Unidad,
+    q: Cotizacion,
+    documento: 'cotizacion' | 'nota',
+    fabrica?: Fabrica | null,
+    numero?: number,
+  ): { actual: number; nota: NotaPedido | null } {
+    if (!this.admin)
+      throw new ErrorUsuario('Solo una cuenta administradora puede cambiar el número de un documento.', 'sin_permiso', 403);
+    if (documento === 'cotizacion') {
+      if ((q.estado !== 'emitida' && q.estado !== 'aprobada') || q.numero === null || !q.pdf)
+        throw new ErrorConflicto(
+          q.estado === 'borrador'
+            ? 'La cotización todavía no se emite: elige su número al emitirla.'
+            : `La cotización N° ${q.numero} está ${q.estado} y su número ya no se cambia.`,
+          'estado_invalido',
+        );
+      if (numero !== undefined && numero !== q.numero) u.validarNumeroCotizacion(q.id, numero);
+      return { actual: q.numero, nota: null };
+    }
+    const nota = fabrica ? q.notas.find((n) => n.fabrica === fabrica) : q.notas.length === 1 ? q.notas[0] : undefined;
+    if (!nota)
+      throw new ErrorConflicto(
+        !q.notas.length
+          ? `La cotización ${q.numero ? `N° ${q.numero} ` : ''}todavía no tiene notas de pedido.`
+          : fabrica
+            ? `La cotización N° ${q.numero} no tiene una nota de pedido para ${nombreFabrica[fabrica]}.`
+            : `La cotización N° ${q.numero} tiene ${textoNotas(q.notas)}: indica la fábrica de la que quieres cambiar.`,
+        'estado_invalido',
+      );
+    if (q.estado !== 'aprobada' || nota.anulada)
+      throw new ErrorConflicto(`La nota de pedido ${numeroNota(nota)} está anulada y su número ya no se cambia.`, 'estado_invalido');
+    if (!nota.fabrica)
+      throw new ErrorConflicto(
+        `La nota de pedido N° ${nota.numero} es anterior a separar las fábricas: asígnale una (npm run notas) antes de cambiar su número.`,
+        'estado_invalido',
+      );
+    if (numero !== undefined && numero !== nota.numero) u.validarNumeroNota(nota.fabrica, numero, q.id);
+    return { actual: nota.numero, nota };
+  }
+
+  /**
+   * Cambia el número de la cotización emitida o de una de sus notas y vuelve a generar el PDF con el número nuevo,
+   * con un nombre de archivo nuevo (un PDF emitido no se sobrescribe). Al cambiar el de la cotización también se
+   * vuelven a generar sus notas, que la nombran. Los PDF anteriores se borran al confirmar. Como al emitir: los PDF
+   * se generan fuera del bloqueo y se confirma solo si nadie cambió la cotización ni tomó el número entretanto.
+   */
+  private async cambiarNumero(accion: Extract<Accion, { tipo: 'cambiar_numero' }>): Promise<Resultado> {
+    const preparado = await this.almacen.transaccion((u): Preparado<{ actual: number }> => {
+      const q = this.obtener(u, accion.id);
+      this.verificarVersion(q, accion.actualizada);
+      const { actual } = this.documentoRenumerable(u, q, accion.documento, accion.fabrica, accion.numero);
+      if (actual === accion.numero) return { listo: q };
+      return { listo: null, copia: structuredClone(q), actual, version: q.actualizada };
+    });
+    if (preparado.listo) return { cotizacion: preparado.listo };
+    const { copia, actual, version } = preparado;
+    const numero = accion.numero;
+    await prepararPdf();
+    const db = this.almacen.baseDatos();
+    // Lo que se vuelve a generar: el archivo nuevo de cada documento y el que reemplaza.
+    const nuevos: { archivo: string; html: string; anterior: string; fabrica: Fabrica | null }[] = [];
+    try {
+      // Con el número nuevo. Las notas se reimprimen todas: dicen «Cotización N° …» y nombran a la otra nota.
+      const cambiada = accion.documento === 'nota' ? copia.notas.find((n) => n.numero === actual && (!accion.fabrica || n.fabrica === accion.fabrica))! : null;
+      const renumerada: Cotizacion = {
+        ...copia,
+        ...(accion.documento === 'cotizacion' ? { numero } : {}),
+        notas: copia.notas.map((n) => (n === cambiada ? { ...n, numero } : n)),
+      };
+      if (accion.documento === 'cotizacion') {
+        const archivo = this.almacen.archivoLibre(`cotizacion-${numero}`);
+        const html = await plantilla(renumerada, documentoCotizacion(renumerada), db);
+        await generarPdf(this.almacen.directorio, archivo, html);
+        nuevos.push({ archivo, html, anterior: copia.pdf!, fabrica: null });
+      }
+      for (const nota of renumerada.notas.filter((n) => !n.anulada)) {
+        const base = nota.fabrica ? `nota-pedido-${nota.fabrica}-${nota.numero}` : `nota-pedido-${nota.numero}`;
+        const archivoNota = this.almacen.archivoLibre(base);
+        const htmlNota = await plantilla(renumerada, documentoNota(renumerada, nota), db);
+        await generarPdf(this.almacen.directorio, archivoNota, htmlNota);
+        nuevos.push({ archivo: archivoNota, html: htmlNota, anterior: nota.pdf, fabrica: nota.fabrica ?? null });
+      }
+      const resultado = await this.almacen.transaccion((u): Resultado => {
+        const q = this.obtener(u, accion.id);
+        if (q.actualizada !== version) throw new ErrorConflicto(VERSION_OBSOLETA);
+        // Otra persona pudo tomar el número mientras se generaban los PDF.
+        const { nota } = this.documentoRenumerable(u, q, accion.documento, accion.fabrica, numero);
+        let detalle: string;
+        // Cada documento reimpreso pasa a su archivo nuevo.
+        for (const n of nuevos) {
+          const notaQ = q.notas.find((x) => x.pdf === n.anterior);
+          if (notaQ) notaQ.pdf = n.archivo;
+        }
+        if (accion.documento === 'cotizacion') {
+          q.numero = numero;
+          q.pdf = nuevos[0].archivo;
+          u.avanzarCorrelativo({ tipo: 'cotizacion' }, numero);
+          u.renumerarReferencias(q, actual);
+          detalle = `Cotización N° ${actual} → N° ${numero}`;
+          q.historial.push({
+            rol: 'asistente',
+            texto: `La cotización pasó del N° ${actual} al N° ${numero}. Su PDF${nuevos.length > 1 ? ' y los de sus notas de pedido se volvieron' : ' se volvió'} a generar con el número nuevo.`,
+          });
+        } else {
+          nota!.numero = numero;
+          u.avanzarCorrelativo({ tipo: 'nota', fabrica: nota!.fabrica! }, numero);
+          detalle = `Nota de pedido de ${nombreFabrica[nota!.fabrica!]} N° ${actual} → N° ${numero}`;
+          q.historial.push({
+            rol: 'asistente',
+            texto: `La nota de pedido de ${nombreFabrica[nota!.fabrica!]} pasó del N° ${actual} al N° ${numero}. Su PDF se volvió a generar con el número nuevo${nuevos.length > 1 ? ', y también el de la otra nota, que la nombra' : ''}.`,
+          });
+        }
+        q.actualizada = marca(q.actualizada);
+        u.guardar(q);
+        for (const n of nuevos) {
+          u.descartarDocumento(n.anterior);
+          u.guardarDocumento(q.id, n.archivo, n.html);
+        }
+        u.registrarEvento(q.id, 'numero_cambiado', this.autor, detalle);
+        // El documento que cambió de número: la cotización o la nota (las demás notas solo se reimprimieron).
+        const propio = accion.documento === 'cotizacion' ? nuevos[0] : nuevos.find((n) => n.anterior === cambiada!.pdf)!;
+        return { cotizacion: q, archivo: propio.archivo };
+      });
+      // El documento con el número anterior ya no es de nadie: se borra (si falla, solo queda un archivo huérfano).
+      for (const n of nuevos) await rm(join(this.almacen.directorio, 'pdf', n.anterior), { force: true }).catch(() => {});
+      return resultado;
+    } catch (error) {
+      for (const n of nuevos) await rm(join(this.almacen.directorio, 'pdf', n.archivo), { force: true });
       throw error;
     }
   }
@@ -1754,6 +2039,8 @@ export class Servicio {
       sinCambios: (q, solicitudes, cliente) => this.sinCambios(q, solicitudes, cliente),
       cambios: (antes, despues, clienteAntes, clienteDespues) => this.cambios(antes, despues, clienteAntes, clienteDespues),
       describir: (s) => this.describir(s),
+      asignarFabricas: (q, u, asignaciones) => this.asignarFabricas(q, u, asignaciones),
+      documentoRenumerable: (u, q, documento, fabrica, numero) => this.documentoRenumerable(u, q, documento, fabrica, numero),
     };
   }
 }

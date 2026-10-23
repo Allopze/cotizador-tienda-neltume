@@ -437,8 +437,8 @@ describe('contexto de la IA', () => {
     };
     const contexto = contextoSeguro('ajusta', [editado, item()], clienteVacio(), ['MOLCO'], ['LENGA']);
     expect(contexto.borrador.items).toEqual([
-      { indice: 0, modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 3, tipoMedida: 'vano', descripcion: 'Puerta especial', observaciones: 'Confirmar apertura', fuente: null },
-      { indice: 1, modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 3, tipoMedida: null, descripcion: null, observaciones: null, fuente: null },
+      { indice: 0, modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 3, tipoMedida: 'vano', descripcion: 'Puerta especial', observaciones: 'Confirmar apertura', fuente: null, fabrica: null },
+      { indice: 1, modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 3, tipoMedida: null, descripcion: null, observaciones: null, fuente: null, fabrica: null },
     ]);
     expect(JSON.stringify(contexto)).not.toMatch(/margen|precio|150000|Molko|coincidencia/);
   });

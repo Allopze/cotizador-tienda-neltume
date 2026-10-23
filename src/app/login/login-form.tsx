@@ -1,10 +1,11 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
 import { correoValido, useErrorCampo } from '../error-campo';
 import { ErrorSolicitud, esPantallaLogin, MENSAJES, PANTALLAS_LOGIN, pedirJSON } from '../solicitud';
 import { avisoSesionExpirada } from './mensajes';
+import { PuertaLogin } from './puerta-login';
 
 export function LoginForm({
   sesionExpirada = false,
@@ -18,6 +19,15 @@ export function LoginForm({
   const [password, setPassword] = useState('');
   const [ocupado, setOcupado] = useState(false);
   const [verClave, setVerClave] = useState(false);
+  // Al ingresar, la puerta se abre y la cámara entra (solo con la escena 3D en marcha); luego se cambia de pantalla.
+  const [entrando, setEntrando] = useState(false);
+  const raiz = useRef<HTMLElement>(null);
+  const botonIngresar = useRef<HTMLButtonElement>(null);
+  const entrar = (destino_: string) => {
+    const con3d = !!raiz.current?.querySelector('.door-side.gl-listo');
+    setEntrando(true);
+    window.setTimeout(() => window.location.replace(destino_), con3d ? 1100 : 0);
+  };
   const errores = useErrorCampo<'correo' | 'clave'>('login');
   const origen = esPantallaLogin(desde) ? desde : null;
   // Tras ingresar se vuelve a la pantalla de origen (el cotizador restaura el borrador guardado en sessionStorage).
@@ -35,11 +45,11 @@ export function LoginForm({
       await pedirJSON('/api/auth/sign-in/email', {
         json: { email: email.trim(), password, callbackURL: '/' },
       });
-      window.location.replace(destino);
+      entrar(destino);
     } catch (e) {
       const status = e instanceof ErrorSolicitud ? e.status : 0;
       // Sesión creada aunque la respuesta no traiga JSON: se continúa igual.
-      if (status >= 200 && status < 300) return window.location.replace(destino);
+      if (status >= 200 && status < 300) return entrar(destino);
       setPassword('');
       setOcupado(false);
       // Tras un error el foco vuelve a la contraseña (ya vaciada) para reintentar.
@@ -61,7 +71,9 @@ export function LoginForm({
   }
 
   return (
-    <main className="login-page">
+    <main ref={raiz} className={`login${entrando ? ' entrando' : ''}`}>
+      <PuertaLogin raiz={raiz} boton={botonIngresar} />
+      <div className="login-side">
       <section className="login-card" aria-labelledby="login-title">
         <Image
           src="/logo-neltume.svg"
@@ -72,7 +84,6 @@ export function LoginForm({
           priority
           unoptimized
         />
-        <p className="eyebrow">ESPACIO INTERNO · COTIZACIONES</p>
         <h1 id="login-title">Iniciar sesión</h1>
         <p className="login-intro">Ingresa con tu cuenta para continuar al cotizador.</p>
         {sesionExpirada && (
@@ -126,15 +137,16 @@ export function LoginForm({
             </button>
           </div>
           {errores.mensaje('clave')}
-          <button className="button primary login-submit" type="submit" disabled={ocupado}>
+          <button ref={botonIngresar} className="button primary login-submit" type="submit" disabled={ocupado}>
             {ocupado ? 'Ingresando…' : 'Ingresar'}
           </button>
         </form>
         <p className="login-help">Si no tienes acceso, solicita una cuenta a la persona responsable.</p>
       </section>
       <footer className="login-footer">
-        NELTUME <span>/ Hecho en madera.</span>
+        NELTUME <span>· Hecho en madera.</span>
       </footer>
+      </div>
     </main>
   );
 }

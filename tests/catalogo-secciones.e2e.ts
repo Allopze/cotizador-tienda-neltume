@@ -155,7 +155,7 @@ test('configuración: cada modelo junta lo que se cambia solo y lo que se pregun
 test('agregar: los datos que faltan se marcan en su campo', async ({ page }) => {
   await page.goto('/catalogo?seccion=agregar');
   await page.getByRole('button', { name: 'Revisar propuesta' }).click();
-  const datos = page.getByRole('form', { name: 'DATOS DEL PRODUCTO' });
+  const datos = page.getByRole('form', { name: 'Datos del producto' });
   await expect(datos.getByRole('combobox', { name: 'Familia' })).toBeFocused();
   await expect(datos.getByLabel('Modelo')).toHaveAttribute('aria-invalid', 'true');
   await expect(datos.getByLabel('Precio base sin IVA')).toHaveAttribute('aria-invalid', 'true');

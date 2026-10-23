@@ -461,7 +461,6 @@
   color: var(--muted);
   font-size: var(--fs-xs);
   letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
 }
 .quote-dispatch-fields .campo-valor-boton,
 .quote-details > .campo .campo-valor-boton {

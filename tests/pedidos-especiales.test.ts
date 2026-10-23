@@ -330,11 +330,11 @@ describe('pedidos especiales en la nota de pedido', () => {
     ).cotizacion;
     q = (await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada })).cotizacion;
     // La Molco a costo de fábrica, la especial con costo a ese costo, y la otra fuera (va «Por definir» en el PDF).
-    expect(q.nota!.montos.lineas.map((l) => [l.indice, l.precioUnitario, l.total])).toEqual([
+    expect(q.notas[0].montos.lineas.map((l) => [l.indice, l.precioUnitario, l.total])).toEqual([
       [0, 100000, 200000],
       [1, 300000, 300000],
     ]);
-    expect(q.nota!.montos.subtotal).toBe(500000);
+    expect(q.notas[0].montos.subtotal).toBe(500000);
   });
 });
 

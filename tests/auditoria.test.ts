@@ -311,7 +311,7 @@ describe('textos y exportación', () => {
       vence: null,
       vencida: false,
       productos: '',
-      nota: null,
+      notas: [],
     } as unknown as ResumenCotizacion;
     const [, linea] = csvCotizaciones([fila]).split('\r\n');
     expect(linea).toContain(`"'=HYPERLINK(""x"")"`);
@@ -328,7 +328,7 @@ describe('textos y exportación', () => {
         fechaEmision: null,
         total: 119000,
         productos: '',
-        nota: null,
+        notas: [],
         ...extra,
       } as unknown as ResumenCotizacion;
       const [cabecera, linea] = csvCotizaciones([fila]).split('\r\n');

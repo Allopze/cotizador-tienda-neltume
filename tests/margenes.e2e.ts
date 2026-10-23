@@ -35,7 +35,7 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   await panel.getByRole('button', { name: 'Guardar' }).click();
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }));
   await expect(
-    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 42 % — cambiada a mano para toda la cotización', {
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 42 % · cambiada a mano para toda la cotización', {
       exact: true,
     }),
   ).toBeVisible();
@@ -52,7 +52,7 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
   await margenLinea.press('Enter');
   await expect(totalPantalla).toHaveText(total({ margenCotizacion: 0.42 }, 0.3));
   await expect(
-    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 30 % — cambiada a mano en esta línea', {
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 30 % · cambiada a mano en esta línea', {
       exact: true,
     }),
   ).toBeVisible();
@@ -69,7 +69,7 @@ test('margen especial de la cotización: se fija, la línea tiene prioridad y se
     .click();
   await panel.locator('.item-details > summary').first().click();
   await expect(
-    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 42 % — cambiada a mano para toda la cotización', {
+    panel.getByText('Ganancia estándar: 85 % · Ganancia aplicada: 42 % · cambiada a mano para toda la cotización', {
       exact: true,
     }),
   ).toBeVisible();

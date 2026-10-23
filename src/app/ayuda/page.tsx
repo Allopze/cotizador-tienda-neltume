@@ -77,13 +77,15 @@ export default async function AyudaPage() {
               pedido.
             </li>
             <li>
-              <strong>Genera la nota de pedido para fábrica.</strong> «Generar nota de pedido» pide la fábrica
-              (Panguipulli para puertas sólidas, Santiago para enchapadas y prepintadas), le da el siguiente número de
-              esa fábrica y crea el PDF que va a ella.
+              <strong>Genera la nota de pedido para fábrica.</strong> «Generar notas de pedido» pide la fábrica de
+              cada ítem (no hay una por omisión: la eliges tú) y genera una nota por fábrica, solo con sus ítems y con
+              el siguiente número de esa fábrica. El reparto se puede preparar antes con «Repartir entre fábricas» o
+              pidiéndoselo al asistente («las Coz Coz van a Santiago»).
             </li>
             <li>
               <strong>Producción.</strong> Pulsa «Iniciar producción» cuando el pedido entra a fábrica y «Marcar
-              producción terminada» cuando fábrica lo termina.
+              producción terminada» cuando fábrica lo termina. Con notas para las dos fábricas, cada una se marca por
+              separado y el pedido sigue a despacho cuando terminan todas.
             </li>
             <li>
               <strong>Despacho.</strong> Con el total pagado, pulsa «Marcar lista para despacho», indica el
@@ -177,7 +179,14 @@ export default async function AyudaPage() {
             </li>
             <li>
               <strong>Un paso de la operación marcado por error:</strong> «Volver al paso anterior», bajo «Siguiente
-              acción». Te pide anotar el motivo.
+              acción». Te pide anotar el motivo. En fábrica deshace el último inicio o término registrado, en la
+              fábrica donde se marcó.
+            </li>
+            <li>
+              <strong>Un número de cotización o de nota de pedido equivocado:</strong> «Cambiar N°» junto a su PDF
+              (solo cuentas administradoras), o pídeselo al asistente («la nota de Santiago debe ser la 61»). El
+              número debe estar libre; el PDF se vuelve a generar con el número nuevo y el cambio queda en la
+              actividad.
             </li>
             <li>
               <strong>Un pago mal anotado:</strong> «Anular» junto al pago, hasta que el pedido quede listo para

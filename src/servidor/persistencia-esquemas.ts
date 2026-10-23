@@ -67,6 +67,7 @@ const solicitudSchema = z.object({
     .max(10)
     .optional(),
   descuento: descuentoItemSchema.nullable().optional(),
+  fabrica: z.enum(FABRICAS).nullable().optional(),
 });
 
 const productoSchema = z.object({
@@ -174,7 +175,53 @@ const rechazoSchema = z.discriminatedUnion('tipo', [
   }),
 ]);
 
-export const cotizacionSchema = z.looseObject({
+const notaSchema = z.object({
+  numero: z.number().int(),
+  fabrica: z.enum(FABRICAS).optional(),
+  pdf: z.string(),
+  montos: montosSchema,
+  fecha: z.string(),
+  despacho: z.object({
+    direccion: z.string().nullable(),
+    transporte: z.string().nullable(),
+    entregaComprometida: z.string().nullable().optional(),
+    destino: z.string().nullable().optional(),
+    valor: z.number().int().nonnegative().nullable().optional(),
+  }),
+  observaciones: z.string().nullable().optional(),
+  anulada: z.boolean(),
+  inicioProduccion: z.string().nullable().optional(),
+  terminoProduccion: z.string().nullable().optional(),
+});
+
+/** Estados operativos en que la fábrica ya terminó el pedido. */
+const PRODUCCION_TERMINADA = new Set(['saldo_pendiente', 'pagada', 'lista_despacho', 'despachada', 'completada']);
+/**
+ * Antes de las notas por fábrica una cotización traía `nota` (una o null) y la producción se llevaba solo en su
+ * estado operativo: pasa a `notas`, con el inicio y el término de producción que ese estado da por hechos (en la
+ * fecha de la nota, la única que se conoce). Lo ya convertido pasa igual.
+ */
+function notasDesdeNota(q: unknown): unknown {
+  if (!esRegistro(q) || !('nota' in q)) return q;
+  const { nota, ...resto } = q;
+  if ('notas' in resto) return resto;
+  if (!esRegistro(nota)) return { ...resto, notas: [] };
+  const operacion = leerEstadoOperativo(resto.estadoOperativo);
+  const fecha = typeof nota.fecha === 'string' ? nota.fecha : null;
+  const inicio = operacion === 'en_produccion' || PRODUCCION_TERMINADA.has(String(operacion)) ? fecha : null;
+  return {
+    ...resto,
+    notas: [
+      {
+        inicioProduccion: inicio,
+        terminoProduccion: PRODUCCION_TERMINADA.has(String(operacion)) ? fecha : null,
+        ...nota,
+      },
+    ],
+  };
+}
+
+const cotizacionBaseSchema = z.looseObject({
   id: z.string(),
   numero: z.number().int().nullable(),
   estado: z.enum(['borrador', 'emitida', 'aprobada', 'reemplazada', 'anulada']),
@@ -244,24 +291,7 @@ export const cotizacionSchema = z.looseObject({
   motivoAnulacion: z.string().nullable(),
   reemplazadaPor: z.number().int().nullable(),
   versionCatalogo: z.string().nullable(),
-  nota: z
-    .object({
-      numero: z.number().int(),
-      fabrica: z.enum(FABRICAS).optional(),
-      pdf: z.string(),
-      montos: montosSchema,
-      fecha: z.string(),
-      despacho: z.object({
-        direccion: z.string().nullable(),
-        transporte: z.string().nullable(),
-        entregaComprometida: z.string().nullable().optional(),
-        destino: z.string().nullable().optional(),
-        valor: z.number().int().nonnegative().nullable().optional(),
-      }),
-      observaciones: z.string().nullable().optional(),
-      anulada: z.boolean(),
-    })
-    .nullable(),
+  notas: z.array(notaSchema),
   estadoComercial: z.enum(['pendiente', 'enviada', 'seguimiento', 'aprobada', 'rechazada', 'vendida']).optional(),
   // «produccion_terminada» nunca se asignó como estado (el paso deja «saldo_pendiente» o «pagada»); un dato que
   // lo traiga se lee como «en_produccion».
@@ -280,6 +310,9 @@ export const cotizacionSchema = z.looseObject({
     identificadorExterno: z.string().nullable(), fecha: z.string().nullable(),
   }).optional(),
 });
+
+/** Cotización guardada (en SQLite, en la papelera o en un estado JSON); acepta la `nota` única de antes. */
+export const cotizacionSchema = z.preprocess(notasDesdeNota, cotizacionBaseSchema);
 
 export const estadoPersistidoSchema = z.object({
   siguienteCotizacion: z.number().int().positive(),
@@ -362,7 +395,12 @@ export function completarEstadoLegado(entrada: unknown): unknown {
           typeof q.estadoComercial === 'string'
             ? q.estadoComercial
             : q.estado === 'emitida' ? 'enviada' : q.estado === 'aprobada' ? 'aprobada' : 'pendiente',
-        estadoOperativo: typeof q.estadoOperativo === 'string' ? q.estadoOperativo : q.nota ? 'pedido_generado' : 'sin_pedido',
+        estadoOperativo:
+          typeof q.estadoOperativo === 'string'
+            ? q.estadoOperativo
+            : q.nota || (Array.isArray(q.notas) && q.notas.length)
+              ? 'pedido_generado'
+              : 'sin_pedido',
         pagos: Array.isArray(q.pagos) ? q.pagos : [],
         comentariosInternos: Array.isArray(q.comentariosInternos) ? q.comentariosInternos : [],
         facturacion: esRegistro(q.facturacion)
@@ -376,15 +414,20 @@ export function completarEstadoLegado(entrada: unknown): unknown {
             } : s)
           : q.solicitudes,
         montos: completarMontos(q.montos),
-        nota: esRegistro(q.nota)
+        // La `nota` única de antes pasa a `notas` al validar (ver `notasDesdeNota`).
+        ...(!('notas' in q)
           ? {
-              despacho: { direccion: null, transporte: null, entregaComprometida: null },
-              observaciones: null,
-              anulada: false,
-              ...q.nota,
-              montos: completarMontos(q.nota.montos),
+              nota: esRegistro(q.nota)
+                ? {
+                    despacho: { direccion: null, transporte: null, entregaComprometida: null },
+                    observaciones: null,
+                    anulada: false,
+                    ...q.nota,
+                    montos: completarMontos(q.nota.montos),
+                  }
+                : null,
             }
-          : (q.nota ?? null),
+          : {}),
       };
     }),
   };

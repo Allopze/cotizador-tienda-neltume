@@ -26,7 +26,7 @@ test('agrega al catálogo desde un pendiente con el formulario completado y coti
   await panel.getByRole('button', { name: 'Agregar al catálogo', exact: true }).click();
 
   const dialogo = page.getByRole('dialog', { name: 'Agregar al catálogo', exact: true });
-  const datos = dialogo.getByRole('form', { name: 'DATOS DEL PRODUCTO' });
+  const datos = dialogo.getByRole('form', { name: 'Datos del producto' });
   await expect(datos.getByRole('combobox', { name: 'Familia' })).toContainText('Puerta');
   await expect(datos.getByLabel('Modelo', { exact: true })).toHaveValue('Huilo Huilo');
   await expect(datos.getByLabel('Madera', { exact: true })).toHaveValue('Roble pendiente e2e');

@@ -1,4 +1,5 @@
 import type { OrigenCatalogo } from './origenes';
+import type { Fabrica } from '../negocio/estado';
 /** Nombre canónico de una madera configurada en config/catalogo.json. */
 export type Madera = string;
 export type Familia = 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA';
@@ -61,6 +62,11 @@ export interface SolicitudItem {
   referencias?: ReferenciaItem[];
   /** Descuento especial solo de este ítem; ausente (o null) mantiene su precio. Nunca toca el catálogo. */
   descuento?: DescuentoItem | null;
+  /**
+   * Fábrica que lo hace: su línea va en la nota de pedido de esa fábrica. La elige quien cotiza (no hay una por
+   * omisión); ausente o null mientras no se asigna. No aparece en la cotización del cliente.
+   */
+  fabrica?: Fabrica | null;
   /**
    * Solo en tránsito desde el chat: el precio que la persona escribió para el ítem, tal como lo propuso la IA.
    * El servidor lo ancla al texto y lo convierte en `precioUnitario` (o en un pedido especial); nunca se guarda.

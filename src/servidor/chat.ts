@@ -55,8 +55,12 @@ import {
   numeroNota,
   cantidadFlete,
   descripcionFlete,
+  nombreFabrica,
+  textoNotas,
   unitarioFlete,
   type Cotizacion,
+  type Fabrica,
+  type NotaPedido,
 } from '../negocio/estado';
 import {
   avisoProductoCambiado,
@@ -81,10 +85,10 @@ import {
   textoDescuentoItem,
 } from '../negocio/precios';
 import { estaVencida, fechaChilena } from '../negocio/vigencia';
-import type { Accion, CambiosCotizacion, CategoriaAviso, DiagnosticoTurno, Resultado } from './acciones';
+import type { Accion, AsignacionFabrica, CambiosCotizacion, CategoriaAviso, DiagnosticoTurno, Resultado } from './acciones';
 import type { Almacen, Unidad } from './almacen';
 import { cambioDescuento, claveDescuento, descuentoDe, marca, textoCambios } from './edicion';
-import { ErrorConflicto, ErrorNoEncontrado, VERSION_OBSOLETA } from './errores';
+import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
 import { resolverReferencia } from './referencias';
 
 /** Lo que el chat usa del servicio: su catálogo, la IA, el almacén y las reglas de edición de la cotización. */
@@ -107,6 +111,16 @@ export interface ContextoChat {
   sinCambios(q: Cotizacion, solicitudes: SolicitudItem[], cliente: Cliente): boolean;
   cambios(antes: SolicitudItem[], despues: SolicitudItem[], clienteAntes: Cliente, clienteDespues: Cliente): CambiosCotizacion | undefined;
   describir(s: SolicitudItem): string;
+  /** Asigna fábricas sin crear una revisión (ver `Servicio.asignarFabricas`); devuelve el texto de lo asignado. */
+  asignarFabricas(q: Cotizacion, u: Unidad, asignaciones: AsignacionFabrica[]): { cotizacion: Cotizacion; texto: string };
+  /** Documento cuyo número se cambiaría y su número actual; lanza si no se puede (ver `Servicio.documentoRenumerable`). */
+  documentoRenumerable(
+    u: Unidad,
+    q: Cotizacion,
+    documento: 'cotizacion' | 'nota',
+    fabrica?: Fabrica | null,
+    numero?: number,
+  ): { actual: number; nota: NotaPedido | null };
 }
 
 const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
@@ -121,6 +135,95 @@ const TEXTO_MONETARIO =
 const HABLA_DE_DESCUENTO = /\b(?:descuent|descont|rebaj)/;
 const SOLICITUD_APROBACION =
   /\b(?:aprueba|apruebe|aprobar|se aprob[oó]|haz(?:me)? (?:la )?nota|genera(?:r)? (?:la )?nota|prepara(?:r)? (?:la )?nota)(?![\p{L}\p{N}])/iu;
+
+/**
+ * El mensaje pide cambiar el número de un documento («cambia el número de la cotización a 340», «la nota de Santiago
+ * debe ser la 61»): sus cifras son números de documento, no referencias a otra cotización (ver `procesarChat`).
+ */
+const CAMBIO_NUMERO =
+  /\b(?:n[uú]mero|correlativo|numeraci[oó]n|renumer\w*)\b|\b(?:nota|orden|ot)\b[^.\n]*\b(?:a|al|sea|ser|por|es)\s+(?:la\s+|el\s+)?(?:n[°º.]?\s*)?\d|\b(?:tiene que|debe|deber[ií]a)\s+ser\s+(?:la|el)\s+(?:n[°º.]?\s*)?\d/iu;
+const NO_EDITABLE_APROBADA =
+  'La cotización está aprobada y no se puede editar. Por chat puedes repartir sus ítems entre las fábricas (antes de generar las notas de pedido) o cambiar su número o el de sus notas.';
+const PREGUNTA_FABRICA =
+  '¿A qué fábrica va cada ítem? Dímelo, por ejemplo: «las Molco a Panguipulli y las Coz Coz a Santiago».';
+/** Cómo se nombra cada fábrica en un mensaje (ya sin tildes ni mayúsculas). */
+const NOMBRES_FABRICA: Record<Fabrica, RegExp> = {
+  panguipulli: /\bpangui(?:pulli)?\b/,
+  santiago: /\b(?:santiago|stgo)\b/,
+};
+/** ¿Alguno de los textos de la persona nombra la fábrica? Sin eso, la IA la habría deducido: no se asigna. */
+const fabricaEscrita = (fabrica: Fabrica, textos: string[]) => textos.some((t) => NOMBRES_FABRICA[fabrica].test(sinTildes(t)));
+/** Enteros escritos en el mensaje («1.250» es 1250): los números de documento deben salir de ahí. */
+const enterosEscritos = (texto: string) =>
+  new Set((texto.match(/\d[\d.]*/g) ?? []).map((n) => Number(n.replace(/\./g, ''))).filter(Number.isSafeInteger));
+/**
+ * Un `modificar_cotizacion` que solo cambia fábricas de ítems existentes es un reparto: va como `asignar_fabricas`,
+ * sin abrir una revisión. null si trae otro cambio.
+ */
+function soloFabricas(input: ModificacionCotizacion): AsignacionFabrica[] | null {
+  const items = input.items ?? [];
+  if (
+    !items.length ||
+    input.agregar?.length ||
+    input.quitar?.length ||
+    Object.keys(input.cliente ?? {}).length ||
+    input.flete !== undefined ||
+    items.some((i) => i.cambios.fabrica === undefined || Object.keys(i.cambios).some((k) => k !== 'fabrica' && k !== 'fuente'))
+  )
+    return null;
+  return items.map((i) => ({ indice: i.indice, fabrica: i.cambios.fabrica ?? null }));
+}
+/**
+ * Asignaciones de `asignar_fabricas` con el ítem que de verdad nombran: la IA repite el modelo de cada uno, y si no
+ * es el del índice que dio (asignó en el orden del mensaje), vale el único ítem de ese modelo. Sin uno claro, se omite.
+ */
+function itemsDelReparto(
+  ctx: ContextoChat,
+  q: Cotizacion,
+  asignaciones: { indice: number; modelo: string; fabrica: Fabrica | null }[],
+): AsignacionFabrica[] {
+  const modelo = (s: SolicitudItem | undefined) => (s ? ctx.producto(s).modelo : '');
+  const resultado: AsignacionFabrica[] = [];
+  for (const a of asignaciones) {
+    const dicho = ctx.producto({ modelo: a.modelo, madera: null, ancho: null, alto: null, medida: null, cantidad: null }).modelo;
+    const candidatos = q.solicitudes.flatMap((s, i) => (modelo(s) === dicho ? [i] : []));
+    const indice = candidatos.includes(a.indice) ? a.indice : candidatos.length === 1 ? candidatos[0] : null;
+    if (indice !== null && !resultado.some((r) => r.indice === indice)) resultado.push({ indice, fabrica: a.fabrica });
+  }
+  return resultado;
+}
+
+/**
+ * Quita de los ítems de la IA la fábrica que el mensaje no nombra (ver `fabricaEscrita`), con un aviso. Un cambio que
+ * solo traía esa fábrica se descarta entero.
+ */
+function fabricasDichas(
+  input: ModificacionCotizacion,
+  textos: string[],
+  describir: (indice: number) => string,
+): { input: ModificacionCotizacion; avisos: string[] } {
+  const avisos: string[] = [];
+  const revisar = <T extends { fabrica?: Fabrica | null }>(item: T, nombre: string): T => {
+    if (!item.fabrica || fabricaEscrita(item.fabrica, textos)) return item;
+    avisos.push(`No asigné fábrica a ${nombre}: el mensaje no dice a cuál va.`);
+    const { fabrica: _fabrica, ...resto } = item;
+    return resto as T;
+  };
+  return {
+    input: {
+      ...input,
+      ...(input.agregar ? { agregar: input.agregar.map((a) => revisar(a, a.modelo ?? 'un ítem nuevo')) } : {}),
+      ...(input.items
+        ? {
+            items: input.items
+              .map((i) => ({ ...i, cambios: revisar(i.cambios, describir(i.indice)) }))
+              .filter((i) => Object.keys(i.cambios).length),
+          }
+        : {}),
+    },
+    avisos,
+  };
+}
 
 /** Palabras que confirman («sí», «ya», «correcto, ese») y las que pueden acompañarlas sin agregar nada. */
 const AFIRMA = new Set([
@@ -621,9 +724,12 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       );
     modo = 'modificacion_anterior';
   } else {
-    const referencia = SOLICITUD_APROBACION.test(accion.mensaje)
-      ? { tipo: 'ninguna' as const }
-      : resolverReferencia(accion.mensaje, ctx.almacen.candidatas(), conversacion?.id);
+    // Las cifras de un cambio de número son números de documento: con una conversación abierta, el cambio es sobre
+    // ella (o sobre el documento que nombre la IA en `actual`), no sobre la cotización que tenga ese número.
+    const referencia =
+      SOLICITUD_APROBACION.test(accion.mensaje) || (conversacion && CAMBIO_NUMERO.test(accion.mensaje))
+        ? { tipo: 'ninguna' as const }
+        : resolverReferencia(accion.mensaje, ctx.almacen.candidatas(), conversacion?.id);
     if (referencia.tipo === 'inexistente')
       throw new ErrorNoEncontrado(
         `No existe la cotización N° ${referencia.numero}. Revisa el número o búscala en el historial; no se aplicó ningún cambio.`,
@@ -639,7 +745,8 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       modo = 'modificacion_anterior';
     } else previo = conversacion;
   }
-  if (previo) ctx.exigirEditable(previo);
+  // Una aprobada solo admite, por chat, repartir sus ítems entre fábricas y cambiar números (se revisa con la respuesta).
+  if (previo && previo.estado !== 'aprobada') ctx.exigirEditable(previo);
   // M4: si la emitida ya tiene una revisión abierta, el cambio se aplica sobre esa revisión.
   if (previo?.estado === 'emitida') previo = ctx.almacen.revisionAbierta(previo) ?? previo;
   // M1: el borrador nuevo se escribe recién con la respuesta de la IA; si falla, no queda nada.
@@ -677,6 +784,15 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
             modelos: aliasModelosCatalogo(ctx.catalogo),
             maderas: aliasMaderasCatalogo(ctx.catalogo),
             catalogo: mapaCatalogo(ctx.catalogo),
+            ...(base.numero !== null
+              ? {
+                  documentos: {
+                    estado: base.estado,
+                    numero: base.numero,
+                    notas: base.notas.map((n) => ({ fabrica: n.fabrica ?? null, numero: n.numero })),
+                  },
+                }
+              : {}),
           },
         ),
         ctx.llm.verificarCifras && corrige
@@ -707,7 +823,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         throw new ErrorConflicto(
           'La cotización cambió mientras se procesaba tu mensaje. Revisa el detalle y vuelve a enviarlo.',
         );
-      ctx.exigirEditable(q);
+      if (q.estado !== 'aprobada') ctx.exigirEditable(q);
     }
     const responder = (texto: string, extra: Omit<Resultado, 'cotizacion'> = {}): Resultado => {
       registrar(q, accion.mensaje, texto);
@@ -725,12 +841,12 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       if (!objetivo) return responder(`No existe la cotización N° ${numero}. Genera primero su PDF.`);
       if (objetivo.estado === 'anulada')
         return responder(
-          `La cotización N° ${numero} está anulada${objetivo.nota ? `, junto con su nota de pedido ${numeroNota(objetivo.nota)},` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
+          `La cotización N° ${numero} está anulada${objetivo.notas.length ? `, junto con ${textoNotas(objetivo.notas)},` : ''} y no se puede aprobar. Duplícala para preparar una nueva.`,
         );
-      if (objetivo.nota)
+      if (objetivo.notas.length)
         return responder(
-          `La cotización N° ${numero} ya está aprobada con la nota de pedido ${numeroNota(objetivo.nota)}.`,
-          { archivo: objetivo.nota.pdf },
+          `La cotización N° ${numero} ya está aprobada con ${textoNotas(objetivo.notas)}.`,
+          { archivo: objetivo.notas[0].pdf },
         );
       if (objetivo.estado !== 'emitida')
         return responder(
@@ -758,13 +874,54 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         },
       };
     }
+    // Lo que la persona escribió en esta conversación: una fábrica que no aparece ahí, la dedujo la IA.
+    const textosPersona = [accion.mensaje, ...historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto)];
+    const reparto =
+      res.name === 'asignar_fabricas'
+        ? itemsDelReparto(ctx, q, res.input.asignaciones)
+        : res.name === 'modificar_cotizacion'
+          ? soloFabricas(res.input)
+          : null;
+    if (reparto) {
+      if (!reparto.length || reparto.some((a) => a.indice >= q.solicitudes.length)) return responder(NO_ENTENDI);
+      const dichas = reparto.filter((a) => a.fabrica === null || fabricaEscrita(a.fabrica, textosPersona));
+      if (!dichas.length) return responder(PREGUNTA_FABRICA);
+      let texto: string;
+      try {
+        texto = ctx.asignarFabricas(q, u, dichas).texto;
+      } catch (error) {
+        if (error instanceof ErrorUsuario) return responder(error.message);
+        throw error;
+      }
+      const sinFabrica = q.solicitudes.filter((s) => !s.fabrica);
+      return responder(
+        [
+          texto ? `Fábricas asignadas: ${texto}.` : 'Esos ítems ya tenían esa fábrica.',
+          ...(dichas.length < reparto.length
+            ? [
+                `No asigné ${reparto
+                  .filter((a) => !dichas.includes(a))
+                  .map((a) => ctx.describir(q.solicitudes[a.indice]))
+                  .join(', ')}: el mensaje no dice a qué fábrica va.`,
+              ]
+            : []),
+          ...(sinFabrica.length ? [`Falta asignar la fábrica de: ${sinFabrica.map((s) => ctx.describir(s)).join(', ')}.`] : []),
+        ].join('\n\n'),
+      );
+    }
+    if (res.name === 'cambiar_numero') return cambiarNumeroPorChat(ctx, u, q, res.input, accion.mensaje, responder);
+    if (q.estado === 'aprobada') return responder(NO_EDITABLE_APROBADA);
     let propuesta: { items: SolicitudItem[]; cliente: Partial<Cliente>; avisos: string[] };
+    let avisosFabrica: string[] = [];
     if (res.name === 'actualizar_cotizacion') {
       if (modo === 'modificacion_anterior') return responder(NO_ENTENDI);
-      // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q.
+      // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q. Una fábrica
+      // que el mensaje no nombra no se toma (el ítem conserva la que tenía).
       const { items, avisos: avisosFusion } = fusionarItems(
         q.solicitudes,
-        res.input.items.map((s) => desdeIA(s)),
+        res.input.items.map(({ fabrica, ...s }) =>
+          desdeIA({ ...s, ...(fabrica && fabricaEscrita(fabrica, textosPersona) ? { fabrica } : {}) }),
+        ),
         (s, pareja) => ctx.producto(s, pareja),
       );
       propuesta = {
@@ -776,11 +933,15 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         },
       };
     } else if (res.name === 'modificar_cotizacion') {
+      const dichas = fabricasDichas(res.input, textosPersona, (i) =>
+        q.solicitudes[i] ? ctx.describir(q.solicitudes[i]) : `el ítem ${i + 1}`,
+      );
+      avisosFabrica = dichas.avisos;
       // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
-      const aplicado = aplicarModificacion(ctx, q, res.input);
-      if (!aplicado) return responder(NO_ENTENDI);
+      const aplicado = aplicarModificacion(ctx, q, dichas.input);
+      if (!aplicado) return responder(avisosFabrica.length ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n') : NO_ENTENDI);
       propuesta = aplicado;
-    } else {
+    } else if (res.name === 'responder') {
       // Sin el reintento de «corregir», un pedido respondido con texto no puede pasar en silencio.
       const sinRegistrar =
         ctx.llm.verificarCifras && !corrige && pedidoSinRegistrar(accion.mensaje, base, modo, resolver)
@@ -793,7 +954,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
           : res.input.texto,
         sinRegistrar.length ? { avisos: sinRegistrar } : {},
       );
-    }
+    } else return responder(NO_ENTENDI);
     // Lo que vio la IA: el mensaje y los turnos recientes. Una cifra que no está ahí, la inventó.
     const textosIA = [accion.mensaje, ...historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto)];
     const { linea: flete, avisos: avisosFlete } = fleteDelChat(
@@ -806,7 +967,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       (flete.flete !== q.flete ||
         flete.fleteCantidad !== cantidadFlete(q) ||
         flete.fleteDescripcion !== (q.fleteDescripcion ?? null));
-    propuesta.avisos.push(...avisosFlete);
+    propuesta.avisos.push(...avisosFlete, ...avisosFabrica);
     if (ctx.llm.verificarCifras && !directa) {
       // «sí» a «¿Te refieres a X?» (lo que pide el prompt): el ítem cuenta como si el borrador ya dijera X.
       // Respalda solo ese nombre; las cifras y los demás nombres siguen saliendo de lo que escribió la persona.
@@ -993,6 +1154,69 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
     avisos: (resultado.avisos ?? []).map((texto) => ({ categoria: categorias.get(texto) ?? 'otros', texto })),
   });
   return resultado;
+}
+
+/**
+ * `cambiar_numero` pedido por chat: ubica el documento (el de la conversación o el que la IA nombra en `actual`),
+ * comprueba que se pueda y propone el cambio para que la persona lo confirme en la interfaz (`confirmarNumero`), igual
+ * que una aprobación. Los dos números deben estar escritos en el mensaje.
+ */
+function cambiarNumeroPorChat(
+  ctx: ContextoChat,
+  u: Unidad,
+  q: Cotizacion,
+  { documento, fabrica, actual, numero }: { documento: 'cotizacion' | 'nota'; fabrica: Fabrica | null; actual: number | null; numero: number },
+  mensaje: string,
+  responder: (texto: string, extra?: Omit<Resultado, 'cotizacion'>) => Resultado,
+): Resultado {
+  const escritos = enterosEscritos(mensaje);
+  // La IA suele completar `actual` con el número de hoy del documento de la conversación (lo ve en `documentos`):
+  // ese no necesita estar escrito. Otro número sí: nombra otro documento.
+  const deHoy =
+    documento === 'cotizacion'
+      ? (q.numero ?? q.origen ?? null)
+      : (q.notas.find((n) => (fabrica ? n.fabrica === fabrica : q.notas.length === 1))?.numero ?? null);
+  if (actual !== null && actual === deHoy && !escritos.has(actual)) actual = null;
+  if (!escritos.has(numero) || (actual !== null && !escritos.has(actual)))
+    return responder('¿Qué número debe tener? Escríbelo en el mensaje, por ejemplo «la cotización debe ser la 340».');
+  let objetivo: Cotizacion | null = q;
+  if (documento === 'cotizacion') {
+    if (actual !== null && actual !== q.numero) objetivo = u.porNumero(actual);
+    // Desde su revisión en borrador (sin número), el número es el de la emitida que revisa.
+    else if (q.numero === null && q.origen != null) objetivo = u.porNumero(q.origen);
+  } else if (actual !== null && !q.notas.some((n) => n.numero === actual && (!fabrica || n.fabrica === fabrica)))
+    objetivo = fabrica ? u.porNota(fabrica, actual) : null;
+  if (!objetivo)
+    return responder(
+      documento === 'cotizacion'
+        ? `No existe la cotización N° ${actual}.`
+        : `No encontré la nota de pedido N° ${actual}${fabrica ? ` de ${nombreFabrica[fabrica]}` : ''}. Indica de qué fábrica es.`,
+    );
+  try {
+    const { actual: hoy, nota } = ctx.documentoRenumerable(u, objetivo, documento, fabrica, numero);
+    const nombre = documento === 'cotizacion' ? `La cotización N° ${hoy}` : `La nota de pedido ${numeroNota(nota!)}`;
+    if (hoy === numero) return responder(`${nombre} ya tiene ese número.`);
+    const pdfs =
+      documento === 'cotizacion' && objetivo.notas.length ? 'su PDF y los de sus notas de pedido' : 'su PDF';
+    const resultado = responder(
+      `¿Confirmas que ${nombre[0].toLowerCase()}${nombre.slice(1)} pasa a ser la N° ${numero}? Se volverá a generar ${pdfs} con el número nuevo.`,
+    );
+    return {
+      ...resultado,
+      confirmarNumero: {
+        id: objetivo.id,
+        // Leída después de registrar el mensaje: si es la misma conversación (emitida o aprobada), no cambió.
+        actualizada: objetivo.actualizada,
+        documento,
+        ...(nota?.fabrica ? { fabrica: nota.fabrica } : {}),
+        actual: hoy,
+        numero,
+      },
+    };
+  } catch (error) {
+    if (error instanceof ErrorUsuario) return responder(error.message);
+    throw error;
+  }
 }
 
 function errorProcesado(id: string) {

@@ -25,6 +25,12 @@ const PANTALLAS = [
 /** Por qué no responden los enlaces mientras el chat espera: se anuncia (aria-describedby), no solo en `title`. */
 const MOTIVO_BLOQUEO = 'Espera la respuesta del asistente o cancélala';
 
+/** Dos letras para el avatar: «María José Soto» → «MS»; un correo, su inicial. */
+const iniciales = (texto: string) => {
+  const palabras = texto.split('@')[0].split(/[\s._-]+/).filter(Boolean);
+  return ((palabras[0]?.[0] ?? '?') + (palabras.length > 1 ? palabras.at(-1)![0] : '')).toUpperCase();
+};
+
 /** Cabecera común: logo, pantalla actual y menú de cuenta (compacto en móvil). */
 export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado, navegacionBloqueada }: Props) {
   const [menuCuenta, setMenuCuenta] = useState(false);
@@ -100,13 +106,19 @@ export function Encabezado({ email, nombre, pantalla, alLogo, logoDeshabilitado,
           aria-controls="menu-cuenta"
           onClick={() => setMenuCuenta((v) => !v)}
         >
-          Cuenta <span aria-hidden>▾</span>
+          <span className="account-avatar" aria-hidden>
+            {iniciales(nombre || email)}
+          </span>
+          <span className="account-name">{nombre || email}</span>
+          <span className="sr-only">Cuenta</span>
+          <span aria-hidden>▾</span>
         </button>
         <div id="menu-cuenta" className="account-controls">
           <span className="account-email" title={email}>
             {nombre && nombre !== email ? (
               <>
-                <strong>{nombre}</strong> <small>{email}</small>
+                <strong>{nombre}</strong>
+                <small>{email}</small>
               </>
             ) : (
               email

@@ -2,23 +2,31 @@
 import { useState } from 'react';
 import {
   anticipoMinimo,
+  etapaProduccion,
   etiquetaComercial,
+  etiquetaEtapa,
   etiquetaFacturacion,
   etiquetaOperativo,
+  FABRICAS,
+  fabricaDeNota,
+  nombreFabrica,
   numeroNota,
+  operacionDe,
   pagoAnulable,
   retrocesoOperativo,
   rangoFechaOperacion,
   sinTransportista,
   type Cotizacion,
+  type NotaPedido,
 } from '@/negocio/estado';
 import { leerPesos } from '@/negocio/cifras';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
-import { pesos, porcentaje } from '@/negocio/precios';
+import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
 import { fechaChilena, fechaLocal } from '@/negocio/vigencia';
 import { useConfirmacion } from './dialogo';
-import { useNotaPedido, useRetroceso } from './dialogos-cotizacion';
-import { fechaLarga, numeroCotizacion } from './formato';
+import { useRepartoFabricas, useRetroceso, type LineaReparto } from './dialogos-cotizacion';
+import { fechaCorta, fechaLarga, nombreProducto, numeroCotizacion } from './formato';
+import { LineaPasos } from './linea-pasos';
 import { SelectorDesplegable } from './selector-desplegable';
 
 interface Props {
@@ -45,13 +53,17 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   const [comentario, setComentario] = useState('');
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirRetroceso, dialogoRetroceso] = useRetroceso();
-  const [pedirNota, dialogoNota] = useNotaPedido();
+  const [pedirReparto, dialogoReparto] = useRepartoFabricas();
   const estado = actual.estado;
   const pagosRegistrados = actual.pagos ?? [];
   const pagado = pagosRegistrados.reduce((s, p) => s + p.monto, 0);
   const saldo = Math.max(0, actual.montos.total - pagado);
   const porcentajePagado = actual.montos.total ? Math.min(100, (100 * pagado) / actual.montos.total) : 0;
-  const operacionActual = actual.estadoOperativo ?? (actual.nota ? 'pedido_generado' : 'sin_pedido');
+  const operacionActual = operacionDe(actual);
+  const notas = actual.notas;
+  const vigentes = notas.filter((n) => !n.anulada);
+  /** Con varias fábricas, cada paso de producción dice en cuál; con una sola, se nombra como siempre. */
+  const variasFabricas = vigentes.length > 1;
   const estadoComercial = actual.estadoComercial ?? (estado === 'emitida' ? 'enviada' : 'pendiente');
   const pagoMinimoNP = anticipoMinimo(actual.montos.total);
   const aprobada = estado === 'aprobada';
@@ -106,13 +118,79 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
     if (ocupado) return;
     if (await confirmar({ titulo, mensaje: <p>{efecto}</p>, aceptar, eyebrow: 'OPERACIÓN' })) await flujo(accion);
   }
-  const operar = (paso: string, titulo: string, efecto: string, aceptar: string) =>
-    void confirmarPaso(titulo, efecto, aceptar, { tipo: 'operacion', paso });
+  const operar = (paso: string, titulo: string, efecto: string, aceptar: string, nota?: NotaPedido) =>
+    void confirmarPaso(titulo, efecto, aceptar, {
+      tipo: 'operacion',
+      paso,
+      ...(variasFabricas && nota?.fabrica ? { fabrica: nota.fabrica } : {}),
+    });
+  // Los ítems valorizados, con la fábrica que tienen asignada: lo que va en las notas de pedido.
+  const lineasReparto = (): LineaReparto[] =>
+    actual.montos.lineas.flatMap((l) =>
+      l.indice === null
+        ? []
+        : [
+            {
+              indice: l.indice,
+              nombre: `${l.cantidad} × ${nombreProducto(descripcionLinea(l))}`,
+              detalle: l.producto.codigo,
+              fabrica: actual.solicitudes[l.indice]?.fabrica ?? null,
+            },
+          ],
+    );
+  const asignadas = new Set(lineasReparto().flatMap((l) => (l.fabrica ? [l.fabrica] : [])));
+  const todasAsignadas = lineasReparto().every((l) => l.fabrica);
+  const textoGenerar = todasAsignadas && asignadas.size === 1 ? 'Generar nota de pedido' : 'Generar notas de pedido';
   async function generarNota() {
     if (ocupado) return;
-    const r = await pedirNota();
-    if (r) await flujo({ tipo: 'generar_nota', fabrica: r.fabrica });
+    const r = await pedirReparto({ lineas: lineasReparto(), generar: true });
+    if (r) await flujo({ tipo: 'generar_nota', ...(r.asignaciones.length ? { asignaciones: r.asignaciones } : {}) });
   }
+  async function repartir() {
+    if (ocupado) return;
+    const r = await pedirReparto({ lineas: lineasReparto(), generar: false });
+    if (r?.asignaciones.length) await flujo({ tipo: 'asignar_fabricas', asignaciones: r.asignaciones });
+  }
+  /** Inicio o término de la producción de una nota, con el efecto que tiene sobre el pedido. */
+  const pasoProduccion = (nota: NotaPedido) => {
+    const etapa = etapaProduccion(nota);
+    const fabrica = fabricaDeNota(nota);
+    const en = variasFabricas ? ` en ${fabrica}` : '';
+    if (etapa === 'pendiente')
+      return {
+        etiqueta: `Iniciar producción${en}`,
+        accion: () =>
+          operar(
+            'iniciar_produccion',
+            `¿Iniciar producción${en}?`,
+            variasFabricas
+              ? `La nota de pedido ${numeroNota(nota)} pasa a «En producción»: queda registrado que el pedido entró a la fábrica de ${fabrica}.`
+              : 'La operación pasa a «En producción»: queda registrado que el pedido entró a fábrica.',
+            `Iniciar producción${en}`,
+            nota,
+          ),
+      };
+    if (etapa === 'en_produccion') {
+      const ultima = vigentes.every((n) => n === nota || etapaProduccion(n) === 'terminada');
+      return {
+        etiqueta: `Marcar producción terminada${en}`,
+        accion: () =>
+          operar(
+            'produccion_terminada',
+            `¿Producción terminada${en}?`,
+            !ultima
+              ? `Queda registrado que ${fabrica} terminó su parte. El pedido pasa a despacho cuando terminen todas las fábricas.`
+              : pagado < actual.montos.total
+                ? `Queda registrado que fábrica terminó el pedido; faltan ${pesos(saldo)} para poder despacharlo.`
+                : 'Queda registrado que fábrica terminó el pedido; ya está pagado y puede prepararse el despacho.',
+            `Marcar producción terminada${en}`,
+            nota,
+          ),
+      };
+    }
+    return null;
+  };
+  const produciendo = aprobada && pagado >= pagoMinimoNP && (operacionActual === 'pedido_generado' || operacionActual === 'en_produccion');
   const previo = retrocesoOperativo(actual);
   async function volverAtras() {
     if (!previo || ocupado) return;
@@ -121,7 +199,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   }
   // Mismas condiciones que `desaprobar` en el servidor: sin nota, pagos ni factura.
   const puedeDesaprobar =
-    aprobada && !actual.nota && !pagosRegistrados.length && actual.facturacion?.estado !== 'facturada';
+    aprobada && !notas.length && !pagosRegistrados.length && actual.facturacion?.estado !== 'facturada';
   const desaprobar = () =>
     void confirmarPaso(
       '¿Deshacer la aprobación?',
@@ -148,22 +226,38 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   };
   const siguiente = (() => {
     if (!aprobada) return null;
-    if (!actual.nota || actual.nota.anulada)
+    if (!vigentes.length)
       return pagado < pagoMinimoNP
         ? { titulo: 'Registrar anticipo', detalle: `La nota de pedido se habilita al registrar ${pesos(pagoMinimoNP)} (${ANTICIPO_TEXTO}).`, etiqueta: 'Ir a pagos', accion: irAPago }
         : {
-            titulo: 'Generar nota de pedido',
-            detalle: 'El anticipo está registrado. Prepara el documento para fábrica.',
-            etiqueta: 'Generar nota de pedido',
+            titulo: textoGenerar,
+            detalle: todasAsignadas
+              ? 'El anticipo está registrado. Prepara el documento de cada fábrica con sus ítems.'
+              : 'El anticipo está registrado. Elige la fábrica de cada ítem y prepara el documento de cada una.',
+            etiqueta: textoGenerar,
             accion: () => void generarNota(),
           };
     if (pagado < pagoMinimoNP)
       return { titulo: 'Completar anticipo', detalle: `La producción requiere al menos ${pesos(pagoMinimoNP)} pagado.`, etiqueta: 'Ir a pagos', accion: irAPago };
     switch (operacionActual) {
       case 'pedido_generado':
-        return { titulo: 'Iniciar producción', detalle: `La nota de pedido ${numeroNota(actual.nota)} ya está generada. Registra el inicio cuando pase a fábrica.`, etiqueta: 'Iniciar producción', accion: () => operar('iniciar_produccion', '¿Iniciar producción?', 'La operación pasa a «En producción»: queda registrado que el pedido entró a fábrica.', 'Iniciar producción') };
-      case 'en_produccion':
-        return { titulo: 'Cerrar producción', detalle: 'Confirma que fábrica terminó el pedido.', etiqueta: 'Marcar producción terminada', accion: () => operar('produccion_terminada', '¿Producción terminada?', pagado < actual.montos.total ? `Queda registrado que fábrica terminó el pedido; faltan ${pesos(saldo)} para poder despacharlo.` : 'Queda registrado que fábrica terminó el pedido; ya está pagado y puede prepararse el despacho.', 'Marcar producción terminada') };
+      case 'en_produccion': {
+        // Primero lo que falta iniciar; después, lo que falta terminar. Cada nota tiene además su botón abajo.
+        const nota =
+          vigentes.find((n) => etapaProduccion(n) === 'pendiente') ?? vigentes.find((n) => etapaProduccion(n) === 'en_produccion');
+        const paso = nota && pasoProduccion(nota);
+        if (!nota || !paso) return { titulo: 'Revisar la producción', detalle: 'Revisa el avance de cada nota de pedido.', etiqueta: null, accion: null };
+        const iniciar = etapaProduccion(nota) === 'pendiente';
+        const otra = variasFabricas ? vigentes.find((n) => n !== nota && etapaProduccion(n) === 'en_produccion') : undefined;
+        return {
+          titulo: iniciar ? paso.etiqueta : `Cerrar producción${variasFabricas ? ` en ${fabricaDeNota(nota)}` : ''}`,
+          detalle: iniciar
+            ? `${otra ? `${fabricaDeNota(otra)} ya está fabricando su nota (N° ${otra.numero}). ` : ''}La nota de pedido ${numeroNota(nota)} ya está generada. Registra el inicio cuando pase a fábrica.`
+            : `Confirma que ${variasFabricas ? fabricaDeNota(nota) : 'fábrica'} terminó ${variasFabricas ? 'su parte' : 'el pedido'}.`,
+          etiqueta: paso.etiqueta,
+          accion: paso.accion,
+        };
+      }
       case 'saldo_pendiente':
         return { titulo: 'Registrar saldo', detalle: `Faltan ${pesos(saldo)} para continuar con el despacho.`, etiqueta: 'Ir a pagos', accion: irAPago };
       case 'pagada':
@@ -184,6 +278,19 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
         return { titulo: 'Revisar el siguiente paso', detalle: 'Revisa pagos, producción y despacho para continuar.', etiqueta: 'Ir a pagos', accion: irAPago };
     }
   })();
+  const detallesPasos = {
+    Emitida: actual.fechaEmision ? fechaCorta(actual.fechaEmision) : null,
+    Aprobada: actual.fechaAprobacion ? fechaCorta(actual.fechaAprobacion) : null,
+    Anticipo: pagado > 0 ? porcentaje(porcentajePagado) : null,
+    Notas: vigentes.length ? vigentes.map((n) => `N° ${n.numero}`).join(' y ') : null,
+    Producción: vigentes.length
+      ? vigentes.length > 1
+        ? `${vigentes.filter((n) => etapaProduccion(n) === 'terminada').length} de ${vigentes.length} fábricas`
+        : etiquetaEtapa[etapaProduccion(vigentes[0])]
+      : null,
+    Despacho: actual.despacho?.transporte && !faltaTransportista ? actual.despacho.transporte : null,
+    Facturada: actual.facturacion?.estado === 'facturada' ? 'Registrada' : null,
+  };
   return (
     <>
       <section className="quote-workflow" aria-labelledby="seguimiento-title">
@@ -195,6 +302,19 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           </div>
           {(aprobada || pagado > 0) && <span className="status">{porcentaje(porcentajePagado)} pagado</span>}
         </div>
+        {(aprobada || estado === 'emitida') && (
+          <LineaPasos
+            datos={{
+              estado,
+              operacion: operacionActual,
+              notas: vigentes.length,
+              pagado,
+              total: actual.montos.total,
+              facturada: actual.facturacion?.estado === 'facturada',
+            }}
+            detalles={detallesPasos}
+          />
+        )}
         {aprobada && (
           <div className="workflow-focus">
             <div className="workflow-progress">
@@ -206,7 +326,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
               <small>{porcentaje(porcentajePagado)} pagado · {pesos(saldo)} pendiente</small>
             </div>
             {siguiente && (
-              <div className="workflow-next">
+              <div className="workflow-next" id="siguiente-accion">
                 <span>Siguiente acción</span>
                 <h4>{siguiente.titulo}</h4>
                 <p>{siguiente.detalle}</p>
@@ -227,6 +347,54 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
                 )}
               </div>
             )}
+          </div>
+        )}
+        {aprobada && notas.length > 0 && (
+          <div className="workflow-notas" aria-labelledby="notas-pedido-title">
+            <h4 id="notas-pedido-title">{notas.length > 1 ? 'Notas de pedido' : 'Nota de pedido'}</h4>
+            <ul>
+              {notas.map((n) => {
+                const paso = produciendo && variasFabricas && !n.anulada ? pasoProduccion(n) : null;
+                return (
+                  <li key={n.pdf}>
+                    <span className="workflow-nota">
+                      <strong>{n.fabrica ? `Fábrica ${nombreFabrica[n.fabrica]}` : 'Sin fábrica asignada'}</strong>
+                      <span>
+                        N° {n.numero} · {n.montos.lineas.length} ítem{n.montos.lineas.length === 1 ? '' : 's'}
+                      </span>
+                    </span>
+                    <span className={`status${n.anulada ? ' anulada' : ''}`}>
+                      {n.anulada ? 'Anulada' : etiquetaEtapa[etapaProduccion(n)]}
+                    </span>
+                    {paso && (
+                      <button type="button" className="button secondary small" disabled={ocupado} onClick={paso.accion}>
+                        {paso.etiqueta}
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+        {/* El reparto no cambia la cotización del cliente: se prepara desde la emisión, sin crear una revisión. */}
+        {(aprobada || estado === 'emitida') && !notas.length && (
+          <div className="workflow-notas" aria-labelledby="reparto-title">
+            <h4 id="reparto-title">Fábricas</h4>
+            <p className="muted">
+              {(() => {
+                const lineas = lineasReparto();
+                const partes = FABRICAS.map((f) => [f, lineas.filter((l) => l.fabrica === f).length] as const)
+                  .filter(([, n]) => n)
+                  .map(([f, n]) => `${nombreFabrica[f]}: ${n} ítem${n === 1 ? '' : 's'}`);
+                const sin = lineas.filter((l) => !l.fabrica).length;
+                if (sin) partes.push(`${partes.length ? 'sin' : 'Sin'} fábrica: ${sin} ítem${sin === 1 ? '' : 's'}`);
+                return `${partes.join(' · ')}. Cada fábrica recibe su propia nota de pedido con sus ítems.`;
+              })()}
+            </p>
+            <button type="button" className="button secondary small" disabled={ocupado} onClick={() => void repartir()}>
+              Repartir entre fábricas
+            </button>
           </div>
         )}
         <div className="workflow-states">
@@ -250,7 +418,13 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             <p className="muted">Los pagos se registran cuando el cliente aprueba la cotización.</p>
           </div>
         )}
-        {aprobada && (
+        {aprobada && <h4 className="workflow-grupo">Pagos</h4>}
+        {aprobada && saldo <= 0 && (
+          <p className="workflow-saldado">
+            Pagado en su totalidad: {pesos(pagado)} de {pesos(actual.montos.total)}.
+          </p>
+        )}
+        {aprobada && saldo > 0 && (
           // Sin noValidate: una fecha a medio escribir llega vacía y el servidor pondría la de hoy; el navegador la frena.
           <form className="workflow-payment" onSubmit={registrarPago}>
             <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input id="monto-recibido" inputMode="numeric" value={montoPago} onChange={(e) => { setMontoPago(e.target.value); setErrorPago(''); }} aria-invalid={errorPago ? true : undefined} aria-describedby={errorPago ? 'monto-recibido-error' : undefined} onBlur={() => { const n = leerPesos(montoPago); if (Number.isSafeInteger(n) && n > 0) setMontoPago(n.toLocaleString('es-CL')); }} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
@@ -283,6 +457,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             ))}
           </ul>
         )}
+        {aprobada && <h4 className="workflow-grupo">Facturación</h4>}
         {aprobada && (
           actual.facturacion?.estado === 'facturada' ? (
             <div className="workflow-actions">
@@ -313,6 +488,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             </form>
           )
         )}
+        <h4 className="workflow-grupo">Notas internas</h4>
         <form className="workflow-comment" onSubmit={guardarComentario}>
           <label className="ia-field"><span>Nota interna</span><textarea value={comentario} onChange={(e) => setComentario(e.target.value)} rows={2} maxLength={2000} placeholder="Seguimiento, acuerdos o instrucciones internas" disabled={ocupado} /></label>
           <button type="submit" className="button secondary small" disabled={ocupado || !comentario.trim()}>Agregar nota</button>
@@ -326,7 +502,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       {/* Fuera de la sección: sus botones no se confunden con los del seguimiento. */}
       {confirmacion}
       {dialogoRetroceso}
-      {dialogoNota}
+      {dialogoReparto}
     </>
   );
 }

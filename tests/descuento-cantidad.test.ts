@@ -912,7 +912,7 @@ describe('documentos y nota de pedido', () => {
     ).cotizacion;
     const a = (await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: q.id, actualizada: q.actualizada }))
       .cotizacion;
-    expect(a.nota!.montos).toMatchObject({
+    expect(a.notas[0].montos).toMatchObject({
       descuentoPorcentaje: 0,
       descuento: 0,
       flete: 0,

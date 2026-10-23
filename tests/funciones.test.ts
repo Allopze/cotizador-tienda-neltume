@@ -364,7 +364,7 @@ describe('A3: medidas pedidas en las líneas', () => {
       [1, null, 2.1, '2X4'],
     ]);
     const a = (await aprobarPagarYGenerarNota(servicio, e)).cotizacion;
-    expect(a.nota!.montos.lineas[0].anchoSolicitado).toBe(0.82);
+    expect(a.notas[0].montos.lineas[0].anchoSolicitado).toBe(0.82);
     expect(vi.mocked(plantilla).mock.calls.at(-1)![1].montos.lineas[1].medidaSolicitada).toBe('2X4');
   });
 });
@@ -386,14 +386,14 @@ describe('Nuevas acciones', () => {
       })
     ).cotizacion;
     expect(a.aprobadaPor).toBe('Paula');
-    expect(a.nota).toBeNull();
+    expect(a.notas).toEqual([]);
     a = (
       await servicio.ejecutar({ tipo: 'pago', id: a.id, actualizada: a.actualizada, monto: Math.ceil(a.montos.total * 0.5) })
     ).cotizacion;
     a = (
       await servicio.ejecutar({ tipo: 'generar_nota', fabrica: 'panguipulli', id: a.id, actualizada: a.actualizada })
     ).cotizacion;
-    expect(a.nota!.despacho).toMatchObject({ direccion: 'Los Carrera #450', transporte: 'Camión propio' });
+    expect(a.notas[0].despacho).toMatchObject({ direccion: 'Los Carrera #450', transporte: 'Camión propio' });
     expect(vi.mocked(plantilla).mock.calls.at(-1)![1]).toMatchObject({ tipo: 'nota', autor: 'Paula' });
     const anulada = (
       await servicio.ejecutar({
@@ -403,7 +403,7 @@ describe('Nuevas acciones', () => {
         motivo: 'Cliente desistió',
       })
     ).cotizacion;
-    expect([anulada.estado, anulada.anuladaPor, anulada.motivoAnulacion, anulada.nota!.anulada]).toEqual([
+    expect([anulada.estado, anulada.anuladaPor, anulada.motivoAnulacion, anulada.notas[0].anulada]).toEqual([
       'anulada',
       'Paula',
       'Cliente desistió',
@@ -510,7 +510,7 @@ describe('Nuevas acciones', () => {
     expect(invalido.avisos?.[0]).toMatch(/dígito verificador/);
     const e = (await emitir(invalido.cotizacion)).cotizacion;
     const a = (await aprobarPagarYGenerarNota(servicio, e)).cotizacion;
-    expect(a.nota!.montos).toMatchObject({ descuento: 0, flete: 0, neto: 400, subtotal: 400 });
+    expect(a.notas[0].montos).toMatchObject({ descuento: 0, flete: 0, neto: 400, subtotal: 400 });
   });
 
   it('la línea de flete se edita como un producto: descripción, cantidad y unitario, sin descuento', async () => {

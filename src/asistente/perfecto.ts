@@ -51,6 +51,7 @@ export const INTERMEDIAS: Record<string, (final: Esperado) => Lectura[]> = {
   'i2-madera-no-fija-alto': ({ items: [a] }) => [{ items: [item(a, { madera: null })] }],
   'i2-alto-no-fija-madera': ({ items: [a] }) => [{ items: [item(a, { alto: null })] }],
   'i6-responde-segundo-pendiente': ({ items: [a, b] }) => [{ items: [a, item(b, { alto: null })] }],
+  'fabrica-reparto-despues': ({ items }) => [{ items: items.map((i) => item(i, { fabrica: undefined })) }],
 };
 
 type Solicitud = ReturnType<typeof solicitudDe>;
@@ -81,6 +82,7 @@ function solicitudDe(i: ItemEsperado, conversacion: string) {
       iva: 'neto' | 'incluido' | null;
     } | null,
     descuento: i.descuento ?? null,
+    ...(i.fabrica ? { fabrica: i.fabrica } : {}),
   };
 }
 

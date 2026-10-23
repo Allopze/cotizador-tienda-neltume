@@ -194,7 +194,7 @@ describe('3.3 · anular después del despacho o de facturar', () => {
     q = await t.operar(q, 'completada');
     await expect(t.sobre(q, { tipo: 'anular' })).rejects.toMatchObject(rechazo);
     expect(t.leer(q.id)).toMatchObject({ estado: 'aprobada', estadoOperativo: 'completada' });
-    expect(t.leer(q.id).nota?.anulada).toBe(false);
+    expect(t.leer(q.id).notas[0]?.anulada).toBe(false);
     expect(t.eventos(q.id).map((e) => e.tipo)).not.toContain('anulada');
   });
 
@@ -428,11 +428,11 @@ describe('3.9 · nota de pedido', () => {
   it('reservarNota toma el mayor entre el contador y MAX(numero)+1', async () => {
     const t = await setup();
     const primera = CORRELATIVOS_NOTA.panguipulli;
-    expect((await t.conNota()).nota?.numero).toBe(primera);
+    expect((await t.conNota()).notas[0]?.numero).toBe(primera);
     // Un respaldo viejo restaurado deja el contador atrás de las notas guardadas.
     t.almacen.baseDatos().prepare("UPDATE correlativos_nota SET siguiente = 1 WHERE fabrica = 'panguipulli'").run();
     const segunda = await t.conNota();
-    expect(segunda.nota?.numero).toBe(primera + 1);
+    expect(segunda.notas[0]?.numero).toBe(primera + 1);
     expect(t.almacen.correlativosNota().panguipulli).toBe(primera + 2);
     // Con el contador adelante (una nota que falló tras reservar), manda el contador.
     t.almacen.baseDatos().prepare('UPDATE correlativos_nota SET siguiente = ? WHERE fabrica = ?').run(primera + 10, 'panguipulli');
@@ -451,14 +451,14 @@ describe('3.9 · nota de pedido', () => {
       .prepare('SELECT despacho_destino, despacho_valor FROM notas_pedido WHERE cotizacion_id = ?')
       .get(q.id);
     expect(fila).toEqual({ despacho_destino: 'Osorno', despacho_valor: 25_000 });
-    expect(new Almacen(t.dir).obtener(q.id)!.nota!.despacho).toMatchObject({
+    expect(new Almacen(t.dir).obtener(q.id)!.notas[0].despacho).toMatchObject({
       transporte: 'Starken',
       destino: 'Osorno',
       valor: 25_000,
     });
     // Cambiar después el despacho de la cotización no toca la nota.
     q = await t.ir(q, { tipo: 'despacho', despacho: { destino: 'Temuco' } });
-    expect(new Almacen(t.dir).obtener(q.id)!.nota!.despacho).toMatchObject({
+    expect(new Almacen(t.dir).obtener(q.id)!.notas[0].despacho).toMatchObject({
       destino: 'Osorno',
       valor: 25_000,
     });
@@ -524,15 +524,15 @@ describe('3.10 · notas de pedido por fábrica', () => {
     const a = await t.conNota(undefined, 'panguipulli');
     const b = await t.conNota(undefined, 'santiago');
     const c = await t.conNota(undefined, 'panguipulli');
-    expect([a.nota, b.nota, c.nota]).toMatchObject([
+    expect([a.notas[0], b.notas[0], c.notas[0]]).toMatchObject([
       { numero: 577, fabrica: 'panguipulli', pdf: 'nota-pedido-panguipulli-577.pdf' },
       { numero: 59, fabrica: 'santiago', pdf: 'nota-pedido-santiago-59.pdf' },
       { numero: 578, fabrica: 'panguipulli' },
     ]);
     expect(t.almacen.correlativosNota()).toEqual({ panguipulli: 579, santiago: 60 });
     // Se guarda y se lee: la cotización y el listado del historial.
-    expect(t.leer(b.id).nota?.fabrica).toBe('santiago');
-    expect(t.almacen.listar({}).cotizaciones.find((q) => q.id === b.id)?.nota).toMatchObject({ numero: 59, fabrica: 'santiago' });
+    expect(t.leer(b.id).notas[0]?.fabrica).toBe('santiago');
+    expect(t.almacen.listar({}).cotizaciones.find((q) => q.id === b.id)?.notas[0]).toMatchObject({ numero: 59, fabrica: 'santiago' });
     expect(t.eventos(b.id).find((e) => e.tipo === 'nota_generada')?.detalle).toBe('Nota de pedido N° 59 · Santiago · precio fábrica');
     expect(vi.mocked(plantilla).mock.calls.map((c) => c[1]).filter((d) => d.tipo === 'nota')).toMatchObject([
       { numero: 577, fabrica: 'panguipulli' },
@@ -549,7 +549,7 @@ describe('3.10 · notas de pedido por fábrica', () => {
     expect(() => t.almacen.fijarCorrelativoNota('santiago', 0)).toThrow();
     // La otra fábrica no tiene notas: puede partir donde sea, también en un número que ya usa Santiago.
     t.almacen.fijarCorrelativoNota('panguipulli', 59);
-    expect((await t.conNota(undefined, 'panguipulli')).nota?.numero).toBe(59);
+    expect((await t.conNota(undefined, 'panguipulli')).notas[0]?.numero).toBe(59);
   });
 
   it('una nota anterior a las fábricas queda sin fábrica y se le asigna sin chocar con las nuevas', async () => {
@@ -557,7 +557,7 @@ describe('3.10 · notas de pedido por fábrica', () => {
     const antigua = await t.conNota();
     const db = t.almacen.baseDatos();
     db.prepare("UPDATE notas_pedido SET fabrica = NULL, numero = 900, pdf = 'nota-pedido-900.pdf' WHERE cotizacion_id = ?").run(antigua.id);
-    expect(t.leer(antigua.id).nota).not.toHaveProperty('fabrica');
+    expect(t.leer(antigua.id).notas[0]).not.toHaveProperty('fabrica');
     expect(t.almacen.notasSinFabrica()).toMatchObject([{ numero: 900, cliente: 'Ana Soto' }]);
     // Las notas sin fábrica siguen sin repetir número entre ellas.
     const otra = await t.conNota();
@@ -571,7 +571,7 @@ describe('3.10 · notas de pedido por fábrica', () => {
     expect(() => t.almacen.asignarFabricaNota(901, 'panguipulli')).toThrow('No hay una nota de pedido N° 901 sin fábrica');
     const version = t.leer(antigua.id).actualizada;
     t.almacen.asignarFabricaNota(900, 'panguipulli');
-    expect(t.leer(antigua.id).nota).toMatchObject({ numero: 900, fabrica: 'panguipulli', pdf: 'nota-pedido-900.pdf' });
+    expect(t.leer(antigua.id).notas[0]).toMatchObject({ numero: 900, fabrica: 'panguipulli', pdf: 'nota-pedido-900.pdf' });
     expect(t.leer(antigua.id).actualizada > version).toBe(true);
     expect(t.eventos(antigua.id).at(-1)?.detalle).toBe('Nota de pedido N° 900 asignada a Panguipulli');
     expect(t.almacen.notasSinFabrica()).toEqual([]);

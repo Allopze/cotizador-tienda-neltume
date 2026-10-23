@@ -270,12 +270,21 @@ describe('#24 y #32 · número manual: último número y tope; 403 con código y
       expect(await numeracion(m.admin)).toEqual({
         status: 200,
         cache: 'no-store',
-        cuerpo: { ultimo: 322, siguiente: 323, tope: 1322 },
+        cuerpo: {
+          ultimo: 322,
+          siguiente: 323,
+          tope: 1322,
+          // Las notas de cada fábrica, desde su número inicial (ver CORRELATIVOS_NOTA).
+          notas: {
+            panguipulli: { ultimo: 576, siguiente: 577, tope: 1576 },
+            santiago: { ultimo: 58, siguiente: 59, tope: 1058 },
+          },
+        },
       });
       expect(m.db.prepare('SELECT siguiente_cotizacion AS n FROM correlativos').get()).toEqual({ n: 323 });
       // Tras emitir con el tope, el rango avanza desde ahí.
       expect((await m.sobre(m.admin, q, { tipo: 'emitir', numero: 1322 })).status).toBe(200);
-      expect((await numeracion(m.admin)).cuerpo).toEqual({ ultimo: 1322, siguiente: 1323, tope: 2322 });
+      expect((await numeracion(m.admin)).cuerpo).toMatchObject({ ultimo: 1322, siguiente: 1323, tope: 2322 });
       const invalido = await m.accion.GET(m.peticion('/api/accion?numeracion=si', { cookie: m.admin }));
       expect(invalido.status).toBe(400);
     } finally {

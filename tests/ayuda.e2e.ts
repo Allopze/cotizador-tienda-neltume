@@ -23,7 +23,7 @@ test('guía «Cómo funciona»: desde la pantalla vacía y el menú de cuenta, e
   for (const titulo of ['Los pasos de una cotización', 'Qué significa cada estado', 'Cómo deshacer', 'A quién pedir ayuda'])
     await expect(guia.getByRole('heading', { name: titulo, level: 2 })).toBeVisible();
   // El ciclo completo, con los nombres de los botones tal como se ven.
-  for (const paso of ['Emitir y generar PDF', 'Registrar aprobación del cliente', 'Registrar pago', 'Generar nota de pedido', 'Registrar despacho', 'Marcar como facturada'])
+  for (const paso of ['Emitir y generar PDF', 'Registrar aprobación del cliente', 'Registrar pago', 'Generar notas de pedido', 'Repartir entre fábricas', 'Cambiar N°', 'Registrar despacho', 'Marcar como facturada'])
     await expect(guia).toContainText(`«${paso}»`);
   await expect(guia).toContainText('50 %');
   for (const estado of ['Borrador', 'Emitida', 'Vencida', 'Aprobada', 'Reemplazada', 'Anulada'])
@@ -54,10 +54,12 @@ test('guía «Cómo funciona»: desde la pantalla vacía y el menú de cuenta, e
     page.getByRole('link', { name: 'Cómo funciona', exact: true, includeHidden: true }),
   ).toHaveAttribute('aria-current', 'page');
 
-  // En escritorio el enlace está a la vista en la cabecera, sin desbordarla.
+  // En escritorio el menú de cuenta es el mismo y la cabecera no se desborda.
   for (const width of [820, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
+    await page.getByRole('button', { name: /Cuenta/ }).click();
     await expect(page.getByRole('banner').getByRole('link', { name: 'Cómo funciona', exact: true })).toBeVisible();
     await sinScrollHorizontal(page);
+    await page.keyboard.press('Escape');
   }
 });

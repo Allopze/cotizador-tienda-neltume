@@ -53,6 +53,8 @@ describe('Proveedor CommandCode', () => {
     expect(body.tools.map((t: { name: string }) => t.name)).toEqual([
       'modificar_cotizacion',
       'aprobar_cotizacion',
+      'asignar_fabricas',
+      'cambiar_numero',
       'responder',
     ]);
     expect(JSON.parse(body.messages[0].content)).toEqual(contexto);

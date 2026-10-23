@@ -1,6 +1,6 @@
 // Formas de las respuestas de la API usadas por la interfaz (copiadas de src/servidor: no se importa
 // código de servidor en el cliente). Ver contrato-api del backend v6.
-import type { Cotizacion, EventoCotizacion, ResumenCotizacion } from '@/negocio/estado';
+import type { Cotizacion, EventoCotizacion, Fabrica, ResumenCotizacion } from '@/negocio/estado';
 import type { Familia, Producto, ReferenciaItem, SolicitudItem } from '@/catalogo/tipos';
 import type { Cliente } from '@/catalogo/tipos';
 import type { OpcionCotizacion } from '@/servidor/referencias';
@@ -19,8 +19,19 @@ export interface CambiosCotizacion {
 export interface Resultado {
   cotizacion: Cotizacion;
   archivo?: string;
+  /** Al generar las notas de pedido: el PDF de cada una (`archivo` es el de la primera). */
+  archivos?: string[];
   seleccion?: OpcionCotizacion[];
   confirmar?: { id: string; numero: number; actualizada: string; vence: string | null; vencida: boolean };
+  /** Cambio de número pedido por chat, a confirmar con la acción `cambiar_numero`. */
+  confirmarNumero?: {
+    id: string;
+    actualizada: string;
+    documento: 'cotizacion' | 'nota';
+    fabrica?: Fabrica;
+    actual: number;
+    numero: number;
+  };
   avisos?: string[];
   cambios?: CambiosCotizacion;
   eliminada?: true;

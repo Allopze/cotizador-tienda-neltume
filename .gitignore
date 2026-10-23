@@ -39,3 +39,6 @@ compose.override.yaml
 
 # Capturas de `npm run ss`.
 capturas/
+
+# Modelos 3D de las puertas (228 MB): solo sirven para redibujar con scripts/dibujos/generar.sh.
+modelos-3d/
