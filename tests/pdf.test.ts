@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { existsSync } from 'node:fs';
-import { mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { clienteVacio, type Producto } from '../src/catalogo/tipos';
@@ -437,8 +437,8 @@ describe('Plantillas', () => {
 
   it('cada nota nombra a la otra nota de la cotización, y una puerta sin modelo 3D lleva el esquema genérico', async () => {
     await aislarBaseDatos();
-    const ranco = { ...puerta, codigo: 'RAN-O-3-A', modelo: 'RANCO', descripcion: 'RANCO PINO OREGON 0,80 A 0,85 MT X 2 MT' };
-    const montos = cotizar([{ producto: ranco, cantidad: 2, anchoSolicitado: 0.8, altoSolicitado: 2 }], { ajuste: 0, iva: 0.19 });
+    const sinDibujo = { ...puerta, codigo: 'ESP-O-3-A', modelo: 'ESPECIAL', descripcion: 'ESPECIAL PINO OREGON 0,80 A 0,85 MT X 2 MT' };
+    const montos = cotizar([{ producto: sinDibujo, cantidad: 2, anchoSolicitado: 0.8, altoSolicitado: 2 }], { ajuste: 0, iva: 0.19 });
     const html = await plantilla(cotizacion(), {
       tipo: 'nota', numero: 577, fabrica: 'panguipulli', montos, fecha: '2026-09-28T12:00:00.000Z',
       otrasNotas: [{ fabrica: 'santiago', numero: 59, items: 1 }],
@@ -446,9 +446,28 @@ describe('Plantillas', () => {
     expect(textoVisible(html)).toMatch(/La cotización N° 325 tiene 2 notas de pedido\. La otra va a Santiago,\s+N° 59\s+, con 1 ítem\./);
     expect(html).toContain('<p class="fabrica"><b>Fábrica Panguipulli</b></p>');
     expect(html).toContain('Recibido por fábrica Panguipulli');
-    // Ranco no tiene dibujo: esquema genérico, con las cotas igual.
+    // Un modelo sin dibujo: esquema genérico, con las cotas igual.
     expect(html).not.toContain('neltume-dibujo:');
     expect(html).toMatch(/<g class="generico">[^]*>800<\/text>[^]*>2000<\/text>/);
+  });
+
+  it('cada modelo de puerta de la planilla de precios tiene su dibujo, y el PNG mide lo que dice el manifiesto', async () => {
+    const { dibujosModelos, normalizarModelo, RECURSOS } = await import('../src/servidor/dibujos');
+    const modelos = [
+      'ANCACOMOE', 'BAKER', 'CALAFQUEN', 'CHAN CHAN', 'CHAUQUEN', 'COCHAMO', 'COZ COZ', 'ENCO', 'ENSENADA', 'FUTALEUFU',
+      'FUTRONO', 'FUY', 'HUELLAHUE', 'HUERQUEHUE', 'Huilo Huilo', 'LANCO', 'LICAN', 'LIPINZA', 'LOS LAGOS', 'LOS RIOS',
+      'MALALHUE', 'MARCO', 'MOLCO', 'NELTUME', 'PALENA', 'PANGUIPULLI', 'PETROHUE', 'PIRIHUEICO', 'PUÑIR', 'RANCO',
+      'RIÑIHUE', 'RUPANCO', 'TOLEDO', 'TOLTEN', 'YELCHO',
+    ];
+    const dibujos = dibujosModelos();
+    for (const modelo of modelos) {
+      const dibujo = dibujos.get(normalizarModelo(modelo));
+      expect(dibujo, `${modelo} no tiene dibujo`).toBeDefined();
+      const png = await readFile(join(RECURSOS, 'dibujos', dibujo!.archivo));
+      expect([png.readUInt32BE(16), png.readUInt32BE(20)], `${dibujo!.archivo}: tamaño del PNG`).toEqual(dibujo!.px);
+      // El marco no tiene hoja que acotar; las puertas sí.
+      if (modelo !== 'MARCO') expect(dibujo!.hoja, `${modelo}: sin la hoja para las cotas`).not.toBeNull();
+    }
   });
 
   it('al imprimir, los dibujos y las fuentes de la plantilla se incrustan; una referencia sin archivo queda igual', async () => {

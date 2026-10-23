@@ -9,5 +9,8 @@ snapshot de cada documento guarda solo la referencia (`neltume-fuente:…`, `nel
 - `dibujos/`: dibujos de línea de cada modelo de puerta y del marco, sacados de los modelos 3D de `modelos-3d/puertas`
   con `scripts/dibujos/generar.sh` (Blender). `dibujos.json` dice el archivo de cada modelo del catálogo y dónde está la
   hoja en el dibujo, para las cotas de la nota de pedido. Un modelo sin dibujo se imprime con el esquema genérico.
-  Huilo Huilo, Los Ríos y Los Lagos no tienen modelo 3D: se dibujaron a mano con `scripts/dibujos/dibujos-2d.py` a
-  partir de las fotos de la planilla de enchapadas. Para otro modelo hace falta una foto o un plano de referencia.
+  Los demás modelos no tienen modelo 3D y se dibujaron a mano con `scripts/dibujos/dibujos-2d.py`, sobre el marco de
+  Ancacomoe: Huilo Huilo, Los Ríos y Los Lagos, a partir de las fotos de la planilla de enchapadas; Calafquén,
+  Cochamó, Enco, Ensenada, Futaleufú, Fuy, Palena, Petrohué, Ranco, Rupanco y Yelcho, a partir de las fotos de
+  puertasneltume.cl. Todos dibujan una hoja de 800 × 2000 mm: Enco y Ranco son correderas más anchas en la foto, y la
+  de Rupanco trae un paño fijo al lado que no se dibuja. Para otro modelo hace falta una foto o un plano de referencia.
