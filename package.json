@@ -20,6 +20,7 @@
     "primer-arranque": "tsx scripts/primer-arranque.ts",
     "feriados": "tsx scripts/feriados.ts",
     "evaluar:ia": "tsx --env-file-if-exists=.env.local scripts/evaluar-ia.ts",
+    "evaluar:numeros": "tsx --env-file-if-exists=.env.local scripts/evaluar-numeros.ts",
     "evaluar:regresion": "tsx --env-file-if-exists=.env.local scripts/evaluar-ia.ts --min 0.95 --min-perfectos 0.95 --max-silenciosos 0 --max-falsas 0.05 --repeticiones 3",
     "paridad:excel": "tsx scripts/paridad-excel.ts",
     "carga": "tsx scripts/carga.ts",

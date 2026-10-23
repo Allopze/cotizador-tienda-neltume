@@ -1,0 +1,179 @@
+[
+  {
+    "id": "nota-santiago",
+    "descripcion": "Número de la nota de una fábrica nombrada",
+    "mensaje": "la nota de Santiago debe ser la 61",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        },
+        {
+          "fabrica": "santiago",
+          "numero": 59
+        }
+      ]
+    },
+    "esperado": {
+      "herramienta": "cambiar_numero",
+      "documento": "nota",
+      "fabrica": "santiago",
+      "numero": 61
+    }
+  },
+  {
+    "id": "nota-panguipulli-actual",
+    "descripcion": "Con el número de hoy y el nuevo en el mensaje",
+    "mensaje": "la orden de Panguipulli es la 580, no la 577",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        },
+        {
+          "fabrica": "santiago",
+          "numero": 59
+        }
+      ]
+    },
+    "esperado": {
+      "herramienta": "cambiar_numero",
+      "documento": "nota",
+      "fabrica": "panguipulli",
+      "numero": 580
+    }
+  },
+  {
+    "id": "cotizacion-explicita",
+    "descripcion": "Cambio del número de la cotización",
+    "mensaje": "cambia el número de la cotización a 340",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        },
+        {
+          "fabrica": "santiago",
+          "numero": 59
+        }
+      ]
+    },
+    "esperado": {
+      "herramienta": "cambiar_numero",
+      "documento": "cotizacion",
+      "fabrica": null,
+      "numero": 340
+    }
+  },
+  {
+    "id": "cotizacion-actual-nuevo",
+    "descripcion": "Los dos números de la cotización escritos",
+    "mensaje": "la 329 tiene que ser la 335",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        },
+        {
+          "fabrica": "santiago",
+          "numero": 59
+        }
+      ]
+    },
+    "esperado": {
+      "herramienta": "cambiar_numero",
+      "documento": "cotizacion",
+      "fabrica": null,
+      "numero": 335
+    }
+  },
+  {
+    "id": "cotizacion-emitida",
+    "descripcion": "En una cotización emitida sin notas",
+    "mensaje": "la cotización debe quedar con el número 400",
+    "documentos": {
+      "estado": "emitida",
+      "numero": 329,
+      "notas": []
+    },
+    "esperado": {
+      "herramienta": "cambiar_numero",
+      "documento": "cotizacion",
+      "fabrica": null,
+      "numero": 400
+    }
+  },
+  {
+    "id": "nota-unica",
+    "descripcion": "Una sola nota: la fábrica es la de esa nota, aunque el mensaje no la nombre",
+    "mensaje": "cambia el número de la nota a 600",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        }
+      ]
+    },
+    "esperado": {
+      "herramienta": "cambiar_numero",
+      "documento": "nota",
+      "fabrica": "panguipulli",
+      "numero": 600
+    }
+  },
+  {
+    "id": "pregunta-no-es-cambio",
+    "descripcion": "Preguntar por un número no es pedir cambiarlo",
+    "mensaje": "¿qué número tiene la nota de Santiago?",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        },
+        {
+          "fabrica": "santiago",
+          "numero": 59
+        }
+      ]
+    },
+    "esperado": null
+  },
+  {
+    "id": "fabrica-no-es-numero",
+    "descripcion": "Repartir fábricas no es cambiar un número",
+    "mensaje": "las Coz Coz van a Santiago",
+    "documentos": {
+      "estado": "aprobada",
+      "numero": 329,
+      "notas": [
+        {
+          "fabrica": "panguipulli",
+          "numero": 577
+        },
+        {
+          "fabrica": "santiago",
+          "numero": 59
+        }
+      ]
+    },
+    "esperado": null
+  }
+]
