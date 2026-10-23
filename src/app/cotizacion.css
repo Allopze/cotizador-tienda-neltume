@@ -465,8 +465,9 @@ td small {
   align-items: center;
   gap: 6px 8px;
 }
+/* El nombre en su línea y las acciones debajo: con «Cambiar N°» y una nota por fábrica, en la misma fila se cortaban. */
 .quote-docs .doc-nombre {
-  flex: 1 1 160px;
+  flex: 1 1 100%;
   font-size: var(--fs-sm);
 }
 .review-note {
@@ -1337,4 +1338,51 @@ td small {
 /* «Volver al paso anterior» acompaña a la acción principal sin competir con ella. */
 .workflow-next .workflow-atras {
   margin-top: 0;
+}
+
+/* Notas de pedido: una por fábrica, cada una con su avance de producción. */
+.workflow-notas {
+  display: grid;
+  gap: 8px;
+}
+.workflow-notas h4 {
+  margin: 0;
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.workflow-notas p {
+  margin: 0;
+}
+.workflow-notas > .button {
+  justify-self: start;
+}
+.workflow-notas ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.workflow-notas li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  background: var(--surface);
+}
+.workflow-nota {
+  display: grid;
+  flex: 1 1 180px;
+  gap: 2px;
+  min-width: 0;
+}
+.workflow-nota span {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.workflow-notas .workflow-nota + .status {
+  flex: none;
 }

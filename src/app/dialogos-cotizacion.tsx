@@ -585,15 +585,33 @@ function FormRetroceso({
   );
 }
 
-/** Nota de pedido: se elige a qué fábrica va; cada una numera sus notas por separado. */
-export function useNotaPedido() {
-  const [pendiente, setPendiente] = useState<{ resolver: (r: { fabrica: Fabrica } | null) => void } | null>(null);
+/** Un ítem del pedido en el reparto entre fábricas, con la fábrica que tiene asignada (null si ninguna). */
+export interface LineaReparto {
+  indice: number;
+  nombre: string;
+  detalle: string | null;
+  fabrica: Fabrica | null;
+}
+interface DatosReparto {
+  lineas: LineaReparto[];
+  /** Al aceptar se generan las notas de pedido: exige fábrica en todos los ítems. Sin él, solo se guarda el reparto. */
+  generar: boolean;
+}
+type Asignaciones = { indice: number; fabrica: Fabrica | null }[];
+
+/**
+ * Reparto entre fábricas: quien cotiza elige la de cada ítem (no hay una por omisión). Para generar las notas de
+ * pedido, una por fábrica con sus ítems, todos deben tener fábrica; cada una numera sus notas por separado.
+ */
+export function useRepartoFabricas() {
+  const [pendiente, setPendiente] = useState<(DatosReparto & { resolver: (r: { asignaciones: Asignaciones } | null) => void }) | null>(null);
   const pedir = useCallback(
-    () => new Promise<{ fabrica: Fabrica } | null>((resolver) => setPendiente({ resolver })),
+    (datos: DatosReparto) =>
+      new Promise<{ asignaciones: Asignaciones } | null>((resolver) => setPendiente({ ...datos, resolver })),
     [],
   );
-  const primera = useRef<HTMLInputElement>(null);
-  const cerrar = (r: { fabrica: Fabrica } | null) => {
+  const cancelar = useRef<HTMLButtonElement>(null);
+  const cerrar = (r: { asignaciones: Asignaciones } | null) => {
     pendiente?.resolver(r);
     setPendiente(null);
   };
@@ -601,78 +619,264 @@ export function useNotaPedido() {
     <Dialogo
       abierto={!!pendiente}
       alCerrar={() => cerrar(null)}
-      titulo="¿Generar la nota de pedido?"
+      titulo={pendiente?.generar ? '¿Generar las notas de pedido?' : 'Repartir entre fábricas'}
       eyebrow="OPERACIÓN"
-      className="dialogo-confirmacion"
-      focoInicial={primera}
-      alerta
+      className="dialogo-confirmacion dialogo-reparto"
+      focoInicial={cancelar}
+      alerta={pendiente?.generar}
     >
-      {pendiente && <FormNotaPedido responder={cerrar} primera={primera} />}
+      {pendiente && <FormReparto datos={pendiente} responder={cerrar} cancelar={cancelar} />}
     </Dialogo>
   );
   return [pedir, elemento] as const;
 }
-function FormNotaPedido({
+function FormReparto({
+  datos,
   responder,
-  primera,
+  cancelar,
 }: {
-  responder: (r: { fabrica: Fabrica } | null) => void;
-  primera: RefObject<HTMLInputElement | null>;
+  datos: DatosReparto;
+  responder: (r: { asignaciones: Asignaciones } | null) => void;
+  cancelar: RefObject<HTMLButtonElement | null>;
 }) {
-  // Sin fábrica marcada: equivocarse manda el pedido a la fábrica que no lo hace y gasta un número suyo.
-  const [fabrica, setFabrica] = useState<Fabrica | null>(null);
+  const [fabricas, setFabricas] = useState<Map<number, Fabrica | null>>(
+    () => new Map(datos.lineas.map((l) => [l.indice, l.fabrica])),
+  );
   const [error, setError] = useState('');
+  const elegir = (indice: number, fabrica: Fabrica) => {
+    setFabricas((m) => new Map(m).set(indice, fabrica));
+    setError('');
+  };
+  const todas = (fabrica: Fabrica) => {
+    setFabricas(new Map(datos.lineas.map((l) => [l.indice, fabrica])));
+    setError('');
+  };
+  const sinFabrica = datos.lineas.filter((l) => !fabricas.get(l.indice));
+  const porFabrica = FABRICAS.map((f) => ({ f, n: datos.lineas.filter((l) => fabricas.get(l.indice) === f).length })).filter(
+    (x) => x.n,
+  );
+  const items = (n: number) => `${n} ítem${n === 1 ? '' : 's'}`;
+  function enviar(e: FormEvent) {
+    e.preventDefault();
+    if (datos.generar && sinFabrica.length) {
+      setError(`Elige la fábrica de ${sinFabrica.length === 1 ? 'un ítem' : `${sinFabrica.length} ítems`}: ${sinFabrica.map((l) => l.nombre).join(', ')}.`);
+      return;
+    }
+    responder({
+      asignaciones: datos.lineas
+        .filter((l) => (fabricas.get(l.indice) ?? null) !== l.fabrica)
+        .map((l) => ({ indice: l.indice, fabrica: fabricas.get(l.indice) ?? null })),
+    });
+  }
+  return (
+    <form onSubmit={enviar}>
+      <div className="dialogo-mensaje">
+        {datos.generar ? (
+          <p>
+            Se genera una nota de pedido por fábrica, cada una con sus ítems a precio de fábrica. Cada fábrica asigna su
+            siguiente N° de nota (no se reutiliza).
+          </p>
+        ) : (
+          <p>Elige qué fábrica hace cada ítem. Puedes cambiarlo hasta generar las notas de pedido.</p>
+        )}
+      </div>
+      <div className="reparto-todas" role="group" aria-label="Asignar todos los ítems">
+        {FABRICAS.map((f) => (
+          <button key={f} type="button" className="button secondary small" onClick={() => todas(f)}>
+            Todo a {nombreFabrica[f]}
+          </button>
+        ))}
+      </div>
+      <ul className="reparto-lineas">
+        {datos.lineas.map((l) => (
+          <li key={l.indice}>
+            <span className="reparto-producto">
+              <b>{l.nombre}</b>
+              {l.detalle && <small>{l.detalle}</small>}
+            </span>
+            <span className="reparto-opciones" role="radiogroup" aria-label={`Fábrica de ${l.nombre}`}>
+              {FABRICAS.map((f) => (
+                <label key={f} className="opcion-fabrica" title={productosFabrica[f]}>
+                  <input
+                    type="radio"
+                    name={`fabrica-${l.indice}`}
+                    value={f}
+                    checked={fabricas.get(l.indice) === f}
+                    onChange={() => elegir(l.indice, f)}
+                  />
+                  <span>{nombreFabrica[f]}</span>
+                </label>
+              ))}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="reparto-resumen" aria-live="polite">
+        {porFabrica.length
+          ? `${datos.generar ? (porFabrica.length > 1 ? `Se generarán ${porFabrica.length} notas: ` : 'Se generará 1 nota: ') : ''}${porFabrica.map(({ f, n }) => `${nombreFabrica[f]}, ${items(n)}`).join(' · ')}`
+          : 'Ningún ítem tiene fábrica todavía.'}
+        {sinFabrica.length > 0 && porFabrica.length > 0 ? ` · sin fábrica: ${items(sinFabrica.length)}` : ''}
+      </p>
+      {error && (
+        <p className="campo-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="dialogo-acciones">
+        <button ref={cancelar} type="button" className="button secondary" onClick={() => responder(null)}>
+          Cancelar
+        </button>
+        <button type="submit" className="button primary">
+          {datos.generar ? (porFabrica.length > 1 ? 'Generar notas de pedido' : 'Generar nota de pedido') : 'Guardar reparto'}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+/** Numeración de la cotización y de las notas de cada fábrica (`GET ?numeracion=1`). */
+export interface NumeracionDocumentos extends Numeracion {
+  notas?: Partial<Record<Fabrica, Numeracion>>;
+}
+interface DatosCambioNumero {
+  documento: 'cotizacion' | 'nota';
+  fabrica?: Fabrica;
+  actual: number;
+  /** La cotización tiene notas de pedido: también se vuelven a generar, porque la nombran. */
+  conNotas?: boolean;
+}
+
+/**
+ * Cambio del número de un documento ya emitido, desde el propio documento (solo cuentas administradoras). El número
+ * debe estar libre: uno mayor que el último mueve la serie; uno menor solo sirve si nunca se usó (lo comprueba el
+ * servidor). El PDF se vuelve a generar con el número nuevo.
+ */
+export function useCambioNumero() {
+  const [pendiente, setPendiente] = useState<(DatosCambioNumero & { resolver: (r: { numero: number } | null) => void }) | null>(
+    null,
+  );
+  const pedir = useCallback(
+    (datos: DatosCambioNumero) =>
+      new Promise<{ numero: number } | null>((resolver) => setPendiente({ ...datos, resolver })),
+    [],
+  );
+  const campo = useRef<HTMLInputElement>(null);
+  const cerrar = (r: { numero: number } | null) => {
+    pendiente?.resolver(r);
+    setPendiente(null);
+  };
+  const documento = pendiente
+    ? pendiente.documento === 'cotizacion'
+      ? `la cotización N° ${pendiente.actual}`
+      : `la nota de pedido N° ${pendiente.actual}${pendiente.fabrica ? ` de ${nombreFabrica[pendiente.fabrica]}` : ''}`
+    : '';
+  const elemento = (
+    <Dialogo
+      abierto={!!pendiente}
+      alCerrar={() => cerrar(null)}
+      titulo={`Cambiar el número de ${documento}`}
+      eyebrow="NUMERACIÓN"
+      className="dialogo-confirmacion"
+      focoInicial={campo}
+      alerta
+    >
+      {pendiente && <FormCambioNumero datos={pendiente} responder={cerrar} campo={campo} />}
+    </Dialogo>
+  );
+  return [pedir, elemento] as const;
+}
+function FormCambioNumero({
+  datos,
+  responder,
+  campo,
+}: {
+  datos: DatosCambioNumero;
+  responder: (r: { numero: number } | null) => void;
+  campo: RefObject<HTMLInputElement | null>;
+}) {
+  const [numero, setNumero] = useState('');
+  const [error, setError] = useState('');
+  const [numeracion, setNumeracion] = useState<NumeracionDocumentos | null>(null);
+  useEffect(() => {
+    const control = new AbortController();
+    pedirJSON<NumeracionDocumentos>('/api/accion?numeracion=1', { signal: control.signal, cache: 'no-store' })
+      .then(setNumeracion)
+      .catch(() => {});
+    return () => control.abort();
+  }, []);
+  const serie = datos.documento === 'nota' && datos.fabrica ? numeracion?.notas?.[datos.fabrica] : numeracion;
+  const miles = (x: number) => x.toLocaleString('es-CL');
+  const escrito = numero.replace(/[.\s]/g, '');
+  const invalido = !escrito
+    ? 'Escribe el número nuevo.'
+    : !/^\d+$/.test(escrito) || Number(escrito) <= 0
+      ? 'El número debe ser un entero positivo.'
+      : Number(escrito) === datos.actual
+        ? `El documento ya tiene el N° ${miles(datos.actual)}.`
+        : serie && Number(escrito) > serie.tope
+          ? `El número puede saltar hasta 1.000 sobre el último: elige uno hasta el ${miles(serie.tope)}.`
+          : null;
+  const n = Number(escrito);
   return (
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        if (fabrica) responder({ fabrica });
-        else {
-          setError('Elige la fábrica que recibe el pedido.');
-          primera.current?.focus();
-        }
+        if (invalido) {
+          setError(invalido);
+          campo.current?.focus();
+        } else responder({ numero: n });
       }}
     >
       <div className="dialogo-mensaje">
-        <p>Se asigna el siguiente N° de nota de pedido de esa fábrica (no se reutiliza) y se genera su PDF.</p>
+        <p>
+          Se vuelve a generar {datos.conNotas ? 'su PDF y los de sus notas de pedido, que la nombran,' : 'su PDF'} con el
+          número nuevo, y el cambio queda en la actividad. El PDF con el número anterior se reemplaza.
+        </p>
+        {serie ? (
+          <p id="cambio-numero-serie">
+            {datos.documento === 'nota' && datos.fabrica ? `Notas de ${nombreFabrica[datos.fabrica]}: ` : 'Cotizaciones: '}
+            el último número usado o reservado es el <strong>N° {miles(serie.ultimo)}</strong>. Uno menor solo sirve si
+            nunca se usó.
+          </p>
+        ) : (
+          <p id="cambio-numero-serie">El número debe estar libre: uno que ya usa otro documento no se acepta.</p>
+        )}
+        {!invalido && serie && n > serie.ultimo && (
+          <p className="dialogo-advertencia" id="cambio-numero-salto">
+            La serie seguirá desde el N° {miles(n + 1)}: los números que se salten no se usarán después.
+          </p>
+        )}
       </div>
-      <fieldset
-        className="dialogo-campos opciones-fabrica"
-        aria-describedby={error ? 'fabrica-error' : undefined}
-        aria-invalid={error ? true : undefined}
-      >
-        <legend className="ia-field-label">Fábrica</legend>
-        {FABRICAS.map((f, i) => (
-          <label key={f} className="opcion-fabrica">
-            <input
-              ref={i === 0 ? primera : undefined}
-              type="radio"
-              name="fabrica"
-              value={f}
-              checked={fabrica === f}
-              onChange={() => {
-                setFabrica(f);
-                setError('');
-              }}
-            />
-            <span>
-              <b>{nombreFabrica[f]}</b>
-              <small>{productosFabrica[f]}</small>
-            </span>
-          </label>
-        ))}
+      <div className="dialogo-campos">
+        <label className="ia-field">
+          <span>Número nuevo</span>
+          <input
+            ref={campo}
+            inputMode="numeric"
+            value={numero}
+            onChange={(e) => {
+              setNumero(e.target.value);
+              setError('');
+            }}
+            placeholder={`Hoy: ${miles(datos.actual)}`}
+            autoComplete="off"
+            maxLength={13}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? 'cambio-numero-error' : 'cambio-numero-serie'}
+          />
+        </label>
         {error && (
-          <p className="campo-error" id="fabrica-error" role="alert">
+          <p className="campo-error" id="cambio-numero-error" role="alert">
             {error}
           </p>
         )}
-      </fieldset>
+      </div>
       <div className="dialogo-acciones">
         <button type="button" className="button secondary" onClick={() => responder(null)}>
           Cancelar
         </button>
         <button type="submit" className="button primary">
-          Generar nota de pedido
+          Cambiar número
         </button>
       </div>
     </form>

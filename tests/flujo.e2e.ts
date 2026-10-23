@@ -81,7 +81,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await emitir();
   expect((await descarga).suggestedFilename()).toBe('cotizacion-323.pdf');
   const contenido = await textoPdf(`${DIR_E2E}/pdf/cotizacion-323.pdf`);
-  expect(contenido).toContain('COTIZACIÓN N° 323');
+  expect(contenido).toMatch(/Cotización\s+N° 323/);
   expect(contenido).toContain(pesos(completo.total));
   expect(contenido).not.toMatch(/precio de lista|ajuste|25 %/i);
   // El cliente no ve la referencia interna ni un tipo de medida sin definir; la observación escrita sí.
@@ -99,12 +99,13 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   const notaDownload = page.waitForEvent('download');
   await panel.getByLabel(/^Monto recibido/).fill(String(Math.ceil(completo.total * 0.5)));
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
-  await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  await panel.getByRole('button', { name: /^Generar notas? de pedido$/ }).click();
   // Cada paso de la operación pide confirmación.
-  await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Todo a Panguipulli' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-panguipulli-577.pdf');
-  await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
+  // En una aprobada el chat solo reparte fábricas y cambia números: el compositor lo dice.
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveAttribute('placeholder', /aprobada: puedes repartir/);
   // Una aprobada no ofrece quitar ítems.
   await expect(page.getByRole('button', { name: /^Quitar ítem 1:/ })).toHaveCount(0);
   const fabrica = cotizar(
@@ -115,9 +116,9 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     { ajuste: 0, iva: 0.19 },
   );
   const nota = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-577.pdf`);
-  expect(nota).toContain('NOTA DE PEDIDO N° 577');
-  expect(nota).toContain('FÁBRICA PANGUIPULLI');
-  expect(nota).toMatch(/Ref\. cotización:?\s*N° 323/);
+  expect(nota).toMatch(/Nota de pedido\s+N° 577/);
+  expect(nota).toContain('Fábrica Panguipulli');
+  expect(nota).toMatch(/Cotización\s+N° 323/);
   expect(nota).toContain('Referencia de catálogo: HUIL-O-3-B');
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
@@ -132,7 +133,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await page.getByRole('link', { name: 'Historial' }).click();
   await page.getByRole('link', { name: /^N° 323/ }).click();
   await expect(page.getByRole('heading', { name: 'N° 323' })).toBeFocused();
-  await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveAttribute('placeholder', /aprobada: puedes repartir/);
   await expect(page.getByTestId('total')).toHaveText(pesos(completo.total));
   await page.screenshot({ path: 'test-results/cotizacion-aprobada.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -233,10 +234,10 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
   const panel = page.getByLabel('Cotización en curso');
   await panel.getByLabel(/^Monto recibido/).fill(String(anticipo));
   await panel.getByRole('button', { name: 'Registrar pago' }).click();
-  await panel.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  await panel.getByRole('button', { name: /^Generar notas? de pedido$/ }).click();
   // Cada paso de la operación pide confirmación.
-  await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Todo a Panguipulli' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   expect((await nota).suggestedFilename()).toMatch(/^nota-pedido-panguipulli-\d+\.pdf$/);
-  await expect(page.getByLabel('Escribe tu pedido')).toHaveCount(0);
+  await expect(page.getByLabel('Escribe tu pedido')).toHaveAttribute('placeholder', /aprobada: puedes repartir/);
 });

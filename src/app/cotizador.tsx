@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   numeroNota,
+  nombreFabrica,
   anticipoMinimo,
   esEditable,
   etiquetaEstado,
@@ -585,16 +586,24 @@ export function Cotizador({
     const ultimo = q.historial.at(-1);
     if (opciones.anunciar && ultimo?.rol === 'asistente')
       setAnuncio(cambios ? `${ultimo.texto} ${cambios}` : ultimo.texto);
-    if (d.archivo) entregarDocumento(d.archivo);
+    // Una descarga por acción: varias seguidas el navegador las bloquea o pide permiso. Las demás notas quedan
+    // junto al total, y el aviso de la descarga lo dice (solo se ve un aviso informativo a la vez).
+    if (d.archivo)
+      entregarDocumento(
+        d.archivo,
+        d.archivos && d.archivos.length > 1
+          ? `Se generaron ${d.archivos.length} notas de pedido, una por fábrica: las demás se descargan junto al total.`
+          : undefined,
+      );
   }
 
   /**
    * PDF recién generado (emisión, nota de pedido): en escritorio se descarga; en una pantalla táctil una
    * descarga sin gesto abre un diálogo del sistema, así que se ofrece abrirlo con un toque.
    */
-  function entregarDocumento(archivo: string) {
-    if (!esTactil()) return void descargar(archivo);
-    avisar('exito', `PDF listo: ${archivo}. También queda junto al total para verlo, descargarlo o compartirlo.`, {
+  function entregarDocumento(archivo: string, detalle?: string) {
+    if (!esTactil()) return void descargar(archivo, false, detalle);
+    avisar('exito', `PDF listo: ${archivo}. ${detalle ?? 'También queda junto al total para verlo, descargarlo o compartirlo.'}`, {
       clave: 'descarga',
       accion: {
         etiqueta: 'Ver PDF',
@@ -627,12 +636,12 @@ export function Cotizador({
   }
 
   /** `reintento`: ya se regeneró una vez; un segundo 404 se informa sin volver a ofrecerlo. */
-  async function descargar(archivo: string, reintento = false) {
+  async function descargar(archivo: string, reintento = false, detalle?: string) {
     setDescargando(archivo);
     try {
       const { blob, nombre } = await pedirArchivo(urlDocumento(archivo));
       guardarArchivo(blob, nombre ?? archivo);
-      avisar('exito', `Documento listo: se descargó ${nombre ?? archivo}.`, { clave: 'descarga' });
+      avisar('exito', `Documento listo: se descargó ${nombre ?? archivo}.${detalle ? ` ${detalle}` : ''}`, { clave: 'descarga' });
     } catch (e) {
       if (reintento || !(e instanceof ErrorSolicitud && e.status === 404)) return fallo(e);
       setDescargando(null);
@@ -649,7 +658,8 @@ export function Cotizador({
    */
   async function recuperarPdf(archivo: string) {
     const q = actualRef.current;
-    const documento = !q ? null : q.nota?.pdf === archivo ? 'nota' : q.pdf === archivo ? 'cotizacion' : null;
+    const nota = q?.notas.find((n) => n.pdf === archivo);
+    const documento = !q ? null : nota ? 'nota' : q.pdf === archivo ? 'cotizacion' : null;
     if (!q || !documento || !admin) {
       avisar(
         'error',
@@ -662,7 +672,7 @@ export function Cotizador({
       titulo: 'No se encontró el PDF',
       mensaje: (
         <p>
-          El archivo de {documento === 'nota' ? `la nota de pedido ${numeroNota(q.nota!)}` : `la cotización ${numeroCotizacion(q.numero)}`}{' '}
+          El archivo de {nota ? `la nota de pedido ${numeroNota(nota)}` : `la cotización ${numeroCotizacion(q.numero)}`}{' '}
           ya no está en el servidor. Se puede regenerar con los mismos datos con que se emitió.
         </p>
       ),
@@ -672,7 +682,13 @@ export function Cotizador({
     setEnCurso('workflow');
     limpiar('operacion');
     try {
-      const { archivo: regenerado, ...d } = await peticion({ tipo: 'regenerar_pdf', id: q.id, ...versionDe(q), documento });
+      const { archivo: regenerado, ...d } = await peticion({
+        tipo: 'regenerar_pdf',
+        id: q.id,
+        ...versionDe(q),
+        documento,
+        ...(nota?.fabrica ? { fabrica: nota.fabrica } : {}),
+      });
       recibir(d, { previa: q });
       avisar('exito', 'PDF regenerado.', { clave: 'descarga' });
       return regenerado ?? archivo;
@@ -1031,7 +1047,7 @@ export function Cotizador({
       const restante = (q.pagos ?? []).reduce((s, p) => s + p.monto, 0) - pago.monto;
       const minimo = anticipoMinimo(q.montos.total);
       const frenaProduccion =
-        !!q.nota &&
+        q.notas.length > 0 &&
         ['pedido_generado', 'en_produccion'].includes(q.estadoOperativo ?? '') &&
         restante < minimo;
       const datos = await pedirAnulacionPago({
@@ -1039,7 +1055,7 @@ export function Cotizador({
         fecha: fechaLarga(pago.fecha),
         ...(frenaProduccion
           ? {
-              aviso: `La nota de pedido ya está generada y quedarían ${pesos(restante)} pagados, menos del ${ANTICIPO_TEXTO} (${pesos(minimo)}): la producción no podrá ${q.estadoOperativo === 'pedido_generado' ? 'iniciarse' : 'terminarse'} hasta volver a registrar el anticipo.`,
+              aviso: `${q.notas.length > 1 ? 'Las notas de pedido ya están generadas' : 'La nota de pedido ya está generada'} y quedarían ${pesos(restante)} pagados, menos del ${ANTICIPO_TEXTO} (${pesos(minimo)}): la producción no podrá ${q.estadoOperativo === 'pedido_generado' ? 'iniciarse' : 'terminarse'} hasta volver a registrar el anticipo.`,
             }
           : {}),
       });
@@ -1189,9 +1205,52 @@ export function Cotizador({
     }
   }
 
+  /** Cambio de número pedido por chat: se confirma aquí y se aplica con `cambiar_numero`, como desde el documento. */
+  async function cambiarNumeroDesdeChat(c: NonNullable<Resultado['confirmarNumero']>, conversacion: Cotizacion) {
+    const documento =
+      c.documento === 'cotizacion'
+        ? `la cotización N° ${c.actual}`
+        : `la nota de pedido N° ${c.actual}${c.fabrica ? ` de ${nombreFabrica[c.fabrica]}` : ''}`;
+    const ok = await confirmar({
+      titulo: `¿Cambiar el número de ${documento}?`,
+      mensaje: (
+        <p>
+          Pasa a ser la N° {c.numero.toLocaleString('es-CL')}. Su PDF se vuelve a generar con el número nuevo y el
+          cambio queda en la actividad.
+        </p>
+      ),
+      aceptar: `Cambiar a N° ${c.numero.toLocaleString('es-CL')}`,
+    });
+    // Se llama dentro del envío del chat (que sigue «en curso»), igual que la aprobación pedida por chat.
+    if (!ok) {
+      setNotaLocal({ id: conversacion.id, texto: 'Cambio de número cancelado.' });
+      return;
+    }
+    setEnCurso('workflow');
+    limpiar('operacion');
+    try {
+      // Trae el PDF con el número nuevo: se descarga como al emitir, y ese aviso confirma el cambio.
+      recibir(
+        await peticion({
+          tipo: 'cambiar_numero',
+          id: c.id,
+          actualizada: c.actualizada,
+          documento: c.documento,
+          ...(c.fabrica ? { fabrica: c.fabrica } : {}),
+          numero: c.numero,
+        }),
+      );
+    } catch (e) {
+      fallo(e);
+    } finally {
+      setEnCurso(null);
+    }
+  }
+
   async function responder(d: Resultado, previa: Cotizacion | null) {
     recibir(d, { anunciar: true, previa });
     if (d.confirmar) await aprobarDesdeChat(d.confirmar, d.cotizacion, !!d.efimera);
+    if (d.confirmarNumero) await cambiarNumeroDesdeChat(d.confirmarNumero, d.cotizacion);
   }
 
   async function enviar(e: FormEvent) {
@@ -1335,8 +1394,9 @@ export function Cotizador({
     return () => document.removeEventListener('keydown', alTeclear);
   }, []);
 
-  // Aprobadas, reemplazadas y anuladas no admiten cambios (ni por chat).
-  const bloqueada = !!actual && !esEditable(actual);
+  // Reemplazadas y anuladas no admiten cambios (ni por chat). En una aprobada el chat solo reparte los ítems entre
+  // fábricas y cambia números: lo demás lo responde el servidor.
+  const bloqueada = !!actual && !esEditable(actual) && actual.estado !== 'aprobada';
   // Las preguntas con botones solo en un borrador: en una emitida, responder crearía una revisión.
   const preguntasChat = actual?.estado === 'borrador' ? preguntasPendientes(actual) : [];
   // Una pregunta en texto sigue abierta mientras no hay cotización o el borrador tiene datos faltantes.
@@ -1641,12 +1701,12 @@ export function Cotizador({
                 Ver cotización <span aria-hidden>→</span>
               </button>
             )}
-            {aprobada ? (
+            {aprobada && (
               <p className="chat-readonly-note">
-                Esta cotización está aprobada. Puedes consultar la conversación o duplicar la cotización
-                si necesitas preparar una nueva versión.
+                Esta cotización está aprobada y no se modifica: duplícala si necesitas una nueva versión. Por chat
+                puedes repartir sus ítems entre las fábricas o cambiar su número o el de sus notas de pedido.
               </p>
-            ) : (
+            )}
             <form onSubmit={enviar} className="composer">
               {textoConservado && (
                 <div className="composer-retained" id="texto-conservado">
@@ -1679,7 +1739,9 @@ export function Cotizador({
                     ? 'El chat no está disponible por ahora.'
                     : bloqueada
                       ? `Cotización ${etiquetaEstado[actual!.estado].toLowerCase()}: no admite cambios. Duplícala o crea una nueva.`
-                      : seleccion
+                      : actual?.estado === 'aprobada'
+                        ? 'Cotización aprobada: puedes repartir sus ítems entre fábricas o cambiar un número.'
+                        : seleccion
                         ? 'Elige una de las cotizaciones de arriba.'
                         : estadoChat
                           ? `Escribe un cambio: se creará una revisión de la ${numeroCotizacion(actual!.numero)}.`
@@ -1718,7 +1780,6 @@ export function Cotizador({
                 </span>
               </div>
             </form>
-            )}
           </div>
         </section>
         <CotizacionPanel
@@ -1734,6 +1795,7 @@ export function Cotizador({
           mostrarCotizacion={() => setVistaMobile('cotizacion')}
           cargando={cargando}
           cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
+          admin={admin}
         />
       </main>
       <footer className="site-footer">

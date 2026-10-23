@@ -77,10 +77,14 @@ Usuarios avisa cuando queda una sola.
 
 ### Correlativos de notas de pedido
 
-Cada nota de pedido va a una fábrica, que se elige al generarla: **Panguipulli** (puertas sólidas) o **Santiago**
-(enchapadas y prepintadas). Cada una tiene su propio correlativo, que parte en la numeración que traía en papel:
-**N° 577** Panguipulli y **N° 59** Santiago (se fija solo, una vez, al actualizar a esta versión). Para ver el próximo
-número de cada fábrica, cambiarlo o asignar la fábrica a una nota generada antes de separarlas:
+Cada ítem de la cotización va a una fábrica, **Panguipulli** o **Santiago**, y la elige quien cotiza (no hay una por
+omisión): en el seguimiento con «Repartir entre fábricas», al generar las notas o pidiéndoselo al asistente («las
+Coz Coz van a Santiago»). Al generar, sale una nota de pedido por fábrica, cada una solo con sus ítems; sin fábrica en
+algún ítem no se genera ninguna. Cada fábrica marca por separado el inicio y el término de su producción, y el pedido
+pasa a despacho cuando terminan todas. Cada fábrica tiene su propio correlativo, que parte en la numeración que traía
+en papel: **N° 577** Panguipulli y **N° 59** Santiago (se fijó solo, una vez, al actualizar a la versión de las dos
+fábricas). Para ver el próximo número de cada fábrica, cambiarlo o asignar la fábrica a una nota generada antes de
+separarlas:
 
 ```sh
 cd /srv/cotizador-neltume
@@ -90,6 +94,12 @@ docker compose exec cotizador npm run notas -- asignar 12 santiago           # l
 ```
 
 El correlativo no puede bajar al último número ya usado por esa fábrica.
+
+Para corregir el número de una cotización ya emitida o de una nota de pedido, una cuenta administradora usa
+«Cambiar N°» junto a su PDF (o se lo pide al asistente, que lo propone y pide confirmarlo). El número nuevo debe estar
+libre en su serie y no saltar más de 1.000 sobre el último; uno mayor que el último mueve el correlativo. El PDF se
+vuelve a generar con el número nuevo (al cambiar el de la cotización, también los de sus notas, que la nombran), el
+anterior se borra y el cambio queda en la actividad.
 
 ## 3. Clave de IA
 

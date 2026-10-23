@@ -184,6 +184,7 @@ export function Documento({
   anulado,
   descripcion = nombre,
   acciones,
+  cambiarNumero,
 }: {
   nombre: string;
   /** Cómo se nombra el documento para lectores de pantalla («Ver cotización N° 325…»). */
@@ -195,6 +196,8 @@ export function Documento({
   anulado?: boolean;
   /** Las del cotizador; sin ellas (otras pantallas), «Ver» sigue el enlace normal y no se ofrece «Compartir». */
   acciones?: AccionesDocumentos | null;
+  /** Cambia el número de este documento (solo cuentas administradoras); sin ella no se ofrece. */
+  cambiarNumero?: () => void;
 }) {
   // Falso en el servidor y al hidratar: el botón aparece recién en el navegador que lo admite.
   const puedeCompartir = useSyncExternalStore(sinSuscripcion, admiteCompartir, () => false);
@@ -236,6 +239,17 @@ export function Documento({
           aria-label={`Compartir ${descripcion}`}
         >
           Compartir
+        </button>
+      )}
+      {cambiarNumero && (
+        <button
+          type="button"
+          className="button secondary small"
+          onClick={cambiarNumero}
+          disabled={descargando === archivo}
+          aria-label={`Cambiar el número de ${descripcion}`}
+        >
+          Cambiar N°
         </button>
       )}
     </div>

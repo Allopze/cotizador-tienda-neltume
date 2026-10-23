@@ -699,7 +699,9 @@ function Fila({
           <small>
             {plural(q.items, 'ítem')}
             {q.pendientes ? ` · ${plural(q.pendientes, 'pendiente')}` : ''}
-            {q.nota ? ` · Nota ${numeroNota(q.nota)}${q.nota.anulada ? ' (anulada)' : ''}` : ''}
+            {q.notas.length
+              ? ` · ${q.notas.length > 1 ? 'Notas' : 'Nota'} ${q.notas.map((n) => `${numeroNota(n)}${n.anulada ? ' (anulada)' : ''}`).join(', ')}`
+              : ''}
           </small>
           <small>Actualizada {fechaCorta(q.actualizada)}</small>
           {autor && <small>por {autor}</small>}
@@ -708,7 +710,7 @@ function Fila({
           <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
           {vencida && <span className="status vencida">Vencida</span>}
           <small>{etiquetaComercial[q.estadoComercial ?? (q.estado === 'emitida' ? 'enviada' : 'pendiente')]}</small>
-          {q.nota && <small>{etiquetaOperativo[q.estadoOperativo ?? 'pedido_generado']}</small>}
+          {q.notas.length > 0 && <small>{etiquetaOperativo[q.estadoOperativo ?? 'pedido_generado']}</small>}
           {pago && <small>{pago}{q.pagado ? ` · ${pesos(q.pagado)}` : ''}</small>}
         </span>
         <strong>{pesos(q.total)}</strong>

@@ -23,7 +23,7 @@ test('guía «Cómo funciona»: desde la pantalla vacía y el menú de cuenta, e
   for (const titulo of ['Los pasos de una cotización', 'Qué significa cada estado', 'Cómo deshacer', 'A quién pedir ayuda'])
     await expect(guia.getByRole('heading', { name: titulo, level: 2 })).toBeVisible();
   // El ciclo completo, con los nombres de los botones tal como se ven.
-  for (const paso of ['Emitir y generar PDF', 'Registrar aprobación del cliente', 'Registrar pago', 'Generar nota de pedido', 'Registrar despacho', 'Marcar como facturada'])
+  for (const paso of ['Emitir y generar PDF', 'Registrar aprobación del cliente', 'Registrar pago', 'Generar notas de pedido', 'Repartir entre fábricas', 'Cambiar N°', 'Registrar despacho', 'Marcar como facturada'])
     await expect(guia).toContainText(`«${paso}»`);
   await expect(guia).toContainText('50 %');
   for (const estado of ['Borrador', 'Emitida', 'Vencida', 'Aprobada', 'Reemplazada', 'Anulada'])

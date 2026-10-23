@@ -170,7 +170,7 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   const numero = await numeroDe(descargaCotizacion, 'cotizacion');
   await expect(panel.getByRole('heading', { level: 2 })).toHaveText(`N° ${numero}`);
   const cotizacionPdf = await textoPdf(`${DIR_E2E}/pdf/cotizacion-${numero}.pdf`);
-  expect(cotizacionPdf).toContain(`COTIZACIÓN N° ${numero}`);
+  expect(cotizacionPdf).toMatch(new RegExp(`Cotización\\s+N° ${numero}`));
   expect(cotizacionPdf).toContain('Juan Pérez');
   expect(cotizacionPdf).toContain(DESCRIPCION);
   expect(cotizacionPdf).not.toContain('Huilo Huilo Mara 0,8 a 0,85');
@@ -215,15 +215,15 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   await flujo.getByRole('button', { name: 'Registrar pago' }).click();
   await expect(estados).toContainText('Operación: 50 % pagado');
   const descargaNota = page.waitForEvent('download');
-  await flujo.getByRole('button', { name: 'Generar nota de pedido' }).click();
+  await flujo.getByRole('button', { name: /^Generar notas? de pedido$/ }).click();
   // Cada paso de la operación pide confirmación.
-  await page.getByRole('alertdialog').getByRole('radio', { name: /Panguipulli/ }).check();
+  await page.getByRole('alertdialog').getByRole('button', { name: 'Todo a Panguipulli' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
   const numeroNota = await numeroDe(descargaNota, 'nota-pedido-panguipulli');
   await expect(estados).toContainText('Operación: Nota de pedido generada');
   const notaPdf = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-${numeroNota}.pdf`);
-  expect(notaPdf).toContain(`NOTA DE PEDIDO N° ${numeroNota}`);
-  expect(notaPdf).toMatch(new RegExp(`Ref\\. cotización:?\\s*N° ${numero}`));
+  expect(notaPdf).toMatch(new RegExp(`Nota de pedido\\s+N° ${numeroNota}`));
+  expect(notaPdf).toMatch(new RegExp(`Cotización\\s+N° ${numero}`));
   expect(notaPdf).toContain('Referencia de catálogo: HUIL-M-3-E');
   expect(notaPdf).toContain('Medida solicitada: 835 × 2360 mm (Vano)');
   for (const monto of [
@@ -354,6 +354,6 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   });
   expect(guardada.montos.total).toBe(especial.total);
   expect(guardada.pagos?.map((p) => p.monto)).toEqual([anticipo, especial.total - anticipo]);
-  expect(guardada.nota?.numero).toBe(numeroNota);
-  expect(guardada.nota?.montos.total).toBe(fabrica.total);
+  expect(guardada.notas[0]?.numero).toBe(numeroNota);
+  expect(guardada.notas[0]?.montos.total).toBe(fabrica.total);
 });

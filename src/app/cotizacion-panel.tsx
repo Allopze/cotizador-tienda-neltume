@@ -59,6 +59,7 @@ import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales, type AccionesDocumentos } from './panel-totales';
 import { SelectorDesplegable } from './selector-desplegable';
 import { SeguimientoOperacion } from './seguimiento-operacion';
+import { useCambioNumero } from './dialogos-cotizacion';
 import { esSilencioso, pedirJSON } from './solicitud';
 
 export type Operacion =
@@ -99,6 +100,8 @@ interface Props {
   cambioVisual: { indices: number[]; total: boolean; texto: string } | null;
   mostrarCotizacion: () => void;
   cargando: boolean;
+  /** Cuenta administradora: cambia el número de la cotización y de sus notas desde sus documentos. */
+  admin?: boolean;
 }
 /** Línea valorizada que corresponde al ítem i (los incompletos no tienen línea). */
 function lineaDe(q: Cotizacion, i: number) {
@@ -297,7 +300,7 @@ function notaEstado(q: Cotizacion | null) {
     case 'reemplazada':
       return `${q.reemplazadaPor ? `Reemplazada por la revisión N° ${q.reemplazadaPor}.` : 'Reemplazada por otra cotización de la misma serie.'} Ya no se puede aprobar ni editar.`;
     case 'aprobada':
-      return q.nota?.anulada
+      return q.notas.some((n) => n.anulada)
         ? 'Cotización aprobada; su nota de pedido fue anulada.'
         : 'Cotización aprobada y bloqueada para edición.';
     case 'emitida':
@@ -327,8 +330,22 @@ export function CotizacionPanel({
   cambioVisual,
   mostrarCotizacion,
   cargando,
+  admin = false,
 }: Props) {
   const ocupado = enCurso !== null;
+  const [pedirNumero, dialogoNumero] = useCambioNumero();
+  /** Pide el número nuevo de un documento y lo aplica: el servidor vuelve a generar su PDF. */
+  async function cambiarNumero(datos: Parameters<typeof pedirNumero>[0]) {
+    if (ocupado) return;
+    const r = await pedirNumero(datos);
+    if (r)
+      await acciones.flujo({
+        tipo: 'cambiar_numero',
+        documento: datos.documento,
+        ...(datos.fabrica ? { fabrica: datos.fabrica } : {}),
+        numero: r.numero,
+      });
+  }
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
   const [arrastrado, setArrastrado] = useState<number | null>(null);
@@ -514,7 +531,8 @@ export function CotizacionPanel({
       )}
     </>
   );
-  const despacho = actual?.nota?.despacho;
+  // Todas las notas se generan juntas con el mismo despacho.
+  const despacho = actual?.notas[0]?.despacho;
   const transporteNota = esOtroTransportista(despacho?.transporte) ? null : despacho?.transporte;
   const condicionDespacho =
     despacho && (despacho.direccion || transporteNota)
@@ -1508,7 +1526,7 @@ export function CotizacionPanel({
             guardando={guardando}
             editar={acciones.editar}
           />
-          {actual && (actual.pdf || actual.nota) && (
+          {actual && (actual.pdf || actual.notas.length > 0) && (
             <div className="quote-docs">
               {actual.pdf && (
                 <Documento
@@ -1518,19 +1536,32 @@ export function CotizacionPanel({
                   descargando={descargando}
                   descargar={acciones.descargar}
                   acciones={documentos}
+                  // El número se cambia desde el propio documento, mientras la cotización está vigente.
+                  cambiarNumero={
+                    admin && actual.numero !== null && (estado === 'emitida' || estado === 'aprobada')
+                      ? () => void cambiarNumero({ documento: 'cotizacion', actual: actual.numero!, conNotas: actual.notas.length > 0 })
+                      : undefined
+                  }
                 />
               )}
-              {actual.nota && (
+              {actual.notas.map((nota) => (
                 <Documento
-                  nombre={`Nota de pedido ${numeroNota(actual.nota)}`}
-                  archivo={actual.nota.pdf}
+                  key={nota.pdf}
+                  nombre={`Nota de pedido ${numeroNota(nota)}`}
+                  descripcion={`nota de pedido ${numeroNota(nota)}`}
+                  archivo={nota.pdf}
                   descargando={descargando}
                   descargar={acciones.descargar}
-                  etiqueta="Descargar nota de pedido"
-                  anulado={actual.nota.anulada}
+                  etiqueta={`Descargar nota de pedido ${numeroNota(nota)}`}
+                  anulado={nota.anulada}
                   acciones={documentos}
+                  cambiarNumero={
+                    admin && estado === 'aprobada' && !nota.anulada && nota.fabrica
+                      ? () => void cambiarNumero({ documento: 'nota', fabrica: nota.fabrica, actual: nota.numero })
+                      : undefined
+                  }
                 />
-              )}
+              ))}
             </div>
           )}
           {/* En un borrador nuevo la nota solo repetía la ayuda del botón: se muestra cuando informa algo. */}
@@ -1698,6 +1729,7 @@ export function CotizacionPanel({
           anularPago={acciones.anularPago}
         />
       )}
+      {dialogoNumero}
     </section>
   );
 }

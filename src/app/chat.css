@@ -1641,3 +1641,59 @@ p + .pregunta-opciones {
   font-weight: 600;
   color: var(--ink);
 }
+
+/* Reparto entre fábricas: cada ítem elige la suya. */
+.dialogo-reparto .reparto-todas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 10px;
+}
+.reparto-lineas {
+  display: grid;
+  gap: 6px;
+  max-height: min(48vh, 420px);
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.reparto-lineas li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+.reparto-producto {
+  display: grid;
+  flex: 1 1 200px;
+  gap: 2px;
+  min-width: 0;
+}
+.reparto-producto b {
+  font-weight: 600;
+}
+.reparto-producto small {
+  color: var(--subtle);
+  font-size: var(--fs-sm);
+}
+.reparto-opciones {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.reparto-opciones .opcion-fabrica {
+  align-items: center;
+  padding: 6px 10px;
+}
+.reparto-opciones .opcion-fabrica input {
+  margin-top: 0;
+}
+.reparto-resumen {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
