@@ -9,3 +9,5 @@ snapshot de cada documento guarda solo la referencia (`neltume-fuente:…`, `nel
 - `dibujos/`: dibujos de línea de cada modelo de puerta y del marco, sacados de los modelos 3D de `modelos-3d/puertas`
   con `scripts/dibujos/generar.sh` (Blender). `dibujos.json` dice el archivo de cada modelo del catálogo y dónde está la
   hoja en el dibujo, para las cotas de la nota de pedido. Un modelo sin dibujo se imprime con el esquema genérico.
+  Huilo Huilo, Los Ríos y Los Lagos no tienen modelo 3D: se dibujaron a mano con `scripts/dibujos/dibujos-2d.py` a
+  partir de las fotos de la planilla de enchapadas. Para otro modelo hace falta una foto o un plano de referencia.

@@ -437,8 +437,8 @@ describe('Plantillas', () => {
 
   it('cada nota nombra a la otra nota de la cotización, y una puerta sin modelo 3D lleva el esquema genérico', async () => {
     await aislarBaseDatos();
-    const huilo = { ...puerta, codigo: 'HUIL-O-3-A', modelo: 'Huilo Huilo', descripcion: 'HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2 MT' };
-    const montos = cotizar([{ producto: huilo, cantidad: 2, anchoSolicitado: 0.8, altoSolicitado: 2 }], { ajuste: 0, iva: 0.19 });
+    const ranco = { ...puerta, codigo: 'RAN-O-3-A', modelo: 'RANCO', descripcion: 'RANCO PINO OREGON 0,80 A 0,85 MT X 2 MT' };
+    const montos = cotizar([{ producto: ranco, cantidad: 2, anchoSolicitado: 0.8, altoSolicitado: 2 }], { ajuste: 0, iva: 0.19 });
     const html = await plantilla(cotizacion(), {
       tipo: 'nota', numero: 577, fabrica: 'panguipulli', montos, fecha: '2026-09-28T12:00:00.000Z',
       otrasNotas: [{ fabrica: 'santiago', numero: 59, items: 1 }],
@@ -446,7 +446,7 @@ describe('Plantillas', () => {
     expect(textoVisible(html)).toMatch(/La cotización N° 325 tiene 2 notas de pedido\. La otra va a Santiago,\s+N° 59\s+, con 1 ítem\./);
     expect(html).toContain('<p class="fabrica"><b>Fábrica Panguipulli</b></p>');
     expect(html).toContain('Recibido por fábrica Panguipulli');
-    // Huilo Huilo no tiene modelo 3D: esquema genérico, con las cotas igual.
+    // Ranco no tiene dibujo: esquema genérico, con las cotas igual.
     expect(html).not.toContain('neltume-dibujo:');
     expect(html).toMatch(/<g class="generico">[^]*>800<\/text>[^]*>2000<\/text>/);
   });
