@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { CategoriaAviso } from '../servidor/servicio';
+import { FABRICAS } from '../negocio/estado';
 
 /**
  * Evaluación de la IA con casos reales: cada caso es una conversación (uno o más mensajes) y el pedido que
@@ -24,6 +25,8 @@ const itemEsperado = z
       .strict()
       .nullable()
       .optional(),
+    /** Fábrica que dijo la persona; ausente es que no la dijo (y la IA no debe deducirla). */
+    fabrica: z.enum(FABRICAS).nullable().optional(),
   })
   .strict();
 /** Línea de flete: valor neto de una unidad y unidades. */
@@ -116,6 +119,7 @@ export const CAMPOS_ITEM = [
   'tipoMedida',
   'precioUnitario',
   'descuento',
+  'fabrica',
 ] as const;
 type CampoItem = (typeof CAMPOS_ITEM)[number];
 

@@ -9,6 +9,40 @@ export class LLMFijo implements LLM {
       delete item.indice;
       return item as SolicitudItem;
     });
+    // Como la IA real: el número nuevo (y el actual, si lo dice) salen del mensaje.
+    const numeroNuevo = c.mensaje.match(/\b(cotizaci[oó]n|nota)\b(?:\s+de\s+(panguipulli|santiago))?[^.\d]*?\b(?:a|al|ser|sea)\s+(?:la\s+|el\s+)?(\d{1,6})\b/i);
+    if (numeroNuevo && /\b(?:n[uú]mero|debe ser|cambia)\b/i.test(c.mensaje))
+      return {
+        name: 'cambiar_numero',
+        input: {
+          documento: /^nota$/i.test(numeroNuevo[1]) ? 'nota' : 'cotizacion',
+          fabrica: (numeroNuevo[2]?.toLowerCase() as 'panguipulli' | 'santiago' | undefined) ?? null,
+          actual: null,
+          numero: Number(numeroNuevo[3]),
+        },
+      };
+    // «todo a Santiago», «las Coz Coz a Santiago y lo demás a Panguipulli»: cada ítem que el mensaje nombra.
+    const reparto = [...c.mensaje.matchAll(/\b(todo|lo dem[aá]s|las? [\p{L} ]+?)\s+(?:van\s+)?a\s+(panguipulli|santiago)\b/giu)];
+    if (reparto.length && c.borrador.items.length) {
+      const asignaciones = new Map<number, 'panguipulli' | 'santiago'>();
+      for (const [, quien, fabrica] of reparto) {
+        const f = fabrica.toLowerCase() as 'panguipulli' | 'santiago';
+        const nombre = quien.replace(/^las?\s+/i, '').toLowerCase();
+        for (const item of c.borrador.items)
+          if (/^(todo|lo dem[aá]s)$/.test(nombre) ? !asignaciones.has(item.indice) : item.modelo?.toLowerCase().includes(nombre))
+            asignaciones.set(item.indice, f);
+      }
+      return {
+        name: 'asignar_fabricas',
+        input: {
+          asignaciones: [...asignaciones].map(([indice, fabrica]) => ({
+            indice,
+            modelo: c.borrador.items[indice].modelo ?? '',
+            fabrica,
+          })),
+        },
+      };
+    }
     if (c.modo === 'modificacion_anterior') {
       const cambio = c.mensaje.match(
         /\b(?:ahora(?:\s+debe\s+ser)?|pasa\s+a|cambia\s+a|sube\s+a)\s+(?:de\s+)?(\d{1,4})\b/i,
