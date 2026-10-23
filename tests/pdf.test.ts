@@ -20,35 +20,40 @@ const navegador = vi.hoisted(() => ({
   falla: null as string | null,
   /** Se espera antes de abrir cada página. */
   alAbrir: null as (() => Promise<void>) | null,
+  /** El lanzamiento de Chromium no termina hasta que esto se cumpla. */
+  lanzamiento: null as Promise<void> | null,
 }));
 vi.mock('playwright', () => ({
   chromium: {
-    launch: vi.fn(async () => ({
-      on: () => {},
-      newPage: async () => {
-        await navegador.alAbrir?.();
-        if (navegador.colgar) await new Promise(() => {});
-        return {
-          close: async () => {},
-          setDefaultTimeout: () => {},
-          route: async () => {},
-          setContent: async () => {},
-          evaluate: async () => {},
-          pdf: async ({ path }: { path: string }) => {
-            await new Promise((r) => setTimeout(r, navegador.demora));
-            if (navegador.falla) throw new Error(navegador.falla);
-            const { writeFile: escribir } = await import('node:fs/promises');
-            await escribir(path, '%PDF-1.4');
-          },
-        };
-      },
-      close: async () => {
-        navegador.cerrado++;
-      },
-    })),
+    launch: vi.fn(async () => {
+      await navegador.lanzamiento;
+      return {
+        on: () => {},
+        newPage: async () => {
+          await navegador.alAbrir?.();
+          if (navegador.colgar) await new Promise(() => {});
+          return {
+            close: async () => {},
+            setDefaultTimeout: () => {},
+            route: async () => {},
+            setContent: async () => {},
+            evaluate: async () => {},
+            pdf: async ({ path }: { path: string }) => {
+              await new Promise((r) => setTimeout(r, navegador.demora));
+              if (navegador.falla) throw new Error(navegador.falla);
+              const { writeFile: escribir } = await import('node:fs/promises');
+              await escribir(path, '%PDF-1.4');
+            },
+          };
+        },
+        close: async () => {
+          navegador.cerrado++;
+        },
+      };
+    }),
   },
 }));
-const { descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, prepararPdf } =
+const { cerrarNavegadorPdf, descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, prepararPdf } =
   await import('../src/servidor/pdf');
 
 const puerta: Producto = {
@@ -94,7 +99,7 @@ const cotizacion = (): Cotizacion => ({
 });
 const dirs: string[] = [];
 afterEach(async () => {
-  Object.assign(navegador, { demora: 0, colgar: false, falla: null, alAbrir: null });
+  Object.assign(navegador, { demora: 0, colgar: false, falla: null, alAbrir: null, lanzamiento: null });
   vi.unstubAllEnvs();
   for (const dir of dirs.splice(0)) {
     cerrarBaseDatos(join(dir, 'cotizador.sqlite'));
@@ -539,6 +544,47 @@ describe('prepararPdf', () => {
       tecnico: expect.stringContaining('50 ms'),
     });
     expect(navegador.cerrado).toBe(cerrados + 1);
+  });
+
+  it('el arranque del Chromium compartido no hereda el plazo corto de quien lo pidió primero', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-'));
+    dirs.push(dir);
+    const { chromium } = await import('playwright');
+    const lanzar = vi.mocked(chromium.launch);
+    // Un documento que vence casi al instante (o el healthcheck) puede ser el primero en pedir el navegador: si el
+    // arranque llevara su plazo, fallaría también para los demás documentos que lo esperan.
+    for (const pedir of [() => prepararPdf(50), () => generarPdf(dir, 'cotizacion-6.pdf', '<html/>', 50)]) {
+      await cerrarNavegadorPdf();
+      lanzar.mockClear();
+      await pedir().catch(() => {});
+      expect(lanzar).toHaveBeenCalledTimes(1);
+      expect(lanzar.mock.calls[0]![0]!.timeout).toBeGreaterThan(1_000);
+    }
+  });
+
+  it('un documento de plazo corto no espera a un arranque lento ni lo descarta: el siguiente lo aprovecha', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-'));
+    dirs.push(dir);
+    const { chromium } = await import('playwright');
+    const lanzar = vi.mocked(chromium.launch);
+    await cerrarNavegadorPdf();
+    lanzar.mockClear();
+    let terminarArranque!: () => void;
+    navegador.lanzamiento = new Promise<void>((r) => (terminarArranque = r));
+    const cerrados = navegador.cerrado;
+    // Vence a los 50 ms con el arranque todavía en curso: responde a tiempo, sin esperar a que termine.
+    const vencido = await Promise.race([
+      prepararPdf(50).catch((e: unknown) => e),
+      new Promise((r) => setTimeout(() => r('esperó el arranque'), 2_000)),
+    ]);
+    expect(vencido).toMatchObject({ codigo: 'pdf_no_disponible', tecnico: expect.stringContaining('50 ms') });
+    // El siguiente documento comparte ese arranque: no se lanza otro Chromium y el que llega no se cierra.
+    const imprimir = generarPdf(dir, 'cotizacion-7.pdf', '<html/>');
+    terminarArranque();
+    await imprimir;
+    expect(lanzar).toHaveBeenCalledTimes(1);
+    expect(navegador.cerrado).toBe(cerrados);
+    expect(await readdir(join(dir, 'pdf'))).toContain('cotizacion-7.pdf');
   });
 
   it('generarPdf conserva la causa del fallo en el registro técnico, sin el registro de llamadas', async () => {

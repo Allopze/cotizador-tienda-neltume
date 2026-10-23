@@ -515,20 +515,33 @@ function piePagina(html: string) {
 // rato sin uso y se descarta ante cualquier falla, para que el siguiente documento parta limpio.
 const INACTIVIDAD_MS = 5 * 60_000;
 let navegador: Promise<Browser> | null = null;
+/** `navegador` todavía está arrancando: aún no hay un Chromium que descartar. */
+let lanzando = false;
 let enUso = 0;
 let cierreInactivo: NodeJS.Timeout | undefined;
 
-function obtenerNavegador(plazoMs: number) {
+/**
+ * El arranque tiene su propio plazo: lo comparten todos los documentos que esperan, así que no puede ser el de quien
+ * lo pidió primero (el healthcheck, 8 s; un documento que vence al instante) o haría fallar a los demás. Cada
+ * documento sigue con su plazo, en el `Promise.race` de `prepararPdf` y `generarPdf`.
+ */
+function obtenerNavegador() {
   if (!navegador) {
-    const lanzado = chromium.launch({ headless: true, executablePath: chromiumPath(), timeout: plazoMs });
+    const lanzado = chromium.launch({ headless: true, executablePath: chromiumPath(), timeout: PLAZO_PDF_MS });
     navegador = lanzado;
+    lanzando = true;
     lanzado.then(
-      (b) =>
+      (b) => {
+        if (navegador === lanzado) lanzando = false;
         b.on?.('disconnected', () => {
           if (navegador === lanzado) navegador = null;
-        }),
+        });
+      },
       () => {
-        if (navegador === lanzado) navegador = null;
+        if (navegador === lanzado) {
+          navegador = null;
+          lanzando = false;
+        }
       },
     );
   }
@@ -551,7 +564,7 @@ export async function prepararPdf(plazoMs = PLAZO_PDF_MS) {
   try {
     await Promise.race([
       // Si la página llega después del plazo, igual se cierra.
-      obtenerNavegador(plazoMs)
+      obtenerNavegador()
         .then((browser) => browser.newPage())
         .then((page) => page.close().catch(() => {})),
       new Promise<never>((_, rechazar) => {
@@ -567,8 +580,8 @@ export async function prepararPdf(plazoMs = PLAZO_PDF_MS) {
   } finally {
     clearTimeout(temporizador);
     enUso--;
-    // Un navegador que no abre páginas no se reutiliza.
-    if (fallo && !enUso) await cerrarNavegadorPdf();
+    // Un navegador que no abre páginas no se reutiliza; uno que aún arranca solo va lento, y lo siguen esperando otros.
+    if (fallo && !enUso && !lanzando) await cerrarNavegadorPdf();
     else if (!enUso) programarCierre();
   }
 }
@@ -578,6 +591,7 @@ export async function cerrarNavegadorPdf() {
   clearTimeout(cierreInactivo);
   const actual = navegador;
   navegador = null;
+  lanzando = false;
   const browser = await actual?.catch(() => null);
   await browser?.close().catch(() => {});
 }
@@ -614,7 +628,7 @@ export async function generarPdf(
   enUso++;
   clearTimeout(cierreInactivo);
   const tarea = (async () => {
-    const browser = await obtenerNavegador(plazoMs);
+    const browser = await obtenerNavegador();
     if (vencido) return;
     const page = await browser.newPage();
     pagina = page;
@@ -666,8 +680,8 @@ export async function generarPdf(
     // Si venció el plazo, la tarea puede terminar después: su archivo temporal también se borra.
     void tarea.catch(() => {}).finally(() => rm(temporal, { force: true }).catch(() => {}));
     await pagina?.close().catch(() => {});
-    // Un navegador colgado o caído no se reutiliza.
-    if (fallo && !enUso) await cerrarNavegadorPdf();
+    // Un navegador colgado o caído no se reutiliza; uno que aún arranca solo va lento, y lo siguen esperando otros.
+    if (fallo && !enUso && !lanzando) await cerrarNavegadorPdf();
     else if (!enUso) programarCierre();
     await rm(temporal, { force: true });
   }
