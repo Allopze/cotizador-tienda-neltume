@@ -59,6 +59,7 @@ import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales, type AccionesDocumentos } from './panel-totales';
 import { SelectorDesplegable } from './selector-desplegable';
 import { SeguimientoOperacion } from './seguimiento-operacion';
+import { DibujoModelo } from './dibujo-modelo';
 import { useCambioNumero } from './dialogos-cotizacion';
 import { esSilencioso, pedirJSON } from './solicitud';
 
@@ -726,6 +727,7 @@ export function CotizacionPanel({
                                 ⠿
                               </span>
                             )}
+                            {!personalizado && <DibujoModelo modelo={linea?.producto.modelo ?? s.modelo} familia={familia} />}
                             <strong>{personalizado ? s.modelo || 'Producto personalizado' : descripcion}</strong>
                           </div>
                           {personalizado ? (

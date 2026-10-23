@@ -1706,7 +1706,18 @@ export function Cotizador({
                 puedes repartir sus ítems entre las fábricas o cambiar su número o el de sus notas de pedido.
               </p>
             )}
-            <form onSubmit={enviar} className="composer">
+            {bloqueada && actual && (
+              <div className="chat-readonly-note chat-bloqueada">
+                <p>
+                  Esta cotización está {etiquetaEstado[actual.estado].toLowerCase()} y no admite cambios.
+                  {actual.estado === 'reemplazada' && actual.reemplazadaPor ? ` Modifica la N° ${actual.reemplazadaPor}.` : ''}
+                </p>
+                <button type="button" className="button secondary small" disabled={ocupado} onClick={() => acciones.duplicar()}>
+                  Duplicar como cotización nueva
+                </button>
+              </div>
+            )}
+            <form onSubmit={enviar} className="composer" hidden={bloqueada}>
               {textoConservado && (
                 <div className="composer-retained" id="texto-conservado">
                   <span>Este texto venía de la cotización anterior. Revísalo antes de enviarlo.</span>

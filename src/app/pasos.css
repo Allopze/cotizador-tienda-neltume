@@ -1,0 +1,219 @@
+/* Línea de pasos del pedido (seguimiento) y su mini-barra (historial). */
+.pasos-contenedor {
+  margin: 4px 0 22px;
+}
+.pasos-linea {
+  display: grid;
+  grid-template-columns: repeat(var(--n), minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pasos-linea li {
+  position: relative;
+  min-width: 0;
+  padding: 26px 12px 0 0;
+}
+/* El trazo entre pasos: gris de fondo y verde encima, que se llena de izquierda a derecha. */
+.pasos-linea li::before,
+.pasos-linea li::after {
+  content: '';
+  position: absolute;
+  top: 7px;
+  left: 22px;
+  right: 6px;
+  height: 2px;
+  background: var(--line);
+}
+.pasos-linea li::after {
+  background: var(--green);
+  transform: scaleX(0);
+  transform-origin: left;
+}
+.pasos-linea li.paso-hecho::after {
+  transform: scaleX(1);
+  animation: pasos-llena 420ms var(--curve-out) both;
+  animation-delay: calc(var(--i) * 70ms + 150ms);
+}
+.pasos-linea li:last-child::before,
+.pasos-linea li:last-child::after {
+  display: none;
+}
+.paso-punto {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  background: var(--surface);
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 9px;
+  line-height: 1;
+}
+.paso-hecho .paso-punto {
+  background: var(--green);
+  border-color: var(--green);
+}
+.paso-actual .paso-punto {
+  border-color: var(--green);
+}
+.paso-actual .paso-punto::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--green);
+}
+/* El paso en curso respira despacio. */
+.paso-actual .paso-punto::after {
+  content: '';
+  position: absolute;
+  inset: -7px;
+  border-radius: 50%;
+  border: 1.5px solid var(--green);
+  opacity: 0;
+  animation: pasos-respira 3.2s var(--curve-out) infinite;
+}
+.pasos-linea b {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  line-height: 1.25;
+  color: var(--muted);
+}
+.paso-hecho b,
+.paso-actual b {
+  color: var(--ink);
+}
+.pasos-linea small {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.pasos-resumen {
+  display: none;
+  margin-top: 8px;
+  font-size: var(--fs-md);
+}
+.pasos-resumen b {
+  font-weight: 500;
+}
+@media (max-width: 720px) {
+  /* En el teléfono la línea de ocho pasos no cabe: queda el trazo, sin textos, y el resumen dice dónde va. */
+  .pasos-linea li {
+    padding-top: 22px;
+  }
+  .pasos-linea b,
+  .pasos-linea small {
+    display: none;
+  }
+  .pasos-resumen {
+    display: block;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pasos-linea li.paso-hecho::after {
+    animation: none;
+  }
+  .paso-actual .paso-punto::after {
+    animation: none;
+  }
+}
+@keyframes pasos-llena {
+  from {
+    transform: scaleX(0);
+  }
+}
+@keyframes pasos-respira {
+  0% {
+    transform: scale(0.55);
+    opacity: 0.6;
+  }
+  75%,
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+.pasos-mini {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+.pasos-mini-barra {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 3px;
+  width: 128px;
+}
+.pasos-mini-barra i {
+  height: 4px;
+  background: var(--line);
+}
+.pasos-mini-barra i.hecho {
+  background: var(--green);
+}
+.pasos-mini-barra i.actual {
+  background: #7d9a80;
+}
+.pasos-mini-texto {
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+
+/* Los formularios del seguimiento, agrupados: pagos, facturación y notas internas. */
+.workflow-grupo {
+  margin: 18px 0 -4px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  font: 400 var(--serif-3) / 1.2 var(--serif);
+  letter-spacing: -0.012em;
+}
+.workflow-saldado {
+  margin: 0;
+  color: var(--muted);
+}
+
+/* Dibujo de línea del modelo junto al nombre del producto. */
+.dibujo-modelo {
+  display: block;
+  flex: none;
+  width: 28px;
+  height: 56px;
+  object-fit: contain;
+}
+.dibujo-generico {
+  fill: none;
+  stroke: var(--green);
+  stroke-width: 14;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.catalogo-producto {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.catalogo-producto > span:last-child {
+  min-width: 0;
+}
+.catalogo-lista tr.catalogo-inicio-modelo td {
+  border-top: 1px solid var(--line);
+}
+
+.chat-bloqueada {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+}
+.chat-bloqueada p {
+  margin: 0;
+}
+.composer[hidden] { display: none; }

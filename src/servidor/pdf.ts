@@ -1,5 +1,5 @@
 import { chromium, type Browser, type Page } from 'playwright';
-import { constants, readFileSync } from 'node:fs';
+import { constants } from 'node:fs';
 import type Database from 'better-sqlite3';
 import { copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -27,6 +27,7 @@ import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { metros } from '../catalogo/resolver';
 import { CODIGO_PERSONALIZADO } from '../negocio/personalizados';
 import { chromiumPath } from './chromium';
+import { dibujosModelos, normalizarModelo, RECURSOS, type Dibujo } from './dibujos';
 import { datosEmpresa } from './empresa';
 import { abrirBaseDatos } from './base-datos';
 import { ErrorPdf } from './errores';
@@ -115,35 +116,6 @@ const fechaLarga = (fecha: string) =>
     timeZone: 'America/Santiago',
   });
 
-/** Recursos de los PDF: fuentes y dibujos de los modelos (ver scripts/dibujos/generar.sh). */
-const RECURSOS = join(/* turbopackIgnore: true */ process.cwd(), 'src/servidor/pdf-recursos');
-interface Dibujo {
-  archivo: string;
-  /** Tamaño del PNG en píxeles. */
-  px: [number, number];
-  /** Dónde está la hoja dentro del dibujo, como fracción del ancho y del alto: sus cotas van en la nota. */
-  hoja: { izq: number; der: number; arriba: number; abajo: number } | null;
-}
-let dibujos: Map<string, Dibujo> | null = null;
-/** Dibujos por modelo del catálogo (normalizado). Sin el manifiesto, ninguno: las puertas usan el esquema genérico. */
-function dibujosModelos() {
-  if (!dibujos) {
-    dibujos = new Map();
-    try {
-      const manifiesto = JSON.parse(readFileSync(join(RECURSOS, 'dibujos', 'dibujos.json'), 'utf8')) as Record<string, Dibujo>;
-      for (const [modelo, d] of Object.entries(manifiesto)) dibujos.set(normalizarModelo(modelo), d);
-    } catch {
-      // Sin dibujos el documento se imprime igual, con el esquema genérico de puerta.
-    }
-  }
-  return dibujos;
-}
-const normalizarModelo = (m: string) =>
-  m
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, '');
 /** Hoja del esquema genérico de puerta (en el mismo lienzo de 455 × 900 que los dibujos del catálogo). */
 const GENERICO: Dibujo = { archivo: '', px: [455, 900], hoja: { izq: 0.14, der: 0.86, arriba: 0.07, abajo: 0.985 } };
 /** Esquema genérico para una puerta sin modelo 3D: marco, hoja y manilla, con el mismo trazo que los dibujos. */

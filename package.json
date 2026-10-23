@@ -45,6 +45,7 @@
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "saxes": "^6.0.0",
+    "three": "^0.170.0",
     "tsx": "^4.20.0",
     "zod": "^4.0.0"
   },
@@ -56,6 +57,7 @@
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "@types/three": "^0.170.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.4.3",
     "pdfjs-dist": "^6.3.289",

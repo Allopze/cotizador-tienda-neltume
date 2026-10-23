@@ -25,7 +25,8 @@ import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
 import { fechaChilena, fechaLocal } from '@/negocio/vigencia';
 import { useConfirmacion } from './dialogo';
 import { useRepartoFabricas, useRetroceso, type LineaReparto } from './dialogos-cotizacion';
-import { fechaLarga, nombreProducto, numeroCotizacion } from './formato';
+import { fechaCorta, fechaLarga, nombreProducto, numeroCotizacion } from './formato';
+import { LineaPasos } from './linea-pasos';
 import { SelectorDesplegable } from './selector-desplegable';
 
 interface Props {
@@ -277,6 +278,19 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
         return { titulo: 'Revisar el siguiente paso', detalle: 'Revisa pagos, producción y despacho para continuar.', etiqueta: 'Ir a pagos', accion: irAPago };
     }
   })();
+  const detallesPasos = {
+    Emitida: actual.fechaEmision ? fechaCorta(actual.fechaEmision) : null,
+    Aprobada: actual.fechaAprobacion ? fechaCorta(actual.fechaAprobacion) : null,
+    Anticipo: pagado > 0 ? porcentaje(porcentajePagado) : null,
+    Notas: vigentes.length ? vigentes.map((n) => `N° ${n.numero}`).join(' y ') : null,
+    Producción: vigentes.length
+      ? vigentes.length > 1
+        ? `${vigentes.filter((n) => etapaProduccion(n) === 'terminada').length} de ${vigentes.length} fábricas`
+        : etiquetaEtapa[etapaProduccion(vigentes[0])]
+      : null,
+    Despacho: actual.despacho?.transporte && !faltaTransportista ? actual.despacho.transporte : null,
+    Facturada: actual.facturacion?.estado === 'facturada' ? 'Registrada' : null,
+  };
   return (
     <>
       <section className="quote-workflow" aria-labelledby="seguimiento-title">
@@ -288,6 +302,19 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           </div>
           {(aprobada || pagado > 0) && <span className="status">{porcentaje(porcentajePagado)} pagado</span>}
         </div>
+        {(aprobada || estado === 'emitida') && (
+          <LineaPasos
+            datos={{
+              estado,
+              operacion: operacionActual,
+              notas: vigentes.length,
+              pagado,
+              total: actual.montos.total,
+              facturada: actual.facturacion?.estado === 'facturada',
+            }}
+            detalles={detallesPasos}
+          />
+        )}
         {aprobada && (
           <div className="workflow-focus">
             <div className="workflow-progress">
@@ -391,7 +418,13 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             <p className="muted">Los pagos se registran cuando el cliente aprueba la cotización.</p>
           </div>
         )}
-        {aprobada && (
+        {aprobada && <h4 className="workflow-grupo">Pagos</h4>}
+        {aprobada && saldo <= 0 && (
+          <p className="workflow-saldado">
+            Pagado en su totalidad: {pesos(pagado)} de {pesos(actual.montos.total)}.
+          </p>
+        )}
+        {aprobada && saldo > 0 && (
           // Sin noValidate: una fecha a medio escribir llega vacía y el servidor pondría la de hoy; el navegador la frena.
           <form className="workflow-payment" onSubmit={registrarPago}>
             <label className="ia-field"><span>Monto recibido (máx. {pesos(saldo)})</span><input id="monto-recibido" inputMode="numeric" value={montoPago} onChange={(e) => { setMontoPago(e.target.value); setErrorPago(''); }} aria-invalid={errorPago ? true : undefined} aria-describedby={errorPago ? 'monto-recibido-error' : undefined} onBlur={() => { const n = leerPesos(montoPago); if (Number.isSafeInteger(n) && n > 0) setMontoPago(n.toLocaleString('es-CL')); }} placeholder="0" disabled={ocupado || saldo <= 0} /></label>
@@ -424,6 +457,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             ))}
           </ul>
         )}
+        {aprobada && <h4 className="workflow-grupo">Facturación</h4>}
         {aprobada && (
           actual.facturacion?.estado === 'facturada' ? (
             <div className="workflow-actions">
@@ -454,6 +488,7 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             </form>
           )
         )}
+        <h4 className="workflow-grupo">Notas internas</h4>
         <form className="workflow-comment" onSubmit={guardarComentario}>
           <label className="ia-field"><span>Nota interna</span><textarea value={comentario} onChange={(e) => setComentario(e.target.value)} rows={2} maxLength={2000} placeholder="Seguimiento, acuerdos o instrucciones internas" disabled={ocupado} /></label>
           <button type="submit" className="button secondary small" disabled={ocupado || !comentario.trim()}>Agregar nota</button>

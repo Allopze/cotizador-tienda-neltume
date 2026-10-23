@@ -250,3 +250,184 @@
 .no-encontrada .button {
   margin-top: 10px;
 }
+
+/* Ingreso: la puerta Neltume en 3D de un lado y el formulario del otro. Al apuntar a «Ingresar» la hoja se entreabre;
+   al ingresar se abre y la cámara entra. */
+.login {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  min-height: 100svh;
+}
+.door-side {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  color: #efe6d2;
+  background: radial-gradient(70% 62% at 57% 30%, #36564a 0%, #22392c 50%, #15241b 100%);
+}
+.door-still,
+.gl-door {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.door-still.m {
+  display: none;
+}
+.gl-door {
+  opacity: 0;
+  transition: opacity 700ms var(--curve-out);
+}
+.door-side.gl-listo .gl-door {
+  opacity: 1;
+}
+.gl-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+.dim3d {
+  font: 500 12px / 1 var(--sans);
+  color: rgb(239 230 210 / 72%);
+  white-space: nowrap;
+}
+.dim3d.h > span {
+  display: inline-block;
+  transform: translateX(62%);
+}
+.door-cap {
+  position: absolute;
+  z-index: 2;
+  top: 44px;
+  right: 48px;
+  left: 48px;
+  pointer-events: none;
+}
+.door-t {
+  margin: 0;
+  color: #f2ead8;
+  font: 400 2.75rem / 1.02 var(--serif);
+  letter-spacing: -0.024em;
+}
+.door-s {
+  margin: 10px 0 0;
+  color: rgb(239 230 210 / 72%);
+  font-size: var(--fs-md);
+}
+.ph-note {
+  position: absolute;
+  z-index: 2;
+  right: 48px;
+  bottom: 18px;
+  left: 48px;
+  margin: 0;
+  color: rgb(239 230 210 / 55%);
+  font-size: var(--fs-xs);
+}
+.ph-short {
+  display: none;
+}
+.door-side::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: #f8eed8;
+  opacity: 0;
+  pointer-events: none;
+}
+.login.entrando .door-side::after {
+  opacity: 1;
+  transition: opacity 420ms var(--curve-out) 760ms;
+}
+.login-side {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  justify-items: center;
+  padding: 48px 48px 22px;
+  background: var(--paper);
+}
+.login .login-card {
+  width: 100%;
+  max-width: 380px;
+  align-self: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+.login .login-logo {
+  width: 52px;
+  height: 58px;
+  margin: 0 0 22px;
+}
+.login .login-card h1,
+.login .login-intro {
+  text-align: left;
+}
+.login .login-intro {
+  margin-left: 0;
+}
+.login .login-help {
+  text-align: left;
+}
+@media (max-width: 900px) {
+  .login {
+    grid-template-columns: 1fr;
+    grid-template-rows: 36svh auto;
+  }
+  .door-still.d {
+    display: none;
+  }
+  .door-still.m {
+    display: block;
+  }
+  .door-cap {
+    top: auto;
+    right: auto;
+    bottom: 22px;
+    left: 20px;
+    max-width: 54%;
+  }
+  .door-t {
+    font-size: 1.7rem;
+  }
+  .door-s {
+    margin-top: 6px;
+    font-size: var(--fs-sm);
+  }
+  .ph-note {
+    top: 14px;
+    right: auto;
+    bottom: auto;
+    left: 20px;
+  }
+  .ph-long {
+    display: none;
+  }
+  .ph-short {
+    display: inline;
+  }
+  .login-side {
+    padding: 28px 20px 24px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .login.entrando .door-side::after {
+    transition: none;
+  }
+}
+.login .login-footer {
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  max-width: 380px;
+  padding-top: 24px;
+}
+.login .login-ver-clave {
+  color: var(--green);
+}

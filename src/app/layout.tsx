@@ -8,6 +8,7 @@ import './login.css';
 import './movimiento.css';
 import './cotizacion-interfaz.css';
 import './cotizador-pantalla.css';
+import './pasos.css';
 // Última: las reglas táctiles deben ganar a cualquier hoja anterior con la misma especificidad.
 import './tactil.css';
 // Las mismas dos familias de los PDF, servidas desde el propio servidor (sin depender de Google). El guion de Host

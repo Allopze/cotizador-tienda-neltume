@@ -122,8 +122,8 @@
 }
 .quote-item-title {
   display: flex;
-  align-items: baseline;
-  gap: 7px;
+  align-items: center;
+  gap: 10px;
 }
 .quote-item-title strong {
   min-width: 0;

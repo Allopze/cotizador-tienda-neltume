@@ -28,6 +28,7 @@ import {
   pedirJSON,
 } from './solicitud';
 import { Actividad } from './actividad';
+import { PasosMini } from './linea-pasos';
 
 /** Un estado, o una vista: las que vencen pronto, las que tienen saldo por cobrar o la papelera de borradores. */
 type Filtro = 'todas' | EstadoCotizacion | 'vencen' | 'saldo' | 'papelera';
@@ -703,14 +704,29 @@ function Fila({
               ? ` · ${q.notas.length > 1 ? 'Notas' : 'Nota'} ${q.notas.map((n) => `${numeroNota(n)}${n.anulada ? ' (anulada)' : ''}`).join(', ')}`
               : ''}
           </small>
-          <small>Actualizada {fechaCorta(q.actualizada)}</small>
-          {autor && <small>por {autor}</small>}
+          <small className="sr-only">Actualizada {fechaCorta(q.actualizada)}</small>
+          {autor && <small className="sr-only">por {autor}</small>}
         </span>
         <span className="history-estado">
           <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
           {vencida && <span className="status vencida">Vencida</span>}
-          <small>{etiquetaComercial[q.estadoComercial ?? (q.estado === 'emitida' ? 'enviada' : 'pendiente')]}</small>
-          {q.notas.length > 0 && <small>{etiquetaOperativo[q.estadoOperativo ?? 'pedido_generado']}</small>}
+          {(q.estado === 'borrador' || q.estado === 'emitida' || q.estado === 'aprobada') && (
+            <PasosMini
+              datos={{
+                estado: q.estado,
+                operacion: q.estadoOperativo ?? 'sin_pedido',
+                notas: q.notas.filter((n) => !n.anulada).length,
+                pagado: q.pagado ?? 0,
+                total: q.total,
+                facturada: q.facturacion?.estado === 'facturada',
+              }}
+            />
+          )}
+          {/* El texto de cada fase sigue en la fila para el lector de pantalla; a la vista va la mini-barra. */}
+          <small className="sr-only">
+            {etiquetaComercial[q.estadoComercial ?? (q.estado === 'emitida' ? 'enviada' : 'pendiente')]}
+            {q.notas.length > 0 ? ` · ${etiquetaOperativo[q.estadoOperativo ?? 'pedido_generado']}` : ''}
+          </small>
           {pago && <small>{pago}{q.pagado ? ` · ${pesos(q.pagado)}` : ''}</small>}
         </span>
         <strong>{pesos(q.total)}</strong>
