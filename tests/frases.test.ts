@@ -77,4 +77,13 @@ describe('frases armadas con trozos del mensaje', () => {
     expect(ubicarPartes('2 molco 0,74 x 2,2', '2 molco 0,74 x 2,2')).toHaveLength(1);
     expect(ubicarPartes('2 molco 0,74 x 2,2 lenga', 'molco 0,74 x 2,3')).toBeNull();
   });
+  it('sin coma, el final de la frase puede venir de la parte común («ambas de …»), y solo de ella', () => {
+    expect(ubicarPartes(texto, 'una en lenga de 74x220')?.map((t) => texto.slice(...t))).toEqual([
+      'una en lenga',
+      'de 74x220',
+    ]);
+    // Fuera de una parte común, un trozo de otra frase no completa la del ítem.
+    const sinComun = '2 Molco lenga 80x200 y 3 Toledo mara de 70x210';
+    expect(ubicarPartes(sinComun, '2 Molco lenga de 70x210')).toBeNull();
+  });
 });

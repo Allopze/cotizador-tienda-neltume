@@ -371,7 +371,9 @@ function escuadriasDe(ctx: ContextoChat, modelo: string, madera: string | null):
 
 /**
  * Corrección para la IA si su respuesta deja fuera pedidos del mensaje o pregunta por el chat lo que debía
- * registrar como ítem pendiente; null si la respuesta sirve.
+ * registrar como ítem pendiente; null si la respuesta sirve. En modo «avisar» (`corrige` falso) solo se revisa lo
+ * segundo: Qwen3.7-Flash responde «¿De qué madera quieres las 3 Rupanco…?» a la mitad de los pedidos sin madera,
+ * aunque el prompt lo prohíbe, y un pedido que no queda registrado no se arregla con un aviso.
  */
 function revisarSalida(
   ctx: ContextoChat,
@@ -380,11 +382,13 @@ function revisarSalida(
   base: Cotizacion,
   modo: 'cotizacion_nueva' | 'modificacion_anterior',
   resolver: Record<'modelo' | 'madera', ResolverNombre>,
+  corrige: boolean,
 ): string | { correccion: string; mensaje: string } | null {
   const parsed = salidaSchema.safeParse(salida);
   if (!parsed.success) return null;
   const res = parsed.data;
   if (res.name === 'modificar_cotizacion') {
+    if (!corrige) return null;
     const faltan = pedidosOmitidos(ctx, res.input, mensaje, base, resolver);
     if (!faltan.length) return null;
     const correccion = `Tu respuesta anterior no registró estos pedidos del mensaje: ${faltan.map((f) => `«${f}»`).join(', ')}. Responde de nuevo con modificar_cotizacion e incluye en agregar todos los ítems del mensaje (también los que ya habías registrado), cada uno con su propia fuente.`;
@@ -757,7 +761,8 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
   const resolver = resolverNombres(ctx.catalogo);
   // Familia del modelo que nombró la persona o la IA (también con un alias): fija el rango de sus medidas.
   const familia = (modelo: string) => ctx.familiaDe(resolver.modelo(modelo) ?? modelo);
-  // En modo «avisar» la lectura de la IA no se enmienda: sin atajos, sin reordenar el mensaje ni reintentos.
+  // En modo «avisar» la lectura de la IA no se enmienda: sin atajos ni reordenar el mensaje, y el único reintento es
+  // el de un pedido respondido por el chat (ver `revisarSalida`).
   const corrige = (ctx.llm.anclaje ?? 'corregir') === 'corregir';
   // Un dato suelto que responde la pregunta pendiente («lenga», «son 3») se aplica sin consultar a la IA,
   // igual que los botones. Los dobles de prueba (sin verificarCifras) siempre pasan por la IA.
@@ -795,8 +800,8 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
               : {}),
           },
         ),
-        ctx.llm.verificarCifras && corrige
-          ? { revisar: (s) => revisarSalida(ctx, s, accion.mensaje, base, modo, resolver) }
+        ctx.llm.verificarCifras
+          ? { revisar: (s) => revisarSalida(ctx, s, accion.mensaje, base, modo, resolver, corrige) }
           : {},
       );
     } catch (error) {
@@ -942,7 +947,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       if (!aplicado) return responder(avisosFabrica.length ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n') : NO_ENTENDI);
       propuesta = aplicado;
     } else if (res.name === 'responder') {
-      // Sin el reintento de «corregir», un pedido respondido con texto no puede pasar en silencio.
+      // En «avisar», si ni el reintento lo registró, un pedido respondido con texto no puede pasar en silencio.
       const sinRegistrar =
         ctx.llm.verificarCifras && !corrige && pedidoSinRegistrar(accion.mensaje, base, modo, resolver)
           ? marcar('responder', [PEDIDO_SIN_REGISTRAR])

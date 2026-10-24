@@ -23,6 +23,11 @@ export interface MedicionAvisos {
   perfectas: number;
   /** Corridas perfectas con algún aviso de revisión: la vendedora revisa algo que estaba bien. */
   falsas: number;
+  /**
+   * Corridas perfectas en que el anclaje dejó pendiente una cifra o un nombre que la IA inventó (avisos `cifras` y
+   * `nombres`): el aviso era cierto y gracias a él la corrida salió perfecta. No son falsas alarmas.
+   */
+  atrapadas: number;
   /** Corridas con diferencias. */
   conErrores: number;
   /** Corridas con diferencias y sin ningún aviso de revisión: el error pasa en silencio. */
@@ -33,27 +38,35 @@ export interface MedicionAvisos {
   ejemplos: string[];
 }
 
+/** Avisos que dejan vacío lo que propuso la IA (ver `anclarCifras` y `anclarNombres`). */
+const DEJAN_PENDIENTE = new Set(['cifras', 'nombres']);
+
 /**
  * Avisos de revisión en corridas perfectas (falsas alarmas) y errores sin aviso (silenciosos). Con `casos`, el aviso
- * que el caso pide en `esperado.avisos` no cuenta como falsa alarma: avisar era lo correcto.
+ * que el caso pide en `esperado.avisos` no cuenta como falsa alarma: avisar era lo correcto. Tampoco uno de
+ * `cifras` o `nombres`: deja el campo vacío, así que en una corrida perfecta lo esperado era vacío (o lo dijo un
+ * mensaje posterior) y la IA lo había inventado.
  */
 export function medirAvisos(corridas: CorridaEvaluada[], casos: CasoEvaluacion[] = []): MedicionAvisos {
   const porId = new Map(casos.map((c) => [c.id, c]));
   const noPedidos = (r: CorridaEvaluada) => avisosDeRevision(r.avisos).filter((a) => !avisoPedido(porId.get(r.id), a));
+  const falsosDe = (r: CorridaEvaluada) => noPedidos(r).filter((a) => !DEJAN_PENDIENTE.has(a.categoria));
   const respondidas = corridas.filter((r) => !r.error);
   const perfectas = respondidas.filter((r) => !r.diferencias.length);
-  const falsas = perfectas.filter((r) => noPedidos(r).length);
+  const falsas = perfectas.filter((r) => falsosDe(r).length);
+  const atrapadas = perfectas.filter((r) => noPedidos(r).some((a) => DEJAN_PENDIENTE.has(a.categoria)));
   const conErrores = respondidas.filter((r) => r.diferencias.length);
   const silenciosas = conErrores.filter((r) => !avisosDeRevision(r.avisos).length);
   const porCategoria: Record<string, number> = {};
   const ejemplos = new Set<string>();
-  for (const a of falsas.flatMap(noPedidos)) {
+  for (const a of falsas.flatMap(falsosDe)) {
     porCategoria[a.categoria] = (porCategoria[a.categoria] ?? 0) + 1;
     ejemplos.add(`[${a.categoria}] ${a.texto}`);
   }
   return {
     perfectas: perfectas.length,
     falsas: falsas.length,
+    atrapadas: atrapadas.length,
     conErrores: conErrores.length,
     silenciosas: silenciosas.length,
     porCategoria,
@@ -165,6 +178,7 @@ export function informeMarkdown(inf: InformeEvaluacion): string {
     `- Precisión por campo: ${pct(inf.precision)}`,
     `- Casos perfectos: ${inf.perfectos}/${inf.casos}`,
     `- Falsas alarmas: ${inf.avisos.falsas}/${inf.avisos.perfectas} corridas perfectas (${pct(inf.tasaFalsas)})`,
+    `- Datos inventados por la IA que el anclaje dejó pendientes: ${inf.avisos.atrapadas} corridas perfectas`,
     `- Errores silenciosos: ${inf.avisos.silenciosas} de ${inf.avisos.conErrores} corridas con errores`,
     ...(inf.sinRespuesta ? [`- Sin respuesta de la IA: ${inf.sinRespuesta} corridas`] : []),
     `- Duración: ${inf.segundos.toFixed(0)} s`,
