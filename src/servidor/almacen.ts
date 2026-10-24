@@ -37,6 +37,8 @@ import { calcularVence, estaVencida, inicioDiaSantiago, fechaLocal } from '../ne
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
 import { normalizarTexto, textoBusqueda } from './busqueda';
 import { ErrorConflicto, ErrorUsuario, registrarError } from './errores';
+import { encolarEnTransaccion, type Encolable } from './integracion-bandeja';
+import { despertarIntegracion } from './integracion-envio';
 import { cotizacionSchema, estadoPersistidoSchema, tramosDescuentoSchema } from './persistencia-esquemas';
 import type { OrigenCatalogo } from '../catalogo/origenes';
 import { guardarCatalogo, RepositorioCatalogoSqlite } from './repositorio-catalogo';
@@ -945,6 +947,11 @@ export class Unidad {
   }
   private documentos: { id: string; archivo: string; html: string }[] = [];
   guardarDocumento(id: string, archivo: string, html: string) { this.documentos.push({ id, archivo, html }); }
+  private integracion: Encolable[] = [];
+  /** Un envío a la fábrica (integracion-bandeja.ts): se guarda al confirmar, en la misma transacción que la cotización. */
+  encolarIntegracion(item: Encolable) { this.integracion.push(item); }
+  /** Se encoló algo al confirmar: quien llama despierta el envío. */
+  encoladosIntegracion = 0;
   private sucias = new Set<string>();
   private eliminadas = new Set<string>();
   private eventos: (EventoCotizacion & { id: string })[] = [];
@@ -1213,7 +1220,7 @@ export class Unidad {
   }
 
   confirmar() {
-    if (!this.sucias.size && !this.eliminadas.size && !this.eventos.length && !this.descartados.length) return;
+    if (!this.sucias.size && !this.eliminadas.size && !this.eventos.length && !this.descartados.length && !this.integracion.length) return;
     this.db
       .transaction(() => {
         for (const [id, version] of this.versiones) {
@@ -1242,8 +1249,10 @@ export class Unidad {
         );
         for (const e of this.eventos)
           if (!this.eliminadas.has(e.id)) insertar.run(e.id, e.fecha, e.usuario, e.tipo, e.detalle);
+        for (const item of this.integracion) if (encolarEnTransaccion(this.db, item) !== null) this.encoladosIntegracion++;
       })
       .immediate();
+    this.integracion = [];
     this.sucias.clear();
     this.eliminadas.clear();
     this.eventos = [];
@@ -1854,6 +1863,8 @@ export class Almacen {
       const resultado = await fn(unidad);
       if (comprometido) throw new ErrorOcupado();
       unidad.confirmar();
+      // La nota ya quedó guardada: el envío a la fábrica corre aparte y nunca demora esta respuesta.
+      if (unidad.encoladosIntegracion) despertarIntegracion(this);
       return resultado;
     } finally {
       await release().catch((error: Error) =>

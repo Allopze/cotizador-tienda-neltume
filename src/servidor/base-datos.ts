@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 25;
+export const VERSION_ESQUEMA = 26;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -442,6 +442,36 @@ function crearEsquema(db: Database.Database) {
     }).immediate();
   if (version < 24) migrarA24(db);
   if (version < 25) migrarA25(db);
+  if (version < 26)
+    db.transaction(() => {
+      // v26: bandeja de salida de la integración con fábrica (integracion-bandeja.ts). Cada fila es un evento que se
+      // envía a la aplicación de la fábrica; se escribe en la misma transacción que la nota de pedido que lo origina.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS integracion_envios (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cotizacion_id TEXT NOT NULL REFERENCES cotizaciones(id) ON DELETE CASCADE,
+          fabrica TEXT NOT NULL CHECK (fabrica IN (${FABRICAS.map((f) => `'${f}'`).join(', ')})),
+          revision INTEGER NOT NULL CHECK (revision > 0),
+          evento TEXT NOT NULL CHECK (evento IN ('order.ready', 'order.cancelled')),
+          evento_id TEXT NOT NULL UNIQUE,
+          clave_idempotencia TEXT NOT NULL UNIQUE,
+          contenido TEXT NOT NULL,
+          html_produccion TEXT,
+          estado TEXT NOT NULL CHECK (estado IN ('pendiente', 'entregado', 'fallido', 'reemplazado')),
+          intentos INTEGER NOT NULL DEFAULT 0,
+          proximo_intento TEXT NOT NULL,
+          en_curso_hasta TEXT,
+          ultimo_status INTEGER,
+          ultimo_error TEXT,
+          respuesta TEXT,
+          creado TEXT NOT NULL,
+          entregado TEXT,
+          UNIQUE (cotizacion_id, fabrica, revision)
+        );
+        CREATE INDEX IF NOT EXISTS idx_integracion_pendientes ON integracion_envios(estado, proximo_intento);
+        PRAGMA user_version = 26;
+      `);
+    }).immediate();
 }
 
 /**

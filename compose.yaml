@@ -43,6 +43,10 @@ services:
       STARKEN_CUENTA_CORRIENTE: ${STARKEN_CUENTA_CORRIENTE:-}
       STARKEN_CUENTA_CORRIENTE_DV: ${STARKEN_CUENTA_CORRIENTE_DV:-}
       STARKEN_RUT_CLIENTE: ${STARKEN_RUT_CLIENTE:-}
+      # Envío automático de notas de pedido a la aplicación de la fábrica de Panguipulli (opcional).
+      NELTUME_FABRICA_PANGUIPULLI_URL: ${NELTUME_FABRICA_PANGUIPULLI_URL:-}
+      NELTUME_FABRICA_PANGUIPULLI_SECRETO: ${NELTUME_FABRICA_PANGUIPULLI_SECRETO:-}
+      NELTUME_FABRICA_TIMEOUT_MS: ${NELTUME_FABRICA_TIMEOUT_MS:-}
       # Fijas de la imagen: rutas dentro del contenedor.
       NODE_ENV: production
       CHROMIUM_PATH: /usr/bin/chromium
