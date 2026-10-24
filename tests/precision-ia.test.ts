@@ -411,13 +411,35 @@ describe('servicio: anclaje en modo «avisar»', () => {
 
   it('conserva la lectura de la IA y avisa en qué difiere de la frase, sin pedirle corregir', async () => {
     const { servicio, llm } = await setupAvisar();
-    llm.interpretar.mockResolvedValueOnce(leida);
+    let correccion: unknown;
+    llm.interpretar.mockImplementationOnce(async (_ctx: unknown, opciones: { revisar: (s: unknown) => unknown }) => {
+      correccion = opciones.revisar(leida);
+      return leida;
+    });
     const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(correccion).toBeNull();
     expect(r.cotizacion.solicitudes.map((s) => s.cantidad)).toEqual([2, 2]);
     expect(r.avisos).toEqual([
       'Revisa el ítem 1 (MOLCO): anoté la cantidad 2, pero tu mensaje parece decir 3.',
     ]);
-    expect(llm.interpretar.mock.calls[0][1]).toEqual({});
+  });
+
+  it('el único reintento: un pedido respondido por el chat (Qwen3.7-Flash pregunta la madera)', async () => {
+    const { servicio, llm } = await setupAvisar();
+    const mensaje = 'precio de 3 Molco de 80 x 200';
+    const revisiones: unknown[] = [];
+    llm.interpretar.mockImplementationOnce(async (_ctx: unknown, opciones: { revisar: (s: unknown) => unknown }) => {
+      revisiones.push(
+        opciones.revisar({ name: 'responder', input: { texto: '¿De qué madera quieres las 3 Molco de 80 x 200?' } }),
+        // Un ítem omitido no se reintenta: se avisa.
+        opciones.revisar({ name: 'modificar_cotizacion', input: { agregar: [] } }),
+      );
+      return { name: 'modificar_cotizacion', input: { agregar: [{ ...item({ madera: null }), fuente: '3 Molco de 80 x 200' }] } };
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(revisiones[0]).toMatch(/regístralos con modificar_cotizacion/);
+    expect(revisiones[1]).toBeNull();
+    expect(r.cotizacion.solicitudes[0]).toMatchObject({ modelo: 'MOLCO', madera: null, cantidad: 3 });
   });
 
   it('en modo «corregir» la misma lectura se corrige con la frase', async () => {
