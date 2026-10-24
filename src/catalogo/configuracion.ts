@@ -40,6 +40,11 @@ export const maderaEquivalente = (familia: Familia | null | undefined, madera: s
   Object.entries((familia && MADERA_EQUIVALENTE[familia]) ?? {}).find(
     ([pedida]) => normalizarCatalogo(pedida) === normalizarCatalogo(madera),
   )?.[1] ?? null;
+/** Las maderas pedidas que la familia cotiza con `madera` (la inversa de `maderaEquivalente`). */
+export const maderasConEquivalente = (familia: string | null | undefined, madera: string) =>
+  Object.entries((familia && MADERA_EQUIVALENTE[familia as Familia]) ?? {}).flatMap(([pedida, equivalente]) =>
+    normalizarCatalogo(equivalente) === normalizarCatalogo(madera) ? [pedida] : [],
+  );
 
 const maderaSchema = z.object({
   nombre: z.string().trim().min(1),

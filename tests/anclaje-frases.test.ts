@@ -10,6 +10,7 @@ import {
   palabrasDesconocidas,
   parMedidaPuerta,
 } from '../src/asistente/anclaje';
+import { maderasConEquivalente } from '../src/catalogo/configuracion';
 import { normalizar, normalizarMedida, resolverNombres } from '../src/catalogo/resolver';
 import type { SolicitudItem } from '../src/catalogo/tipos';
 
@@ -462,6 +463,23 @@ describe('maderas que no son del catálogo', () => {
     );
     expect(items[0].madera).toBeNull();
   });
+
+  it('la madera con que el catálogo cotiza una dicha se acepta: un marco «enchapado» es Pino Finger enchapado', () => {
+    // Qwen3.7-Flash escribe directo PINO FINGER ENCHAPADO MARA, la madera que el sistema guarda para ese marco.
+    const anclar = (modelo: string, texto: string) =>
+      anclarNombres(
+        [item({ modelo, madera: 'PINO FINGER ENCHAPADO MARA' })],
+        [],
+        [texto],
+        { modelo: {}, madera: { 'MARA ENCHAPADA': ['ENCHAPADO', 'ENCHAPADA'] } },
+        undefined,
+        (m, madera) => maderasConEquivalente(m === 'MARCO' ? 'MARCO' : 'PUERTA', madera),
+      ).items[0].madera;
+    expect(anclar('MARCO', '2 Huilo Huilo enchapada con su marco de 30x90 enchapado')).toBe('PINO FINGER ENCHAPADO MARA');
+    // Sin la madera dicha, o en una familia que no la cotiza así, sigue siendo un nombre que no está en el mensaje.
+    expect(anclar('MARCO', '2 marcos de 30x90 en lenga')).toBeNull();
+    expect(anclar('HUILO HUILO', '2 Huilo Huilo enchapada')).toBeNull();
+  });
 });
 
 describe('escuadría en pulgadas', () => {
@@ -901,6 +919,14 @@ describe('modo «avisar»: diferencias con la frase sin corregir', () => {
       }),
     ];
     expect(avisosDeCampos(ia, [{ ...ia[0], ancho: 80, madera: 'lenga' }])).toEqual([]);
+  });
+
+  it('la madera con que el catálogo cotiza la que dice la frase no es una diferencia', () => {
+    const marco = item({ modelo: 'MARCO', madera: 'PINO FINGER ENCHAPADO MARA', medida: '30X90', cantidad: 2 });
+    const pedidasComo = (m: string | null, madera: string) => maderasConEquivalente(m === 'MARCO' ? 'MARCO' : 'PUERTA', madera);
+    const leido = [{ ...marco, madera: 'MARA ENCHAPADA' }];
+    expect(avisosDeCampos([marco], leido, undefined, pedidasComo)).toEqual([]);
+    expect(avisosDeCampos([marco], [{ ...marco, madera: 'LENGA' }], undefined, pedidasComo)).toHaveLength(1);
   });
 
   it('avisa las palabras desconocidas junto al producto solo si su frase está en el mensaje', () => {

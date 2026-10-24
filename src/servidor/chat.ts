@@ -32,7 +32,7 @@ import {
 import { fleteAlFinal, pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
 import { respuestaDirecta } from '../asistente/respuesta-directa';
 import { mapaCatalogo } from '../catalogo/mapa';
-import { nombreCanonicoModelo } from '../catalogo/configuracion';
+import { maderasConEquivalente, nombreCanonicoModelo } from '../catalogo/configuracion';
 import { metrosTexto } from '../catalogo/escalones';
 import {
   aliasMaderasCatalogo,
@@ -153,6 +153,19 @@ const NOMBRES_FABRICA: Record<Fabrica, RegExp> = {
 };
 /** ¿Alguno de los textos de la persona nombra la fábrica? Sin eso, la IA la habría deducido: no se asigna. */
 const fabricaEscrita = (fabrica: Fabrica, textos: string[]) => textos.some((t) => NOMBRES_FABRICA[fabrica].test(sinTildes(t)));
+/**
+ * La fábrica dicha como tal («para la fábrica de Panguipulli», «las hace la fábrica de Santiago»). Sueltos,
+ * Panguipulli y Santiago también son un modelo, una comuna o un despacho.
+ */
+const FABRICA_DICHA = /\bfabricas?\s+(?:de\s+)?(pangui(?:pulli)?|santiago|stgo)\b/g;
+/** Fábricas que el mensaje nombra como tales y la respuesta de la IA no asigna a ningún ítem. */
+function fabricasSinAsignar(mensaje: string, input: ModificacionCotizacion): Fabrica[] {
+  const dichas = new Set(
+    [...sinTildes(mensaje).matchAll(FABRICA_DICHA)].map((m): Fabrica => (m[1].startsWith('pangui') ? 'panguipulli' : 'santiago')),
+  );
+  const asignadas = new Set([...(input.agregar ?? []), ...(input.items ?? []).map((i) => i.cambios)].map((x) => x.fabrica));
+  return [...dichas].filter((f) => !asignadas.has(f));
+}
 /** Enteros escritos en el mensaje («1.250» es 1250): los números de documento deben salir de ahí. */
 const enterosEscritos = (texto: string) =>
   new Set((texto.match(/\d[\d.]*/g) ?? []).map((n) => Number(n.replace(/\./g, ''))).filter(Number.isSafeInteger));
@@ -371,9 +384,10 @@ function escuadriasDe(ctx: ContextoChat, modelo: string, madera: string | null):
 
 /**
  * Corrección para la IA si su respuesta deja fuera pedidos del mensaje o pregunta por el chat lo que debía
- * registrar como ítem pendiente; null si la respuesta sirve. En modo «avisar» (`corrige` falso) solo se revisa lo
- * segundo: Qwen3.7-Flash responde «¿De qué madera quieres las 3 Rupanco…?» a la mitad de los pedidos sin madera,
- * aunque el prompt lo prohíbe, y un pedido que no queda registrado no se arregla con un aviso.
+ * registrar como ítem pendiente, o si no asigna la fábrica que el mensaje dice; null si la respuesta sirve. En modo
+ * «avisar» (`corrige` falso) no se revisan los omitidos: Qwen3.7-Flash responde «¿De qué madera quieres las 3
+ * Rupanco…?» a la mitad de los pedidos sin madera, aunque el prompt lo prohíbe, y un pedido o una fábrica que no
+ * queda registrada no se arregla con un aviso.
  */
 function revisarSalida(
   ctx: ContextoChat,
@@ -388,9 +402,14 @@ function revisarSalida(
   if (!parsed.success) return null;
   const res = parsed.data;
   if (res.name === 'modificar_cotizacion') {
-    if (!corrige) return null;
-    const faltan = pedidosOmitidos(ctx, res.input, mensaje, base, resolver);
-    if (!faltan.length) return null;
+    const faltan = corrige ? pedidosOmitidos(ctx, res.input, mensaje, base, resolver) : [];
+    if (!faltan.length) {
+      // Qwen3.7-Flash a veces registra los productos sin la fábrica que el mensaje dice para cada uno.
+      const sinFabrica = fabricasSinAsignar(mensaje, res.input);
+      return sinFabrica.length
+        ? `El mensaje dice a qué fábrica va cada producto (${sinFabrica.map((f) => nombreFabrica[f]).join(' y ')}), pero tu respuesta no la asignó. Responde de nuevo con modificar_cotizacion, con los mismos ítems, y pon en cada uno la fábrica que dice el mensaje.`
+        : null;
+    }
     const correccion = `Tu respuesta anterior no registró estos pedidos del mensaje: ${faltan.map((f) => `«${f}»`).join(', ')}. Responde de nuevo con modificar_cotizacion e incluye en agregar todos los ítems del mensaje (también los que ya habías registrado), cada uno con su propia fuente.`;
     // Con un flete en el mensaje, el modelo a veces registra solo el flete y ningún producto, y repite el error
     // al corregirlo: el reintento va sin la línea del flete, que ya quedó registrado y se conserva.
@@ -761,8 +780,8 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
   const resolver = resolverNombres(ctx.catalogo);
   // Familia del modelo que nombró la persona o la IA (también con un alias): fija el rango de sus medidas.
   const familia = (modelo: string) => ctx.familiaDe(resolver.modelo(modelo) ?? modelo);
-  // En modo «avisar» la lectura de la IA no se enmienda: sin atajos ni reordenar el mensaje, y el único reintento es
-  // el de un pedido respondido por el chat (ver `revisarSalida`).
+  // En modo «avisar» la lectura de la IA no se enmienda: sin atajos ni reordenar el mensaje, y solo se reintenta un
+  // pedido respondido por el chat o una fábrica dicha sin asignar (ver `revisarSalida`).
   const corrige = (ctx.llm.anclaje ?? 'corregir') === 'corregir';
   // Un dato suelto que responde la pregunta pendiente («lenga», «son 3») se aplica sin consultar a la IA,
   // igual que los botones. Los dobles de prueba (sin verificarCifras) siempre pasan por la IA.
@@ -941,7 +960,16 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       const dichas = fabricasDichas(res.input, textosPersona, (i) =>
         q.solicitudes[i] ? ctx.describir(q.solicitudes[i]) : `el ítem ${i + 1}`,
       );
-      avisosFabrica = dichas.avisos;
+      avisosFabrica = [
+        ...dichas.avisos,
+        // Si ni el reintento la asignó, la fábrica dicha que falta no pasa en silencio.
+        ...marcar(
+          'noRegistre',
+          fabricasSinAsignar(accion.mensaje, dichas.input).map(
+            (f) => `No registré la fábrica de ${nombreFabrica[f]} que indicaste: revisa a qué ítems va.`,
+          ),
+        ),
+      ];
       // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
       const aplicado = aplicarModificacion(ctx, q, dichas.input);
       if (!aplicado) return responder(avisosFabrica.length ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n') : NO_ENTENDI);
@@ -1008,10 +1036,16 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         (a) => !editadoEnElMensaje(a, propuesta.items, q.solicitudes, accion.mensaje),
       );
       const anclado = anclarCifras(corrige ? leidoPorFrase.items : propuesta.items, previos, textosIA, familia);
-      const nombres = anclarNombres(anclado.items, previos, textosIA, {
-        modelo: aliasModelosCatalogo(ctx.catalogo),
-        madera: aliasMaderasCatalogo(ctx.catalogo),
-      }, resolver);
+      const pedidasComo = (modelo: string | null, madera: string) =>
+        modelo ? maderasConEquivalente(familia(modelo), madera) : [];
+      const nombres = anclarNombres(
+        anclado.items,
+        previos,
+        textosIA,
+        { modelo: aliasModelosCatalogo(ctx.catalogo), madera: aliasMaderasCatalogo(ctx.catalogo) },
+        resolver,
+        pedidasComo,
+      );
       const porFrase = corrige
         ? {
             ...leidoPorFrase,
@@ -1026,7 +1060,12 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
               // su propio aviso; no se avisa además como «anoté…» ni como «tu mensaje parece decir…».
               ...marcar(
                 'campo',
-                avisosDeCampos(nombres.items, sinLoDejado(propuesta.items, leidoPorFrase.items, nombres.items), familia),
+                avisosDeCampos(
+                  nombres.items,
+                  sinLoDejado(propuesta.items, leidoPorFrase.items, nombres.items),
+                  familia,
+                  pedidasComo,
+                ),
               ),
               ...marcar('palabra', avisosDePalabras(propuesta.items, accion.mensaje, resolver)),
             ],

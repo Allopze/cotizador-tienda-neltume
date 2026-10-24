@@ -72,7 +72,7 @@ export interface OpcionesInterpretar {
  * - 'corregir': su lectura reemplaza la de la IA cuando difieren, y los atajos están activos.
  * - 'avisar': la lectura de la IA se conserva y cada diferencia solo se avisa; sin atajos. Pensado para un modelo
  *   capaz, que no necesita que el servidor le enmiende la lectura. Solo se reintenta un pedido que la IA respondió
- *   por el chat en vez de registrarlo.
+ *   por el chat en vez de registrarlo, o una fábrica que el mensaje dice y la IA no asignó.
  * En ambos modos una cifra, un nombre o un monto que no está escrito en la conversación se anula.
  */
 export type ModoAnclaje = 'corregir' | 'avisar';

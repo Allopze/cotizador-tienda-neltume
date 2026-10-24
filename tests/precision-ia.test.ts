@@ -424,7 +424,36 @@ describe('servicio: anclaje en modo «avisar»', () => {
     ]);
   });
 
-  it('el único reintento: un pedido respondido por el chat (Qwen3.7-Flash pregunta la madera)', async () => {
+  it('reintenta y avisa la fábrica dicha que la IA no asignó; Panguipulli suelto no es la fábrica', async () => {
+    const { servicio, llm } = await setupAvisar();
+    const mensaje = '3 Molco oregón de 80 x 200 para la fábrica de Panguipulli';
+    const sinFabrica = { name: 'modificar_cotizacion', input: { agregar: [{ ...item(), fuente: '3 Molco oregón de 80 x 200' }] } };
+    const revisiones: unknown[] = [];
+    llm.interpretar.mockImplementationOnce(async (_ctx: unknown, opciones: { revisar: (s: unknown) => unknown }) => {
+      revisiones.push(
+        opciones.revisar(sinFabrica),
+        opciones.revisar({ name: 'modificar_cotizacion', input: { agregar: [{ ...item(), fabrica: 'panguipulli' }] } }),
+      );
+      // Ni el reintento la asignó.
+      return sinFabrica;
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(revisiones[0]).toMatch(/fábrica va cada producto \(Panguipulli\).*pon en cada uno la fábrica/);
+    expect(revisiones[1]).toBeNull();
+    expect(r.avisos).toEqual(['No registré la fábrica de Panguipulli que indicaste: revisa a qué ítems va.']);
+
+    // «Despacho a Santiago» o el modelo Panguipulli no dicen a qué fábrica va.
+    let otra: unknown;
+    llm.interpretar.mockImplementationOnce(async (_ctx: unknown, opciones: { revisar: (s: unknown) => unknown }) => {
+      otra = opciones.revisar(sinFabrica);
+      return sinFabrica;
+    });
+    const r2 = await servicio.ejecutar({ tipo: 'chat', mensaje: '3 Molco oregón de 80 x 200, despacho a Santiago' });
+    expect(otra).toBeNull();
+    expect(r2.avisos ?? []).not.toContainEqual(expect.stringMatching(/fábrica/));
+  });
+
+  it('el reintento de un pedido respondido por el chat (Qwen3.7-Flash pregunta la madera)', async () => {
     const { servicio, llm } = await setupAvisar();
     const mensaje = 'precio de 3 Molco de 80 x 200';
     const revisiones: unknown[] = [];

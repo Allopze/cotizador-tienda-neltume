@@ -305,7 +305,8 @@ function dichoComo(texto: string, resolver: ResolverNombre, otro?: ResolverNombr
 /**
  * Lo mismo para los nombres: un modelo o una madera nueva debe aparecer en el texto, por su nombre, por una
  * de sus palabras o por un alias del catálogo. Así la IA no puede cambiar «Pillo» por otro modelo parecido.
- * Un nombre que ya estaba en el borrador se acepta («cámbialas todas a lenga» copia la madera).
+ * Un nombre que ya estaba en el borrador se acepta («cámbialas todas a lenga» copia la madera), y también la
+ * madera con que el catálogo cotiza una dicha (un marco «enchapado» es PINO FINGER ENCHAPADO MARA).
  */
 export function anclarNombres(
   items: SolicitudItem[],
@@ -314,6 +315,8 @@ export function anclarNombres(
   alias: Record<CampoNombre, Record<string, string[]>>,
   /** Resolución del catálogo: acepta un nombre dicho con otra forma solo si el catálogo lo lleva a ese nombre. */
   resolver?: Record<CampoNombre, ResolverNombre>,
+  /** Maderas que el catálogo cotiza como `madera` para el modelo del ítem (ver `maderasConEquivalente`). */
+  pedidasComo: (modelo: string | null, madera: string) => string[] = () => [],
 ) {
   const texto = normalizar(textos.join(' '));
   const dicho = resolver && {
@@ -328,13 +331,15 @@ export function anclarNombres(
       if (!valor) continue;
       const clave = normalizar(valor);
       if (previos.some((p) => p[campo] && normalizar(p[campo]!) === clave)) continue;
-      const alternativos = Object.entries(alias[campo]).flatMap(([nombre, lista]) =>
-        normalizar(nombre) === clave ? lista : [],
-      );
-      const candidatos = [...partesNombre(valor), ...alternativos];
-      if (dicho
-        ? dicho[campo](valor)
-        : candidatos.some((c) => !!normalizar(c) && texto.includes(normalizar(c)))) continue;
+      const esDicho = (nombre: string) => {
+        const alternativos = Object.entries(alias[campo]).flatMap(([n, lista]) =>
+          normalizar(n) === normalizar(nombre) ? lista : [],
+        );
+        return dicho
+          ? dicho[campo](nombre)
+          : [...partesNombre(nombre), ...alternativos].some((c) => !!normalizar(c) && texto.includes(normalizar(c)));
+      };
+      if (esDicho(valor) || (campo === 'madera' && pedidasComo(item.modelo, valor).some(esDicho))) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
         `El asistente interpretó ${campo === 'modelo' ? 'el modelo' : 'la madera'} del ítem ${i + 1} como «${valor}», pero ese nombre no aparece en tu mensaje: quedó pendiente para que lo indiques.`,
@@ -908,8 +913,12 @@ export function avisosDeCampos(
   porFrase: SolicitudItem[],
   /** Familia del modelo en el catálogo: las medidas se comparan y muestran con su rango (ver `familiaItem`). */
   familia: (modelo: string) => string | null = () => null,
+  /** Maderas que el catálogo cotiza como la que anotó la IA: dicen lo mismo (ver `anclarNombres`). */
+  pedidasComo: (modelo: string | null, madera: string) => string[] = () => [],
 ): string[] {
   const avisos: string[] = [];
+  const equivalente = (item: SolicitudItem, anotada: string, leida: string) =>
+    pedidasComo(item.modelo, anotada).some((m) => normalizar(m) === normalizar(leida));
   ia.forEach((item, i) => {
     const leido = porFrase[i];
     if (!leido) return;
@@ -922,6 +931,7 @@ export function avisosDeCampos(
         b = leido[campo] ?? null;
       if (a === null && b === null) continue;
       if (a !== null && b !== null && mismoValor(campo, a, b, fam)) continue;
+      if (campo === 'madera' && a !== null && b !== null && equivalente(item, String(a), String(b))) continue;
       if (a === null) faltan.push(`${nombre} ${valorAviso(campo, b!, fam)}`);
       else if (b === null) sobran.push(`${nombre} ${valorAviso(campo, a, fam)}`);
       else distintos.push([`${nombre} ${valorAviso(campo, a, fam)}`, valorAviso(campo, b, fam)]);
