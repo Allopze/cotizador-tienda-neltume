@@ -1,7 +1,7 @@
 // Mide la precisión de la IA con los casos de evals/cotizacion.json, usando el mismo servicio que la
 // aplicación (anclaje de cifras, reintento y resolución contra el catálogo incluidos).
 //
-//   npm run evaluar:ia                           modelo configurado en Ajustes
+//   npm run evaluar:ia                           modelo de CMD_MODEL (.env.local); sin él, el de Ajustes
 //   npm run evaluar:ia -- --modelos a,b          compara modelos
 //   npm run evaluar:ia -- --caso voz-coscos      un caso
 //   npm run evaluar:ia -- --min 0.95             sale con error bajo esa precisión
@@ -70,12 +70,16 @@ const clave = perfecta ? '' : leerClaveCommandCode();
 if (!perfecta && !clave)
   throw new Error('Falta la clave de CommandCode: configúrala en Ajustes o en CMD_API_KEY.');
 if (perfecta && values.modelos) throw new Error('--ia-perfecta no admite --modelos.');
+// El modelo a evaluar lo dice --modelos o la configuración (CMD_MODEL); solo sin ella, el guardado en Ajustes.
+const configurado = process.env.CMD_MODEL?.trim();
+const origenModelo = values.modelos ? '--modelos' : configurado ? 'CMD_MODEL' : 'Ajustes';
 const modelos = perfecta
   ? [new LLMPerfecto(casos[0]).modeloEfectivo]
   : (values.modelos
       ?.split(',')
       .map((m) => m.trim())
-      .filter(Boolean) ?? [leerAjustesIA().commandcode.modelo]);
+      .filter(Boolean) ?? [configurado || leerAjustesIA().commandcode.modelo]);
+if (!perfecta) console.log(`Modelo${modelos.length > 1 ? 's' : ''} de ${origenModelo}: ${modelos.join(', ')}`);
 const modos = (values.anclaje ?? new CommandCodeLLM().anclaje).split(',').map((m) => m.trim());
 for (const m of modos)
   if (m !== 'corregir' && m !== 'avisar') throw new Error(`--anclaje: «${m}» no es corregir ni avisar.`);
