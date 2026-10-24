@@ -31,15 +31,17 @@ const corrida = (id: string, extra: Partial<CorridaEvaluada> = {}): CorridaEvalu
 });
 const diferencia = { item: 1, campo: 'alto', esperado: 2, obtenido: 2.1 };
 const avisoCifras = { categoria: 'cifras', texto: 'El alto 2,1 m no aparece en tu mensaje.' };
+const avisoCampo = { categoria: 'campo', texto: 'No pude verificar el ítem 1 contra tu mensaje; revísalo.' };
 const informativo = { categoria: 'otros', texto: 'Usé el precio que indicaste para el ítem 1.' };
 
 describe('informe de evaluar:ia', () => {
-  // a: perfecto con un aviso informativo · b: perfecto con falsa alarma · c: error silencioso y error avisado.
+  // a: perfecto con un aviso informativo · b: perfecto con falsa alarma y con una cifra inventada que quedó
+  // pendiente · c: error silencioso y error avisado.
   const corridas = [
     corrida('a', { avisos: [informativo] }),
     corrida('a'),
+    corrida('b', { avisos: [avisoCampo] }),
     corrida('b', { avisos: [avisoCifras] }),
-    corrida('b'),
     corrida('c', { aciertos: 8, diferencias: [diferencia] }),
     corrida('c', { aciertos: 8, diferencias: [diferencia], avisos: [avisoCifras] }),
   ];
@@ -55,13 +57,15 @@ describe('informe de evaluar:ia', () => {
   });
 
   it('cuenta falsas alarmas, errores silenciosos y casos perfectos; los avisos informativos no cuentan', () => {
+    // El aviso de cifras de la corrida perfecta dejó pendiente lo que la IA inventó: no es falsa alarma.
     expect(medirAvisos(corridas)).toEqual({
       perfectas: 4,
       falsas: 1,
+      atrapadas: 1,
       conErrores: 2,
       silenciosas: 1,
-      porCategoria: { cifras: 1 },
-      ejemplos: [`[cifras] ${avisoCifras.texto}`],
+      porCategoria: { campo: 1 },
+      ejemplos: [`[campo] ${avisoCampo.texto}`],
     });
     expect(informe).toMatchObject({
       modelo: 'deepseek/deepseek-v4.1-flash',
@@ -92,9 +96,9 @@ describe('informe de evaluar:ia', () => {
     ]);
     const avisoTotal = { categoria: 'otros', texto: 'Escribiste un precio total para el ítem 1; indica el valor por unidad.' };
     expect(medirAvisos([corrida('i7', { avisos: [avisoTotal] })], totalPedido)).toMatchObject({ perfectas: 1, falsas: 0 });
-    expect(medirAvisos([corrida('i7', { avisos: [avisoTotal, avisoCifras] })], totalPedido)).toMatchObject({
+    expect(medirAvisos([corrida('i7', { avisos: [avisoTotal, avisoCampo] })], totalPedido)).toMatchObject({
       falsas: 1,
-      porCategoria: { cifras: 1 },
+      porCategoria: { campo: 1 },
     });
     // Sin los casos se cuenta como antes.
     expect(medirAvisos([corrida('i7', { avisos: [avisoTotal] })])).toMatchObject({ falsas: 1 });
@@ -121,6 +125,7 @@ describe('informe de evaluar:ia', () => {
     expect(md).toContain('# Evaluación de la IA · deepseek/deepseek-v4.1-flash');
     expect(md).toContain('- Casos perfectos: 2/3');
     expect(md).toContain('- Falsas alarmas: 1/4 corridas perfectas (25.0 %)');
+    expect(md).toContain('- Datos inventados por la IA que el anclaje dejó pendientes: 1 corridas perfectas');
     expect(md).toContain('- Errores silenciosos: 1 de 2 corridas con errores');
     expect(md).toContain('≈ US$ 0.012');
     expect(md).toContain('## Casos con diferencias (1)');

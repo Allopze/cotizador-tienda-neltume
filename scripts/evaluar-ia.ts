@@ -210,7 +210,7 @@ for (const modelo of modelos)
     const { avisos } = informe;
     const categorias = Object.entries(avisos.porCategoria);
     console.log(
-      `  avisos: falsas alarmas en ${avisos.falsas}/${avisos.perfectas} corridas perfectas${categorias.length ? ` (${categorias.map(([c, n]) => `${c} ${n}`).join(', ')})` : ''} · errores avisados ${avisos.conErrores - avisos.silenciosas}/${avisos.conErrores} · silenciosos ${avisos.silenciosas}`,
+      `  avisos: falsas alarmas en ${avisos.falsas}/${avisos.perfectas} corridas perfectas${categorias.length ? ` (${categorias.map(([c, n]) => `${c} ${n}`).join(', ')})` : ''} · datos inventados atrapados en ${avisos.atrapadas} · errores avisados ${avisos.conErrores - avisos.silenciosas}/${avisos.conErrores} · silenciosos ${avisos.silenciosas}`,
     );
     for (const texto of avisos.ejemplos) console.log(`    falsa alarma ${texto}`);
     const base = join(values.salida!, nombreInforme(fecha, modelo, modos.length > 1 ? anclaje : undefined));
