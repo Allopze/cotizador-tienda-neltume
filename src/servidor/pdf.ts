@@ -103,7 +103,37 @@ export interface DocumentoPdf {
   otrasNotas?: { fabrica?: Fabrica; numero: number; items: number }[];
   /** Documento anulado: se imprime con una marca visible y la fecha y el motivo de la anulación. */
   anulada?: { fecha: string | null; motivo: string | null; por: string | null } | null;
+  /**
+   * Solo nota: la orden de trabajo que recibe la fábrica por la integración. Las mismas líneas, medidas, planos y
+   * observaciones que la nota, sin precios, totales ni descuentos: el HTML no los trae, no solo los oculta.
+   */
+  produccion?: boolean;
 }
+
+/**
+ * Filas de un documento en el orden del pedido. En la nota, además de sus líneas valorizadas, los pedidos especiales
+ * de su fábrica sin costo de fábrica (`definida: false`): van «Por definir», en su lugar del pedido, y no suman. Solo
+ * los de su fábrica: los de la otra van en su propia nota (uno sin fábrica es de una nota anterior a separarlas).
+ */
+export function filasDocumento(q: Pick<Cotizacion, 'montos' | 'solicitudes'>, doc: Pick<DocumentoPdf, 'tipo' | 'montos' | 'fabrica'>) {
+  const porDefinir =
+    doc.tipo === 'nota'
+      ? q.montos.lineas.filter(
+          (l) =>
+            l.indice != null &&
+            !!q.solicitudes[l.indice]?.personalizado &&
+            (!doc.fabrica || (q.solicitudes[l.indice].fabrica ?? doc.fabrica) === doc.fabrica) &&
+            !doc.montos.lineas.some((m) => m.indice === l.indice),
+        )
+      : [];
+  return [
+    ...doc.montos.lineas.map((l) => ({ l, definida: true })),
+    ...porDefinir.map((l) => ({ l, definida: false })),
+  ].sort((a, b) => (a.l.indice ?? 0) - (b.l.indice ?? 0));
+}
+
+/** Referencia de catálogo de una línea, como la imprime la nota: código y medidas del producto base. */
+export const referenciaCatalogo = (l: Linea) => `${l.producto.codigo} · ${medidaReferencia(l.producto)}`;
 
 const fechaDocumento = (iso: string) =>
   new Date(iso).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
@@ -159,9 +189,10 @@ function planoNota(d: Dibujo | null, l: Linea) {
 
 export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.Database = abrirBaseDatos()) {
   const nota = doc.tipo === 'nota';
+  const produccion = nota && !!doc.produccion;
   const { numero, montos, fecha } = doc;
   const reglas = doc.reglas ?? q.reglas ?? REGLAS;
-  const tipo = nota ? 'Nota de pedido' : 'Cotización';
+  const tipo = produccion ? 'Orden de trabajo' : nota ? 'Nota de pedido' : 'Cotización';
   const c = q.cliente;
   const empresa = datosEmpresa(db);
   // El logo va como referencia: el HTML que se guarda como snapshot de cada documento no repite el SVG en base64.
@@ -189,6 +220,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     nota
       ? [
           ['Fecha', fechaLarga(fecha)],
+          // La orden de trabajo lleva el número de su nota de pedido: es el mismo pedido, sin precios.
+          ['Nota de pedido', produccion ? `N° ${numero}` : null],
           ['Cotización', q.numero !== null ? `N° ${q.numero}` : null],
           ['Aprobada por', doc.autor],
           ['Emitida por', q.emitidaPor],
@@ -232,8 +265,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
   // Un producto fuera de catálogo no tiene referencia de catálogo: fábrica ve las referencias que entregó el cliente.
   const referenciaFabrica = (l: Linea) => {
-    if (l.producto.codigo !== CODIGO_PERSONALIZADO)
-      return `Referencia de catálogo: ${l.producto.codigo} · ${medidaReferencia(l.producto)}`;
+    if (l.producto.codigo !== CODIGO_PERSONALIZADO) return `Referencia de catálogo: ${referenciaCatalogo(l)}`;
     const referencias = l.indice === null ? [] : (q.solicitudes[l.indice]?.referencias ?? []);
     return `Producto personalizado, fuera de catálogo${referencias.length ? ` · Referencias del cliente: ${referencias.map((r) => r.nombre).join(', ')}` : ''}`;
   };
@@ -250,7 +282,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
       l.observaciones && `Observación: ${l.observaciones}`,
     ];
     return `<b>${esc(descripcionLegible(descripcionLinea(l)))}</b>${detalles.map((d) => (d ? `<span${d.startsWith('Medida') ? ' class="medida"' : ''}>${esc(d)}</span>` : '')).join('')}${
-      conDescuentoItem(l) && l.descuentoItem
+      !produccion && conDescuentoItem(l) && l.descuentoItem
         ? `<span class="descuento-item">Descuento especial ${esc(textoDescuentoItem(l.descuentoItem))}: −${pesos(l.descuentoUnitario!)} c/u · Ahorro ${pesos(ahorroLinea(l))}</span>`
         : ''
     }<span class="cod">${esc(nota ? referenciaFabrica(l) : l.producto.codigo)}</span>`;
@@ -258,26 +290,16 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // Con descuento especial, el precio original queda tachado sobre el rebajado (unitario y total de la línea).
   const conOriginal = (l: Linea, original: number, final: number) =>
     conDescuentoItem(l) ? `<s class="original">${pesos(original)}</s> <span>${pesos(final)}</span>` : pesos(final);
-  // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma. Solo los
-  // de su fábrica: los de la otra van en su propia nota (uno sin fábrica es de una nota anterior a separarlas).
-  const porDefinir = nota
-    ? q.montos.lineas.filter(
-        (l) =>
-          l.indice != null &&
-          !!q.solicitudes[l.indice]?.personalizado &&
-          (!doc.fabrica || (q.solicitudes[l.indice].fabrica ?? doc.fabrica) === doc.fabrica) &&
-          !montos.lineas.some((m) => m.indice === l.indice),
-      )
-    : [];
-  const filas = [
-    ...montos.lineas.map((l) => ({ l, definida: true })),
-    ...porDefinir.map((l) => ({ l, definida: false })),
-  ].sort((a, b) => (a.l.indice ?? 0) - (b.l.indice ?? 0));
+  // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma.
+  const filas = filasDocumento(q, doc);
+  const porDefinir = filas.filter((f) => !f.definida);
   const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) => {
     const dibujo = dibujoDe(l);
-    const precios = definida
-      ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
-      : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
+    const precios = produccion
+      ? ''
+      : definida
+        ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
+        : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
     return nota
       ? `<tr><td class="n">${i + 1}</td><td class="plano-c">${planoNota(dibujo, l)}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}<td class="listo"><i></i></td></tr>`
       : `<tr><td class="n">${i + 1}</td><td><div class="prod${dibujo ? '' : ' sin-dibujo'}">${dibujoCotizacion(dibujo)}<div>${producto(l)}</div></div></td><td class="r cant">${l.cantidad}</td>${precios}</tr>`;
@@ -286,7 +308,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     ? `<tr><td class="n">${filas.length + 1}</td><td><div class="prod sin-dibujo"><div><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></div></div></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
     : '';
   const tabla = nota
-    ? `<table><thead><tr><th class="n">N°</th><th class="plano-c">Plano</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio fábrica</th><th class="r tot">Total</th><th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
+    ? `<table><thead><tr><th class="n">N°</th><th class="plano-c">Plano</th><th>Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
     : `<table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
 
   // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
@@ -317,7 +339,10 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   const valores = nota
     ? 'Valores a precio de fábrica, sin la ganancia de venta. Las cotas del plano son la medida pedida de cada puerta, en milímetros (de hoja o de vano, como indica la línea).'
     : 'Valores en pesos chilenos, puestos en fábrica.';
-  const cierreTotales = `<section class="cierre"><p class="valores">${valores}${porDefinir.length ? '<br><br>Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.' : ''}</p><dl class="totales">${totales}</dl></section>`;
+  // La orden de trabajo no lleva totales: solo cómo leer las cotas del plano.
+  const cierreTotales = produccion
+    ? '<section class="cierre"><p class="valores">Orden de trabajo sin precios. Las cotas del plano son la medida pedida de cada puerta, en milímetros (de hoja o de vano, como indica la línea).</p></section>'
+    : `<section class="cierre"><p class="valores">${valores}${porDefinir.length ? '<br><br>Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.' : ''}</p><dl class="totales">${totales}</dl></section>`;
 
   const anulacion = doc.anulada
     ? `<div class="anulada-marca" aria-hidden="true">ANULADA</div><p class="anulada-aviso">${nota ? 'NOTA DE PEDIDO ANULADA' : 'COTIZACIÓN ANULADA'}${doc.anulada.fecha ? ` el ${fechaDocumento(doc.anulada.fecha)}` : ''}${doc.anulada.por ? ` por ${esc(doc.anulada.por)}` : ''}${doc.anulada.motivo ? `. Motivo: ${esc(doc.anulada.motivo)}` : ''}. No es válida${nota ? ' para fábrica' : ''}.</p>`

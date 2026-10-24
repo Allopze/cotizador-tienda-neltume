@@ -6,6 +6,7 @@ import type { Catalogo, Producto, SolicitudItem } from '../src/catalogo/tipos';
 import { clienteVacio } from '../src/catalogo/tipos';
 import { CORRELATIVOS_NOTA, retrocesoOperativo, type Cotizacion } from '../src/negocio/estado';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { VERSION_ESQUEMA } from '../src/servidor/base-datos';
 import { Servicio } from '../src/servidor/servicio';
 import { generarPdf, plantilla } from '../src/servidor/pdf';
 
@@ -371,7 +372,7 @@ describe('Migración v25', () => {
     db.prepare("INSERT INTO eventos (cotizacion_id, fecha, usuario, tipo, detalle) VALUES (?, '2026-10-09T12:00:00.000Z', null, 'produccion_terminada', null)").run(q.id);
     cerrarAlmacen(join(t.dir, 'cotizador.sqlite'));
     const migrada = new Almacen(t.dir).obtener(q.id)!;
-    expect(new Almacen(t.dir).baseDatos().pragma('user_version', { simple: true })).toBe(25);
+    expect(new Almacen(t.dir).baseDatos().pragma('user_version', { simple: true })).toBe(VERSION_ESQUEMA);
     expect(migrada.notas).toHaveLength(1);
     expect(migrada.notas[0]).toMatchObject({
       fabrica: 'panguipulli',

@@ -8,6 +8,9 @@ import { sincronizacionActiva } from '@/servidor/feriados-sync';
 import { prepararPdf } from '@/servidor/pdf';
 import { leerEntornoStarken } from '@/servidor/starken';
 import { leerConfiguracionStarken } from '@/servidor/starken-configuracion';
+import { estadoConfiguracion, FABRICAS_INTEGRADAS } from '@/servidor/integracion-configuracion';
+import { resumenBandeja } from '@/servidor/integracion-bandeja';
+import { nombreFabrica } from '@/negocio/estado';
 
 /**
  * Comprobaciones de /api/salud. `error` significa que el cotizador no puede cumplir su función principal (cotizar,
@@ -227,6 +230,42 @@ function comprobarFeriados(ahora = new Date()): Comprobacion {
   }
 }
 
+/** Un envío a fábrica pendiente por más de esto (la fábrica no responde o rechaza la firma) merece revisarse. */
+const ENVIO_DEMORADO_MS = HORA;
+
+/**
+ * Integración con la fábrica: es opcional, así que sin configurar no es un aviso. Avisa si quedó a medio configurar,
+ * si hay envíos que no se reintentan (fallidos) o si alguno lleva más de una hora sin salir. Nunca muestra el secreto.
+ */
+function comprobarIntegracion(ahora = new Date()): Comprobacion {
+  const estados = Object.fromEntries(FABRICAS_INTEGRADAS.map((f) => [f, estadoConfiguracion(f)]));
+  const incompletas = FABRICAS_INTEGRADAS.filter((f) => estados[f] === 'incompleta').map((f) => nombreFabrica[f]);
+  let resumen;
+  try {
+    resumen = resumenBandeja(abrirBaseDatos());
+  } catch (error) {
+    return { estado: 'aviso', detalle: `No se pudo revisar los envíos a fábrica: ${textoError(error)}`, configuracion: estados };
+  }
+  const datos = { configuracion: estados, ...resumen };
+  if (incompletas.length)
+    return {
+      estado: 'aviso',
+      detalle: `La integración con ${incompletas.join(' y ')} está a medio configurar: falta la URL HTTPS o el secreto (al menos 32 caracteres). Las notas nuevas no se envían.`,
+      ...datos,
+    };
+  if (resumen.fallidos)
+    return {
+      estado: 'aviso',
+      detalle: `${resumen.fallidos} envío${resumen.fallidos === 1 ? '' : 's'} a fábrica no se pudo entregar y ya no se reintenta. Revísalo con npm run integracion.`,
+      ...datos,
+    };
+  if (resumen.pendienteMasAntiguo && ahora.getTime() - Date.parse(resumen.pendienteMasAntiguo) > ENVIO_DEMORADO_MS)
+    return { estado: 'aviso', detalle: 'Hay envíos a fábrica pendientes hace más de una hora; se siguen reintentando.', ...datos };
+  if (!Object.values(estados).includes('configurada'))
+    return { estado: 'ok', detalle: 'La integración con fábrica no está configurada (es opcional).', ...datos };
+  return { estado: 'ok', detalle: 'Integración con fábrica al día.', ...datos };
+}
+
 /** Fecha de una carpeta `cotizador-<ISO con : y . cambiados por ->` de `npm run respaldar`. */
 function fechaRespaldo(directorio: string, nombre: string) {
   const iso = nombre
@@ -279,6 +318,7 @@ export async function comprobacionesCompletas(ahora = new Date()): Promise<Recor
     starken: comprobarStarken(),
     feriados: comprobarFeriados(ahora),
     respaldo: comprobarRespaldo(ahora),
+    integracion: comprobarIntegracion(ahora),
   };
 }
 

@@ -96,10 +96,12 @@ import {
   textoActividad,
   textoCambios,
 } from './edicion';
-import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, VERSION_OBSOLETA } from './errores';
+import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, registrarError, VERSION_OBSOLETA } from './errores';
 import { prepararFeriados } from './feriados-sync';
-import { generarPdf, plantilla, prepararPdf } from './pdf';
+import { generarPdf, plantilla, prepararPdf, type DocumentoPdf } from './pdf';
 import { documentoCotizacion, documentoNota } from './documentos';
+import { configuracionFabrica, fabricaIntegrada } from './integracion-configuracion';
+import { cancelacionDeNota, prepararEnvio, type EnvioPreparado } from './integracion-pedido';
 import { itemsVigentes } from './items-vigentes';
 import { leerConfiguracionNegocio } from './configuracion-negocio';
 import { verificarTarifa, huellaBulto } from './starken-firma';
@@ -780,6 +782,11 @@ export class Servicio {
     q.fechaAnulacion = fecha;
     q.motivoAnulacion = motivo;
     for (const nota of q.notas) nota.anulada = true;
+    // La fábrica integrada que ya recibió (o tiene en cola) el pedido se entera de la anulación; si nunca se encoló,
+    // la bandeja lo descarta.
+    for (const nota of q.notas)
+      if (fabricaIntegrada(nota.fabrica))
+        u.encolarIntegracion({ tipo: 'cancelacion', cotizacionId: q.id, fabrica: nota.fabrica, cancelacion: cancelacionDeNota(q, nota) });
     // Una revisión en borrador de esta emitida ya no revisa nada: sigue como cotización nueva.
     const avisos: string[] = [];
     const revision = q.numero !== null ? u.revisionAbierta(q) : null;
@@ -1765,30 +1772,28 @@ export class Servicio {
       entregaComprometida: null,
     };
     const fecha = new Date().toISOString();
-    const generados: { nota: NotaPedido; html: string }[] = [];
+    const generados: { nota: NotaPedido; html: string; doc: DocumentoPdf }[] = [];
     try {
       for (const { numero, fabrica, montos } of notas) {
         const archivo = `nota-pedido-${fabrica}-${numero}.pdf`;
-        const html = await plantilla(
-          copia,
-          {
-            tipo: 'nota',
-            numero,
-            fabrica,
-            montos,
-            fecha,
-            autor: this.autor,
-            despacho,
-            reglas: copia.reglas,
-            observaciones: copia.observaciones,
-            // Cada fábrica sabe que la cotización tiene otra nota, con su número.
-            otrasNotas: notas.filter((o) => o.fabrica !== fabrica).map((o) => ({ fabrica: o.fabrica, numero: o.numero, items: o.items })),
-          },
-          this.almacen.baseDatos(),
-        );
+        const doc: DocumentoPdf = {
+          tipo: 'nota',
+          numero,
+          fabrica,
+          montos,
+          fecha,
+          autor: this.autor,
+          despacho,
+          reglas: copia.reglas,
+          observaciones: copia.observaciones,
+          // Cada fábrica sabe que la cotización tiene otra nota, con su número.
+          otrasNotas: notas.filter((o) => o.fabrica !== fabrica).map((o) => ({ fabrica: o.fabrica, numero: o.numero, items: o.items })),
+        };
+        const html = await plantilla(copia, doc, this.almacen.baseDatos());
         await generarPdf(this.almacen.directorio, archivo, html);
         generados.push({
           html,
+          doc,
           nota: {
             numero,
             fabrica,
@@ -1810,8 +1815,14 @@ export class Servicio {
           },
         });
       }
+      // Las notas de una fábrica integrada se envían solas, con su orden de trabajo de la misma versión.
+      const envios = await this.prepararEnvios(
+        { ...copia, notas: generados.map((g) => g.nota) },
+        generados.map(({ nota, doc }) => ({ nota, doc })),
+      );
       return await this.almacen.transaccion((u): Resultado => {
         const q = vigente(u);
+        for (const envio of envios) u.encolarIntegracion({ tipo: 'pedido', cotizacionId: q.id, envio });
         q.despacho = despacho;
         q.solicitudes.forEach((s, i) => (s.fabrica = fabricas.get(i) ?? null));
         q.notas = generados.map((g) => g.nota);
@@ -1833,6 +1844,24 @@ export class Servicio {
       for (const { nota } of generados) await rm(join(this.almacen.directorio, 'pdf', nota.pdf), { force: true });
       throw error;
     }
+  }
+
+  /**
+   * Envíos a fábrica de las notas recién impresas de `q`: solo las de una fábrica integrada y configurada (hoy,
+   * Panguipulli). Una nota de Santiago nunca entra aquí. Si preparar uno falla, la nota se genera igual (nunca se frena
+   * el flujo comercial): queda en el registro y se puede encolar después con `npm run integracion -- encolar <N° cotización>`.
+   */
+  private async prepararEnvios(q: Cotizacion, notas: { nota: NotaPedido; doc: DocumentoPdf }[]): Promise<EnvioPreparado[]> {
+    const envios: EnvioPreparado[] = [];
+    for (const { nota, doc } of notas) {
+      if (nota.anulada || !fabricaIntegrada(nota.fabrica) || !configuracionFabrica(nota.fabrica)) continue;
+      try {
+        envios.push(await prepararEnvio(q, nota, { db: this.almacen.baseDatos(), doc }));
+      } catch (error) {
+        registrarError('integracion', `No se preparó el envío de la nota ${numeroNota(nota)} (cotización N° ${q.numero}): ${(error as Error)?.message ?? error}`);
+      }
+    }
+    return envios;
   }
 
   /**
@@ -1947,16 +1976,31 @@ export class Servicio {
         await generarPdf(this.almacen.directorio, archivo, html);
         nuevos.push({ archivo, html, anterior: copia.pdf!, fabrica: null });
       }
+      const docsNota = new Map<string, DocumentoPdf>();
       for (const nota of renumerada.notas.filter((n) => !n.anulada)) {
         const base = nota.fabrica ? `nota-pedido-${nota.fabrica}-${nota.numero}` : `nota-pedido-${nota.numero}`;
         const archivoNota = this.almacen.archivoLibre(base);
-        const htmlNota = await plantilla(renumerada, documentoNota(renumerada, nota), db);
+        const docNota = documentoNota(renumerada, nota);
+        const htmlNota = await plantilla(renumerada, docNota, db);
         await generarPdf(this.almacen.directorio, archivoNota, htmlNota);
         nuevos.push({ archivo: archivoNota, html: htmlNota, anterior: nota.pdf, fabrica: nota.fabrica ?? null });
+        docsNota.set(archivoNota, docNota);
       }
+      // La nota reimpresa es otra revisión del pedido para la fábrica integrada (otro número en sus documentos). Solo
+      // si ese pedido ya se había encolado: renumerar una nota anterior a la integración no la envía.
+      const reimpresa: Cotizacion = {
+        ...renumerada,
+        ...(accion.documento === 'cotizacion' ? { pdf: nuevos[0].archivo } : {}),
+        notas: renumerada.notas.map((n) => ({ ...n, pdf: nuevos.find((x) => x.anterior === n.pdf)?.archivo ?? n.pdf })),
+      };
+      const envios = await this.prepararEnvios(
+        reimpresa,
+        reimpresa.notas.flatMap((nota) => (docsNota.has(nota.pdf) ? [{ nota, doc: docsNota.get(nota.pdf)! }] : [])),
+      );
       const resultado = await this.almacen.transaccion((u): Resultado => {
         const q = this.obtener(u, accion.id);
         if (q.actualizada !== version) throw new ErrorConflicto(VERSION_OBSOLETA);
+        for (const envio of envios) u.encolarIntegracion({ tipo: 'pedido', cotizacionId: q.id, envio, soloSiYaEncolado: true });
         // Otra persona pudo tomar el número mientras se generaban los PDF.
         const { nota } = this.documentoRenumerable(u, q, accion.documento, accion.fabrica, numero);
         let detalle: string;

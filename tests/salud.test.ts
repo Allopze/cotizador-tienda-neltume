@@ -2,6 +2,7 @@ import { mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { montarInstalacion, ORIGEN } from './sesion-prueba';
+import { VERSION_ESQUEMA } from '../src/servidor/base-datos';
 
 // O4 / 5.4: /api/salud responde solo { ok } sin sesión (healthcheck de Compose) y el detalle a una administradora.
 
@@ -85,9 +86,11 @@ describe('/api/salud', () => {
     let datos = await (await consultar(admin.cookie)).json();
     expect(datos.ok).toBe(true);
     expect(Object.keys(datos.comprobaciones).sort()).toEqual(
-      ['autenticacion', 'base', 'chromium', 'disco', 'feriados', 'ia', 'respaldo', 'starken'].sort(),
+      ['autenticacion', 'base', 'chromium', 'disco', 'feriados', 'ia', 'integracion', 'respaldo', 'starken'].sort(),
     );
-    expect(datos.comprobaciones.base).toMatchObject({ estado: 'ok', versionEsquema: 25 });
+    expect(datos.comprobaciones.base).toMatchObject({ estado: 'ok', versionEsquema: VERSION_ESQUEMA });
+    // Sin variables de la fábrica, la integración es opcional: no es un aviso.
+    expect(datos.comprobaciones.integracion).toMatchObject({ estado: 'ok', pendientes: 0, fallidos: 0 });
     expect(datos.comprobaciones.disco.libresMb).toBeGreaterThan(0);
     expect(datos.comprobaciones.ia).toMatchObject({ estado: 'aviso', fuente: 'ninguna' });
     expect(datos.comprobaciones.respaldo.estado).toBe('aviso');
