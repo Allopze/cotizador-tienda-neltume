@@ -456,6 +456,45 @@ describe('Plantillas', () => {
     expect(html).toMatch(/<g class="generico">[^]*>800<\/text>[^]*>2000<\/text>/);
   });
 
+  it('la nota de Santiago va a nombre de Neltume.co y sin el aviso de las otras notas; la de Panguipulli no cambia', async () => {
+    await aislarBaseDatos();
+    const q = cotizacion();
+    const antes = structuredClone(q);
+    const montos = cotizar([{ producto: puerta, cantidad: 2, anchoSolicitado: 0.83, altoSolicitado: 2, tipoMedida: 'hoja' }], { ajuste: 0, iva: 0.19 });
+    const nota = (fabrica: 'panguipulli' | 'santiago', otra: 'panguipulli' | 'santiago') =>
+      plantilla(q, {
+        tipo: 'nota', numero: fabrica === 'santiago' ? 59 : 577, fabrica, montos, fecha: '2026-09-28T12:00:00.000Z',
+        despacho: { direccion: 'Los Carrera #450', transporte: 'Camión' },
+        otrasNotas: [{ fabrica: otra, numero: otra === 'santiago' ? 59 : 577, items: 1 }],
+      });
+    const santiago = await nota('santiago', 'panguipulli');
+    const panguipulli = await nota('panguipulli', 'santiago');
+
+    expect(santiago).toContain('<p class="k">Cliente</p><h2>Neltume.co</h2></div>');
+    expect(textoVisible(santiago)).not.toContain('Juan');
+    expect(santiago).not.toContain('12.345.678-5');
+    expect(santiago).not.toContain('Constructora');
+    // Sin el recuadro: ni el contenedor ni su texto, y el encabezado sigue directo con las partes.
+    expect(santiago).not.toContain('class="otras"');
+    expect(textoVisible(santiago)).not.toMatch(/notas de pedido\.|La otra va/);
+    expect(santiago).toMatch(/<\/header><section class="partes">/);
+    expect(santiago).toContain('<dt>Dirección de despacho</dt><dd>Los Carrera #450</dd>');
+    expect(santiago).toContain('<p class="fabrica"><b>Fábrica Santiago</b></p>');
+    expect(santiago).toContain('Recibido por fábrica Santiago');
+
+    expect(panguipulli).toContain('<p class="k">Cliente</p><h2>Juan</h2>');
+    expect(panguipulli).toContain('<dt>RUT</dt><dd>12.345.678-5</dd>');
+    expect(panguipulli).toMatch(/<\/header><p class="otras">La cotización N° 325 tiene 2 notas de pedido\. La otra va a Santiago, <b>N° 59<\/b>, con 1 ítem\.<\/p><section class="partes">/);
+
+    // Mismas líneas, cantidades, precios y totales en las dos.
+    const detalle = (html: string) => html.slice(html.indexOf('<table>'), html.indexOf('<section class="fab">'));
+    expect(detalle(santiago)).toBe(detalle(panguipulli));
+    // La cotización al cliente sigue con su nombre, y nada del cliente guardado cambió.
+    const comercial = await plantilla(q, { tipo: 'cotizacion', numero: 325, montos, fecha: '2026-09-28T12:00:00.000Z' });
+    expect(comercial).toContain('<p class="k">Cliente</p><h2>Juan</h2>');
+    expect(q).toEqual(antes);
+  });
+
   it('cada modelo de puerta de la planilla de precios tiene su dibujo, y el PNG mide lo que dice el manifiesto', async () => {
     const { dibujosModelos, normalizarModelo, RECURSOS } = await import('../src/servidor/dibujos');
     const modelos = [
@@ -596,6 +635,60 @@ describe('prepararPdf', () => {
       tecnico:
         'Falló la generación de cotizacion-5.pdf: page.pdf: Target page, context or browser has been closed',
     });
+  });
+});
+
+describe('Notas de pedido emitidas por fábrica', () => {
+  it('al generar las notas, la de Santiago se guarda a nombre de Neltume.co; el cliente y el pedido a Panguipulli siguen iguales', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-fabricas-'));
+    dirs.push(dir);
+    const almacen = new Almacen(dir);
+    const pedido = { modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.82, alto: 2, medida: null, cantidad: 2, tipoMedida: 'hoja' };
+    const cliente = { ...clienteVacio(), nombre: 'Ana Soto', rut: '12.345.678-5', telefono: '+56 9 1234 5678' };
+    const llm = {
+      interpretar: vi.fn().mockResolvedValue({ name: 'actualizar_cotizacion', input: { items: [pedido, { ...pedido, cantidad: 3 }], cliente } }),
+    };
+    const catalogo = { fuente: 'test', sha256: 'test', fecha: '2026-01-01', productos: [puerta] };
+    const servicio = new Servicio(catalogo, llm, almacen, { nombre: 'Paula', email: 'paula@neltume.cl' });
+    let q = (await servicio.ejecutar({ tipo: 'chat', mensaje: 'cotiza MOLCO' })).cotizacion;
+    const ir = async (accion: Record<string, unknown>) =>
+      (q = (await servicio.ejecutar({ ...accion, id: q.id, actualizada: q.actualizada } as never)).cotizacion);
+    await ir({ tipo: 'emitir' });
+    await ir({ tipo: 'aprobar' });
+    await ir({ tipo: 'pago', monto: anticipoMinimo(q.montos.total) });
+    await ir({ tipo: 'generar_nota', asignaciones: [{ indice: 0, fabrica: 'panguipulli' }, { indice: 1, fabrica: 'santiago' }] });
+
+    const html = (archivo: string) =>
+      (almacen.baseDatos().prepare('SELECT html FROM documentos_snapshot WHERE archivo = ?').get(archivo) as { html: string }).html;
+    const [notaPanguipulli, notaSantiago] = q.notas;
+    const santiago = html(notaSantiago.pdf);
+    const panguipulli = html(notaPanguipulli.pdf);
+    expect(santiago).toContain('<h2>Neltume.co</h2>');
+    expect(textoVisible(santiago)).not.toMatch(/Ana Soto|12\.345\.678-5|1234 5678/);
+    expect(santiago).not.toContain('class="otras"');
+    expect(panguipulli).toContain('<h2>Ana Soto</h2>');
+    expect(panguipulli).toContain(`La otra va a Santiago, <b>N° ${notaSantiago.numero}</b>, con 1 ítem.`);
+    expect(html(q.pdf!)).toContain('<h2>Ana Soto</h2>');
+    // La nota de Santiago sigue con sus líneas y precios de fábrica.
+    expect(notaSantiago.montos.lineas.map((l) => [l.indice, l.cantidad, l.precioUnitario])).toEqual([[1, 3, 100_000]]);
+
+    // El cliente guardado no cambia.
+    expect(almacen.obtener(q.id)!.cliente).toMatchObject({ nombre: 'Ana Soto', rut: '12.345.678-5', telefono: '+56 9 1234 5678' });
+    // Recuperar la nota de Santiago desde su snapshot da el mismo documento.
+    await rm(join(dir, 'pdf', notaSantiago.pdf));
+    await servicio.ejecutar({ tipo: 'regenerar_pdf', id: q.id, actualizada: q.actualizada, documento: 'nota', fabrica: 'santiago' } as never);
+    expect(existsSync(join(dir, 'pdf', notaSantiago.pdf))).toBe(true);
+    expect(html(notaSantiago.pdf)).toBe(santiago);
+
+    // La integración con Panguipulli no cambia: su pedido sigue nombrando la nota de Santiago y su orden de trabajo,
+    // el aviso de la otra nota.
+    const { pedidoDeNota, prepararEnvio } = await import('../src/servidor/integracion-pedido');
+    expect(pedidoDeNota(q, notaPanguipulli).relatedOrders).toEqual([
+      { factoryCode: expect.any(String), orderNumber: String(notaSantiago.numero), itemCount: 1 },
+    ]);
+    const envio = await prepararEnvio(q, notaPanguipulli, { db: almacen.baseDatos() });
+    expect(envio.htmlProduccion).toContain('<p class="otras">');
+    expect(envio.htmlProduccion).toContain('<h2>Ana Soto</h2>');
   });
 });
 

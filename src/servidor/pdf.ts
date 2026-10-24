@@ -213,6 +213,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
       .map(([k, v]) => `<div><dt class="k">${k}</dt><dd>${esc(v)}</dd></div>`)
       .join('')}</dl>`;
   const transporte = sinTransportista(doc.despacho?.transporte) ? null : doc.despacho!.transporte!.trim();
+  // Santiago recibe la nota a nombre de Neltume.co: no ve al cliente final ni las otras notas de la cotización. Solo
+  // cambia lo impreso; la cotización, el cliente guardado y el pedido de la integración siguen iguales.
+  const paraSantiago = nota && doc.fabrica === 'santiago';
 
   // Encabezado: el número es lo que se busca; los datos de Neltume van al pie de cada página.
   const fabrica = nota && doc.fabrica ? `<p class="fabrica"><b>Fábrica ${nombreFabrica[doc.fabrica]}</b></p>` : '';
@@ -237,16 +240,20 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   const otras = (doc.otrasNotas ?? []).map(
     (o) => `${o.fabrica ? nombreFabrica[o.fabrica] : 'otra fábrica'}, <b>N° ${o.numero}</b>, con ${o.items} ítem${o.items === 1 ? '' : 's'}`,
   );
-  const avisoOtras = nota && otras.length
+  const avisoOtras = nota && !paraSantiago && otras.length
     ? `<p class="otras">La cotización N° ${q.numero} tiene ${otras.length + 1} notas de pedido. ${otras.length > 1 ? 'Las otras van' : 'La otra va'} a ${otras.join(' y ')}.</p>`
     : '';
-  const partes = nota
-    ? `<section class="partes">${parte('Cliente', c.nombre || 'Sin nombre', [
+  // A Santiago, sin los datos del cliente final: su RUT o teléfono bajo «Neltume.co» lo identificarían igual.
+  const clienteNota = paraSantiago
+    ? parte('Cliente', 'Neltume.co', [])
+    : parte('Cliente', c.nombre || 'Sin nombre', [
         ['RUT', c.rut],
         ['Giro', c.giro],
         ['Dirección', [c.direccion, c.comuna].filter(Boolean).join(', ')],
         ['Teléfono', c.telefono],
-      ])}${parte('Despacho', c.proyecto || doc.despacho?.destino || 'Despacho', [
+      ]);
+  const partes = nota
+    ? `<section class="partes">${clienteNota}${parte('Despacho', c.proyecto || doc.despacho?.destino || 'Despacho', [
         ['Dirección de despacho', doc.despacho?.direccion],
         ['Transporte', transporte ?? 'Por confirmar'],
         ['Destino', c.proyecto ? doc.despacho?.destino : null],
