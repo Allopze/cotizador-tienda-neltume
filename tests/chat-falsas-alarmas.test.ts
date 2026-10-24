@@ -159,6 +159,8 @@ describe('casos de la evaluación con otra IA', () => {
   for (const [a, b] of [
     ['una en lenga, ambas de 80x200', 'otra en mara, ambas de 80x200'],
     ['una en lenga', 'otra en mara'],
+    // Qwen3.7-Flash pega la parte común sin coma (8 de 8 corridas, 24 oct).
+    ['una en lenga de 80x200', 'otra en mara de 80x200'],
   ])
     it(`dos-maderas: «dame 2 Pirihueico, una en lenga y otra en mara…» sin avisos («${a}» / «${b}»)`, async () => {
       const chat = await setup('avisar');

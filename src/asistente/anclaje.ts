@@ -1,4 +1,4 @@
-import { planoFrase, ubicarFrase, ubicarPartes } from './frases';
+import { PARTE_COMUN, planoFrase, ubicarFrase, ubicarPartes } from './frases';
 import { claveEscuadria, metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { SolicitudItem } from '../catalogo/tipos';
 import { familiaItem } from '../negocio/personalizados';
@@ -486,11 +486,6 @@ export function parMedidaPuerta(frase: string): { ancho: number; alto: number } 
   return pares.length === 1 ? pares[0] : null;
 }
 
-/**
- * Parte del mensaje que vale para varios ítems: «ambas de 73x240», «las dos en 80x200», «cada una de 0,73 x 2,4»,
- * «todas de 70x210». Llega hasta la coma, el punto y coma o el final (una coma decimal no corta).
- */
-const PARTE_COMUN = /\b(?:ambas|ambos|las dos|los dos|cada una|cada uno|todas|todos)\b(?:[^,;]|,(?=\d))*/g;
 /** ¿La frase trae un par de medidas propio? */
 const PAR_MEDIDAS_PLANO = /\d\s*(?:x|por)\s*\d/;
 
