@@ -219,13 +219,13 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
 
   // Encabezado: el número es lo que se busca; los datos de Neltume van al pie de cada página.
   const fabrica = nota && doc.fabrica ? `<p class="fabrica"><b>Fábrica ${nombreFabrica[doc.fabrica]}</b></p>` : '';
-  const cabecera = `<header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">${tipo}</p><h1>N° ${numero}</h1>${fabrica}${meta(
+  const cabecera = `<header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">${tipo}</p><h1>N.º ${numero}</h1>${fabrica}${meta(
     nota
       ? [
           ['Fecha', fechaLarga(fecha)],
           // La orden de trabajo lleva el número de su nota de pedido: es el mismo pedido, sin precios.
-          ['Nota de pedido', produccion ? `N° ${numero}` : null],
-          ['Cotización', q.numero !== null ? `N° ${q.numero}` : null],
+          ['Nota de pedido', produccion ? `N.º ${numero}` : null],
+          ['Cotización', q.numero !== null ? `N.º ${q.numero}` : null],
           // La orden de trabajo no nombra al personal de Neltume: la fábrica no guarda datos personales.
           ['Aprobada por', produccion ? null : doc.autor],
           ['Emitida por', produccion ? null : q.emitidaPor],
@@ -233,16 +233,16 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
       : [
           ['Fecha', fechaLarga(fecha)],
           ['Válida hasta', doc.vence ? fechaLarga(doc.vence) : null],
-          ['Revisión de', q.origen ? `N° ${q.origen}` : null],
+          ['Revisión de', q.origen ? `N.º ${q.origen}` : null],
           ['Emitida por', doc.autor],
         ],
   )}</div></header>`;
   // Cada fábrica sabe que la cotización tiene otra nota, y cuál.
   const otras = (doc.otrasNotas ?? []).map(
-    (o) => `${o.fabrica ? nombreFabrica[o.fabrica] : 'otra fábrica'}, <b>N° ${o.numero}</b>, con ${o.items} ítem${o.items === 1 ? '' : 's'}`,
+    (o) => `${o.fabrica ? nombreFabrica[o.fabrica] : 'otra fábrica'}, <b>N.º ${o.numero}</b>, con ${o.items} ítem${o.items === 1 ? '' : 's'}`,
   );
   const avisoOtras = nota && !paraSantiago && otras.length
-    ? `<p class="otras">La cotización N° ${q.numero} tiene ${otras.length + 1} notas de pedido. ${otras.length > 1 ? 'Las otras van' : 'La otra va'} a ${otras.join(' y ')}.</p>`
+    ? `<p class="otras">La cotización N.º ${q.numero} tiene ${otras.length + 1} notas de pedido. ${otras.length > 1 ? 'Las otras van' : 'La otra va'} a ${otras.join(' y ')}.</p>`
     : '';
   // A Santiago, sin los datos del cliente final: su RUT o teléfono bajo «Neltume.co» lo identificarían igual.
   const clienteNota = paraSantiago
@@ -317,8 +317,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     ? `<tr><td class="n">${filas.length + 1}</td><td><div class="prod sin-dibujo"><div><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></div></div></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
     : '';
   const tabla = nota
-    ? `<table><thead><tr><th class="n">N°</th><th class="plano-c">Plano</th><th>Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
-    : `<table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
+    ? `<table><thead><tr><th class="n">N.º</th><th class="plano-c">Plano</th><th>Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
+    : `<table><thead><tr><th class="n">N.º</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
 
   // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
   // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
@@ -380,13 +380,13 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     : `${observaciones ? `<section class="observaciones"><h2>Observaciones</h2><p>${esc(observaciones)}</p></section>` : ''}<section class="condiciones"><h2>Condiciones</h2><div class="cond">${condiciones.join('')}</div></section>${
         doc.anulada
           ? ''
-          : `<section class="aceptar"><h2>Para aceptar esta cotización</h2><p>Responde este correo${empresa.telefono ? ` o escríbenos al ${esc(empresa.telefono)}` : ''} indicando el N° ${numero}. Si prefieres, fírmala y envíanos una foto.</p><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></section>`
+          : `<section class="aceptar"><h2>Para aceptar esta cotización</h2><p>Responde este correo${empresa.telefono ? ` o escríbenos al ${esc(empresa.telefono)}` : ''} indicando el N.º ${numero}. Si prefieres, fírmala y envíanos una foto.</p><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></section>`
       }`;
   // Datos de Neltume al pie de cada página, junto al número de página (ver `generarPdf`): también a quién preguntar.
   const pie = [empresa.nombre, empresa.rut && `RUT ${empresa.rut}`, empresa.direccion, empresa.telefono && `Tel. ${empresa.telefono}`, empresa.correo, empresa.web]
     .filter(Boolean)
     .join(' · ');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N° ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N.º ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
 }
 
 /**
@@ -491,7 +491,7 @@ export async function plantillaPruebaConexion(
   const fila = (n: number, producto: string, cantidad: number) =>
     `<tr><td class="n">${n}</td><td class="prod"><b>${esc(producto)}</b><span>Dato inventado para la prueba · sin precio</span></td><td class="r cant">${cantidad}</td></tr>`;
   const pie = `Prueba de conexión · sin valor comercial · código ${codigo}`;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>Prueba de conexión ${esc(codigo)} · Neltume</title><style>${ESTILOS}${ESTILOS_PRUEBA}</style></head><body class="nota"><div class="prueba-marca" aria-hidden="true">PRUEBA</div><header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">Prueba de conexión</p><h1>${esc(codigo)}</h1><dl class="meta"><div><dt class="k">Fecha y hora</dt><dd>${esc(fechaHoraChile(fecha))}</dd></div><div><dt class="k">Código de la prueba</dt><dd class="codigo">${esc(codigo)}</dd></div></dl></div></header><p class="prueba-aviso">PRUEBA DE CONEXIÓN — no es un pedido</p><section class="partes"><div class="parte"><p class="k">Emisor</p><h2>${esc(emisor)}</h2></div><div class="parte"><p class="k">Destino</p><h2>${esc(destino)}</h2></div></section><table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th></tr></thead><tbody>${fila(1, 'Puerta de ejemplo · 820 × 2000 mm', 2)}${fila(2, 'Marco de ejemplo · 2x4 pulg.', 2)}</tbody></table><p class="prueba-nota">Este documento no es una nota de pedido ni una cotización y no tiene valor comercial: se genera solo para comprobar que la conexión entre la tienda y la fábrica funciona. Los productos, medidas y cantidades son inventados. Si lo ves en la otra aplicación con el mismo código de prueba (${esc(codigo)}), la conexión funciona.</p></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>Prueba de conexión ${esc(codigo)} · Neltume</title><style>${ESTILOS}${ESTILOS_PRUEBA}</style></head><body class="nota"><div class="prueba-marca" aria-hidden="true">PRUEBA</div><header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">Prueba de conexión</p><h1>${esc(codigo)}</h1><dl class="meta"><div><dt class="k">Fecha y hora</dt><dd>${esc(fechaHoraChile(fecha))}</dd></div><div><dt class="k">Código de la prueba</dt><dd class="codigo">${esc(codigo)}</dd></div></dl></div></header><p class="prueba-aviso">PRUEBA DE CONEXIÓN — no es un pedido</p><section class="partes"><div class="parte"><p class="k">Emisor</p><h2>${esc(emisor)}</h2></div><div class="parte"><p class="k">Destino</p><h2>${esc(destino)}</h2></div></section><table><thead><tr><th class="n">N.º</th><th>Producto</th><th class="r cant">Cant.</th></tr></thead><tbody>${fila(1, 'Puerta de ejemplo · 820 × 2000 mm', 2)}${fila(2, 'Marco de ejemplo · 2x4 pulg.', 2)}</tbody></table><p class="prueba-nota">Este documento no es una nota de pedido ni una cotización y no tiene valor comercial: se genera solo para comprobar que la conexión entre la tienda y la fábrica funciona. Los productos, medidas y cantidades son inventados. Si lo ves en la otra aplicación con el mismo código de prueba (${esc(codigo)}), la conexión funciona.</p></body></html>`;
 }
 
 /**

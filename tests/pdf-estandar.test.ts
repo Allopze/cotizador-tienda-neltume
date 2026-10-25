@@ -133,7 +133,7 @@ const FECHA_LARGA = /^\d{1,2} de [a-záéíóú]+ de \d{4}$/;
 const FUENTES_DEL_ESTANDAR =
   /^(Fraunces-Medium|InstrumentSans-Regular|InstrumentSans-SemiBold|JetBrainsMono-Regular)$/;
 /** Cómo se escribe el número de un documento: «N.º 577». */
-const NUMERO = /^N°\s*(\d+)$/;
+const NUMERO = /^N\.º\s*(\d+)$/;
 
 const todos = (l: Leido) => l.paginas.flat();
 const misma = (a: Fragmento, b: Fragmento) => Math.abs(a.y - b.y) <= 3;

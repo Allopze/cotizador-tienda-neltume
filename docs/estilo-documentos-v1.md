@@ -48,7 +48,7 @@
 ## 5. Cuerpo
 
 - **Bloques de partes** (Cliente, Obra, Despacho, Emisor, Destino): etiqueta pequeña, título en Fraunces 15 pt y, debajo, los datos como pares etiqueta (gris) y valor.
-- **Tabla:** encabezado en Instrument Sans 600 de 7,3 pt, gris, con filete de tinta debajo; filas con filete suave de 0,5 pt. Cantidad, unitario y total alineados a la derecha. El encabezado se repite en cada página siguiente, en una sola línea.
+- **Tabla:** encabezado en Instrument Sans 600 de 7,3 pt, gris, con filete de tinta debajo; filas con filete suave de 0,5 pt. Cantidad, unitario y total alineados a la derecha. Repetir el encabezado en las páginas siguientes es propio de cada aplicación (la tienda lo repite; la fábrica, hoy, no); si se repite, va en una sola línea.
 - **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, verde, sobre un filete de tinta. Los descuentos y ahorros, en raulí.
 - **Montos** `$1.234`, un solo fragmento. Un precio que aún no existe se imprime `Por definir`, nunca `$0`.
 
@@ -65,10 +65,11 @@
 | Número de documento | `N.º 577` (con `º`, U+00BA) |
 | Fecha del encabezado | En palabras: `25 de octubre de 2026` |
 | Fecha en tablas y campos («Entrega», vigencias) | `dd-mm-aaaa` |
+| Fecha y hora (solo la prueba de conexión) | `dd-mm-aaaa hh:mm`, hora de Chile, en vez de la fecha en palabras |
 | Monto | `$1.234` |
 | Sin precio | `Por definir` |
-| Nombre de descarga | `Neltume - {Tipo} N.º {n}[ {Fábrica}][ (anulada)].pdf`, p. ej. `Neltume - Nota de pedido N.º 577 Panguipulli.pdf` |
-| Título del PDF | `{Tipo} N.º {n}[ · {Fábrica}] · Neltume` |
+| Nombre de descarga | `Neltume - {Tipo} N.º {n}[ {Fábrica}][ (anulada)].pdf`, p. ej. `Neltume - Nota de pedido N.º 577 Panguipulli.pdf`. La fábrica no lleva segmento de fábrica (es la fábrica) ni el sufijo « (anulada)» (en sus pedidos el término es «cancelada» y hoy no se usa); en las dos, `Content-Disposition` lleva además un `filename` ASCII de respaldo |
+| Título del PDF | `{Tipo} N.º {n}[ · {Fábrica}] · Neltume`; sin segmento de fábrica en la fábrica. En su orden de trabajo, `n` es el número de la nota |
 
 **Metadatos del PDF:** título común (arriba). Autor, creador y productor «Neltume.co» solo donde el generador lo permita: la fábrica sí; la tienda no, porque Chromium fija el creador y el productor (`Skia/PDF`) y no los deja cambiar. Es una brecha conocida; se cierra solo si la tienda incorpora una librería que reescriba los metadatos.
 
@@ -78,18 +79,18 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 
 ### 8.1 Encabezado
 
-1. **«Nota de pedido» y su número.** El fragmento `Nota de pedido` va seguido, dentro de los 3 fragmentos siguientes en el orden de lectura (de arriba abajo, de izquierda a derecha), de un fragmento propio `N.º n`. Nada de la columna izquierda debe quedar entre el tipo y el número: con el logo (imagen) a la izquierda y el bloque de tipo y número a la derecha, ningún texto lo interrumpe. La fábrica acepta también `N°` mientras dure la transición.
-2. **`Fábrica X`** (p. ej. `Fábrica Panguipulli`): fragmento exacto. Una nota vigente no lleva el texto `ANULADA`.
+1. **«Nota de pedido» y su número.** El fragmento `Nota de pedido` va seguido, dentro de los 3 fragmentos siguientes en el orden de lectura (de arriba abajo, de izquierda a derecha), de un fragmento propio `N.º n`. Nada de la columna izquierda debe quedar entre el tipo y el número: con el logo (imagen) a la izquierda y el bloque de tipo y número a la derecha, ningún texto lo interrumpe. Requisito del lector de la fábrica: a partir de su fase F22 acepta `N.º` y también `N°`; hasta que esa fase esté desplegada solo lee `N°`, por eso la tienda no publica `N.º` antes (sección 11).
+2. **`Fábrica X`** (p. ej. `Fábrica Panguipulli`): fragmento exacto; la fábrica toma la **primera** coincidencia en el orden de lectura, así que ningún texto que empiece por `Fábrica ` va más arriba que la insignia. Una nota vigente no lleva el texto `ANULADA`.
 3. **`Cotización` y `Despacho`:** fragmentos exactos; el valor va justo debajo (a ≤ 15 pt en x). La fábrica toma la **primera** coincidencia del documento: `Despacho` no se repite como título de un bloque más arriba.
 4. **La fecha en palabras** va entera en un solo fragmento, y la primera que aparece sobre el encabezado de la tabla es la de la nota (no `Válida hasta`).
 
 ### 8.2 Tabla de ítems
 
-5. **Encabezado de la tabla:** `Cant.`, `Precio fábrica` y `Total` (columna) en una sola línea, con la misma línea base. Si se repite en las páginas siguientes, también va en una sola línea con `Cant.` y `Precio fábrica` en la misma línea base. La fábrica ignora toda línea que lleve `Cant.` al buscar descripción, cantidad y totales.
+5. **Encabezado de la tabla:** `Cant.`, `Precio fábrica` y `Total` (columna) en una sola línea, con la misma línea base. Si se repite en las páginas siguientes, también va en una sola línea con `Cant.` y `Precio fábrica` en la misma línea base. Requisito del lector de la fábrica: a partir de su F22 ignora toda línea que lleve `Cant.` al buscar descripción, cantidad y totales (hasta entonces, el `Total` de la columna de las páginas siguientes deja el total de la nota en `null`, que nadie usa).
 6. **Cantidad:** un fragmento de solo dígitos cuya x de inicio queda a menos de 20 pt de la x de `Cant.` (la fábrica prevé ensanchar su tolerancia a 30 pt, pero no se depende de ello hasta que lo avise). Si ambas van alineadas a la derecha, el margen es estrecho: no se ensanchan las columnas.
 7. **Montos:** cada monto es un solo fragmento (`$159.485`, no `$` aparte). En la línea del ítem la fábrica lee al menos 2 montos: el primero es el unitario y el último el total. Un pedido especial sin costo de fábrica lleva `Por definir` en los dos lugares.
 8. **Misma línea base (±3 pt)** entre la cantidad y los montos del ítem, y entre la etiqueta `Total` y su cifra (la cifra grande en verde y la etiqueta de menor tamaño comparten línea base).
-9. **Referencia de catálogo:** `Referencia de catálogo: CÓDIGO · medidas` en un solo fragmento, en la fuente del texto. Es el ancla del ítem: una línea sin ella no se lee (los pedidos especiales llevan `Producto personalizado, fuera de catálogo`; la fábrica los trata aparte).
+9. **Referencia de catálogo:** `Referencia de catálogo: CÓDIGO · medidas` en un solo fragmento, en la fuente del texto. Es el ancla del ítem: una línea sin ella no se lee (los pedidos especiales llevan `Producto personalizado, fuera de catálogo`; hoy el respaldo manual de la fábrica los omite sin avisar; su F22 propone leerlos como «a pedido, revisar» o, como mínimo, avisar, y lo decide el usuario).
 10. **Descripción:** la fábrica toma el fragmento más alto en la misma x que la referencia (±3 pt), dentro de 20 pt sobre la línea de la cantidad. Ahí no debe haber otro texto (por ejemplo, la referencia del ítem anterior más cerca de 20 pt). De una descripción de dos líneas se lee solo la primera.
 
 ### 8.3 Totales y despacho
@@ -105,7 +106,7 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 
 ## 9. Qué conserva cada aplicación
 
-- **Tienda:** precios al cliente; condiciones de pago, validez y datos bancarios; caja «Para aceptar esta cotización»; dibujo de cada modelo y planos con cotas en la nota; casilla «Listo»; bloque «Para fábrica» con firmas; logo personalizable desde Ajustes; descuentos por ítem y por cantidad.
+- **Tienda:** precios al cliente; encabezado de la tabla repetido en cada página; condiciones de pago, validez y datos bancarios; caja «Para aceptar esta cotización»; dibujo de cada modelo y planos con cotas en la nota; casilla «Listo»; bloque «Para fábrica» con firmas; logo personalizable desde Ajustes; descuentos por ítem y por cantidad.
 - **Fábrica:** sus campos de producción; los códigos en mono; las líneas Pagado/Saldo y Descuento con motivo bajo «Total» del pedido; la caja vacía para escribir a mano en pedido y orden de trabajo.
 
 ## 10. Documentos ya emitidos

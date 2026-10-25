@@ -244,7 +244,7 @@ describe('Integración con la fábrica de Panguipulli', () => {
     const produccion = Buffer.from(m.documents!.production.contentBase64, 'base64');
     expect(m.documents!.production.sha256).toBe(sha(produccion));
     expect(produccion.toString()).toContain('Orden de trabajo');
-    expect(produccion.toString()).toContain(`N° ${CORRELATIVOS_NOTA.panguipulli}`);
+    expect(produccion.toString()).toContain(`N.º ${CORRELATIVOS_NOTA.panguipulli}`);
   });
 
   it('una cotización preliminar, emitida o aprobada sin nota no se envía', async () => {

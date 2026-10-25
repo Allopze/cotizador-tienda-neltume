@@ -140,7 +140,7 @@ describe('Plantillas', () => {
       vence: '2026-10-12',
       autor: 'Paula',
     });
-    expect(html).toContain('<dt class="k">Revisión de</dt><dd>N° 323</dd>');
+    expect(html).toContain('<dt class="k">Revisión de</dt><dd>N.º 323</dd>');
     expect(html).toContain('<dt class="k">Válida hasta</dt><dd>12 de octubre de 2026</dd>');
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('<dt class="k">Emitida por</dt><dd>Paula</dd>');
@@ -276,7 +276,7 @@ describe('Plantillas', () => {
     // Fábrica ve además la referencia de catálogo (el rango que se cobra).
     expect(html).toContain('Referencia de catálogo: MOL-O-3-A');
     expect(textoVisible(html)).not.toMatch(/descuento/i);
-    expect(html).toContain('<dt class="k">Cotización</dt><dd>N° 325</dd>');
+    expect(html).toContain('<dt class="k">Cotización</dt><dd>N.º 325</dd>');
     expect(html).toContain('Recibido por fábrica');
     expect(html).not.toContain('GRACIAS');
   });
@@ -451,7 +451,7 @@ describe('Plantillas', () => {
       tipo: 'nota', numero: 577, fabrica: 'panguipulli', montos, fecha: '2026-09-28T12:00:00.000Z',
       otrasNotas: [{ fabrica: 'santiago', numero: 59, items: 1 }],
     });
-    expect(textoVisible(html)).toMatch(/La cotización N° 325 tiene 2 notas de pedido\. La otra va a Santiago,\s+N° 59\s+, con 1 ítem\./);
+    expect(textoVisible(html)).toMatch(/La cotización N\.º 325 tiene 2 notas de pedido\. La otra va a Santiago,\s+N\.º 59\s+, con 1 ítem\./);
     expect(html).toContain('<p class="fabrica"><b>Fábrica Panguipulli</b></p>');
     expect(html).toContain('Recibido por fábrica Panguipulli');
     // Un modelo sin dibujo: esquema genérico, con las cotas igual.
@@ -487,7 +487,7 @@ describe('Plantillas', () => {
 
     expect(panguipulli).toContain('<p class="k">Cliente</p><h2>Juan</h2>');
     expect(panguipulli).toContain('<dt>RUT</dt><dd>12.345.678-5</dd>');
-    expect(panguipulli).toMatch(/<\/header><p class="otras">La cotización N° 325 tiene 2 notas de pedido\. La otra va a Santiago, <b>N° 59<\/b>, con 1 ítem\.<\/p><section class="partes">/);
+    expect(panguipulli).toMatch(/<\/header><p class="otras">La cotización N\.º 325 tiene 2 notas de pedido\. La otra va a Santiago, <b>N\.º 59<\/b>, con 1 ítem\.<\/p><section class="partes">/);
 
     // Mismas líneas, cantidades, precios y totales en las dos.
     const detalle = (html: string) => html.slice(html.indexOf('<table>'), html.indexOf('<section class="fab">'));
@@ -743,7 +743,7 @@ describe('Notas de pedido emitidas por fábrica', () => {
     expect(textoVisible(santiago)).not.toMatch(/Ana Soto|12\.345\.678-5|1234 5678/);
     expect(santiago).not.toContain('class="otras"');
     expect(panguipulli).toContain('<h2>Ana Soto</h2>');
-    expect(panguipulli).toContain(`La otra va a Santiago, <b>N° ${notaSantiago.numero}</b>, con 1 ítem.`);
+    expect(panguipulli).toContain(`La otra va a Santiago, <b>N.º ${notaSantiago.numero}</b>, con 1 ítem.`);
     expect(html(q.pdf!)).toContain('<h2>Ana Soto</h2>');
     // La nota de Santiago sigue con sus líneas y precios de fábrica.
     expect(notaSantiago.montos.lineas.map((l) => [l.indice, l.cantidad, l.precioUnitario])).toEqual([[1, 3, 100_000]]);

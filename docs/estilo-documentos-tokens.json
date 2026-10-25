@@ -75,7 +75,20 @@
       "color": "gris",
       "mayusculasForzadas": false
     },
-    "codigoSolo": { "familia": "JetBrains Mono", "peso": 400, "tamanoPt": 6.8, "color": "gris" },
+    "codigoSolo": {
+      "familia": "JetBrains Mono",
+      "peso": 400,
+      "tamanoPt": 6.8,
+      "color": "gris",
+      "uso": "tienda: código del producto bajo su nombre en la cotización"
+    },
+    "codigoTabla": {
+      "familia": "JetBrains Mono",
+      "peso": 400,
+      "tamanoPt": 8,
+      "color": "tinta",
+      "uso": "fábrica: columna de código de sus tablas"
+    },
     "pie": { "familia": "Instrument Sans", "peso": 400, "tamanoPt": 7.5, "color": "gris" }
   },
   "trazos": {

@@ -57,7 +57,7 @@ test('reparto entre fábricas: una nota por fábrica, producción por fábrica y
   await expect(dialogo).toContainText('Se generarán 2 notas: Panguipulli, 1 ítem · Santiago, 1 ítem');
   const descarga = page.waitForEvent('download');
   await dialogo.getByRole('button', { name: 'Generar notas de pedido' }).click();
-  expect((await descarga).suggestedFilename()).toMatch(/^nota-pedido-panguipulli-\d+\.pdf$/);
+  expect((await descarga).suggestedFilename()).toMatch(/^Neltume - Nota de pedido N\.º \d+ Panguipulli\.pdf$/);
   await expect(page.getByText(/Se generaron 2 notas de pedido, una por fábrica/)).toBeVisible();
   await expect(estados).toContainText('Operación: Nota de pedido generada');
   const docs = panel.locator('.quote-docs');
@@ -90,6 +90,6 @@ test('reparto entre fábricas: una nota por fábrica, producción por fábrica y
   const confirmar = page.getByRole('alertdialog', { name: /^¿Cambiar el número de la nota de pedido N° \d+ de Panguipulli\?$/ });
   const nueva = page.waitForEvent('download');
   await confirmar.getByRole('button', { name: 'Cambiar a N° 950' }).click();
-  expect((await nueva).suggestedFilename()).toBe('nota-pedido-panguipulli-950.pdf');
+  expect((await nueva).suggestedFilename()).toBe('Neltume - Nota de pedido N.º 950 Panguipulli.pdf');
   await expect(docs.getByText('Nota de pedido N° 950 · Panguipulli', { exact: true })).toBeVisible();
 });

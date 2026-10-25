@@ -79,9 +79,9 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await expect(panel.getByText(rectificar, { exact: true })).toHaveCount(2);
   const descarga = page.waitForEvent('download');
   await emitir();
-  expect((await descarga).suggestedFilename()).toBe('cotizacion-323.pdf');
+  expect((await descarga).suggestedFilename()).toBe('Neltume - Cotización N.º 323.pdf');
   const contenido = await textoPdf(`${DIR_E2E}/pdf/cotizacion-323.pdf`);
-  expect(contenido).toMatch(/Cotización\s+N° 323/);
+  expect(contenido).toMatch(/Cotización\s+N\.º 323/);
   expect(contenido).toContain(pesos(completo.total));
   expect(contenido).not.toMatch(/precio de lista|ajuste|25 %/i);
   // El cliente no ve la referencia interna ni un tipo de medida sin definir; la observación escrita sí.
@@ -103,7 +103,7 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   // Cada paso de la operación pide confirmación.
   await page.getByRole('alertdialog').getByRole('button', { name: 'Todo a Panguipulli' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
-  expect((await notaDownload).suggestedFilename()).toBe('nota-pedido-panguipulli-577.pdf');
+  expect((await notaDownload).suggestedFilename()).toBe('Neltume - Nota de pedido N.º 577 Panguipulli.pdf');
   // En una aprobada el chat solo reparte fábricas y cambia números: el compositor lo dice.
   await expect(page.getByLabel('Escribe tu pedido')).toHaveAttribute('placeholder', /aprobada: puedes repartir/);
   // Una aprobada no ofrece quitar ítems.
@@ -116,9 +116,9 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
     { ajuste: 0, iva: 0.19 },
   );
   const nota = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-577.pdf`);
-  expect(nota).toMatch(/Nota de pedido\s+N° 577/);
+  expect(nota).toMatch(/Nota de pedido\s+N\.º 577/);
   expect(nota).toContain('Fábrica Panguipulli');
-  expect(nota).toMatch(/Cotización\s+N° 323/);
+  expect(nota).toMatch(/Cotización\s+N\.º 323/);
   expect(nota).toContain('Referencia de catálogo: HUIL-O-3-B');
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
@@ -160,7 +160,7 @@ test('modifica una cotización anterior por nombre y pide elegir entre coinciden
   // Números leídos de cada descarga: la prueba no depende de cuántas emitió la anterior.
   const numeroDe = async (descarga: Promise<Download>) => {
     const nombre = (await descarga).suggestedFilename();
-    expect(nombre).toMatch(/^cotizacion-\d+\.pdf$/);
+    expect(nombre).toMatch(/^Neltume - Cotización N\.º \d+\.pdf$/);
     return Number(nombre.match(/\d+/)![0]);
   };
   const cotizarMaria = 'Cotiza 3 Huilo Huilo oregón de 80×210 para María José, Temuco';
@@ -222,7 +222,7 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
     .getByRole('button', { name: 'Emitir y generar PDF' })
     .click();
-  const numero = Number((await descarga).suggestedFilename().match(/cotizacion-(\d+)\.pdf/)![1]);
+  const numero = Number((await descarga).suggestedFilename().match(/Cotización N\.º (\d+)\.pdf/)![1]);
 
   const textoTotal = (await page.getByTestId('total').textContent()) ?? '';
   const anticipo = Math.ceil(Number(textoTotal.replace(/\D/g, '')) * 0.5);
@@ -238,6 +238,6 @@ test('aprobación pedida por chat abre el diálogo de despacho y genera la nota'
   // Cada paso de la operación pide confirmación.
   await page.getByRole('alertdialog').getByRole('button', { name: 'Todo a Panguipulli' }).click();
   await page.getByRole('alertdialog').getByRole('button', { name: 'Generar nota de pedido', exact: true }).click();
-  expect((await nota).suggestedFilename()).toMatch(/^nota-pedido-panguipulli-\d+\.pdf$/);
+  expect((await nota).suggestedFilename()).toMatch(/^Neltume - Nota de pedido N\.º \d+ Panguipulli\.pdf$/);
   await expect(page.getByLabel('Escribe tu pedido')).toHaveAttribute('placeholder', /aprobada: puedes repartir/);
 });

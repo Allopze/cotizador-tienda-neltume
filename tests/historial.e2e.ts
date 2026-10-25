@@ -4,6 +4,7 @@ import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { abrirBaseDatos } from '../src/servidor/base-datos';
 import { RepositorioCatalogoSqlite } from '../src/servidor/repositorio-catalogo';
 import { cotizar, MARGENES_INICIALES, pesos, REGLAS } from '../src/negocio/precios';
+import { archivoDeDescarga } from './datos-e2e';
 import { DIR_E2E, iniciarSesion } from './login-e2e';
 import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 
@@ -94,7 +95,8 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
     .getByRole('alertdialog', { name: 'Emitir la cotización' })
     .getByRole('button', { name: 'Emitir y generar PDF' })
     .click();
-  const archivo = (await descarga).suggestedFilename();
+  const descargado = (await descarga).suggestedFilename();
+  const archivo = archivoDeDescarga(descargado);
   await expect(titulo).toHaveText(/^N° \d+$/);
 
   // Anulada: la descarga lleva la marca «ANULADA» y el original queda intacto.
@@ -107,8 +109,8 @@ test('charla sin borrador, catálogo, descuento decimal, actividad, anulada y ex
   const anulada = page.waitForEvent('download');
   await panel.getByRole('button', { name: 'Descargar cotización' }).click();
   const nombreAnulada = (await anulada).suggestedFilename();
-  expect(nombreAnulada).toBe(archivo.replace('.pdf', '-anulada.pdf'));
-  expect(await textoPdf(`${DIR_E2E}/pdf/${nombreAnulada}`)).toContain('ANULADA');
+  expect(nombreAnulada).toBe(descargado.replace('.pdf', ' (anulada).pdf'));
+  expect(await textoPdf(`${DIR_E2E}/pdf/${archivoDeDescarga(nombreAnulada)}`)).toContain('ANULADA');
   expect(await textoPdf(`${DIR_E2E}/pdf/${archivo}`)).not.toContain('ANULADA');
 
   // Exportación del listado (pantalla del historial).

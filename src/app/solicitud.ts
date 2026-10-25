@@ -154,6 +154,19 @@ export async function pedirJSON<T>(url: string, init?: RequestInit & { json?: un
   return data as T;
 }
 
+/** El nombre de archivo de una cabecera `Content-Disposition`: `filename*` (UTF-8) si viene y, si no, `filename`. */
+export function nombreDeDisposicion(cabecera: string | null) {
+  if (!cabecera) return null;
+  const utf8 = /filename\*=UTF-8''([^;\s]+)/i.exec(cabecera)?.[1];
+  if (utf8)
+    try {
+      return decodeURIComponent(utf8);
+    } catch {
+      // Un `filename*` mal codificado: se cae a la versión simple.
+    }
+  return /filename="([^"]+)"/.exec(cabecera)?.[1] ?? null;
+}
+
 /** Descarga binaria autenticada (PDF, CSV) con el nombre que propone el servidor. */
 export async function pedirArchivo(
   url: string,
@@ -162,8 +175,7 @@ export async function pedirArchivo(
   const r = await pedir(url, init);
   if (r.status === 401) expirarSesion();
   if (!r.ok) throw new ErrorSolicitud(mensajePorEstado(r.status), r.status);
-  const nombre = r.headers.get('content-disposition')?.match(/filename="([^"]+)"/)?.[1] ?? null;
-  return { blob: await r.blob(), nombre };
+  return { blob: await r.blob(), nombre: nombreDeDisposicion(r.headers.get('content-disposition')) };
 }
 
 /** Comprueba (HEAD, sin bajar el archivo) que un documento siga en el servidor; falso si responde 404. */

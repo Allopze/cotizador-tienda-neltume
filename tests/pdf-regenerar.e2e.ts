@@ -1,5 +1,6 @@
 import { test, expect } from './fixtures-e2e';
 import { access, rm } from 'node:fs/promises';
+import { archivoDeDescarga } from './datos-e2e';
 import { ADMIN_E2E, DIR_E2E, iniciarSesion } from './login-e2e';
 import { resolverMedidasAntesDeEmitir } from './medidas-e2e';
 
@@ -47,8 +48,9 @@ test('una cuenta administradora ve el número manual y regenera un PDF que falta
   await expect(emision.locator('.dialogo-advertencia')).toHaveCount(0);
   const descarga = page.waitForEvent('download');
   await emision.getByRole('button', { name: 'Emitir y generar PDF' }).click();
-  const archivo = (await descarga).suggestedFilename();
-  expect(archivo).toMatch(/^cotizacion-\d+\.pdf$/);
+  const nombre = (await descarga).suggestedFilename();
+  expect(nombre).toMatch(/^Neltume - Cotización N\.º \d+\.pdf$/);
+  const archivo = archivoDeDescarga(nombre);
 
   // El archivo ya no está en el disco (p. ej. un respaldo incompleto): descargar ofrece regenerarlo.
   await rm(`${DIR_E2E}/pdf/${archivo}`);
@@ -57,7 +59,7 @@ test('una cuenta administradora ve el número manual y regenera un PDF que falta
   await expect(dialogo).toContainText('ya no está en el servidor');
   const otra = page.waitForEvent('download');
   await dialogo.getByRole('button', { name: 'Regenerar PDF' }).click();
-  expect((await otra).suggestedFilename()).toBe(archivo);
+  expect((await otra).suggestedFilename()).toBe(nombre);
   await access(`${DIR_E2E}/pdf/${archivo}`);
   await expect(page.getByRole('status').filter({ hasText: /se descargó/ })).toBeVisible();
 });
