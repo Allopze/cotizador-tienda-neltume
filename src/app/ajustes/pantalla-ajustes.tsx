@@ -8,6 +8,7 @@ import { EncabezadoPagina } from '../encabezado-pagina';
 import { useEsCliente } from '../memoria-pantalla';
 import { useAvisoSalida, useSeccionVisible } from '../secciones-pantalla';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { ConexionFabrica } from './conexion-fabrica';
 import { CrearUsuario } from './crear-usuario';
 import { CotizacionesDespacho, DatosEmpresa, PreciosDescuentos, useConfiguracionNegocio } from './configuracion-negocio';
 import { seccionesVisibles, type SeccionAjustes } from './secciones';
@@ -17,7 +18,7 @@ import { GestionUsuarios } from './usuarios';
 
 const AVISO_SALIDA = 'Hay cambios sin guardar en Ajustes. ¿Salir de todos modos?';
 
-/** Pantalla «Ajustes»: cuenta, asistente, configuración comercial, Starken y, para admin, usuarios. */
+/** Pantalla «Ajustes»: cuenta, asistente, configuración comercial, Starken y, para admin, conexión con la fábrica y usuarios. */
 export function PantallaAjustes({
   email,
   nombre,
@@ -165,6 +166,11 @@ export function PantallaAjustes({
           {montada('starken') && (
             <div hidden={seccion !== 'starken'}>
               <ConfiguracionStarkenAjustes avisar={avisar} alCambiar={alCambiar.starken} />
+            </div>
+          )}
+          {puedeCrearUsuarios && montada('fabrica') && (
+            <div hidden={seccion !== 'fabrica'}>
+              <ConexionFabrica />
             </div>
           )}
           {puedeCrearUsuarios && montada('usuarios') && (

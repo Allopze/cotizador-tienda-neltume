@@ -1185,6 +1185,31 @@ p + .pregunta-opciones {
 .usuarios-admin > .catalog-modal-intro {
   margin: 8px 0 12px;
 }
+/* Ajustes → Conexión con la fábrica: qué hay de la configuración, una línea por dato. */
+.conexion-estado {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+  font-size: var(--fs-md);
+}
+.conexion-estado div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.conexion-estado dt {
+  color: var(--muted);
+}
+.conexion-estado dt::after {
+  content: ':';
+}
+.conexion-estado dd {
+  margin: 0;
+  font-weight: 500;
+}
+.conexion-estado dd.falta {
+  color: var(--danger);
+}
 .ia-field {
   display: grid;
   gap: 6px;

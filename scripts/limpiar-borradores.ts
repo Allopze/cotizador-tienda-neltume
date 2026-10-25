@@ -9,7 +9,9 @@ import {
   eliminarLockVencido,
   lockVencido,
   pdfAnuladosAntiguos,
+  pruebasAntiguas,
   purgarAuditoria,
+  purgarPruebas,
   purgarSnapshots,
   snapshotsCompactables,
   snapshotsPurgables,
@@ -22,8 +24,8 @@ import {
 // Los borradores eliminados van a la papelera; la papelera se vacía de lo eliminado hace más de --dias días.
 // También borra las referencias del cliente (data/referencias) que ya no usa ninguna cotización y lo que crece sin
 // uso (src/servidor/limpieza.ts): snapshots de cotizaciones anuladas hace más de --dias días o que ya no existen,
-// copias «ANULADA» de más de --dias días (se regeneran si alguien las pide), auditoría de cuentas de más de un año,
-// PDF temporales de impresiones interrumpidas y un data/.estado.lock abandonado. Además compacta los snapshots
+// copias «ANULADA» de más de --dias días (se regeneran si alguien las pide), auditoría de cuentas y pruebas de
+// conexión con la fábrica de más de un año, PDF temporales de impresiones interrumpidas y un data/.estado.lock abandonado. Además compacta los snapshots
 // antiguos que guardaban el logo en base64 (ahora es una referencia).
 const args = process.argv.slice(2);
 const valor = (nombre: string) => {
@@ -44,6 +46,7 @@ async function main() {
   await limpiarReferencias(almacen);
   await limpiarSnapshots(almacen);
   await limpiarAuditoria(almacen);
+  await limpiarPruebas(almacen);
   await limpiarArchivos(almacen);
 }
 
@@ -84,6 +87,22 @@ async function limpiarAuditoria(almacen: Almacen) {
     return;
   }
   console.log(`Se eliminaron ${purgarAuditoria(db)} registro(s) de auditoría de cuentas de más de ${DIAS_AUDITORIA} días.`);
+}
+
+async function limpiarPruebas(almacen: Almacen) {
+  const db = almacen.baseDatos();
+  const { cantidad, desde } = pruebasAntiguas(db);
+  if (!cantidad) {
+    console.log(`No hay pruebas de conexión con la fábrica de más de ${DIAS_AUDITORIA} días.`);
+    return;
+  }
+  if (!confirmar) {
+    console.log(
+      `${cantidad} prueba(s) de conexión con la fábrica de más de ${DIAS_AUDITORIA} días (desde ${desde?.slice(0, 10)}) se eliminarían. Repite con --confirmar para hacerlo.`,
+    );
+    return;
+  }
+  console.log(`Se eliminaron ${purgarPruebas(db)} prueba(s) de conexión con la fábrica de más de ${DIAS_AUDITORIA} días.`);
 }
 
 async function limpiarArchivos(almacen: Almacen) {

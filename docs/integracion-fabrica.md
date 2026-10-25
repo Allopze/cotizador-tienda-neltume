@@ -26,7 +26,7 @@ La persona que cotiza no hace nada distinto: no hay botón ni confirmación. El 
 | `PUT /api/integrations/neltume/attachments/{sha256}` | bytes del archivo (`Content-Type`: `image/jpeg`, `image/png`, `image/webp` o `application/pdf`; hasta 10 MB) | Referencias del cliente (fotos, croquis). Se suben **antes** del pedido que las nombra. |
 | `POST /api/integrations/neltume/orders` | JSON del mensaje (sección 4; hasta 20 MB) | Pedido nuevo, revisión o anulación. |
 
-Ambos solo por HTTPS con certificado válido (la tienda no acepta certificados inválidos ni sigue redirecciones). No exponer estas rutas a usuarios ni sesiones: se autentican solo con la firma.
+Ambos solo por HTTPS con certificado válido (la tienda no acepta certificados inválidos ni sigue redirecciones). No exponer estas rutas a usuarios ni sesiones: se autentican solo con la firma. La prueba de conexión (sección 12) es una tercera ruta, que implementan las dos aplicaciones.
 
 ### Adjuntos
 
@@ -376,7 +376,7 @@ Abierto: la tienda no se entera de lo que decide la fábrica sobre una revisión
 | `NELTUME_FABRICA_PANGUIPULLI_SECRETO` | Sí, para activar | Secreto HMAC compartido solo con la fábrica, ≥ 32 caracteres (`openssl rand -base64 32`). Distinto de `BETTER_AUTH_SECRET`. |
 | `NELTUME_FABRICA_TIMEOUT_MS` | No | Plazo de cada solicitud (1.000–120.000 ms; 20.000 por omisión). |
 
-Sin las dos primeras la integración está apagada y el cotizador funciona exactamente como antes. En Docker van en el `.env` del servidor; `compose.yaml` ya las pasa al contenedor. La fábrica guarda el mismo secreto en su propia variable de entorno.
+Sin las dos primeras la integración está apagada y el cotizador funciona exactamente como antes. Para **recibir** la prueba de conexión de la fábrica (sección 12) basta el secreto. En Docker van en el `.env` del servidor; `compose.yaml` ya las pasa al contenedor. La fábrica guarda el mismo secreto en su propia variable de entorno.
 
 ## 10. Prueba en desarrollo
 
@@ -389,3 +389,13 @@ La fábrica corre en `http://localhost:3000`, el mismo puerto que usa `npm run d
 3. En la tienda se definen las variables y se reinicia (`docker compose up -d`).
 4. Prueba controlada: generar una nota de Panguipulli de prueba y revisar `npm run integracion` (debe quedar «entregado») y la fábrica.
 5. Opcional: encolar notas generadas antes de activar con `npm run integracion -- encolar <N° cotización>`.
+
+## 12. Prueba de conexión
+
+Además de los pedidos, cada aplicación puede enviar a la otra un PDF de prueba desde sus Ajustes (en la tienda, **Ajustes → Conexión con la fábrica**, solo administración): `POST /api/integrations/neltume/connection-tests`, con el mismo secreto y la misma firma que los pedidos. Quien aprieta el botón ve el resultado al instante, y el PDF queda en la lista de la otra aplicación con el mismo código corto de evento. Es una familia de eventos aparte (`eventType: "connection.test"`): no cambia `schemaVersion`, no crea pedidos y no toca la bandeja.
+
+El contrato (cuerpo, orden de validación, respuestas, diagnóstico común de las dos pantallas y conservación) está en [prueba-conexion-v1.md](prueba-conexion-v1.md). Lo que importa para operar la tienda:
+
+- La tienda es **receptora** además de emisora: la ruta no pide sesión (la protege la firma) y valida que el `Host` esté en `NELTUME_HOSTS` (el hostname público, `cotizador.puertasneltume.cl`, que ya está para los usuarios). Hoy el hostname no está detrás de Cloudflare Access; si alguna vez lo estuviera, `/api/integrations/*` necesitaría una regla **Bypass** (o un service token que la fábrica tendría que enviar), porque sin ella la fábrica vería una redirección o un 403 antes de llegar a la tienda.
+- Para recibir basta `NELTUME_FABRICA_PANGUIPULLI_SECRETO`; para enviar hacen falta también la URL.
+- Se guarda el PDF de las últimas 20 pruebas enviadas y las últimas 20 recibidas (tabla `integracion_pruebas`, esquema 27); el resto queda sin PDF un año, como auditoría.

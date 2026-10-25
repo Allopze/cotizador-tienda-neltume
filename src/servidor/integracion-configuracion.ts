@@ -57,3 +57,44 @@ export function configuracionFabrica(
   const timeoutMs = Number.isFinite(timeout) && timeout > 0 ? Math.min(120_000, Math.max(1_000, Math.round(timeout))) : TIMEOUT_PREDETERMINADO_MS;
   return { url, secreto, timeoutMs };
 }
+
+/** Secreto compartido con `fabrica` si sirve (largo mínimo). Para recibir una prueba de conexión basta el secreto. */
+export function secretoFabrica(fabrica: Fabrica, env: Record<string, string | undefined> = process.env): string | null {
+  if (!fabricaIntegrada(fabrica)) return null;
+  const secreto = env[`${prefijo(fabrica)}_SECRETO`]?.trim();
+  return secreto && secreto.length >= LARGO_MINIMO_SECRETO ? secreto : null;
+}
+
+export interface DetalleConfiguracion {
+  urlPresente: boolean;
+  secretoPresente: boolean;
+  /** La URL es HTTPS (o HTTP local), sin usuario ni parámetros. */
+  urlValida: boolean;
+  /** El secreto tiene el largo mínimo. */
+  secretoValido: boolean;
+  /** Hay URL y secreto que sirven: lo mismo que `configuracionFabrica(...) !== null`. */
+  completa: boolean;
+  /** «Falta configurar …», con las variables que faltan o no sirven; null con la configuración completa. */
+  falta: string | null;
+}
+
+/** Qué hay y qué falta de la configuración de `fabrica`, sin mostrar nunca el secreto (pantalla de Ajustes). */
+export function detalleConfiguracion(fabrica: Fabrica, env: Record<string, string | undefined> = process.env): DetalleConfiguracion {
+  const url = env[`${prefijo(fabrica)}_URL`]?.trim().replace(/\/+$/, '') ?? '';
+  const secreto = env[`${prefijo(fabrica)}_SECRETO`]?.trim() ?? '';
+  const urlValida = !!url && urlSegura(url);
+  const secretoValido = secreto.length >= LARGO_MINIMO_SECRETO;
+  const completa = fabricaIntegrada(fabrica) && urlValida && secretoValido;
+  const faltas = [
+    !urlValida && `la URL de la fábrica (${prefijo(fabrica)}_URL${url ? ', debe ser HTTPS' : ''})`,
+    !secretoValido && `el secreto compartido (${prefijo(fabrica)}_SECRETO${secreto ? `, al menos ${LARGO_MINIMO_SECRETO} caracteres` : ''})`,
+  ].filter(Boolean);
+  return {
+    urlPresente: !!url,
+    secretoPresente: !!secreto,
+    urlValida,
+    secretoValido,
+    completa,
+    falta: completa ? null : faltas.length ? `Falta configurar ${faltas.join(' y ')}.` : 'Esta fábrica no tiene integración.',
+  };
+}

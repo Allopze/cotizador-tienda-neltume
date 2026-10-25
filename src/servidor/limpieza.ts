@@ -117,6 +117,20 @@ export function purgarAuditoria(db: Database.Database, ahora = new Date()) {
   return db.prepare('DELETE FROM auditoria_cuentas WHERE fecha < ?').run(limite(ahora, DIAS_AUDITORIA)).changes;
 }
 
+/**
+ * Pruebas de conexión con la fábrica de más de un año. Su PDF solo se conserva en las últimas de cada dirección; la
+ * fila (quién, cuándo, resultado) es el registro de auditoría y se guarda un año, como la de cuentas.
+ */
+export function pruebasAntiguas(db: Database.Database, ahora = new Date()) {
+  return db
+    .prepare('SELECT COUNT(*) AS cantidad, MIN(fecha) AS desde FROM integracion_pruebas WHERE fecha < ?')
+    .get(limite(ahora, DIAS_AUDITORIA)) as { cantidad: number; desde: string | null };
+}
+
+export function purgarPruebas(db: Database.Database, ahora = new Date()) {
+  return db.prepare('DELETE FROM integracion_pruebas WHERE fecha < ?').run(limite(ahora, DIAS_AUDITORIA)).changes;
+}
+
 export interface ArchivoPurgable {
   /** Ruta relativa a la carpeta de datos. */
   ruta: string;
