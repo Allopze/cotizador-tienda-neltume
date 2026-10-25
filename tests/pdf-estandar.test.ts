@@ -20,7 +20,7 @@ const LONGITUD = 14; // Con tantas líneas la nota pasa de una página y repite 
 const ESPECIALES = 1; // Pedidos especiales sin costo de fábrica entre ellas (la séptima línea).
 // El primer ítem lleva una descripción larga: la fila crece y la cantidad, que va al centro, se aleja de la referencia.
 const DESCRIPCION_LARGA =
-  'Puerta Molco de pino oregón con panel liso, terminación natural, bisagras reforzadas y cerradura de embutir incluida en la entrega a obra';
+  'Puerta Molco de pino oregón con panel liso, terminación natural, bisagras reforzadas y cerradura de embutir incluida en la entrega a obra. Se entrega con marco, tapajuntas y herrajes de acero inoxidable; revisar las medidas en obra antes de fabricar y confirmar el sentido de apertura.';
 // Con la dirección configurada, los datos de Neltume del pie no caben en una línea.
 const DIRECCION = 'Panguipulli, Región de Los Ríos, Chile';
 const MODELOS = [
@@ -434,10 +434,18 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
           )[0];
           if (!referencia || referencia.y - cantidad.y > 60) continue;
           filas++;
-          // Límite del lector de la fábrica (F22): la referencia a menos de 40 pt bajo la cantidad.
+          // Requisito del lector de la fábrica (F22): la cantidad a ≤ 120 pt sobre la referencia del ítem y por debajo de la
+          // referencia del ítem anterior de la misma página.
           expect(referencia.y - cantidad.y, `referencia bajo la cantidad ${cantidad.s}`).toBeLessThanOrEqual(
-            40,
+            120,
           );
+          const anterior = frags
+            .filter((f) => f.s.startsWith('Referencia de catálogo: ') && f.y < cantidad.y)
+            .pop();
+          if (anterior)
+            expect(cantidad.y, `cantidad ${cantidad.s} bajo la referencia anterior`).toBeGreaterThan(
+              anterior.y,
+            );
           // «El fragmento más alto a esa x, dentro de 20 pt sobre la cantidad» es el nombre del ítem (9,6 pt), no la
           // referencia del ítem anterior.
           const ventana = frags
