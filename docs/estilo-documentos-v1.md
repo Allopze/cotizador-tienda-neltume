@@ -40,7 +40,7 @@
 
 ## 4. Encabezado
 
-- **Izquierda: solo el logo, el de cada aplicación** (imagen vectorial; el estándar fija dónde va, no cuál es: la tienda pone la caja NEL/TU/ME o el que se guarde en Ajustes; la fábrica, el suyo). Ningún texto a la izquierda en la altura del tipo y del número: los datos de la empresa van en el bloque «Emisor» o «Cliente» y en el pie.
+- **Izquierda: solo el logo, el de cada aplicación** (imagen vectorial; el estándar fija dónde va, no cuál es: la tienda pone la caja NEL/TU/ME o el que se guarde en Ajustes; la fábrica, el suyo). Ningún texto a la izquierda a la altura del tipo y del número (en la nota de la tienda, que lee la fábrica, es el ancla 1 de la sección 8). Los datos de la empresa van en el bloque «Emisor» o «Cliente» y en el pie; la fábrica, además, puede llevar un bloque con sus datos bajo el logo, siempre más abajo que el número.
 - **Derecha, en dos líneas:** el tipo del documento («Nota de pedido», «Cotización», «Orden de trabajo», «Prueba de conexión») en gris, y debajo su número como `N.º 577` en un solo fragmento. En una nota, la insignia verde `Fábrica Panguipulli`.
 - **Debajo, en columnas con la etiqueta arriba y el valor abajo** (alineadas a la derecha): Fecha, Cotización, Válida hasta, Aprobada por, Emitida por… según el documento.
 - Un filete verde de 0,7 pt cierra el encabezado.
