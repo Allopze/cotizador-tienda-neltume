@@ -40,7 +40,7 @@
 
 ## 4. Encabezado
 
-- **Izquierda: solo el logo** (imagen vectorial; la caja NEL/TU/ME o el que se guarde en Ajustes). Ningún texto a la izquierda en la altura del tipo y del número: los datos de la empresa van en el bloque «Emisor» o «Cliente» y en el pie.
+- **Izquierda: solo el logo, el de cada aplicación** (imagen vectorial; el estándar fija dónde va, no cuál es: la tienda pone la caja NEL/TU/ME o el que se guarde en Ajustes; la fábrica, el suyo). Ningún texto a la izquierda en la altura del tipo y del número: los datos de la empresa van en el bloque «Emisor» o «Cliente» y en el pie.
 - **Derecha, en dos líneas:** el tipo del documento («Nota de pedido», «Cotización», «Orden de trabajo», «Prueba de conexión») en gris, y debajo su número como `N.º 577` en un solo fragmento. En una nota, la insignia verde `Fábrica Panguipulli`.
 - **Debajo, en columnas con la etiqueta arriba y el valor abajo** (alineadas a la derecha): Fecha, Cotización, Válida hasta, Aprobada por, Emitida por… según el documento.
 - Un filete verde de 0,7 pt cierra el encabezado.
@@ -106,8 +106,9 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 
 ## 9. Qué conserva cada aplicación
 
-- **Tienda:** precios al cliente; encabezado de la tabla repetido en cada página; condiciones de pago, validez y datos bancarios; caja «Para aceptar esta cotización»; dibujo de cada modelo y planos con cotas en la nota; casilla «Listo»; bloque «Para fábrica» con firmas; logo personalizable desde Ajustes; descuentos por ítem y por cantidad.
-- **Fábrica:** sus campos de producción; los códigos en mono; las líneas Pagado/Saldo y Descuento con motivo bajo «Total» del pedido; la caja vacía para escribir a mano en pedido y orden de trabajo.
+- **Las dos:** su logo y sus precios. El estándar no toca ni uno ni otro: solo fija el aspecto.
+- **Tienda:** precios al cliente (de venta en la cotización, de fábrica en la nota); encabezado de la tabla repetido en cada página; condiciones de pago, validez y datos bancarios; caja «Para aceptar esta cotización»; dibujo de cada modelo y planos con cotas en la nota; casilla «Listo»; bloque «Para fábrica» con firmas; logo personalizable desde Ajustes; descuentos por ítem y por cantidad.
+- **Fábrica:** sus precios (su lista); sus campos de producción; los códigos en mono; las líneas Pagado/Saldo y Descuento con motivo bajo «Total» del pedido; la caja vacía para escribir a mano en pedido y orden de trabajo.
 
 ## 10. Documentos ya emitidos
 
