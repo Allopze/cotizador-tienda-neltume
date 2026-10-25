@@ -601,7 +601,8 @@ async function piePagina(html: string) {
   const rostro = fuente
     ? `<style>@font-face{font-family:'Instrument Sans';src:url(data:font/woff;base64,${fuente}) format('woff')}</style>`
     : '';
-  return `${rostro}<div style="width:100%;padding:0 14mm;font:7.5pt 'Instrument Sans',Helvetica,Arial,sans-serif;color:#58615a;display:flex;justify-content:space-between;gap:12px"><span>${datos}</span>${pagina}</div>`;
+  // Con la dirección configurada los datos no caben en una línea: pasan a dos y «Página n de m» queda en la última.
+  return `${rostro}<div style="width:100%;padding:0 14mm;font:7.5pt 'Instrument Sans',Helvetica,Arial,sans-serif;color:#58615a;display:flex;justify-content:space-between;align-items:flex-end;gap:12px"><span>${datos}</span>${pagina}</div>`;
 }
 
 // Un solo Chromium reutilizado entre documentos: lanzarlo cuesta más que imprimir. Se cierra tras un

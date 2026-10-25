@@ -586,6 +586,8 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     dirs.push(dir);
     await generarPdf(dir, 'nuevo.pdf', '<html><head><meta name="neltume-estilo" content="1"><meta name="neltume-pie" content="Neltume.co · RUT 1"></head></html>');
     expect(navegador.pie).toContain("font:7.5pt 'Instrument Sans'");
+    // Si los datos de Neltume no caben en una línea, «Página n de m» queda en la última.
+    expect(navegador.pie).toContain('align-items:flex-end');
     expect(navegador.pie).toMatch(/@font-face\{font-family:'Instrument Sans';src:url\(data:font\/woff;base64,[A-Za-z0-9+/=]{1000,}\) format\('woff'\)\}/);
     expect(navegador.pie).toContain('Neltume.co · RUT 1');
     expect(navegador.pie).toContain('<span class="pageNumber"></span> de <span class="totalPages"></span>');

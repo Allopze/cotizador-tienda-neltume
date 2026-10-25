@@ -18,6 +18,11 @@ import { Servicio } from '../src/servidor/servicio';
 
 const LONGITUD = 14; // Con tantas líneas la nota pasa de una página y repite el encabezado de la tabla.
 const ESPECIALES = 1; // Pedidos especiales sin costo de fábrica entre ellas (la séptima línea).
+// El primer ítem lleva una descripción larga: la fila crece y la cantidad, que va al centro, se aleja de la referencia.
+const DESCRIPCION_LARGA =
+  'Puerta Molco de pino oregón con panel liso, terminación natural, bisagras reforzadas y cerradura de embutir incluida en la entrega a obra';
+// Con la dirección configurada, los datos de Neltume del pie no caben en una línea.
+const DIRECCION = 'Panguipulli, Región de Los Ríos, Chile';
 const MODELOS = [
   'MOLCO',
   'HUILO',
@@ -79,11 +84,13 @@ interface Leido {
   paginas: Fragmento[][];
   fuentes: string[];
   ancho: number;
+  bytes: number;
 }
 
 async function leer(ruta: string): Promise<Leido> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
-  const carga = pdfjs.getDocument({ data: new Uint8Array(await readFile(ruta)), useSystemFonts: false });
+  const archivo = await readFile(ruta);
+  const carga = pdfjs.getDocument({ data: new Uint8Array(archivo), useSystemFonts: false });
   const documento = await carga.promise;
   const paginas: Fragmento[][] = [];
   const fuentes = new Set<string>();
@@ -124,7 +131,7 @@ async function leer(ruta: string): Promise<Leido> {
     }
   }
   await carga.destroy();
-  return { paginas, fuentes: [...fuentes].sort(), ancho };
+  return { paginas, fuentes: [...fuentes].sort(), ancho, bytes: archivo.length };
 }
 
 const MONTO = /^\$\d{1,3}(\.\d{3})*$/;
@@ -146,6 +153,17 @@ const aLaDerecha = (frags: Fragmento[], etiqueta: Fragmento) =>
     .join(' ');
 const exacto = (frags: Fragmento[], texto: string) => frags.find((f) => f.s === texto);
 
+// No necesita Chromium: se comprueba siempre.
+it('las fuentes de pdf-recursos son byte a byte las del estándar (las mismas que usa la fábrica)', async () => {
+  const lista = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'))
+    .fuentes as { archivo: string; sha256: string }[];
+  expect(lista.length).toBe(4);
+  for (const { archivo, sha256 } of lista) {
+    const contenido = await readFile(join(process.cwd(), 'src/servidor/pdf-recursos/fuentes', archivo));
+    expect(createHash('sha256').update(contenido).digest('hex'), archivo).toBe(sha256);
+  }
+});
+
 describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los documentos (PDF real)', () => {
   let dir = '';
   let cotizacion: Leido;
@@ -158,6 +176,7 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
     dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-estandar-'));
     vi.stubEnv('NELTUME_EMPRESA_NOMBRE', 'Neltume.co');
     vi.stubEnv('NELTUME_EMPRESA_RUT', '77.235.175-5');
+    vi.stubEnv('NELTUME_EMPRESA_DIRECCION', DIRECCION);
     vi.stubEnv('NELTUME_EMPRESA_TELEFONO', '+56938603334');
     vi.stubEnv('NELTUME_EMPRESA_WEB', 'www.puertasneltume.cl');
     vi.stubEnv('NELTUME_EMPRESA_CORREO', 'neltume.co@gmail.com');
@@ -220,6 +239,7 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
         comuna: 'Valdivia',
         proyecto: 'Edificio Los Robles',
       },
+      items: [{ indice: 0, cambios: { descripcion: DESCRIPCION_LARGA } }],
       observaciones: 'Entregar en obra.',
     });
     await ir({ tipo: 'emitir' });
@@ -277,17 +297,6 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
     expect(nota.fuentes).not.toContain('JetBrainsMono-Regular');
   });
 
-  it('las fuentes de pdf-recursos son byte a byte las del estándar (las mismas que usa la fábrica)', async () => {
-    const lista = JSON.parse(
-      await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'),
-    ).fuentes as { archivo: string; sha256: string }[];
-    expect(lista.length).toBe(4);
-    for (const { archivo, sha256 } of lista) {
-      const contenido = await readFile(join(process.cwd(), 'src/servidor/pdf-recursos/fuentes', archivo));
-      expect(createHash('sha256').update(contenido).digest('hex'), archivo).toBe(sha256);
-    }
-  });
-
   it('los márgenes del estándar: 14 mm a cada lado', () => {
     const margen = (14 / 25.4) * 72;
     for (const documento of [cotizacion, nota, orden, prueba])
@@ -297,24 +306,45 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
       }
   });
 
-  it('el pie de cada página va a 7,5 pt con el número de página', () => {
+  it('el pie de cada página va a 7,5 pt; si los datos de Neltume no caben en una línea, el número queda en la última', () => {
     for (const documento of [cotizacion, nota, orden, prueba])
       documento.paginas.forEach((frags, i) => {
         const pagina = frags.find((f) => f.s === `Página ${i + 1} de ${documento.paginas.length}`);
         expect(pagina, `pie de la página ${i + 1}`).toBeDefined();
         expect(pagina!.tam).toBeCloseTo(7.5, 1);
+        // Nada va más abajo que «Página n de m».
+        expect(Math.max(...frags.map((f) => f.y)), `pie de la página ${i + 1}`).toBeLessThanOrEqual(
+          pagina!.y + 1,
+        );
       });
+    // Con la dirección, los datos de la empresa llevan dos líneas: la primera queda sobre la del número de página.
+    for (const documento of [cotizacion, nota, orden]) {
+      const pagina = todos(documento).find((f) => f.s.startsWith('Página 1 de'))!;
+      const datos = todos(documento).filter((f) => f.y > pagina.y - 14 && f.y < pagina.y - 4);
+      expect(datos.map((f) => f.s).join(' ')).toContain(DIRECCION);
+    }
+  });
+
+  it('el archivo no pasa de 5 MiB ni de 20 páginas (límites del lector de la fábrica)', () => {
+    for (const documento of [cotizacion, nota, orden, prueba]) {
+      expect(documento.bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
+      expect(documento.paginas.length).toBeLessThanOrEqual(20);
+    }
   });
 
   describe('anclas de lectura de la nota de pedido (las lee la fábrica)', () => {
-    it('«Nota de pedido» y su número: el número es un fragmento propio dentro de los 3 siguientes', () => {
+    it('«Nota de pedido» y su número: el número es el fragmento que sigue al tipo, sin texto de la columna izquierda entre los dos', () => {
       const frags = todos(nota);
       const i = frags.findIndex((f) => f.s === 'Nota de pedido');
       expect(i).toBeGreaterThanOrEqual(0);
-      const siguientes = frags.slice(i + 1, i + 4).map((f) => f.s.match(NUMERO)?.[1]);
-      expect(siguientes).toContain(String(numeroNota));
+      // La fábrica admite hasta 3 fragmentos entre el tipo y el número; el estándar no deja ninguno.
+      expect(frags[i + 1].s.match(NUMERO)?.[1]).toBe(String(numeroNota));
       // Tipo sobre número, en dos líneas: el número está más abajo que el tipo.
       expect(frags[i + 1].y).toBeGreaterThan(frags[i].y);
+    });
+
+    it('una nota vigente no lleva el texto «ANULADA»', () => {
+      expect(todos(nota).filter((f) => /ANULAD/i.test(f.s))).toEqual([]);
     });
 
     it('«Fábrica X», «Cotización» y «Despacho» son fragmentos exactos; el valor de los dos últimos va justo debajo', () => {
@@ -387,6 +417,40 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
       );
     });
 
+    it('descripción: sobre la cantidad, a la x de la referencia, solo va el nombre del ítem; la referencia queda cerca de la cantidad', () => {
+      const referencias = todos(nota).filter((f) => f.s.startsWith('Referencia de catálogo: '));
+      const xReferencia = referencias[0].x;
+      let filas = 0;
+      nota.paginas.forEach((frags) => {
+        const cant = frags.find((f) => f.s === 'Cant.');
+        if (!cant) return;
+        const cantidades = frags.filter(
+          (f) => SOLO_DIGITOS.test(f.s) && f.y > cant.y && Math.abs(f.x - cant.x) < 20 && f.tam > 8.5,
+        );
+        for (const cantidad of cantidades) {
+          // Solo los ítems con referencia de catálogo (el especial no la lleva y la fábrica no lo lee).
+          const referencia = frags.filter(
+            (f) => f.s.startsWith('Referencia de catálogo: ') && f.y > cantidad.y,
+          )[0];
+          if (!referencia || referencia.y - cantidad.y > 60) continue;
+          filas++;
+          // Límite del lector de la fábrica (F22): la referencia a menos de 40 pt bajo la cantidad.
+          expect(referencia.y - cantidad.y, `referencia bajo la cantidad ${cantidad.s}`).toBeLessThanOrEqual(
+            40,
+          );
+          // «El fragmento más alto a esa x, dentro de 20 pt sobre la cantidad» es el nombre del ítem (9,6 pt), no la
+          // referencia del ítem anterior.
+          const ventana = frags
+            .filter((f) => Math.abs(f.x - xReferencia) <= 3 && f.y < cantidad.y && f.y >= cantidad.y - 20)
+            .sort((a, b) => a.y - b.y);
+          expect(ventana.length, `descripción sobre la cantidad ${cantidad.s}`).toBeGreaterThan(0);
+          expect(ventana[0].tam).toBeGreaterThanOrEqual(9.5);
+          expect(ventana.some((f) => f.s.startsWith('Referencia de catálogo: '))).toBe(false);
+        }
+      });
+      expect(filas).toBe(LONGITUD - ESPECIALES);
+    });
+
     it('Neto, Total, Entrega comprometida, Dirección de despacho y Transporte: el valor es todo lo que queda a la derecha', () => {
       const ultima = nota.paginas[nota.paginas.length - 1];
       const valor = (frags: Fragmento[], etiqueta: string) => {
@@ -405,14 +469,6 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
       const cifra = ultima.find((f) => MONTO.test(f.s) && misma(f, total) && f.x > total.x)!;
       expect(cifra.tam).toBeGreaterThan(total.tam);
     });
-
-    it('un texto de la columna izquierda no se cuela entre el tipo y el número: el logo va solo a la izquierda', () => {
-      const frags = todos(nota);
-      const tipo = frags.find((f) => f.s === 'Nota de pedido')!;
-      const numero = frags.find((f) => NUMERO.test(f.s))!;
-      const entre = frags.filter((f) => f.y > tipo.y + 1 && f.y < numero.y - 1);
-      expect(entre.map((f) => f.s)).toEqual([]);
-    });
   });
 
   it('la orden de trabajo no lleva precios, ni datos del cliente, ni nombres del personal, y muestra su número', () => {
@@ -421,7 +477,8 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
     expect(texto).not.toMatch(/\$\s*\d/);
     expect(texto).not.toMatch(/Constructora Ejemplo|76\.543\.210-3|1111 2222|Paula|Aprobada por|Emitida por/);
     const i = frags.findIndex((f) => f.s === 'Orden de trabajo');
-    expect(frags.slice(i + 1, i + 4).map((f) => f.s.match(NUMERO)?.[1])).toContain(String(numeroNota));
+    expect(i).toBeGreaterThanOrEqual(0);
+    expect(frags[i + 1].s.match(NUMERO)?.[1]).toBe(String(numeroNota));
     // La obra y el despacho sí van.
     expect(texto).toContain('Edificio Los Robles');
     expect(texto).toContain('Camino a Niebla km 3');

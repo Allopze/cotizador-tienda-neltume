@@ -20,7 +20,7 @@
 | `filete` | `#dcddd3` | Líneas entre filas |
 | `fondoSuave` | `#f2f3ec` | Cajas («Para fábrica», «Para aceptar», avisos) |
 | `verde` | `#2d4938` | Acento principal: filete del encabezado, insignia de la fábrica, cifra del total |
-| `rauli` | `#9a4524` | Acento cálido: descuentos y ahorros, rótulo y marca de la prueba de conexión |
+| `rauli` | `#9a4524` | Acento cálido: ahorro por descuento especial (el texto del ítem y la línea «Ahorro desc. especiales»), rótulo y marca de la prueba de conexión |
 | `anulada` | `#aa1e1e` | Solo ANULADA: aviso y marca de agua |
 
 ## 3. Tipografía
@@ -34,7 +34,7 @@
 
 - Los cuatro archivos son los mismos, byte a byte, en las dos aplicaciones (licencia SIL Open Font 1.1, `OFL`); el sha256 de cada uno está en el archivo de tokens y cada repositorio lo comprueba.
 - Tamaños y colores por rol: sección `roles` del archivo de tokens (texto 9,2 pt; etiqueta 7,3 pt; tipo 11 pt; número 29 pt; título de bloque 15 pt; cifra del total 22 pt; pie 7,5 pt).
-- **Sin ligaduras, sin separación silábica y sin interletrado** en los textos que lee la fábrica (sección 8) y, por uniformidad, en los demás. Con interletrado o ligaduras, pdfjs parte el texto por letras.
+- **Sin ligaduras, sin separación silábica y sin interletrado** en los textos que lee la fábrica (sección 8) y, por uniformidad, en los demás. Con un interletrado grande pdfjs parte el texto por letras (en los PDF de Chromium, desde unos 0,12 em); en los PDF de la fábrica también ocurre con ligaduras.
 - **Mono solo cuando el código es un campo propio** (el código del producto en la cotización, el código de la prueba de conexión). Dentro de una frase («Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m») va en la fuente del texto: cambiar de fuente parte el fragmento que lee la fábrica.
 - El encabezado de la tabla no se fuerza a mayúsculas.
 
@@ -49,13 +49,13 @@
 
 - **Bloques de partes** (Cliente, Obra, Despacho, Emisor, Destino): etiqueta pequeña, título en Fraunces 15 pt y, debajo, los datos como pares etiqueta (gris) y valor.
 - **Tabla:** encabezado en Instrument Sans 600 de 7,3 pt, gris, con filete de tinta debajo; filas con filete suave de 0,5 pt. Cantidad, unitario y total alineados a la derecha. Repetir el encabezado en las páginas siguientes es propio de cada aplicación (la tienda lo repite; la fábrica, hoy, no); si se repite, va en una sola línea.
-- **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, verde, sobre un filete de tinta. Los descuentos y ahorros, en raulí.
+- **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, verde, sobre un filete de tinta. El ahorro por descuento especial, en raulí; la línea del descuento general, en gris y tinta.
 - **Montos** `$1.234`, un solo fragmento. Un precio que aún no existe se imprime `Por definir`, nunca `$0`.
 
 ## 6. Cajas, pie y marcas de agua
 
 - **Cajas** (observaciones a mano, «Para fábrica», «Para aceptar»): fondo suave, título en Fraunces 14 pt; el campo para escribir a mano lleva borde de gris y fondo blanco.
-- **Pie de cada página** a 7,5 pt, Instrument Sans, gris: a la izquierda los datos de Neltume y a la derecha `Página n de m`.
+- **Pie de cada página** a 7,5 pt, Instrument Sans, gris: a la izquierda los datos de Neltume y a la derecha `Página n de m`. Si los datos no caben en una línea (con la dirección configurada), pasan a dos y `Página n de m` queda en la última.
 - **Marcas de agua** en diagonal (−28°), Instrument Sans 600 y muy tenues: `ANULADA` en `anulada` (opacidad 0,16) y `PRUEBA` en `rauli` (0,09).
 
 ## 7. Formatos
@@ -75,7 +75,7 @@
 
 ## 8. No cambiar sin avisar: anclas de lectura de la nota de pedido
 
-La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por fragmentos de texto y posiciones (respaldo manual, ADR-0008, y validación de lo que llega por la API). La **cotización** no se lee; la **orden de trabajo** solo se verifica (sección 8.4). Cualquier cambio de tipografía, tamaños, márgenes, columnas o textos que mueva algo de esta lista se avisa a la otra parte antes de publicarlo. Cada ancla tiene su comprobación en `tests/pdf-estandar.test.ts` (tienda).
+La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por fragmentos de texto y posiciones (respaldo manual, ADR-0008, y validación de lo que llega por la API). La **cotización** no se lee; la **orden de trabajo** solo se verifica (sección 8.4). Cualquier cambio de tipografía, tamaños, márgenes, columnas o textos que mueva algo de esta lista se avisa a la otra parte antes de publicarlo. En la tienda, las anclas se comprueban en `tests/pdf-estandar.test.ts` (sobre el PDF real) y los estilos que las sostienen (sin interletrado ni ligaduras, versión del estilo) en `tests/pdf.test.ts`.
 
 ### 8.1 Encabezado
 
@@ -87,7 +87,7 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 ### 8.2 Tabla de ítems
 
 5. **Encabezado de la tabla:** `Cant.`, `Precio fábrica` y `Total` (columna) en una sola línea, con la misma línea base. Si se repite en las páginas siguientes, también va en una sola línea con `Cant.` y `Precio fábrica` en la misma línea base. Requisito del lector de la fábrica: a partir de su F22 ignora toda línea que lleve `Cant.` al buscar descripción, cantidad y totales (hasta entonces, el `Total` de la columna de las páginas siguientes deja el total de la nota en `null`, que nadie usa).
-6. **Cantidad:** un fragmento de solo dígitos cuya x de inicio queda a menos de 20 pt de la x de `Cant.` (la fábrica prevé ensanchar su tolerancia a 30 pt, pero no se depende de ello hasta que lo avise). Si ambas van alineadas a la derecha, el margen es estrecho: no se ensanchan las columnas.
+6. **Cantidad:** un fragmento de solo dígitos cuya x de inicio queda a menos de 20 pt de la x de `Cant.` (la fábrica prevé ensanchar su tolerancia a 30 pt, pero no se depende de ello hasta que lo avise). Si ambas van alineadas a la derecha, el margen es estrecho: no se ensanchan las columnas. La fábrica espera además la línea `Referencia de catálogo` a no más de 40 pt bajo la cantidad (límite de su F22): una descripción larga alarga la fila y aleja la cantidad, que va al centro. El límite se alcanza hacia los 220 caracteres de descripción, con las fuentes anteriores y con las del estándar; la fábrica puede ampliarlo.
 7. **Montos:** cada monto es un solo fragmento (`$159.485`, no `$` aparte). En la línea del ítem la fábrica lee al menos 2 montos: el primero es el unitario y el último el total. Un pedido especial sin costo de fábrica lleva `Por definir` en los dos lugares.
 8. **Misma línea base (±3 pt)** entre la cantidad y los montos del ítem, y entre la etiqueta `Total` y su cifra (la cifra grande en verde y la etiqueta de menor tamaño comparten línea base).
 9. **Referencia de catálogo:** `Referencia de catálogo: CÓDIGO · medidas` en un solo fragmento, en la fuente del texto. Es el ancla del ítem: una línea sin ella no se lee (los pedidos especiales llevan `Producto personalizado, fuera de catálogo`; hoy el respaldo manual de la fábrica los omite sin avisar; su F22 propone leerlos como «a pedido, revisar» o, como mínimo, avisar, y lo decide el usuario).
@@ -101,7 +101,7 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 
 12. **Orden de trabajo:** no contiene un `$` seguido de un dígito y muestra el número del pedido. No lleva datos del cliente ni nombres del personal.
 13. **Documento comercial:** muestra los dígitos del número de la nota.
-14. **Texto de las anclas:** sin interletrado ni ligaduras (pdfjs los parte letra por letra).
+14. **Texto de las anclas:** sin interletrado ni ligaduras (un interletrado grande hace que pdfjs parta el texto por letras).
 15. **Archivo:** ≤ 5 MiB y ≤ 20 páginas.
 
 ## 9. Qué conserva cada aplicación
