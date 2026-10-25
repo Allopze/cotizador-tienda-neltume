@@ -226,8 +226,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
           // La orden de trabajo lleva el número de su nota de pedido: es el mismo pedido, sin precios.
           ['Nota de pedido', produccion ? `N° ${numero}` : null],
           ['Cotización', q.numero !== null ? `N° ${q.numero}` : null],
-          ['Aprobada por', doc.autor],
-          ['Emitida por', q.emitidaPor],
+          // La orden de trabajo no nombra al personal de Neltume: la fábrica no guarda datos personales.
+          ['Aprobada por', produccion ? null : doc.autor],
+          ['Emitida por', produccion ? null : q.emitidaPor],
         ]
       : [
           ['Fecha', fechaLarga(fecha)],
@@ -252,8 +253,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
         ['Dirección', [c.direccion, c.comuna].filter(Boolean).join(', ')],
         ['Teléfono', c.telefono],
       ]);
+  // La orden de trabajo va solo con la obra y el despacho, sin los datos del cliente: la fábrica no los guarda.
   const partes = nota
-    ? `<section class="partes">${clienteNota}${parte('Despacho', c.proyecto || doc.despacho?.destino || 'Despacho', [
+    ? `<section class="partes${produccion ? ' una' : ''}">${produccion ? '' : clienteNota}${parte('Despacho', c.proyecto || doc.despacho?.destino || 'Despacho', [
         ['Dirección de despacho', doc.despacho?.direccion],
         ['Transporte', transporte ?? 'Por confirmar'],
         ['Destino', c.proyecto ? doc.despacho?.destino : null],
@@ -384,69 +386,85 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   const pie = [empresa.nombre, empresa.rut && `RUT ${empresa.rut}`, empresa.direccion, empresa.telefono && `Tel. ${empresa.telefono}`, empresa.correo, empresa.web]
     .filter(Boolean)
     .join(' · ');
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N° ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N° ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
 }
 
 /**
- * Estilos de los documentos, con el sistema de la aplicación: Newsreader en títulos y cifras grandes, Host Grotesk en
- * el texto. Las fuentes van como referencia `neltume-fuente:` y se incrustan al imprimir: el servidor imprime sin red.
+ * Versión del estilo de los documentos (docs/estilo-documentos-v1.md, común con la fábrica). Va en el HTML
+ * (`<meta name="neltume-estilo">`): un snapshot sin la marca es anterior al estándar y se reimprime como se emitió, con
+ * sus fuentes y su pie de entonces.
+ */
+const ESTILO_DOCUMENTOS = 1;
+const MARCA_ESTILO = /<meta name="neltume-estilo" content="(\d+)">/;
+const estiloDe = (html: string) => Number(MARCA_ESTILO.exec(html)?.[1] ?? 0);
+
+/**
+ * Estilos de los documentos, los del estándar: Fraunces en el tipo, el número, los títulos y las cifras grandes;
+ * Instrument Sans en el texto; JetBrains Mono en los códigos que van solos en su línea. Las fuentes van como referencia
+ * `neltume-fuente:` y se incrustan al imprimir: el servidor imprime sin red.
  */
 const ESTILOS = `
-/* El guion de este Host Grotesk es más corto que el original, que se leía como raya en códigos y RUT (ver
-   scripts/fuentes-pdf.py). */
-@font-face{font-family:'Host Grotesk';src:url(neltume-fuente:host-grotesk.woff2) format('woff2');font-weight:300 800}
-@font-face{font-family:'Newsreader';src:url(neltume-fuente:newsreader.woff2) format('woff2');font-weight:200 800}
+@font-face{font-family:'Fraunces';src:url(neltume-fuente:fraunces-latin-500-normal.woff) format('woff');font-weight:500}
+@font-face{font-family:'Instrument Sans';src:url(neltume-fuente:instrument-sans-latin-400-normal.woff) format('woff');font-weight:400}
+@font-face{font-family:'Instrument Sans';src:url(neltume-fuente:instrument-sans-latin-600-normal.woff) format('woff');font-weight:600}
+@font-face{font-family:'JetBrains Mono';src:url(neltume-fuente:jetbrains-mono-latin-400-normal.woff) format('woff');font-weight:400}
 @page{size:A4;margin:14mm 14mm 17mm}
-:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec}
+:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec;--rauli:#9a4524;--anulada:#aa1e1e}
 *{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-body{margin:0;font:400 9.2pt/1.45 'Host Grotesk',Helvetica,Arial,sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;font-feature-settings:'calt' 0;background:#fff}
-h1,h2,h3,p,dl,dd{margin:0}b{font-weight:500}
-.k{font-size:7.3pt;color:var(--muted);letter-spacing:.01em}
+/* Sin ligaduras en ningún texto: el atajo «font:» de las reglas siguientes las restablece, por eso va con !important. */
+*{font-variant-ligatures:none!important}
+body{margin:0;font:400 9.2pt/1.45 'Instrument Sans',Helvetica,Arial,sans-serif;color:var(--ink);font-variant-numeric:tabular-nums;font-feature-settings:'calt' 0;background:#fff}
+h1,h2,h3,p,dl,dd{margin:0}b{font-weight:600}
+.k{font-size:7.3pt;color:var(--muted)}
 .cab{display:grid;grid-template-columns:1fr auto;align-items:end;gap:10mm;padding-bottom:4.5mm;border-bottom:.7pt solid var(--green)}
 .cab img{height:17mm;width:auto;display:block}
-.cab .tipo{font:400 11pt 'Newsreader',Georgia,serif;color:var(--muted);text-align:right}
-.cab h1{font:400 29pt/.92 'Newsreader',Georgia,serif;letter-spacing:-.022em;text-align:right;margin-top:1mm}
-.fabrica{text-align:right;margin-top:2.5mm}.fabrica b{background:var(--green);color:#fff;font-size:10pt;padding:1.2mm 3mm;letter-spacing:.01em}
-.meta{display:grid;grid-auto-flow:column;gap:0 8mm;margin-top:3.5mm;justify-content:end;text-align:right}.meta dd{font-weight:500;font-size:8.8pt}
+.cab .tipo{font:500 11pt 'Fraunces',Georgia,serif;color:var(--muted);text-align:right}
+.cab h1{font:500 29pt/.92 'Fraunces',Georgia,serif;text-align:right;margin-top:1mm}
+.fabrica{text-align:right;margin-top:2.5mm}.fabrica b{background:var(--green);color:#fff;font-size:10pt;padding:1.2mm 3mm}
+.meta{display:grid;grid-auto-flow:column;gap:0 8mm;margin-top:3.5mm;justify-content:end;text-align:right}.meta dd{font-weight:600;font-size:8.8pt}
 .otras{margin-top:2.5mm;padding:2.4mm 3.5mm;background:var(--soft);font-size:8.2pt}
-.partes{display:grid;grid-template-columns:1.15fr 1fr;gap:12mm;padding:4mm 0 3mm}
-.parte h2{font:400 15pt/1.1 'Newsreader',Georgia,serif;letter-spacing:-.012em;margin-top:1mm}
+.partes{display:grid;grid-template-columns:1.15fr 1fr;gap:12mm;padding:4mm 0 3mm}.partes.una{grid-template-columns:1fr}
+.parte h2{font:500 15pt/1.1 'Fraunces',Georgia,serif;margin-top:1mm}
 .datos{display:grid;grid-template-columns:auto 1fr;gap:.9mm 4mm;margin-top:2.6mm;font-size:8.6pt}.datos dt{color:var(--muted)}
 table{width:100%;border-collapse:collapse}thead{display:table-header-group}
-th{font-weight:500;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:.7pt solid var(--ink)}
+th{font-weight:600;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:.7pt solid var(--ink)}
 td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr{break-inside:avoid}
-.r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted);font-size:8pt}.cant{width:13mm}td.cant{font-weight:500}.unit{width:27mm}.tot{width:29mm;font-weight:500}
+.r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted);font-size:8pt}.cant{width:13mm}td.cant{font-weight:600}.unit{width:27mm}.tot{width:29mm;font-weight:600}
 div.prod{display:grid;grid-template-columns:10mm 1fr;gap:4mm;align-items:center}div.prod.sin-dibujo{grid-template-columns:1fr}div.prod.sin-dibujo>div{padding-left:14mm}
 .dibujo{width:10mm;height:12.5mm;display:block}
-.prod b{display:block;font-size:9.6pt}.prod span{display:block;color:var(--muted);font-size:8.2pt;line-height:1.35}.prod .medida{color:var(--ink);font-weight:500}.prod .cod{font-size:7.3pt;letter-spacing:.03em;margin-top:.6mm}
-.prod .descuento-item{color:#8a5a37}s.original{color:var(--muted);font-size:8pt}
+.prod b{display:block;font-size:9.6pt}.prod span{display:block;color:var(--muted);font-size:8.2pt;line-height:1.35}.prod .medida{color:var(--ink);font-weight:600}.prod .cod{font-size:7.3pt;margin-top:.6mm}
+/* En la cotización el código va solo en su línea: es un campo de código. En la nota va dentro de «Referencia de catálogo: …»,
+   una frase que se lee entera: queda en la fuente del texto. */
+.cotizacion .prod .cod{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:6.8pt}
+.prod .descuento-item{color:var(--rauli)}s.original{color:var(--muted);font-size:8pt}
 .plano-c{width:26mm}.plano{height:18mm;width:auto;display:block}
 /* En la nota, el plano y la casilla «Listo» dejan menos ancho: los precios se acotan para que el producto no se corte. */
-.nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}.plano text{font:500 125px 'Host Grotesk',Helvetica,sans-serif;fill:var(--ink)}.plano .cota{stroke:var(--ink);stroke-width:3;fill:none}
+.nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}.plano text{font:600 125px 'Instrument Sans',Helvetica,sans-serif;fill:var(--ink)}.plano .cota{stroke:var(--ink);stroke-width:3;fill:none}
 .generico{fill:none;stroke:var(--green);stroke-width:6;stroke-linejoin:round;stroke-linecap:round}
 td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:inline-block;width:4mm;height:4mm;border:.7pt solid var(--ink);vertical-align:middle}
 .cierre{display:grid;grid-template-columns:1fr 68mm;gap:12mm;margin-top:3mm;align-items:start;break-inside:avoid}
 .valores{font-size:8.2pt;color:var(--muted);max-width:80mm;padding-top:1.2mm}
 .totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9pt}.totales dt{color:var(--muted)}
-.totales .original dd{color:var(--muted)}.totales .ahorro dd{color:#8a5a37}
+.totales .original dd{color:var(--muted)}.totales .ahorro dd{color:var(--rauli)}
 .totales .total{border-top:.7pt solid var(--ink);margin-top:1.5mm;padding-top:2.4mm;align-items:baseline}
-.totales .total dt{font:400 12pt 'Newsreader',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Newsreader',Georgia,serif;letter-spacing:-.015em;color:var(--green)}
+.totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--green)}
 .observaciones,.condiciones{margin-top:3mm;break-inside:avoid}
-.observaciones h2,.condiciones h2{font:400 12pt 'Newsreader',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:8.6pt;white-space:pre-line}
+.observaciones h2,.condiciones h2{font:500 12pt 'Fraunces',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:8.6pt;white-space:pre-line}
 .cond{display:grid;grid-template-columns:repeat(3,1fr);gap:0 6mm;font-size:7.9pt}.cond div{padding:2mm 0;border-top:.5pt solid var(--line)}.cond b{display:block}.cond p{color:var(--muted)}
-.aceptar{margin-top:3mm;padding:3mm 5mm 3.5mm;background:var(--soft);break-inside:avoid}.aceptar h2{font:400 14pt 'Newsreader',Georgia,serif;letter-spacing:-.01em}.aceptar>p{margin-top:1.2mm;font-size:8.8pt}
+.aceptar{margin-top:3mm;padding:3mm 5mm 3.5mm;background:var(--soft);break-inside:avoid}.aceptar h2{font:500 14pt 'Fraunces',Georgia,serif}.aceptar>p{margin-top:1.2mm;font-size:8.8pt}
 .firmas{display:grid;grid-template-columns:repeat(3,1fr);gap:7mm;margin-top:5mm}.fab .firmas{grid-template-columns:1fr 1fr;gap:10mm;margin-top:6mm}
 .firma{border-top:.5pt solid var(--ink);padding-top:1.4mm;font-size:7.3pt;color:var(--muted)}
-.fab{margin-top:3.5mm;padding:3.5mm 5mm 4mm;background:var(--soft);break-inside:avoid}.fab h2{font:400 14pt 'Newsreader',Georgia,serif;letter-spacing:-.01em}
+.fab{margin-top:3.5mm;padding:3.5mm 5mm 4mm;background:var(--soft);break-inside:avoid}.fab h2{font:500 14pt 'Fraunces',Georgia,serif}
 .linea{display:flex;gap:3mm;align-items:baseline;margin-top:3mm;font-size:8.6pt}.linea b{white-space:nowrap}.linea span{flex:1;border-bottom:.5pt solid var(--muted);min-height:4mm}
 .obs{margin-top:3mm;font-size:8.6pt}.obs div{margin-top:1.2mm;min-height:10mm;border:.5pt solid var(--muted);background:#fff;padding:1.5mm 2mm;white-space:pre-line}
-.anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:600 110px 'Host Grotesk',Helvetica,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}
-.anulada-aviso{border:.7pt solid #aa1e1e;color:#aa1e1e;padding:2.4mm 3.5mm;margin-bottom:3mm;font-weight:500}
+.anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:600 110px 'Instrument Sans',Helvetica,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}
+.anulada-aviso{border:.7pt solid var(--anulada);color:var(--anulada);padding:2.4mm 3.5mm;margin-bottom:3mm;font-weight:600}
 `;
 
 const ESTILOS_PRUEBA = `
-.prueba-marca{position:fixed;top:44%;left:0;right:0;text-align:center;font:600 120px 'Host Grotesk',Helvetica,sans-serif;color:rgba(45,73,56,.08);transform:rotate(-28deg);pointer-events:none}
-.prueba-aviso{margin:5mm 0 1mm;padding:3.2mm 4mm;border:.9pt solid var(--green);background:var(--soft);color:var(--green);font:500 15pt/1.2 'Newsreader',Georgia,serif;text-align:center}
+.prueba-marca{position:fixed;top:44%;left:0;right:0;text-align:center;font:600 120px 'Instrument Sans',Helvetica,sans-serif;color:rgba(154,69,36,.09);transform:rotate(-28deg);pointer-events:none}
+.prueba-aviso{margin:5mm 0 1mm;padding:3.2mm 4mm;border:.9pt solid var(--rauli);background:var(--soft);color:var(--rauli);font:500 15pt/1.2 'Fraunces',Georgia,serif;text-align:center}
+.meta dd.codigo{font:400 8.2pt 'JetBrains Mono',ui-monospace,Menlo,monospace}
 .prueba-nota{margin-top:6mm;font-size:8.6pt;color:var(--muted)}
 `;
 
@@ -473,7 +491,7 @@ export async function plantillaPruebaConexion(
   const fila = (n: number, producto: string, cantidad: number) =>
     `<tr><td class="n">${n}</td><td class="prod"><b>${esc(producto)}</b><span>Dato inventado para la prueba · sin precio</span></td><td class="r cant">${cantidad}</td></tr>`;
   const pie = `Prueba de conexión · sin valor comercial · código ${codigo}`;
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-pie" content="${esc(pie)}"><title>Prueba de conexión ${esc(codigo)} · Neltume</title><style>${ESTILOS}${ESTILOS_PRUEBA}</style></head><body class="nota"><div class="prueba-marca" aria-hidden="true">PRUEBA</div><header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">Prueba de conexión</p><h1>${esc(codigo)}</h1><dl class="meta"><div><dt class="k">Fecha y hora</dt><dd>${esc(fechaHoraChile(fecha))}</dd></div><div><dt class="k">Código de la prueba</dt><dd>${esc(codigo)}</dd></div></dl></div></header><p class="prueba-aviso">PRUEBA DE CONEXIÓN — no es un pedido</p><section class="partes"><div class="parte"><p class="k">Emisor</p><h2>${esc(emisor)}</h2></div><div class="parte"><p class="k">Destino</p><h2>${esc(destino)}</h2></div></section><table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th></tr></thead><tbody>${fila(1, 'Puerta de ejemplo · 820 × 2000 mm', 2)}${fila(2, 'Marco de ejemplo · 2x4 pulg.', 2)}</tbody></table><p class="prueba-nota">Este documento no es una nota de pedido ni una cotización y no tiene valor comercial: se genera solo para comprobar que la conexión entre la tienda y la fábrica funciona. Los productos, medidas y cantidades son inventados. Si lo ves en la otra aplicación con el mismo código de prueba (${esc(codigo)}), la conexión funciona.</p></body></html>`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>Prueba de conexión ${esc(codigo)} · Neltume</title><style>${ESTILOS}${ESTILOS_PRUEBA}</style></head><body class="nota"><div class="prueba-marca" aria-hidden="true">PRUEBA</div><header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">Prueba de conexión</p><h1>${esc(codigo)}</h1><dl class="meta"><div><dt class="k">Fecha y hora</dt><dd>${esc(fechaHoraChile(fecha))}</dd></div><div><dt class="k">Código de la prueba</dt><dd class="codigo">${esc(codigo)}</dd></div></dl></div></header><p class="prueba-aviso">PRUEBA DE CONEXIÓN — no es un pedido</p><section class="partes"><div class="parte"><p class="k">Emisor</p><h2>${esc(emisor)}</h2></div><div class="parte"><p class="k">Destino</p><h2>${esc(destino)}</h2></div></section><table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th></tr></thead><tbody>${fila(1, 'Puerta de ejemplo · 820 × 2000 mm', 2)}${fila(2, 'Marco de ejemplo · 2x4 pulg.', 2)}</tbody></table><p class="prueba-nota">Este documento no es una nota de pedido ni una cotización y no tiene valor comercial: se genera solo para comprobar que la conexión entre la tienda y la fábrica funciona. Los productos, medidas y cantidades son inventados. Si lo ves en la otra aplicación con el mismo código de prueba (${esc(codigo)}), la conexión funciona.</p></body></html>`;
 }
 
 /**
@@ -535,7 +553,7 @@ export function compactarLogo(html: string) {
   );
 }
 
-const RECURSO = /(src|href)="neltume-dibujo:([a-z0-9-]+\.png)"|url\(neltume-fuente:([a-z0-9-]+\.woff2)\)/g;
+const RECURSO = /(src|href)="neltume-dibujo:([a-z0-9-]+\.png)"|url\(neltume-fuente:([a-z0-9-]+\.woff2?)\)/g;
 const recursosLeidos = new Map<string, string>();
 /** Archivo de `pdf-recursos` en base64 (se lee una vez por proceso); null si no está. */
 async function recursoBase64(ruta: string) {
@@ -562,17 +580,28 @@ export async function inyectarRecursos(html: string): Promise<string> {
   return html.replace(RECURSO, (todo, atributo: string | undefined, dibujo: string | undefined, fuente: string | undefined) => {
     const base64 = contenidos.get(dibujo ? `dibujos/${dibujo}` : `fuentes/${fuente}`);
     if (!base64) return todo;
-    return dibujo ? `${atributo}="data:image/png;base64,${base64}"` : `url(data:font/woff2;base64,${base64})`;
+    return dibujo
+      ? `${atributo}="data:image/png;base64,${base64}"`
+      : `url(data:font/${fuente!.endsWith('.woff2') ? 'woff2' : 'woff'};base64,${base64})`;
   });
 }
 
 /**
  * Pie de cada página: los datos de Neltume que trae el documento (`<meta name="neltume-pie">`, ya escapados) y el número
- * de página. Un documento anterior (un snapshot sin esa marca) lleva solo el número, como se imprimió.
+ * de página. Un documento anterior (un snapshot sin esa marca) lleva solo el número, como se imprimió. Un documento del
+ * estándar lo lleva a 7,5 pt y en Instrument Sans: el pie se imprime aparte del cuerpo y no ve sus fuentes, así que la
+ * suya va incrustada en el mismo pie.
  */
-function piePagina(html: string) {
+async function piePagina(html: string) {
   const datos = html.match(/<meta name="neltume-pie" content="([^"]*)">/)?.[1] ?? '';
-  return `<div style="width:100%;padding:0 14mm;font:7px Helvetica,Arial,sans-serif;color:#58615a;display:flex;justify-content:space-between;gap:12px"><span>${datos}</span><span style="white-space:nowrap">Página <span class="pageNumber"></span> de <span class="totalPages"></span></span></div>`;
+  const pagina = '<span style="white-space:nowrap">Página <span class="pageNumber"></span> de <span class="totalPages"></span></span>';
+  if (estiloDe(html) < 1)
+    return `<div style="width:100%;padding:0 14mm;font:7px Helvetica,Arial,sans-serif;color:#58615a;display:flex;justify-content:space-between;gap:12px"><span>${datos}</span>${pagina}</div>`;
+  const fuente = await recursoBase64('fuentes/instrument-sans-latin-400-normal.woff');
+  const rostro = fuente
+    ? `<style>@font-face{font-family:'Instrument Sans';src:url(data:font/woff;base64,${fuente}) format('woff')}</style>`
+    : '';
+  return `${rostro}<div style="width:100%;padding:0 14mm;font:7.5pt 'Instrument Sans',Helvetica,Arial,sans-serif;color:#58615a;display:flex;justify-content:space-between;gap:12px"><span>${datos}</span>${pagina}</div>`;
 }
 
 // Un solo Chromium reutilizado entre documentos: lanzarlo cuesta más que imprimir. Se cierra tras un
@@ -709,7 +738,7 @@ export async function generarPdf(
       // Numeración en el margen inferior: en documentos largos cada hoja dice cuántas son.
       displayHeaderFooter: true,
       headerTemplate: '<span></span>',
-      footerTemplate: piePagina(html),
+      footerTemplate: await piePagina(html),
     });
   })();
   let fallo = false;

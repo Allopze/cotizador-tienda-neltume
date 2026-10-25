@@ -22,6 +22,8 @@ const navegador = vi.hoisted(() => ({
   alAbrir: null as (() => Promise<void>) | null,
   /** El lanzamiento de Chromium no termina hasta que esto se cumpla. */
   lanzamiento: null as Promise<void> | null,
+  /** `footerTemplate` de la última impresión. */
+  pie: '',
 }));
 vi.mock('playwright', () => ({
   chromium: {
@@ -38,7 +40,8 @@ vi.mock('playwright', () => ({
             route: async () => {},
             setContent: async () => {},
             evaluate: async () => {},
-            pdf: async ({ path }: { path: string }) => {
+            pdf: async ({ path, footerTemplate }: { path: string; footerTemplate?: string }) => {
+              navegador.pie = footerTemplate ?? '';
               await new Promise((r) => setTimeout(r, navegador.demora));
               if (navegador.falla) throw new Error(navegador.falla);
               const { writeFile: escribir } = await import('node:fs/promises');
@@ -53,7 +56,7 @@ vi.mock('playwright', () => ({
     }),
   },
 }));
-const { cerrarNavegadorPdf, descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, prepararPdf } =
+const { cerrarNavegadorPdf, descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, plantillaPruebaConexion, prepararPdf } =
   await import('../src/servidor/pdf');
 
 const puerta: Producto = {
@@ -544,6 +547,79 @@ describe('Plantillas', () => {
   });
 });
 
+describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
+  const nota = { tipo: 'nota' as const, numero: 577, fabrica: 'panguipulli' as const, fecha: '2026-10-25T12:00:00.000Z' };
+  const unaPuerta = () => cotizar([{ producto: puerta, cantidad: 2, anchoSolicitado: 0.82, altoSolicitado: 2, tipoMedida: 'hoja' }]);
+
+  it('cada documento lleva la marca de versión del estilo y solo las tipografías y colores del estándar', async () => {
+    await aislarBaseDatos();
+    const documentos = [
+      await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 325, montos: unaPuerta(), fecha: '2026-10-25T12:00:00.000Z' }),
+      await plantilla(cotizacion(), { ...nota, montos: unaPuerta() }),
+      await plantilla(cotizacion(), { ...nota, montos: unaPuerta(), produccion: true }),
+      await plantillaPruebaConexion({ eventId: '3f9a12bc-0000-4000-8000-000000000000', fecha: new Date('2026-10-25T18:00:00Z'), emisor: 'Tienda', destino: 'Fábrica' }),
+    ];
+    for (const html of documentos) {
+      expect(html).toContain('<meta name="neltume-estilo" content="1">');
+      const css = html.match(/<style>([\s\S]*?)<\/style>/)![1];
+      expect(css).not.toMatch(/Newsreader|Host Grotesk/);
+      for (const archivo of ['fraunces-latin-500-normal.woff', 'instrument-sans-latin-400-normal.woff', 'instrument-sans-latin-600-normal.woff', 'jetbrains-mono-latin-400-normal.woff'])
+        expect(css).toContain(`neltume-fuente:${archivo}`);
+      // Sin ligaduras (también donde el atajo `font:` las restablece) y sin interletrado: pdfjs parte el texto por letras.
+      expect(css).toContain('*{font-variant-ligatures:none!important}');
+      expect(css).not.toContain('letter-spacing');
+      // Los colores del estándar; el pardo y el verde de antes ya no se usan.
+      expect(css).toContain('--rauli:#9a4524');
+      expect(css).not.toMatch(/#8a5a37|45,73,56/);
+    }
+  });
+
+  it('el código va en mono solo cuando es un campo propio: en la cotización sí, dentro de «Referencia de catálogo» no', async () => {
+    await aislarBaseDatos();
+    const css = (await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 325, montos: unaPuerta(), fecha: '2026-10-25T12:00:00.000Z' })).match(/<style>([\s\S]*?)<\/style>/)![1];
+    expect(css).toMatch(/\.cotizacion \.prod \.cod\{font-family:'JetBrains Mono'/);
+    expect(css).not.toMatch(/\.nota [^{]*\.cod\{[^}]*JetBrains/);
+  });
+
+  it('el pie de un documento del estándar va a 7,5 pt en Instrument Sans; el de un snapshot anterior se imprime como se emitió', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-pie-'));
+    dirs.push(dir);
+    await generarPdf(dir, 'nuevo.pdf', '<html><head><meta name="neltume-estilo" content="1"><meta name="neltume-pie" content="Neltume.co · RUT 1"></head></html>');
+    expect(navegador.pie).toContain("font:7.5pt 'Instrument Sans'");
+    expect(navegador.pie).toMatch(/@font-face\{font-family:'Instrument Sans';src:url\(data:font\/woff;base64,[A-Za-z0-9+/=]{1000,}\) format\('woff'\)\}/);
+    expect(navegador.pie).toContain('Neltume.co · RUT 1');
+    expect(navegador.pie).toContain('<span class="pageNumber"></span> de <span class="totalPages"></span>');
+    // Un snapshot sin la marca (emitido antes del estándar) se reimprime con el pie de entonces.
+    await generarPdf(dir, 'anterior.pdf', '<html><head><meta name="neltume-pie" content="Neltume.co"></head></html>');
+    expect(navegador.pie).toContain('font:7px Helvetica');
+    expect(navegador.pie).not.toContain('@font-face');
+  });
+
+  it('las fuentes anteriores siguen en pdf-recursos: los documentos ya emitidos se reimprimen con ellas', async () => {
+    const html = await inyectarRecursos(
+      '<style>@font-face{src:url(neltume-fuente:newsreader.woff2)}@font-face{src:url(neltume-fuente:host-grotesk.woff2)}@font-face{src:url(neltume-fuente:fraunces-latin-500-normal.woff)}</style>',
+    );
+    expect(html).not.toContain('neltume-fuente:');
+    expect(veces(html, 'url(data:font/woff2;base64,')).toBe(2);
+    expect(veces(html, 'url(data:font/woff;base64,')).toBe(1);
+  });
+
+  it('la orden de trabajo va solo con la obra y el despacho, sin los datos del cliente ni el personal', async () => {
+    await aislarBaseDatos();
+    const q = { ...cotizacion(), cliente: { ...clienteVacio(), nombre: 'Ana Soto', rut: '12.345.678-5', telefono: '+56 9 1234 5678', proyecto: 'Edificio Los Robles' } };
+    const doc = { ...nota, montos: unaPuerta(), autor: 'Paula', despacho: { direccion: 'Camino a Niebla km 3', transporte: 'Starken', entregaComprometida: '15-11-2026' } };
+    const orden = await plantilla(q, { ...doc, produccion: true });
+    expect(orden).toContain('class="partes una"');
+    expect(textoVisible(orden)).toContain('Edificio Los Robles');
+    expect(textoVisible(orden)).toContain('Camino a Niebla km 3');
+    expect(textoVisible(orden)).not.toMatch(/Ana Soto|12\.345\.678-5|1234 5678|Paula|Aprobada por|Emitida por/);
+    // La nota comercial, en cambio, conserva al cliente y quién aprobó.
+    const comercial = textoVisible(await plantilla(q, doc));
+    expect(comercial).toMatch(/Ana Soto/);
+    expect(comercial).toMatch(/Aprobada por\s+Paula\s+Emitida por/);
+  });
+});
+
 describe('generarPdf', () => {
   it('escribe con permisos privados y nunca sobrescribe un documento', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'neltume-pdf-'));
@@ -688,7 +764,10 @@ describe('Notas de pedido emitidas por fábrica', () => {
     ]);
     const envio = await prepararEnvio(q, notaPanguipulli, { db: almacen.baseDatos() });
     expect(envio.htmlProduccion).toContain('<p class="otras">');
-    expect(envio.htmlProduccion).toContain('<h2>Ana Soto</h2>');
+    // La orden de trabajo va con la obra y el despacho, sin los datos del cliente ni los nombres del personal: la
+    // fábrica no guarda datos personales. La nota comercial a Panguipulli sí los lleva.
+    expect(envio.htmlProduccion).toContain('class="partes una"');
+    expect(textoVisible(envio.htmlProduccion)).not.toMatch(/Ana Soto|12\.345\.678-5|1234 5678|Paula|Aprobada por|Emitida por/);
   });
 });
 
