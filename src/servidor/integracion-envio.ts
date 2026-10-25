@@ -38,7 +38,7 @@ import { generarPdf } from './pdf';
 /** Tope del cuerpo de un pedido (JSON con los dos PDF en base64). Más grande no se envía: queda fallido. */
 export const MAX_CUERPO_BYTES = 20 * 1024 * 1024;
 /** Lo que se lee de una respuesta de la fábrica: la confirmación es un JSON chico. */
-const MAX_RESPUESTA_BYTES = 64 * 1024;
+export const MAX_RESPUESTA_BYTES = 64 * 1024;
 /** Intentos antes de dejar un envío fallido (con la espera exponencial, unos tres días). */
 export const MAX_INTENTOS = 15;
 const ESPERA_BASE_MS = 30_000;
@@ -85,7 +85,7 @@ export interface OpcionesEnvio {
 }
 
 /** Lee la respuesta con tope: una fábrica mal configurada no llena la memoria. */
-async function leerRespuesta(respuesta: Response) {
+export async function leerRespuesta(respuesta: Response) {
   const lector = respuesta.body?.getReader();
   if (!lector) return '';
   const partes: Uint8Array[] = [];

@@ -161,6 +161,7 @@ test('Ajustes en el teléfono: pestañas a la vista y Starken con los campos ali
     ['Precios y descuentos', 'Precios y descuentos'],
     ['Cotizaciones', 'Vigencia y transportistas'],
     ['Usuarios', 'Usuarios'],
+    ['Conexión con la fábrica', 'Conexión con la fábrica'],
     ['Starken', 'Despacho con Starken'],
     ['Mi cuenta', 'Mi cuenta'],
   ]) {

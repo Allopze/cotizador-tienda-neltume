@@ -21,7 +21,7 @@ import {
   textoDescuentoItem,
   type ReglasComerciales,
 } from '../negocio/precios';
-import { fechaChilena } from '../negocio/vigencia';
+import { fechaChilena, fechaHoraChile } from '../negocio/vigencia';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { metros } from '../catalogo/resolver';
@@ -443,6 +443,38 @@ td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:in
 .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:600 110px 'Host Grotesk',Helvetica,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}
 .anulada-aviso{border:.7pt solid #aa1e1e;color:#aa1e1e;padding:2.4mm 3.5mm;margin-bottom:3mm;font-weight:500}
 `;
+
+const ESTILOS_PRUEBA = `
+.prueba-marca{position:fixed;top:44%;left:0;right:0;text-align:center;font:600 120px 'Host Grotesk',Helvetica,sans-serif;color:rgba(45,73,56,.08);transform:rotate(-28deg);pointer-events:none}
+.prueba-aviso{margin:5mm 0 1mm;padding:3.2mm 4mm;border:.9pt solid var(--green);background:var(--soft);color:var(--green);font:500 15pt/1.2 'Newsreader',Georgia,serif;text-align:center}
+.prueba-nota{margin-top:6mm;font-size:8.6pt;color:var(--muted)}
+`;
+
+export interface DatosPruebaConexion {
+  eventId: string;
+  fecha: Date;
+  /** Aplicación que envía y la que recibe, como se leen en el PDF. */
+  emisor: string;
+  destino: string;
+}
+
+/**
+ * PDF de la prueba de conexión con la fábrica (Ajustes → Conexión con la fábrica): una página con el aspecto de una nota
+ * de pedido, con datos inventados y sin precios, y el rótulo que la distingue de un pedido real. Lleva el código corto
+ * del evento (los 8 primeros caracteres del `eventId`): la persona lo cruza con lo que ve la otra aplicación. Se imprime
+ * con el mismo Chromium que las notas, así que también comprueba que imprimir funciona en este servidor.
+ */
+export async function plantillaPruebaConexion(
+  { eventId, fecha, emisor, destino }: DatosPruebaConexion,
+  db: Database.Database = abrirBaseDatos(),
+) {
+  const logo = registrarLogo(await logoVigente(db));
+  const codigo = eventId.slice(0, 8);
+  const fila = (n: number, producto: string, cantidad: number) =>
+    `<tr><td class="n">${n}</td><td class="prod"><b>${esc(producto)}</b><span>Dato inventado para la prueba · sin precio</span></td><td class="r cant">${cantidad}</td></tr>`;
+  const pie = `Prueba de conexión · sin valor comercial · código ${codigo}`;
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-pie" content="${esc(pie)}"><title>Prueba de conexión ${esc(codigo)} · Neltume</title><style>${ESTILOS}${ESTILOS_PRUEBA}</style></head><body class="nota"><div class="prueba-marca" aria-hidden="true">PRUEBA</div><header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">Prueba de conexión</p><h1>${esc(codigo)}</h1><dl class="meta"><div><dt class="k">Fecha y hora</dt><dd>${esc(fechaHoraChile(fecha))}</dd></div><div><dt class="k">Código de la prueba</dt><dd>${esc(codigo)}</dd></div></dl></div></header><p class="prueba-aviso">PRUEBA DE CONEXIÓN — no es un pedido</p><section class="partes"><div class="parte"><p class="k">Emisor</p><h2>${esc(emisor)}</h2></div><div class="parte"><p class="k">Destino</p><h2>${esc(destino)}</h2></div></section><table><thead><tr><th class="n">N°</th><th>Producto</th><th class="r cant">Cant.</th></tr></thead><tbody>${fila(1, 'Puerta de ejemplo · 820 × 2000 mm', 2)}${fila(2, 'Marco de ejemplo · 2x4 pulg.', 2)}</tbody></table><p class="prueba-nota">Este documento no es una nota de pedido ni una cotización y no tiene valor comercial: se genera solo para comprobar que la conexión entre la tienda y la fábrica funciona. Los productos, medidas y cantidades son inventados. Si lo ves en la otra aplicación con el mismo código de prueba (${esc(codigo)}), la conexión funciona.</p></body></html>`;
+}
 
 /**
  * Logo de los documentos. La plantilla escribe `src="neltume-logo:<sha256>"` en lugar del SVG en base64, y el SVG se

@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 26;
+export const VERSION_ESQUEMA = 27;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -470,6 +470,36 @@ function crearEsquema(db: Database.Database) {
         );
         CREATE INDEX IF NOT EXISTS idx_integracion_pendientes ON integracion_envios(estado, proximo_intento);
         PRAGMA user_version = 26;
+      `);
+    }).immediate();
+  if (version < 27)
+    db.transaction(() => {
+      // v27: pruebas de conexión con la fábrica (integracion-prueba.ts): el PDF de prueba que cada aplicación envía a la
+      // otra desde Ajustes, con su resultado. El PDF solo se conserva en las últimas de cada dirección; la fila queda un
+      // año como registro de auditoría. Se puede repetir sin efecto.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS integracion_pruebas (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          direccion TEXT NOT NULL CHECK (direccion IN ('enviada', 'recibida')),
+          fabrica TEXT NOT NULL CHECK (fabrica IN (${FABRICAS.map((f) => `'${f}'`).join(', ')})),
+          evento_id TEXT NOT NULL,
+          clave_idempotencia TEXT NOT NULL,
+          fecha TEXT NOT NULL,
+          resultado TEXT NOT NULL CHECK (resultado IN ('aceptada', 'duplicada', 'rechazada', 'sin_respuesta', 'recibida')),
+          http INTEGER,
+          codigo TEXT,
+          detalle TEXT,
+          latencia_ms INTEGER,
+          actor TEXT,
+          archivo TEXT NOT NULL,
+          bytes INTEGER NOT NULL,
+          sha256 TEXT NOT NULL,
+          cuerpo_sha256 TEXT,
+          pdf BLOB,
+          UNIQUE (direccion, clave_idempotencia)
+        );
+        CREATE INDEX IF NOT EXISTS idx_integracion_pruebas ON integracion_pruebas(direccion, fabrica, id);
+        PRAGMA user_version = 27;
       `);
     }).immediate();
 }

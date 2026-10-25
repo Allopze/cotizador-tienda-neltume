@@ -7,6 +7,7 @@ const SECCIONES_AJUSTES = [
   { id: 'precios', titulo: 'Precios y descuentos', encabezado: 'Precios y descuentos', admin: false },
   { id: 'cotizaciones', titulo: 'Cotizaciones', encabezado: 'Vigencia y transportistas', admin: false },
   { id: 'starken', titulo: 'Starken', encabezado: 'Despacho con Starken', admin: false },
+  { id: 'fabrica', titulo: 'Conexión con la fábrica', encabezado: 'Conexión con la fábrica', admin: true },
   { id: 'usuarios', titulo: 'Usuarios', encabezado: 'Usuarios', admin: true },
 ] as const;
 export type SeccionAjustes = (typeof SECCIONES_AJUSTES)[number]['id'];

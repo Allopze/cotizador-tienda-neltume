@@ -186,3 +186,56 @@ export const errorFabricaSchema = z
 /** Clave de idempotencia estable por pedido y revisión: un reintento nunca crea otro pedido en la fábrica. */
 export const claveIdempotencia = (sourceOrderId: string, fabrica: Fabrica, revision: number) =>
   `${ORIGEN_INTEGRACION}:${sourceOrderId}:${CODIGO_FABRICA[fabrica]}:${revision}`;
+
+// ── Prueba de conexión ───────────────────────────────────────────────────────────────────────────────────────
+/**
+ * Prueba de conexión (docs/integracion-fabrica.md, «Prueba de conexión»): desde Ajustes, cada aplicación envía un PDF
+ * de prueba a la otra. Misma firma y mismo secreto que los pedidos, ruta propia, sin bandeja ni reintentos. `source`
+ * y `eventType` van dentro del cuerpo firmado y cada receptor exige el de la otra parte: un mensaje capturado no
+ * sirve en el sentido contrario ni como pedido.
+ */
+export const RUTA_PRUEBA_CONEXION = '/api/integrations/neltume/connection-tests';
+export const EVENTO_PRUEBA = 'connection.test';
+export const ORIGEN_FABRICA = 'neltume-factory';
+export type OrigenPrueba = typeof ORIGEN_INTEGRACION | typeof ORIGEN_FABRICA;
+/** Cuerpo JSON de la prueba (2 MiB) y PDF ya decodificado (1 MiB). */
+export const MAX_CUERPO_PRUEBA_BYTES = 2 * 1024 * 1024;
+export const MAX_PDF_PRUEBA_BYTES = 1024 * 1024;
+
+export const claveIdempotenciaPrueba = (origen: OrigenPrueba, eventId: string) => `${origen}:connection-test:${eventId}`;
+
+/** El base64 va aparte del esquema: un base64 que no es estricto es `document_invalid` (422), no `schema_invalid`. */
+export const documentoPruebaSchema = z
+  .object({
+    filename: z.string().regex(/^[A-Za-z0-9._-]{1,100}\.pdf$/),
+    mimeType: z.literal('application/pdf'),
+    contentBase64: z.string().min(1),
+    sha256,
+  })
+  .strict();
+
+/** Mensaje de la prueba enviado por `origen`; el receptor valida con el origen de la otra parte. */
+export const mensajePruebaSchema = (origen: OrigenPrueba) =>
+  z
+    .object({
+      schemaVersion: z.literal(VERSION_CONTRATO),
+      eventType: z.literal(EVENTO_PRUEBA),
+      eventId: z.uuid().refine((id) => id === id.toLowerCase(), 'El UUID va en minúsculas.'),
+      source: z.literal(origen),
+      /** La fábrica del enlace: en tienda → fábrica es el destino, en fábrica → tienda es el origen. */
+      factoryCode: texto(40),
+      issuedAt: z.iso.datetime(),
+      document: documentoPruebaSchema,
+    })
+    .strict();
+export type MensajePrueba = z.infer<ReturnType<typeof mensajePruebaSchema>>;
+
+/** Confirmación de la prueba (2xx): solo vale si la manda la app esperada y nombra el mismo evento. */
+export const confirmacionPruebaSchema = z
+  .object({
+    status: z.enum(['accepted', 'duplicate']),
+    eventId: z.string().max(100),
+    receiver: z.string().max(40),
+    receivedAt: z.string().max(40).optional(),
+  })
+  .passthrough();

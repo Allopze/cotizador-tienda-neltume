@@ -25,6 +25,24 @@ const FORMATO_HORA = new Intl.DateTimeFormat('en-US', {
 /** Fecha local (YYYY-MM-DD) de un instante ISO en Santiago. */
 export const fechaLocal = (iso: string | Date) => FORMATO_FECHA.format(new Date(iso));
 
+const FORMATO_FECHA_HORA = new Intl.DateTimeFormat('es-CL', {
+  timeZone: ZONA,
+  hourCycle: 'h23',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+/** «25-10-2026 14:30» (dd-mm-aaaa hh:mm): fecha y hora de un instante en Santiago, igual en las dos aplicaciones. */
+export function fechaHoraChile(instante: string | Date) {
+  const fecha = new Date(instante);
+  if (Number.isNaN(fecha.getTime())) return String(instante);
+  const partes = Object.fromEntries(FORMATO_FECHA_HORA.formatToParts(fecha).map(({ type, value }) => [type, value]));
+  return `${partes.day}-${partes.month}-${partes.year} ${partes.hour}:${partes.minute}`;
+}
+
 export function sumarDiasHabiles(fecha: string, dias: number): string {
   const d = new Date(`${fecha}T12:00:00.000Z`);
   let restantes = dias;
