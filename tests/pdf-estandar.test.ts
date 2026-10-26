@@ -84,6 +84,7 @@ interface Leido {
   paginas: Fragmento[][];
   fuentes: string[];
   ancho: number;
+  alto: number;
   bytes: number;
 }
 
@@ -95,10 +96,12 @@ async function leer(ruta: string): Promise<Leido> {
   const paginas: Fragmento[][] = [];
   const fuentes = new Set<string>();
   let ancho = 0;
+  let alto = 0;
   for (let n = 1; n <= documento.numPages; n++) {
     const pagina = await documento.getPage(n);
     const vista = pagina.getViewport({ scale: 1 });
     ancho = vista.width;
+    alto = vista.height;
     const contenido = await pagina.getTextContent();
     const items = contenido.items.flatMap((i) =>
       'str' in i && i.str.trim()
@@ -131,7 +134,7 @@ async function leer(ruta: string): Promise<Leido> {
     }
   }
   await carga.destroy();
-  return { paginas, fuentes: [...fuentes].sort(), ancho, bytes: archivo.length };
+  return { paginas, fuentes: [...fuentes].sort(), ancho, alto, bytes: archivo.length };
 }
 
 const MONTO = /^\$\d{1,3}(\.\d{3})*$/;
@@ -318,11 +321,50 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
         );
       });
     // Con la dirección, los datos de la empresa llevan dos líneas: la primera queda sobre la del número de página.
-    for (const documento of [cotizacion, nota, orden]) {
+    for (const documento of [cotizacion, nota, orden, prueba]) {
       const pagina = todos(documento).find((f) => f.s.startsWith('Página 1 de'))!;
       const datos = todos(documento).filter((f) => f.y > pagina.y - 14 && f.y < pagina.y - 4);
       expect(datos.map((f) => f.s).join(' ')).toContain(DIRECCION);
     }
+  });
+
+  it('el texto del cuerpo va a 9,2 pt (rol «texto») y el título de la columna «N.º» a 7,3 pt (encabezado de tabla)', async () => {
+    const { roles } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
+    for (const documento of [cotizacion, nota, orden, prueba]) {
+      const frags = todos(documento);
+      const cant = exacto(frags, 'Cant.')!;
+      const titulo = frags.find((f) => f.s === 'N.º' && misma(f, cant))!;
+      expect(titulo, 'título de la columna N.º').toBeDefined();
+      expect(titulo.tam).toBeCloseTo(roles.encabezadoTabla.tamanoPt, 1);
+      // El número de la primera fila, justo bajo el título, es texto del cuerpo.
+      const fila = frags.find((f) => f.s === '1' && Math.abs(f.x - titulo.x) < 3 && f.y > titulo.y)!;
+      expect(fila.tam).toBeCloseTo(roles.texto.tamanoPt, 1);
+    }
+    // Pares de los bloques, campos de «Para fábrica» y totales: todos en el rol «texto».
+    for (const [documento, etiquetas] of [
+      [cotizacion, ['RUT', 'Subtotal']],
+      [nota, ['Dirección de despacho', 'Neto', 'Entrega comprometida']],
+      [orden, ['Dirección de despacho', 'Entrega comprometida']],
+    ] as [Leido, string[]][])
+      for (const etiqueta of etiquetas) {
+        const f = todos(documento).find((x) => x.s === etiqueta)!;
+        expect(f, etiqueta).toBeDefined();
+        expect(f.tam, etiqueta).toBeCloseTo(roles.texto.tamanoPt, 1);
+      }
+  });
+
+  it('el pie no lleva filete y la línea base de su última línea queda a 6 mm del borde inferior', () => {
+    // 6 mm = 17 pt. «Última línea»: la de «Página n de m», que con la dirección configurada es la segunda del pie.
+    const seisMm = (6 / 25.4) * 72;
+    for (const documento of [cotizacion, nota, orden, prueba])
+      documento.paginas.forEach((frags, i) => {
+        const pagina = frags.find((f) => f.s === `Página ${i + 1} de ${documento.paginas.length}`)!;
+        expect(documento.alto - pagina.y, `pie de la página ${i + 1}`).toBeCloseTo(seisMm, 0);
+        // Los datos de la empresa terminan en la misma línea base que «Página n de m», no 2 pt más arriba.
+        const datos = frags.filter((f) => misma(f, pagina) && f !== pagina);
+        expect(datos.length, `datos del pie, página ${i + 1}`).toBeGreaterThan(0);
+        for (const d of datos) expect(Math.abs(d.y - pagina.y), d.s).toBeLessThan(0.5);
+      });
   });
 
   it('el archivo no pasa de 5 MiB ni de 20 páginas (límites del lector de la fábrica)', () => {

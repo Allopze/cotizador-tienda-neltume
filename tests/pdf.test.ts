@@ -141,7 +141,8 @@ describe('Plantillas', () => {
       autor: 'Paula',
     });
     expect(html).toContain('<dt class="k">Revisión de</dt><dd>N.º 323</dd>');
-    expect(html).toContain('<dt class="k">Válida hasta</dt><dd>12 de octubre de 2026</dd>');
+    // La vigencia va en dd-mm-aaaa; la fecha en palabras es solo la del documento (estándar, sección 7).
+    expect(html).toContain('<dt class="k">Válida hasta</dt><dd>12-10-2026</dd>');
     expect(html).toContain('válida hasta el 12-10-2026');
     expect(html).toContain('<dt class="k">Emitida por</dt><dd>Paula</dd>');
     // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio. El vano no se repite aparte.
@@ -604,6 +605,34 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     expect(css).toContain(`.prod .medida{color:var(--ink);font-weight:${roles.productoMedida.peso}}`);
     expect(css).toContain(`.prod .cod{font-size:${roles.productoReferencia.tamanoPt}pt;`);
     expect(css).toContain(`font-size:${roles.firma.tamanoPt}pt;color:var(--muted)}`);
+  });
+
+  it('los textos del cuerpo usan el rol «texto» y el título de «N.º» el del encabezado de tabla (tokens del estándar)', async () => {
+    await aislarBaseDatos();
+    const { roles } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
+    const t = roles.texto.tamanoPt;
+    const css = (await plantilla(cotizacion(), { ...nota, montos: unaPuerta() })).match(/<style>([\s\S]*?)<\/style>/)![1];
+    expect(css).toContain(`.datos{display:grid;grid-template-columns:auto 1fr;gap:.9mm 4mm;margin-top:2.6mm;font-size:${t}pt}`);
+    expect(css).toContain(`padding:.9mm 0;font-size:${t}pt}.totales dt`);
+    expect(css).toContain(`.linea{display:flex;gap:3mm;align-items:baseline;margin-top:3mm;font-size:${t}pt}`);
+    expect(css).toContain(`.obs{margin-top:3mm;font-size:${t}pt}`);
+    expect(css).toContain(`.observaciones p{font-size:${t}pt;`);
+    const cssPrueba = (await plantillaPruebaConexion({ eventId: '3f9a12bc-0000-4000-8000-000000000000', fecha: new Date('2026-10-25T18:00:00Z'), emisor: 'Tienda', destino: 'Fábrica' })).match(/<style>([\s\S]*?)<\/style>/)![1];
+    expect(cssPrueba).toContain(`.prueba-nota{margin-top:6mm;font-size:${t}pt;`);
+    // El título de la columna «N.º» no hereda el tamaño de los números de fila: es un encabezado de tabla.
+    expect(css).toContain(`th{font-weight:600;font-size:${roles.encabezadoTabla.tamanoPt}pt;`);
+    expect(css).toContain('.n{width:6mm;color:var(--muted)}');
+    expect(css).toContain(`td.n{font-size:${t}pt}`);
+  });
+
+  it('el pie de la prueba de conexión lleva los datos de la empresa, como el de los demás documentos', async () => {
+    await aislarBaseDatos();
+    const pieDe = (html: string) => html.match(/<meta name="neltume-pie" content="([^"]*)">/)![1];
+    const prueba = await plantillaPruebaConexion({ eventId: '3f9a12bc-0000-4000-8000-000000000000', fecha: new Date('2026-10-25T18:00:00Z'), emisor: 'Tienda', destino: 'Fábrica' });
+    const cot = await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 325, montos: unaPuerta(), fecha: '2026-10-25T12:00:00.000Z' });
+    expect(pieDe(prueba)).not.toBe('');
+    expect(pieDe(prueba)).toBe(pieDe(cot));
+    expect(prueba).not.toContain('sin valor comercial · código');
   });
 
   it('el código va en mono solo cuando es un campo propio: en la cotización sí, dentro de «Referencia de catálogo» no', async () => {
