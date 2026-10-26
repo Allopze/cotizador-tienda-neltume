@@ -135,6 +135,12 @@ export function filasDocumento(q: Pick<Cotizacion, 'montos' | 'solicitudes'>, do
 /** Referencia de catálogo de una línea, como la imprime la nota: código y medidas del producto base. */
 export const referenciaCatalogo = (l: Linea) => `${l.producto.codigo} · ${medidaReferencia(l.producto)}`;
 
+/** Datos de Neltume al pie de cada página, junto al número de página (ver `generarPdf`): también a quién preguntar. */
+const datosPie = (empresa: ReturnType<typeof datosEmpresa>) =>
+  [empresa.nombre, empresa.rut && `RUT ${empresa.rut}`, empresa.direccion, empresa.telefono && `Tel. ${empresa.telefono}`, empresa.correo, empresa.web]
+    .filter(Boolean)
+    .join(' · ');
+
 const fechaDocumento = (iso: string) =>
   new Date(iso).toLocaleDateString('es-CL', { timeZone: 'America/Santiago' });
 /** «23 de octubre de 2026»: fecha del encabezado. Una fecha sin hora (YYYY-MM-DD) se toma tal cual. */
@@ -232,7 +238,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
         ]
       : [
           ['Fecha', fechaLarga(fecha)],
-          ['Válida hasta', doc.vence ? fechaLarga(doc.vence) : null],
+          ['Válida hasta', doc.vence ? fechaChilena(doc.vence) : null],
           ['Revisión de', q.origen ? `N.º ${q.origen}` : null],
           ['Emitida por', doc.autor],
         ],
@@ -383,9 +389,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
           : `<section class="aceptar"><h2>Para aceptar esta cotización</h2><p>Responde este correo${empresa.telefono ? ` o escríbenos al ${esc(empresa.telefono)}` : ''} indicando el N.º ${numero}. Si prefieres, fírmala y envíanos una foto.</p><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></section>`
       }`;
   // Datos de Neltume al pie de cada página, junto al número de página (ver `generarPdf`): también a quién preguntar.
-  const pie = [empresa.nombre, empresa.rut && `RUT ${empresa.rut}`, empresa.direccion, empresa.telefono && `Tel. ${empresa.telefono}`, empresa.correo, empresa.web]
-    .filter(Boolean)
-    .join(' · ');
+  const pie = datosPie(empresa);
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N.º ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
 }
 
@@ -425,11 +429,11 @@ h1,h2,h3,p,dl,dd{margin:0}b{font-weight:600}
 .otras{margin-top:2.5mm;padding:2.4mm 3.5mm;background:var(--soft);font-size:8.2pt}
 .partes{display:grid;grid-template-columns:1.15fr 1fr;gap:12mm;padding:4mm 0 3mm}.partes.una{grid-template-columns:1fr}
 .parte h2{font:500 15pt/1.1 'Fraunces',Georgia,serif;margin-top:1mm}
-.datos{display:grid;grid-template-columns:auto 1fr;gap:.9mm 4mm;margin-top:2.6mm;font-size:8.6pt}.datos dt{color:var(--muted)}
+.datos{display:grid;grid-template-columns:auto 1fr;gap:.9mm 4mm;margin-top:2.6mm;font-size:9.2pt}.datos dt{color:var(--muted)}
 table{width:100%;border-collapse:collapse}thead{display:table-header-group}
 th{font-weight:600;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:.7pt solid var(--ink)}
 td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr{break-inside:avoid}
-.r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted);font-size:8pt}.cant{width:13mm}td.cant{font-weight:600}.unit{width:27mm}.tot{width:29mm;font-weight:600}
+.r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted)}td.n{font-size:9.2pt}.cant{width:13mm}td.cant{font-weight:600}.unit{width:27mm}.tot{width:29mm;font-weight:600}
 div.prod{display:grid;grid-template-columns:10mm 1fr;gap:4mm;align-items:center}div.prod.sin-dibujo{grid-template-columns:1fr}div.prod.sin-dibujo>div{padding-left:14mm}
 .dibujo{width:10mm;height:12.5mm;display:block}
 .prod b{display:block;font-size:9.6pt}.prod span{display:block;color:var(--muted);font-size:8.2pt;line-height:1.35}.prod .medida{color:var(--ink);font-weight:600}.prod .cod{font-size:7.3pt;margin-top:.6mm}
@@ -444,19 +448,19 @@ div.prod{display:grid;grid-template-columns:10mm 1fr;gap:4mm;align-items:center}
 td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:inline-block;width:4mm;height:4mm;border:.7pt solid var(--ink);vertical-align:middle}
 .cierre{display:grid;grid-template-columns:1fr 68mm;gap:12mm;margin-top:3mm;align-items:start;break-inside:avoid}
 .valores{font-size:8.2pt;color:var(--muted);max-width:80mm;padding-top:1.2mm}
-.totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9pt}.totales dt{color:var(--muted)}
+.totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9.2pt}.totales dt{color:var(--muted)}
 .totales .original dd{color:var(--muted)}.totales .ahorro dd{color:var(--calido)}
 .totales .total{border-top:.7pt solid var(--ink);margin-top:1.5mm;padding-top:2.4mm;align-items:baseline}
 .totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--total)}
 .observaciones,.condiciones{margin-top:3mm;break-inside:avoid}
-.observaciones h2,.condiciones h2{font:500 12pt 'Fraunces',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:8.6pt;white-space:pre-line}
+.observaciones h2,.condiciones h2{font:500 12pt 'Fraunces',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:9.2pt;white-space:pre-line}
 .cond{display:grid;grid-template-columns:repeat(3,1fr);gap:0 6mm;font-size:7.9pt}.cond div{padding:2mm 0;border-top:.5pt solid var(--line)}.cond b{display:block}.cond p{color:var(--muted)}
 .aceptar{margin-top:3mm;padding:3mm 5mm 3.5mm;background:var(--soft);break-inside:avoid}.aceptar h2{font:500 14pt 'Fraunces',Georgia,serif}.aceptar>p{margin-top:1.2mm;font-size:8.8pt}
 .firmas{display:grid;grid-template-columns:repeat(3,1fr);gap:7mm;margin-top:5mm}.fab .firmas{grid-template-columns:1fr 1fr;gap:10mm;margin-top:6mm}
 .firma{border-top:.5pt solid var(--ink);padding-top:1.4mm;font-size:7.3pt;color:var(--muted)}
 .fab{margin-top:3.5mm;padding:3.5mm 5mm 4mm;background:var(--soft);break-inside:avoid}.fab h2{font:500 14pt 'Fraunces',Georgia,serif}
-.linea{display:flex;gap:3mm;align-items:baseline;margin-top:3mm;font-size:8.6pt}.linea b{white-space:nowrap}.linea span{flex:1;border-bottom:.5pt solid var(--muted);min-height:4mm}
-.obs{margin-top:3mm;font-size:8.6pt}.obs div{margin-top:1.2mm;min-height:10mm;border:.5pt solid var(--muted);background:#fff;padding:1.5mm 2mm;white-space:pre-line}
+.linea{display:flex;gap:3mm;align-items:baseline;margin-top:3mm;font-size:9.2pt}.linea b{white-space:nowrap}.linea span{flex:1;border-bottom:.5pt solid var(--muted);min-height:4mm}
+.obs{margin-top:3mm;font-size:9.2pt}.obs div{margin-top:1.2mm;min-height:10mm;border:.5pt solid var(--muted);background:#fff;padding:1.5mm 2mm;white-space:pre-line}
 .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:600 110px 'Instrument Sans',Helvetica,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}
 .anulada-aviso{border:.7pt solid var(--anulada);color:var(--anulada);padding:2.4mm 3.5mm;margin-bottom:3mm;font-weight:600}
 `;
@@ -465,7 +469,7 @@ const ESTILOS_PRUEBA = `
 .prueba-marca{position:fixed;top:44%;left:0;right:0;text-align:center;font:600 120px 'Instrument Sans',Helvetica,sans-serif;color:rgba(45,73,56,.08);transform:rotate(-28deg);pointer-events:none}
 .prueba-aviso{margin:5mm 0 1mm;padding:3.2mm 4mm;border:.9pt solid var(--green);background:var(--soft);color:var(--green);font:500 15pt/1.2 'Fraunces',Georgia,serif;text-align:center}
 .meta dd.codigo{font:400 8.2pt 'JetBrains Mono',ui-monospace,Menlo,monospace}
-.prueba-nota{margin-top:6mm;font-size:8.6pt;color:var(--muted)}
+.prueba-nota{margin-top:6mm;font-size:9.2pt;color:var(--muted)}
 `;
 
 export interface DatosPruebaConexion {
@@ -490,7 +494,8 @@ export async function plantillaPruebaConexion(
   const codigo = eventId.slice(0, 8);
   const fila = (n: number, producto: string, cantidad: number) =>
     `<tr><td class="n">${n}</td><td class="prod"><b>${esc(producto)}</b><span>Dato inventado para la prueba · sin precio</span></td><td class="r cant">${cantidad}</td></tr>`;
-  const pie = `Prueba de conexión · sin valor comercial · código ${codigo}`;
+  const empresa = datosEmpresa(db);
+  const pie = datosPie(empresa);
   return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>Prueba de conexión ${esc(codigo)} · Neltume</title><style>${ESTILOS}${ESTILOS_PRUEBA}</style></head><body class="nota"><div class="prueba-marca" aria-hidden="true">PRUEBA</div><header class="cab"><img alt="Neltume" src="${logo}"><div><p class="tipo">Prueba de conexión</p><h1>${esc(codigo)}</h1><dl class="meta"><div><dt class="k">Fecha y hora</dt><dd>${esc(fechaHoraChile(fecha))}</dd></div><div><dt class="k">Código de la prueba</dt><dd class="codigo">${esc(codigo)}</dd></div></dl></div></header><p class="prueba-aviso">PRUEBA DE CONEXIÓN — no es un pedido</p><section class="partes"><div class="parte"><p class="k">Emisor</p><h2>${esc(emisor)}</h2></div><div class="parte"><p class="k">Destino</p><h2>${esc(destino)}</h2></div></section><table><thead><tr><th class="n">N.º</th><th>Producto</th><th class="r cant">Cant.</th></tr></thead><tbody>${fila(1, 'Puerta de ejemplo · 820 × 2000 mm', 2)}${fila(2, 'Marco de ejemplo · 2x4 pulg.', 2)}</tbody></table><p class="prueba-nota">Este documento no es una nota de pedido ni una cotización y no tiene valor comercial: se genera solo para comprobar que la conexión entre la tienda y la fábrica funciona. Los productos, medidas y cantidades son inventados. Si lo ves en la otra aplicación con el mismo código de prueba (${esc(codigo)}), la conexión funciona.</p></body></html>`;
 }
 
