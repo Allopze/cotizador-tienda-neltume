@@ -1,18 +1,34 @@
 {
   "version": 1,
-  "descripcion": "Estilo común de los PDF de la tienda y de la fábrica (estilo-documentos-v1.md). Este archivo es idéntico en los dos repositorios.",
+  "descripcion": "Estilo común de los PDF de la tienda y de la fábrica (estilo-documentos-v1.md). Este archivo es idéntico en los dos repositorios. Cada aplicación conserva su paleta: los roles de color son los mismos y cada app usa los valores de su clave.",
   "hoja": {
     "formato": "A4",
-    "margenesMm": { "arriba": 14, "izquierda": 14, "derecha": 14, "abajo": 17 }
+    "margenesMm": {
+      "arriba": 14,
+      "izquierda": 14,
+      "derecha": 14,
+      "abajo": 17
+    }
   },
   "colores": {
-    "tinta": "#1d2b24",
-    "gris": "#58615a",
-    "filete": "#dcddd3",
-    "fondoSuave": "#f2f3ec",
-    "verde": "#2d4938",
-    "rauli": "#9a4524",
-    "anulada": "#aa1e1e"
+    "tienda": {
+      "tinta": "#1d2b24",
+      "gris": "#58615a",
+      "filete": "#dcddd3",
+      "fondoSuave": "#f2f3ec",
+      "acento": "#2d4938",
+      "calido": "#8a5a37",
+      "anulada": "#aa1e1e"
+    },
+    "fabrica": {
+      "tinta": "#1d2920",
+      "gris": "#62645c",
+      "filete": "#dddddd",
+      "fondoSuave": "#f2f3ec",
+      "acento": "#9a4524",
+      "calido": "#9a4524",
+      "anulada": "#aa1e1e"
+    }
   },
   "fuentes": [
     {
@@ -53,9 +69,24 @@
       "interlineado": 1.45,
       "color": "tinta"
     },
-    "etiqueta": { "familia": "Instrument Sans", "peso": 400, "tamanoPt": 7.3, "color": "gris" },
-    "valorMeta": { "familia": "Instrument Sans", "peso": 600, "tamanoPt": 8.8, "color": "tinta" },
-    "tipoDocumento": { "familia": "Fraunces", "peso": 500, "tamanoPt": 11, "color": "gris" },
+    "etiqueta": {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "tamanoPt": 7.3,
+      "color": "gris"
+    },
+    "valorMeta": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "tamanoPt": 8.8,
+      "color": "tinta"
+    },
+    "tipoDocumento": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 11,
+      "color": "gris"
+    },
     "numeroDocumento": {
       "familia": "Fraunces",
       "peso": 500,
@@ -63,11 +94,36 @@
       "interlineado": 0.92,
       "color": "tinta"
     },
-    "tituloBloque": { "familia": "Fraunces", "peso": 500, "tamanoPt": 15, "color": "tinta" },
-    "tituloSeccion": { "familia": "Fraunces", "peso": 500, "tamanoPt": 12, "color": "tinta" },
-    "tituloCaja": { "familia": "Fraunces", "peso": 500, "tamanoPt": 14, "color": "tinta" },
-    "etiquetaTotal": { "familia": "Fraunces", "peso": 500, "tamanoPt": 12, "color": "tinta" },
-    "cifraTotal": { "familia": "Fraunces", "peso": 500, "tamanoPt": 22, "color": "verde" },
+    "tituloBloque": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 15,
+      "color": "tinta"
+    },
+    "tituloSeccion": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 12,
+      "color": "tinta"
+    },
+    "tituloCaja": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 14,
+      "color": "tinta"
+    },
+    "etiquetaTotal": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 12,
+      "color": "tinta"
+    },
+    "cifraTotal": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 22,
+      "color": "acento"
+    },
     "encabezadoTabla": {
       "familia": "Instrument Sans",
       "peso": 600,
@@ -89,13 +145,30 @@
       "color": "tinta",
       "uso": "fábrica: columna de código de sus tablas"
     },
-    "pie": { "familia": "Instrument Sans", "peso": 400, "tamanoPt": 7.5, "color": "gris" }
+    "pie": {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "tamanoPt": 7.5,
+      "color": "gris"
+    }
   },
   "trazos": {
-    "bajoEncabezado": { "anchoPt": 0.7, "color": "verde" },
-    "bajoEncabezadoTabla": { "anchoPt": 0.7, "color": "tinta" },
-    "entreFilas": { "anchoPt": 0.5, "color": "filete" },
-    "sobreTotal": { "anchoPt": 0.7, "color": "tinta" }
+    "bajoEncabezado": {
+      "anchoPt": 0.7,
+      "color": "acento"
+    },
+    "bajoEncabezadoTabla": {
+      "anchoPt": 0.7,
+      "color": "tinta"
+    },
+    "entreFilas": {
+      "anchoPt": 0.5,
+      "color": "filete"
+    },
+    "sobreTotal": {
+      "anchoPt": 0.7,
+      "color": "tinta"
+    }
   },
   "marcasDeAgua": {
     "ANULADA": {
@@ -108,7 +181,7 @@
     "PRUEBA": {
       "familia": "Instrument Sans",
       "peso": 600,
-      "color": "rauli",
+      "color": "acento",
       "opacidad": 0.09,
       "giroGrados": -28
     }

@@ -13,15 +13,17 @@
 
 ## 2. Colores
 
-| Token | Valor | Uso |
-| --- | --- | --- |
-| `tinta` | `#1d2b24` | Texto, filetes fuertes |
-| `gris` | `#58615a` | Etiquetas, texto secundario, pie |
-| `filete` | `#dcddd3` | Líneas entre filas |
-| `fondoSuave` | `#f2f3ec` | Cajas («Para fábrica», «Para aceptar», avisos) |
-| `verde` | `#2d4938` | Acento principal: filete del encabezado, insignia de la fábrica, cifra del total |
-| `rauli` | `#9a4524` | Acento cálido: ahorro por descuento especial (el texto del ítem y la línea «Ahorro desc. especiales»), rótulo y marca de la prueba de conexión |
-| `anulada` | `#aa1e1e` | Solo ANULADA: aviso y marca de agua |
+**Cada aplicación conserva sus colores.** El estándar fija los roles de color y dónde se usan; cada app los llena con su paleta (`colores.tienda` y `colores.fabrica` en el archivo de tokens). La paleta de la fábrica es la que usaba antes del estándar; su repositorio la confirma.
+
+| Rol | Uso | Tienda | Fábrica |
+| --- | --- | --- | --- |
+| `tinta` | Texto, filetes fuertes | `#1d2b24` | `#1d2920` |
+| `gris` | Etiquetas, texto secundario, pie | `#58615a` | `#62645c` |
+| `filete` | Líneas entre filas | `#dcddd3` | `#dddddd` |
+| `fondoSuave` | Cajas («Para fábrica», «Para aceptar», avisos) | `#f2f3ec` | `#f2f3ec` (provisorio) |
+| `acento` | Filete del encabezado, insignia de la fábrica, cifra del total, rótulo y marca de la prueba de conexión | verde `#2d4938` | terracota (raulí) `#9a4524` |
+| `calido` | Ahorro por descuento especial (el texto del ítem y la línea «Ahorro desc. especiales») | pardo `#8a5a37` | terracota (raulí) `#9a4524` |
+| `anulada` | Solo ANULADA: aviso y marca de agua | `#aa1e1e` | `#aa1e1e` (provisorio) |
 
 ## 3. Tipografía
 
@@ -41,22 +43,22 @@
 ## 4. Encabezado
 
 - **Izquierda: solo el logo, el de cada aplicación** (imagen vectorial; el estándar fija dónde va, no cuál es: la tienda pone la caja NEL/TU/ME o el que se guarde en Ajustes; la fábrica, el suyo). Ningún texto a la izquierda a la altura del tipo y del número (en la nota de la tienda, que lee la fábrica, es el ancla 1 de la sección 8). Los datos de la empresa van en el bloque «Emisor» o «Cliente» y en el pie; la fábrica, además, puede llevar un bloque con sus datos bajo el logo, siempre más abajo que el número.
-- **Derecha, en dos líneas:** el tipo del documento («Nota de pedido», «Cotización», «Orden de trabajo», «Prueba de conexión») en gris, y debajo su número como `N.º 577` en un solo fragmento. En una nota, la insignia verde `Fábrica Panguipulli`.
+- **Derecha, en dos líneas:** el tipo del documento («Nota de pedido», «Cotización», «Orden de trabajo», «Prueba de conexión») en gris, y debajo su número como `N.º 577` en un solo fragmento. En una nota, la insignia `Fábrica Panguipulli` en el color de acento.
 - **Debajo, en columnas con la etiqueta arriba y el valor abajo** (alineadas a la derecha): Fecha, Cotización, Válida hasta, Aprobada por, Emitida por… según el documento.
-- Un filete verde de 0,7 pt cierra el encabezado.
+- Un filete de 0,7 pt en el color de acento cierra el encabezado.
 
 ## 5. Cuerpo
 
 - **Bloques de partes** (Cliente, Obra, Despacho, Emisor, Destino): etiqueta pequeña, título en Fraunces 15 pt y, debajo, los datos como pares etiqueta (gris) y valor.
 - **Tabla:** encabezado en Instrument Sans 600 de 7,3 pt, gris, con filete de tinta debajo; filas con filete suave de 0,5 pt. Cantidad, unitario y total alineados a la derecha. Repetir el encabezado en las páginas siguientes es propio de cada aplicación (la tienda lo repite; la fábrica, hoy, no); si se repite, va en una sola línea.
-- **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, verde, sobre un filete de tinta. El ahorro por descuento especial, en raulí; la línea del descuento general, en gris y tinta.
+- **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, en el color de acento, sobre un filete de tinta. El ahorro por descuento especial, en el color cálido; la línea del descuento general, en gris y tinta.
 - **Montos** `$1.234`, un solo fragmento. Un precio que aún no existe se imprime `Por definir`, nunca `$0`.
 
 ## 6. Cajas, pie y marcas de agua
 
 - **Cajas** (observaciones a mano, «Para fábrica», «Para aceptar»): fondo suave, título en Fraunces 14 pt; el campo para escribir a mano lleva borde de gris y fondo blanco.
 - **Pie de cada página** a 7,5 pt, Instrument Sans, gris: a la izquierda los datos de Neltume y a la derecha `Página n de m`. Si los datos no caben en una línea (con la dirección configurada), pasan a dos y `Página n de m` queda en la última.
-- **Marcas de agua** en diagonal (−28°), Instrument Sans 600 y muy tenues: `ANULADA` en `anulada` (opacidad 0,16) y `PRUEBA` en `rauli` (0,09).
+- **Marcas de agua** en diagonal (−28°), Instrument Sans 600 y muy tenues: `ANULADA` en `anulada` (opacidad 0,16) y `PRUEBA` en `acento` (0,09).
 
 ## 7. Formatos
 
@@ -89,7 +91,7 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 5. **Encabezado de la tabla:** `Cant.`, `Precio fábrica` y `Total` (columna) en una sola línea, con la misma línea base. Si se repite en las páginas siguientes, también va en una sola línea con `Cant.` y `Precio fábrica` en la misma línea base. Requisito del lector de la fábrica: a partir de su F22 ignora toda línea que lleve `Cant.` al buscar descripción, cantidad y totales (hasta entonces, el `Total` de la columna de las páginas siguientes deja el total de la nota en `null`, que nadie usa).
 6. **Cantidad:** un fragmento de solo dígitos cuya x de inicio queda a menos de 20 pt de la x de `Cant.` (la fábrica prevé ensanchar su tolerancia a 30 pt, pero no se depende de ello hasta que lo avise). Si ambas van alineadas a la derecha, el margen es estrecho: no se ensanchan las columnas. Requisito del lector de la fábrica (F22, sin desplegar): la cantidad queda a ≤ 120 pt sobre la `Referencia de catálogo` del ítem y por debajo de la referencia del ítem anterior de la misma página; con descripciones largas la fila crece y la cantidad, que va al centro, se aleja (el límite anterior, 40 pt, lo superaba una descripción de unos 200 caracteres).
 7. **Montos:** cada monto es un solo fragmento (`$159.485`, no `$` aparte). En la línea del ítem la fábrica lee al menos 2 montos: el primero es el unitario y el último el total. Un pedido especial sin costo de fábrica lleva `Por definir` en los dos lugares.
-8. **Misma línea base (±3 pt)** entre la cantidad y los montos del ítem, y entre la etiqueta `Total` y su cifra (la cifra grande en verde y la etiqueta de menor tamaño comparten línea base).
+8. **Misma línea base (±3 pt)** entre la cantidad y los montos del ítem, y entre la etiqueta `Total` y su cifra (la cifra grande en el color de acento y la etiqueta de menor tamaño comparten línea base).
 9. **Referencia de catálogo:** `Referencia de catálogo: CÓDIGO · medidas` en un solo fragmento, en la fuente del texto. Es el ancla del ítem: una línea sin ella no se lee (los pedidos especiales llevan `Producto personalizado, fuera de catálogo`; hoy el respaldo manual de la fábrica los omite sin avisar; su F22 propone leerlos como «a pedido, revisar» o, como mínimo, avisar, y lo decide el usuario).
 10. **Descripción:** la fábrica toma el fragmento más alto en la misma x que la referencia (±3 pt), dentro de 20 pt sobre la línea de la cantidad. Ahí no debe haber otro texto (por ejemplo, la referencia del ítem anterior más cerca de 20 pt). De una descripción de dos líneas se lee solo la primera; con filas muy altas el lector toma una línea intermedia, y no importa: la descripción de la nota no se usa (el pedido toma la del catálogo por el código).
 

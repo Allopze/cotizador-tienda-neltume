@@ -568,9 +568,20 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
       // Sin ligaduras (también donde el atajo `font:` las restablece) y sin interletrado: pdfjs parte el texto por letras.
       expect(css).toContain('*{font-variant-ligatures:none!important}');
       expect(css).not.toContain('letter-spacing');
-      // Los colores del estándar; el pardo y el verde de antes ya no se usan.
-      expect(css).toContain('--rauli:#9a4524');
-      expect(css).not.toMatch(/#8a5a37|45,73,56/);
+      // Cada aplicación conserva sus colores: la tienda, los de la clave `tienda` del archivo de tokens (el terracota,
+      // que es el acento de la fábrica, no aparece).
+      const paleta = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8')).colores.tienda;
+      const variable = (nombre: string) => css.match(new RegExp(`--${nombre}:(#[0-9a-f]{6})`))?.[1];
+      expect({
+        tinta: variable('ink'),
+        gris: variable('muted'),
+        filete: variable('line'),
+        fondoSuave: variable('soft'),
+        acento: variable('green'),
+        calido: variable('calido'),
+        anulada: variable('anulada'),
+      }).toEqual(paleta);
+      expect(css).not.toMatch(/#9a4524|154,69,36/);
     }
   });
 
