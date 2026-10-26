@@ -921,7 +921,8 @@ export function avisosDeCampos(
     pedidasComo(item.modelo, anotada).some((m) => normalizar(m) === normalizar(leida));
   ia.forEach((item, i) => {
     const leido = porFrase[i];
-    if (!leido) return;
+    // Un ítem libre no tiene medidas: el «45» de «instalación por $45.000» no es un ancho que faltó anotar.
+    if (!leido || item.libre || item.personalizado?.familia === 'OTRO') return;
     const fam = familiaItem(item, null, null, familia);
     const distintos: [string, string][] = [],
       faltan: string[] = [],
