@@ -409,7 +409,7 @@ const ESTILOS = `
 @font-face{font-family:'Instrument Sans';src:url(neltume-fuente:instrument-sans-latin-600-normal.woff) format('woff');font-weight:600}
 @font-face{font-family:'JetBrains Mono';src:url(neltume-fuente:jetbrains-mono-latin-400-normal.woff) format('woff');font-weight:400}
 @page{size:A4;margin:14mm 14mm 17mm}
-:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec;--calido:#8a5a37;--anulada:#aa1e1e}
+:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec;--calido:#8a5a37;--total:#2d4938;--anulada:#aa1e1e}
 *{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 /* Sin ligaduras en ningún texto: el atajo «font:» de las reglas siguientes las restablece, por eso va con !important. */
 *{font-variant-ligatures:none!important}
@@ -447,7 +447,7 @@ td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:in
 .totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9pt}.totales dt{color:var(--muted)}
 .totales .original dd{color:var(--muted)}.totales .ahorro dd{color:var(--calido)}
 .totales .total{border-top:.7pt solid var(--ink);margin-top:1.5mm;padding-top:2.4mm;align-items:baseline}
-.totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--green)}
+.totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--total)}
 .observaciones,.condiciones{margin-top:3mm;break-inside:avoid}
 .observaciones h2,.condiciones h2{font:500 12pt 'Fraunces',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:8.6pt;white-space:pre-line}
 .cond{display:grid;grid-template-columns:repeat(3,1fr);gap:0 6mm;font-size:7.9pt}.cond div{padding:2mm 0;border-top:.5pt solid var(--line)}.cond b{display:block}.cond p{color:var(--muted)}

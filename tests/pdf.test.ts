@@ -579,6 +579,7 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
         fondoSuave: variable('soft'),
         acento: variable('green'),
         calido: variable('calido'),
+        total: variable('total'),
         anulada: variable('anulada'),
       }).toEqual(paleta);
       expect(css).not.toMatch(/#9a4524|154,69,36/);

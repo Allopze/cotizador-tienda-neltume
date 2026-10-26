@@ -18,6 +18,7 @@
       "fondoSuave": "#f2f3ec",
       "acento": "#2d4938",
       "calido": "#8a5a37",
+      "total": "#2d4938",
       "anulada": "#aa1e1e"
     },
     "fabrica": {
@@ -27,6 +28,7 @@
       "fondoSuave": "#f2f3ec",
       "acento": "#9a4524",
       "calido": "#9a4524",
+      "total": "#1d2920",
       "anulada": "#aa1e1e"
     }
   },
@@ -122,7 +124,7 @@
       "familia": "Fraunces",
       "peso": 500,
       "tamanoPt": 22,
-      "color": "acento"
+      "color": "total"
     },
     "encabezadoTabla": {
       "familia": "Instrument Sans",
