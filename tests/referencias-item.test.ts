@@ -238,6 +238,26 @@ describe('limpieza de referencias sin uso', () => {
     expect(eliminadas).toBe(1);
     expect(await readdir(join(dir, 'referencias'))).toEqual([foto.archivo]);
   });
+  it('conserva las imágenes que muestra un documento emitido o una orden de trabajo en cola', async () => {
+    const { referenciasHuerfanas, GRACIA_HUERFANAS_MS } = await import('../src/servidor/archivos-referencia');
+    const { dir, almacen, servicio, q, foto } = await conDosItems();
+    const otra = await guardarReferencia(dir, PNG_2, 'otra.png');
+    const db = almacen.baseDatos();
+    db.prepare('INSERT INTO documentos_snapshot (archivo, cotizacion_id, html) VALUES (?, ?, ?)').run(
+      'cotizacion-1.pdf',
+      q.id,
+      `<img class="ref" src="neltume-referencia:${foto.archivo}" alt="">`,
+    );
+    await editar(servicio, q, [{ indice: 1, cambios: { referencias: [] } }]);
+    const despues = Date.now() + GRACIA_HUERFANAS_MS + 1000;
+    // La foto ya no está en el ítem, pero el documento emitido la imprime al regenerarse.
+    expect((await referenciasHuerfanas(dir, almacen.archivosReferencia(), despues)).map((r) => r.archivo)).toEqual([otra.archivo]);
+    db.prepare(
+      `INSERT INTO integracion_envios (cotizacion_id, fabrica, revision, evento, evento_id, clave_idempotencia, contenido, html_produccion, estado, proximo_intento, creado)
+       VALUES (?, 'panguipulli', 1, 'order.ready', 'e1', 'c1', '{}', ?, 'pendiente', '2026-10-26T00:00:00.000Z', '2026-10-26T00:00:00.000Z')`,
+    ).run(q.id, `<img class="ref" src="neltume-referencia:${otra.archivo}" alt="">`);
+    expect(await referenciasHuerfanas(dir, almacen.archivosReferencia(), despues)).toEqual([]);
+  });
   it('conserva los archivos que usa una cotización duplicada', async () => {
     const { referenciasHuerfanas, GRACIA_HUERFANAS_MS } = await import('../src/servidor/archivos-referencia');
     const { dir, almacen, servicio, q } = await conDosItems();

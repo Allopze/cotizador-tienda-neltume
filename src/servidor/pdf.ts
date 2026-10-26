@@ -1,7 +1,7 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { constants } from 'node:fs';
 import type Database from 'better-sqlite3';
-import { copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
+import { access, copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { etiquetaDescuento } from '../negocio/descuento-cantidad';
@@ -24,13 +24,15 @@ import {
 import { fechaChilena, fechaHoraChile } from '../negocio/vigencia';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
-import { metros } from '../catalogo/resolver';
-import { CODIGO_PERSONALIZADO } from '../negocio/personalizados';
+import { ARCHIVO_REFERENCIA, CODIGO_PERSONALIZADO, esImagen } from '../negocio/personalizados';
 import { chromiumPath } from './chromium';
-import { dibujosModelos, normalizarModelo, RECURSOS, type Dibujo } from './dibujos';
+import { carpetaReferencias } from './archivos-referencia';
 import { datosEmpresa } from './empresa';
 import { abrirBaseDatos } from './base-datos';
 import { ErrorPdf } from './errores';
+
+/** Recursos de los PDF: las fuentes y los dibujos que usaban los documentos anteriores (ver `inyectarRecursos`). */
+const RECURSOS = join(/* turbopackIgnore: true */ process.cwd(), 'src/servidor/pdf-recursos');
 
 /** Plazo total para lanzar Chromium, cargar la plantilla e imprimir. */
 const PLAZO_PDF_MS = 30_000;
@@ -104,8 +106,8 @@ export interface DocumentoPdf {
   /** Documento anulado: se imprime con una marca visible y la fecha y el motivo de la anulación. */
   anulada?: { fecha: string | null; motivo: string | null; por: string | null } | null;
   /**
-   * Solo nota: la orden de trabajo que recibe la fábrica por la integración. Las mismas líneas, medidas, planos y
-   * observaciones que la nota, sin precios, totales ni descuentos: el HTML no los trae, no solo los oculta.
+   * Solo nota: la orden de trabajo que recibe la fábrica por la integración. Las mismas líneas, medidas, imágenes del cliente
+   * y observaciones que la nota, sin precios, totales ni descuentos: el HTML no los trae, no solo los oculta.
    */
   produccion?: boolean;
 }
@@ -152,46 +154,12 @@ const fechaLarga = (fecha: string) =>
     timeZone: 'America/Santiago',
   });
 
-/** Hoja del esquema genérico de puerta (en el mismo lienzo de 455 × 900 que los dibujos del catálogo). */
-const GENERICO: Dibujo = { archivo: '', px: [455, 900], hoja: { izq: 0.14, der: 0.86, arriba: 0.07, abajo: 0.985 } };
-/** Esquema genérico para una puerta sin modelo 3D: marco, hoja y manilla, con el mismo trazo que los dibujos. */
-const trazoGenerico = () =>
-  `<g class="generico"><path d="M14 890V14H441V890"/><rect x="${0.14 * 455}" y="${0.07 * 900}" width="${0.72 * 455}" height="${0.915 * 900}"/><path d="M${0.86 * 455 - 40} 470v70"/></g>`;
-
 /**
- * Dibujo de la línea: el del modelo si hay uno (una puerta del catálogo o el marco), el esquema genérico para otra
- * puerta (también un pedido especial de puerta) y ninguno para molduras, piezas T y accesorios especiales.
+ * Imágenes que adjuntó la persona a un ítem (fotos o croquis del cliente). Al imprimir, la referencia
+ * `neltume-referencia:` se reemplaza por el archivo guardado (ver `generarPdf`). Los documentos no llevan dibujos del
+ * catálogo: el producto de catálogo puede ser solo la base del precio de un modelo especial.
  */
-function dibujoDe(l: Linea): Dibujo | null {
-  const familia = l.producto.familia;
-  if (familia !== 'PUERTA' && familia !== 'MARCO') return null;
-  const propio = l.producto.codigo === CODIGO_PERSONALIZADO ? null : dibujosModelos().get(normalizarModelo(familia === 'MARCO' ? 'MARCO' : l.producto.modelo));
-  return propio ?? (familia === 'PUERTA' ? GENERICO : null);
-}
-/** Imagen del dibujo: la referencia `neltume-dibujo:` se reemplaza por el PNG al imprimir (ver `inyectarRecursos`). */
-const imagenDibujo = (d: Dibujo) =>
-  d.archivo
-    ? `<image href="neltume-dibujo:${d.archivo}" x="0" y="0" width="${d.px[0]}" height="${d.px[1]}"/>`
-    : trazoGenerico();
-/** Dibujo de la línea en la cotización, sin cotas. */
-const dibujoCotizacion = (d: Dibujo | null) =>
-  d ? `<svg class="dibujo" viewBox="0 0 ${d.px[0]} ${d.px[1]}" aria-hidden="true">${imagenDibujo(d)}</svg>` : '';
-/**
- * Plano de la línea en la nota: el dibujo con las cotas de la medida pedida (en mm), cuando es una puerta con ancho y
- * alto. Las cotas van sobre la hoja del dibujo.
- */
-function planoNota(d: Dibujo | null, l: Linea) {
-  if (!d) return '';
-  const [w, h] = d.px;
-  const ancho = l.producto.familia === 'PUERTA' ? l.anchoSolicitado : null;
-  const alto = l.producto.familia === 'PUERTA' ? l.altoSolicitado : null;
-  if (!d.hoja || ancho === null || alto === null)
-    return `<svg class="plano" viewBox="0 0 ${w} ${h}" aria-hidden="true">${imagenDibujo(d)}</svg>`;
-  const mm = (m: number) => Math.round((metros(m, 'PUERTA') ?? m) * 1000);
-  const x0 = d.hoja.izq * w, x1 = d.hoja.der * w, y0 = d.hoja.arriba * h, y1 = d.hoja.abajo * h;
-  const xv = w + 40, yh = h + 40, t = 16;
-  return `<svg class="plano" viewBox="0 0 ${w + 205} ${h + 190}" aria-hidden="true">${imagenDibujo(d)}<path class="cota" d="M${x0} ${yh}H${x1}M${x0} ${yh - t}V${yh + t}M${x1} ${yh - t}V${yh + t}M${xv} ${y0}V${y1}M${xv - t} ${y0}H${xv + t}M${xv - t} ${y1}H${xv + t}"/><text x="${(x0 + x1) / 2}" y="${yh + 145}" text-anchor="middle">${mm(ancho)}</text><text x="${xv + 125}" y="${(y0 + y1) / 2}" text-anchor="middle" transform="rotate(-90 ${xv + 125} ${(y0 + y1) / 2})">${mm(alto)}</text></svg>`;
-}
+const imagenReferencia = (archivo: string) => `<img class="ref" src="neltume-referencia:${archivo}" alt="">`;
 
 export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.Database = abrirBaseDatos()) {
   const nota = doc.tipo === 'nota';
@@ -279,11 +247,12 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
 
   // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
   // Un producto fuera de catálogo no tiene referencia de catálogo: fábrica ve las referencias que entregó el cliente.
-  const referenciaFabrica = (l: Linea) => {
-    if (l.producto.codigo !== CODIGO_PERSONALIZADO) return `Referencia de catálogo: ${referenciaCatalogo(l)}`;
-    const referencias = l.indice === null ? [] : (q.solicitudes[l.indice]?.referencias ?? []);
-    return `Producto personalizado, fuera de catálogo${referencias.length ? ` · Referencias del cliente: ${referencias.map((r) => r.nombre).join(', ')}` : ''}`;
-  };
+  const referenciaFabrica = (l: Linea) =>
+    l.producto.codigo !== CODIGO_PERSONALIZADO
+      ? `Referencia de catálogo: ${referenciaCatalogo(l)}`
+      : 'Producto personalizado, fuera de catálogo';
+  // Lo que entregó el cliente para el ítem: las imágenes van en las observaciones; los PDF se nombran en la celda.
+  const referenciasDe = (l: Linea) => (l.indice === null ? [] : (q.solicitudes[l.indice]?.referencias ?? []));
   const producto = (l: Linea) => {
     // Hoja o vano es un dato para fábrica: la cotización no lo nombra (el vano, el hueco del muro, confundía al
     // cliente) y solo la nota de pedido lo dice. En el panel se sigue viendo mientras se edita.
@@ -292,9 +261,11 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     const tipoMedidaExplicita = tipoMedida === 'hoja' || tipoMedida === 'vano';
     const pedida = l.descripcionDocumento || tipoMedidaExplicita ? medidaPedida({ ...l, tipoMedida }) : null;
     const tipoTexto = tipoMedidaExplicita ? `medida de ${tipoMedida}` : null;
+    const documentos = referenciasDe(l).filter((r) => !esImagen(r));
     const detalles = [
       pedida ? `Medida solicitada: ${pedida}` : tipoTexto && `${tipoTexto[0].toUpperCase()}${tipoTexto.slice(1)}`,
       l.observaciones && `Observación: ${l.observaciones}`,
+      documentos.length && `Referencias del cliente: ${documentos.map((r) => r.nombre).join(', ')}`,
     ];
     return `<b>${esc(descripcionLegible(descripcionLinea(l)))}</b>${detalles.map((d) => (d ? `<span${d.startsWith('Medida') ? ' class="medida"' : ''}>${esc(d)}</span>` : '')).join('')}${
       !produccion && conDescuentoItem(l) && l.descuentoItem
@@ -309,22 +280,30 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   const filas = filasDocumento(q, doc);
   const porDefinir = filas.filter((f) => !f.definida);
   const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) => {
-    const dibujo = dibujoDe(l);
     const precios = produccion
       ? ''
       : definida
         ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
         : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
-    return nota
-      ? `<tr><td class="n">${i + 1}</td><td class="plano-c">${planoNota(dibujo, l)}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}<td class="listo"><i></i></td></tr>`
-      : `<tr><td class="n">${i + 1}</td><td><div class="prod${dibujo ? '' : ' sin-dibujo'}">${dibujoCotizacion(dibujo)}<div>${producto(l)}</div></div></td><td class="r cant">${l.cantidad}</td>${precios}</tr>`;
+    return `<tr><td class="n">${i + 1}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}${nota ? '<td class="listo"><i></i></td>' : ''}</tr>`;
   };
+  // Las imágenes del cliente van en las observaciones, agrupadas por ítem con su número y nombre: la tabla queda solo
+  // con texto y las anclas que lee la fábrica no se mueven.
+  const imagenesObservaciones = filas
+    .flatMap(({ l }, i) => {
+      const imagenes = referenciasDe(l).filter(esImagen);
+      return imagenes.length
+        ? [`<div class="imagenes-item"><p class="k">Ítem ${i + 1} · ${esc(descripcionLegible(descripcionLinea(l)))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
+        : [];
+    })
+    .join('');
+  const conImagenes = imagenesObservaciones ? ' con-imagenes' : '';
   const filaFlete = montos.flete
-    ? `<tr><td class="n">${filas.length + 1}</td><td><div class="prod sin-dibujo"><div><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></div></div></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
+    ? `<tr><td class="n">${filas.length + 1}</td><td class="prod"><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
     : '';
   const tabla = nota
-    ? `<table><thead><tr><th class="n">N.º</th><th class="plano-c">Plano</th><th>Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
-    : `<table><thead><tr><th class="n">N.º</th><th>Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
+    ? `<table><thead><tr><th class="n">N.º</th><th class="prod">Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
+    : `<table><thead><tr><th class="n">N.º</th><th class="prod">Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
 
   // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
   // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
@@ -352,11 +331,11 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     fila('Total', pesos(montos.total), 'total'),
   ].join('');
   const valores = nota
-    ? 'Valores a precio de fábrica, sin la ganancia de venta. Las cotas del plano son la medida pedida de cada puerta, en milímetros (de hoja o de vano, como indica la línea).'
+    ? 'Valores a precio de fábrica, sin la ganancia de venta.'
     : 'Valores en pesos chilenos, puestos en fábrica.';
-  // La orden de trabajo no lleva totales: solo cómo leer las cotas del plano.
+  // La orden de trabajo no lleva totales.
   const cierreTotales = produccion
-    ? '<section class="cierre"><p class="valores">Orden de trabajo sin precios. Las cotas del plano son la medida pedida de cada puerta, en milímetros (de hoja o de vano, como indica la línea).</p></section>'
+    ? '<section class="cierre"><p class="valores">Orden de trabajo sin precios.</p></section>'
     : `<section class="cierre"><p class="valores">${valores}${porDefinir.length ? '<br><br>Las líneas «Por definir» son pedidos especiales sin costo de fábrica: no están en el total.' : ''}</p><dl class="totales">${totales}</dl></section>`;
 
   const anulacion = doc.anulada
@@ -382,8 +361,8 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // La cotización cierra con sus observaciones, cómo aceptarla y las condiciones; la nota, con lo que fábrica
   // completa a mano: entrega comprometida, observaciones y recepción.
   const cierre = nota
-    ? `<section class="fab"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="obs"><b>Observaciones</b><div>${observaciones ? esc(observaciones) : ''}</div></div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma(`Recibido por fábrica${doc.fabrica ? ` ${nombreFabrica[doc.fabrica]}` : ''}`)}</div>`}</section>`
-    : `${observaciones ? `<section class="observaciones"><h2>Observaciones</h2><p>${esc(observaciones)}</p></section>` : ''}<section class="condiciones"><h2>Condiciones</h2><div class="cond">${condiciones.join('')}</div></section>${
+    ? `<section class="fab${conImagenes}"><h2>Para fábrica</h2><div class="linea"><b>Entrega comprometida</b><span>${esc(doc.despacho?.entregaComprometida)}</span></div><div class="obs"><b>Observaciones</b><div>${observaciones ? esc(observaciones) : ''}${imagenesObservaciones}</div></div>${doc.anulada ? '' : `<div class="firmas">${firma('Aprobado por Neltume')}${firma(`Recibido por fábrica${doc.fabrica ? ` ${nombreFabrica[doc.fabrica]}` : ''}`)}</div>`}</section>`
+    : `${observaciones || imagenesObservaciones ? `<section class="observaciones${conImagenes}"><h2>Observaciones</h2>${observaciones ? `<p>${esc(observaciones)}</p>` : ''}${imagenesObservaciones}</section>` : ''}<section class="condiciones"><h2>Condiciones</h2><div class="cond">${condiciones.join('')}</div></section>${
         doc.anulada
           ? ''
           : `<section class="aceptar"><h2>Para aceptar esta cotización</h2><p>Responde este correo${empresa.telefono ? ` o escríbenos al ${esc(empresa.telefono)}` : ''} indicando el N.º ${numero}. Si prefieres, fírmala y envíanos una foto.</p><div class="firmas">${firma('Nombre y RUT')}${firma('Firma')}${firma('Fecha')}</div></section>`
@@ -434,18 +413,19 @@ table{width:100%;border-collapse:collapse}thead{display:table-header-group}
 th{font-weight:600;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:.7pt solid var(--ink)}
 td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr{break-inside:avoid}
 .r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted)}td.n{font-size:9.2pt}.cant{width:13mm}td.cant{font-weight:600}.unit{width:27mm}.tot{width:29mm;font-weight:600}
-div.prod{display:grid;grid-template-columns:10mm 1fr;gap:4mm;align-items:center}div.prod.sin-dibujo{grid-template-columns:1fr}div.prod.sin-dibujo>div{padding-left:14mm}
-.dibujo{width:10mm;height:12.5mm;display:block}
 .prod b{display:block;font-size:9.6pt}.prod span{display:block;color:var(--muted);font-size:8.2pt;line-height:1.35}.prod .medida{color:var(--ink);font-weight:600}.prod .cod{font-size:7.3pt;margin-top:.6mm}
 /* En la cotización el código va solo en su línea: es un campo de código. En la nota va dentro de «Referencia de catálogo: …»,
    una frase que se lee entera: queda en la fuente del texto. */
 .cotizacion .prod .cod{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:6.8pt}
 .prod .descuento-item{color:var(--calido)}s.original{color:var(--muted);font-size:8pt}
-.plano-c{width:26mm}.plano{height:18mm;width:auto;display:block}
-/* En la nota, el plano y la casilla «Listo» dejan menos ancho: los precios se acotan para que el producto no se corte. */
-.nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}.plano text{font:600 125px 'Instrument Sans',Helvetica,sans-serif;fill:var(--ink)}.plano .cota{stroke:var(--ink);stroke-width:3;fill:none}
-.generico{fill:none;stroke:var(--green);stroke-width:6;stroke-linejoin:round;stroke-linecap:round}
-td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:inline-block;width:4mm;height:4mm;border:.7pt solid var(--ink);vertical-align:middle}
+/* En la nota, la casilla «Listo» deja menos ancho: los precios se acotan para que el producto no se corte. */
+.nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}
+.prod{padding-left:3mm}
+/* Imágenes del cliente en las observaciones, por ítem y con su proporción. Con imágenes el bloque puede seguir en la
+   página siguiente; cada ítem con sus imágenes no se parte. */
+.observaciones.con-imagenes,.fab.con-imagenes{break-inside:auto}.con-imagenes h2{break-after:avoid}
+.imagenes-item{margin-top:2.5mm;break-inside:avoid;white-space:normal}.imagenes-item>div{display:flex;flex-wrap:wrap;gap:2mm;margin-top:1mm}
+.ref{display:block;max-width:58mm;max-height:40mm;width:auto;height:auto}.listo{width:11mm;text-align:center}.listo i{display:inline-block;width:4mm;height:4mm;border:.7pt solid var(--ink);vertical-align:middle}
 .cierre{display:grid;grid-template-columns:1fr 68mm;gap:12mm;margin-top:3mm;align-items:start;break-inside:avoid}
 .valores{font-size:8.2pt;color:var(--muted);max-width:80mm;padding-top:1.2mm}
 .totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9.2pt}.totales dt{color:var(--muted)}
@@ -460,7 +440,7 @@ td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:in
 .firma{border-top:.5pt solid var(--ink);padding-top:1.4mm;font-size:7.3pt;color:var(--muted)}
 .fab{margin-top:3.5mm;padding:3.5mm 5mm 4mm;background:var(--soft);break-inside:avoid}.fab h2{font:500 14pt 'Fraunces',Georgia,serif}
 .linea{display:flex;gap:3mm;align-items:baseline;margin-top:3mm;font-size:9.2pt}.linea b{white-space:nowrap}.linea span{flex:1;border-bottom:.5pt solid var(--muted);min-height:4mm}
-.obs{margin-top:3mm;font-size:9.2pt}.obs div{margin-top:1.2mm;min-height:10mm;border:.5pt solid var(--muted);background:#fff;padding:1.5mm 2mm;white-space:pre-line}
+.obs{margin-top:3mm;font-size:9.2pt}.obs>div{margin-top:1.2mm;min-height:10mm;border:.5pt solid var(--muted);background:#fff;padding:1.5mm 2mm;white-space:pre-line}
 .anulada-marca{position:fixed;top:40%;left:0;right:0;text-align:center;font:600 110px 'Instrument Sans',Helvetica,sans-serif;color:rgba(170,30,30,.16);transform:rotate(-28deg);pointer-events:none;z-index:10}
 .anulada-aviso{border:.7pt solid var(--anulada);color:var(--anulada);padding:2.4mm 3.5mm;margin-bottom:3mm;font-weight:600}
 `;
@@ -572,8 +552,9 @@ async function recursoBase64(ruta: string) {
 }
 
 /**
- * Reemplaza las referencias a los dibujos de los modelos (`neltume-dibujo:`) y a las fuentes (`neltume-fuente:`) por
- * su contenido en base64, como el logo: el snapshot guarda solo las referencias y el servidor imprime sin red. Una
+ * Reemplaza las referencias a las fuentes (`neltume-fuente:`) y a los dibujos de los modelos (`neltume-dibujo:`, que
+ * solo traen los snapshots de documentos emitidos antes de quitar los dibujos: se reimprimen como se emitieron) por su
+ * contenido en base64, como el logo: el snapshot guarda solo las referencias y el servidor imprime sin red. Una
  * referencia cuyo archivo no está queda tal cual: el documento se imprime sin ese dibujo o con la fuente de respaldo.
  */
 export async function inyectarRecursos(html: string): Promise<string> {
@@ -589,6 +570,27 @@ export async function inyectarRecursos(html: string): Promise<string> {
       ? `${atributo}="data:image/png;base64,${base64}"`
       : `url(data:font/${fuente!.endsWith('.woff2') ? 'woff2' : 'woff'};base64,${base64})`;
   });
+}
+
+const REFERENCIA_CLIENTE = /<img class="ref" src="neltume-referencia:([0-9a-f]{64}\.(?:jpg|png|webp))" alt="">/g;
+/** Origen ficticio desde el que la página pide las imágenes del cliente: `generarPdf` las sirve desde el disco. */
+const ORIGEN_REFERENCIAS = 'https://referencias.neltume.invalid/';
+/** Lado mayor con que se imprime una imagen del cliente: nítida a su tamaño en la hoja y liviana en el PDF. */
+const LADO_IMAGEN_PX = 1000;
+
+/**
+ * Apunta las imágenes del cliente (`neltume-referencia:`) a `ORIGEN_REFERENCIAS`, de donde las sirve `generarPdf`. Se
+ * piden por la red de la página y no van en base64 en el HTML: una foto de teléfono pesa varios MB. Una imagen cuyo
+ * archivo ya no está se omite, sin dejar el ícono de imagen rota.
+ */
+export async function inyectarReferencias(html: string, directorioDatos: string) {
+  const archivos = new Map<string, boolean>();
+  for (const [, archivo] of html.matchAll(REFERENCIA_CLIENTE))
+    if (!archivos.has(archivo))
+      archivos.set(archivo, await access(join(carpetaReferencias(directorioDatos), archivo)).then(() => true, () => false));
+  return html.replace(REFERENCIA_CLIENTE, (_, archivo: string) =>
+    archivos.get(archivo) ? `<img class="ref" src="${ORIGEN_REFERENCIAS}${archivo}" crossorigin="anonymous" alt="">` : '',
+  );
 }
 
 /**
@@ -712,14 +714,21 @@ export async function generarPdf(
   archivo: string,
   html: string,
   plazoMs = PLAZO_PDF_MS,
-  opciones: { /** Imprime el logo vigente de esta base (al regenerar desde un snapshot). */ logoDe?: Database.Database } = {},
+  opciones: {
+    /** Imprime el logo vigente de esta base (al regenerar desde un snapshot). */
+    logoDe?: Database.Database;
+    /** Directorio de datos con las referencias del cliente, si no es `directorio`. */
+    referenciasDe?: string;
+  } = {},
 ) {
   const carpeta = join(directorio, 'pdf');
   await mkdir(carpeta, { recursive: true, mode: 0o700 });
   await chmod(carpeta, 0o700);
   const temporal = join(carpeta, `.${randomUUID()}.pdf`);
-  const documento = await inyectarRecursos(
-    await inyectarLogo(html, opciones.logoDe && (await logoVigente(opciones.logoDe))),
+  const datos = opciones.referenciasDe ?? directorio;
+  const documento = await inyectarReferencias(
+    await inyectarRecursos(await inyectarLogo(html, opciones.logoDe && (await logoVigente(opciones.logoDe)))),
+    datos,
   );
   let pagina: Page | undefined;
   let vencido = false;
@@ -732,10 +741,38 @@ export async function generarPdf(
     const page = await browser.newPage();
     pagina = page;
     page.setDefaultTimeout(plazoMs);
-    await page.route('**/*', (route) => route.abort());
+    // Sin red: solo se sirven las imágenes del cliente, desde el disco.
+    await page.route('**/*', async (route) => {
+      const archivo = route.request().url().startsWith(ORIGEN_REFERENCIAS)
+        ? route.request().url().slice(ORIGEN_REFERENCIAS.length)
+        : null;
+      if (archivo && ARCHIVO_REFERENCIA.test(archivo))
+        await route.fulfill({ path: join(carpetaReferencias(datos), archivo), headers: { 'Access-Control-Allow-Origin': '*' } });
+      else await route.abort();
+    });
     await page.setContent(documento, { waitUntil: 'load', timeout: plazoMs });
     // Las fuentes incrustadas se cargan aparte: se imprime recién con ellas, no con la de respaldo.
     await page.evaluate(() => document.fonts.ready);
+    // Las fotos del cliente se reducen antes de imprimir: el PDF de la nota tiene un tope de tamaño (estándar §8.4).
+    await page.evaluate(async (lado) => {
+      for (const img of Array.from(document.querySelectorAll<HTMLImageElement>('img.ref'))) {
+        if (!img.naturalWidth) {
+          img.remove();
+          continue;
+        }
+        const escala = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight));
+        const lienzo = document.createElement('canvas');
+        lienzo.width = Math.round(img.naturalWidth * escala);
+        lienzo.height = Math.round(img.naturalHeight * escala);
+        const ctx = lienzo.getContext('2d')!;
+        // Fondo blanco: una imagen con transparencia no queda negra en JPEG.
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, lienzo.width, lienzo.height);
+        ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
+        img.src = lienzo.toDataURL('image/jpeg', 0.8);
+        await img.decode();
+      }
+    }, LADO_IMAGEN_PX);
     await page.pdf({
       path: temporal,
       format: 'A4',

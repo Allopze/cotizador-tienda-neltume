@@ -180,22 +180,6 @@
   color: var(--muted);
 }
 
-/* Dibujo de línea del modelo junto al nombre del producto. */
-.dibujo-modelo {
-  display: block;
-  flex: none;
-  width: 28px;
-  height: 56px;
-  object-fit: contain;
-}
-.dibujo-generico {
-  fill: none;
-  stroke: var(--green);
-  stroke-width: 14;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-}
-
 .catalogo-producto {
   display: flex;
   align-items: center;

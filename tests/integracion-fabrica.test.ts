@@ -297,8 +297,15 @@ describe('Integración con la fábrica de Panguipulli', () => {
     for (const prohibido of ['$', 'Precio', 'precio fábrica', 'Total', 'IVA', 'Neto', 'Subtotal', 'Descuento', 'Por definir', '100.000', '345.000'])
       expect(texto, prohibido).not.toContain(prohibido);
     // Pero sí todo lo de producción.
-    for (const necesario of ['Puerta Molco oregón, panel liso', 'Bisagras a la derecha', 'Copiar el tallado de la foto', 'foto-puerta-cliente.png', 'Camino a Niebla km 3', '15 de noviembre', 'Entregar en obra'])
+    for (const necesario of ['Puerta Molco oregón, panel liso', 'Bisagras a la derecha', 'Copiar el tallado de la foto', 'Camino a Niebla km 3', '15 de noviembre', 'Entregar en obra'])
       expect(texto, necesario).toContain(necesario);
+    // La foto del cliente va como imagen en las observaciones, con su ítem; no por su nombre. Se imprime desde el
+    // directorio de datos.
+    expect(texto).toMatch(/<div class="imagenes-item"><p class="k">Ítem 3 · Puerta según diseño cliente · Roble<\/p><div><img class="ref" src="neltume-referencia:[0-9a-f]{64}\.png" alt=""><\/div>/);
+    expect(texto).not.toContain('foto-puerta-cliente.png');
+    const { generarPdf } = await import('../src/servidor/pdf');
+    const orden = vi.mocked(generarPdf).mock.calls.find((c) => c[2].includes('<p class="tipo">Orden de trabajo</p>'));
+    expect(orden?.[4]).toMatchObject({ referenciasDe: t.dir });
   });
 
   it('transfiere todos los productos de su fábrica con sus especificaciones, como los imprime la nota', async () => {

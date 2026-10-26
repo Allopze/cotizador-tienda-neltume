@@ -226,27 +226,13 @@
     "sinPrecio": "Por definir",
     "nombreDeDescarga": "Neltume - {Tipo} N.º {n}[ {Fábrica}][ (anulada)].pdf"
   },
-  "plano": {
-    "alturaMm": 18,
-    "celdaMm": 26,
-    "miniaturaMm": {
-      "ancho": 10,
-      "alto": 12.5
-    },
-    "dibujoBasePx": {
-      "ancho": 455,
-      "alto": 900
-    },
-    "lienzoConCotasPx": {
-      "ancho": 660,
-      "alto": 1090
-    },
-    "cotas": {
-      "familia": "Instrument Sans",
-      "peso": 600,
-      "tamanoPx": 125,
-      "trazoPx": 3
-    },
-    "uso": "Medidas del dibujo de puertas y marcos (sección 5 del estándar); los px son del lienzo del dibujo."
+  "imagenesReferencia": {
+    "altoMaxMm": 40,
+    "anchoMaxMm": 58,
+    "separacionMm": 2,
+    "ladoMaxPx": 1000,
+    "formato": "image/jpeg",
+    "calidadJpeg": 0.8,
+    "uso": "Imágenes que adjunta la persona a un ítem, en las observaciones del documento, agrupadas por ítem con la línea «Ítem n · producto» (sección 5 del estándar). No hay dibujos del catálogo."
   }
 }

@@ -6,7 +6,6 @@ import { medidaProducto, nombreProducto, sinMedida } from './formato';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
-import { DibujoModelo } from './dibujo-modelo';
 
 /** La primera opción vacía es «todas»: el selector la muestra como el estado sin filtro. */
 const FAMILIAS = [
@@ -149,12 +148,6 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                   <tr key={p.codigo} className={i > 0 && datos.productos[i - 1].modelo === p.modelo ? undefined : 'catalogo-inicio-modelo'}>
                     <td>
                       <div className="catalogo-producto">
-                        {/* El dibujo va una vez por modelo, en su primera fila; las demás dejan el espacio. */}
-                        {i > 0 && datos.productos[i - 1].modelo === p.modelo ? (
-                          <span className="dibujo-modelo" aria-hidden />
-                        ) : (
-                          <DibujoModelo modelo={p.modelo} familia={p.familia} />
-                        )}
                         <span>
                           {/* En puertas la medida ya está en su columna: el nombre queda en modelo y madera. */}
                           {p.familia === 'PUERTA'
