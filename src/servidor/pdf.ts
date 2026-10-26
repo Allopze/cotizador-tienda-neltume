@@ -409,7 +409,7 @@ const ESTILOS = `
 @font-face{font-family:'Instrument Sans';src:url(neltume-fuente:instrument-sans-latin-600-normal.woff) format('woff');font-weight:600}
 @font-face{font-family:'JetBrains Mono';src:url(neltume-fuente:jetbrains-mono-latin-400-normal.woff) format('woff');font-weight:400}
 @page{size:A4;margin:14mm 14mm 17mm}
-:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec;--rauli:#9a4524;--anulada:#aa1e1e}
+:root{--ink:#1d2b24;--green:#2d4938;--muted:#58615a;--line:#dcddd3;--soft:#f2f3ec;--calido:#8a5a37;--total:#2d4938;--anulada:#aa1e1e}
 *{box-sizing:border-box}html{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 /* Sin ligaduras en ningún texto: el atajo «font:» de las reglas siguientes las restablece, por eso va con !important. */
 *{font-variant-ligatures:none!important}
@@ -436,7 +436,7 @@ div.prod{display:grid;grid-template-columns:10mm 1fr;gap:4mm;align-items:center}
 /* En la cotización el código va solo en su línea: es un campo de código. En la nota va dentro de «Referencia de catálogo: …»,
    una frase que se lee entera: queda en la fuente del texto. */
 .cotizacion .prod .cod{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:6.8pt}
-.prod .descuento-item{color:var(--rauli)}s.original{color:var(--muted);font-size:8pt}
+.prod .descuento-item{color:var(--calido)}s.original{color:var(--muted);font-size:8pt}
 .plano-c{width:26mm}.plano{height:18mm;width:auto;display:block}
 /* En la nota, el plano y la casilla «Listo» dejan menos ancho: los precios se acotan para que el producto no se corte. */
 .nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}.plano text{font:600 125px 'Instrument Sans',Helvetica,sans-serif;fill:var(--ink)}.plano .cota{stroke:var(--ink);stroke-width:3;fill:none}
@@ -445,9 +445,9 @@ td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:in
 .cierre{display:grid;grid-template-columns:1fr 68mm;gap:12mm;margin-top:3mm;align-items:start;break-inside:avoid}
 .valores{font-size:8.2pt;color:var(--muted);max-width:80mm;padding-top:1.2mm}
 .totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9pt}.totales dt{color:var(--muted)}
-.totales .original dd{color:var(--muted)}.totales .ahorro dd{color:var(--rauli)}
+.totales .original dd{color:var(--muted)}.totales .ahorro dd{color:var(--calido)}
 .totales .total{border-top:.7pt solid var(--ink);margin-top:1.5mm;padding-top:2.4mm;align-items:baseline}
-.totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--green)}
+.totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--total)}
 .observaciones,.condiciones{margin-top:3mm;break-inside:avoid}
 .observaciones h2,.condiciones h2{font:500 12pt 'Fraunces',Georgia,serif;margin-bottom:1.8mm}.observaciones p{font-size:8.6pt;white-space:pre-line}
 .cond{display:grid;grid-template-columns:repeat(3,1fr);gap:0 6mm;font-size:7.9pt}.cond div{padding:2mm 0;border-top:.5pt solid var(--line)}.cond b{display:block}.cond p{color:var(--muted)}
@@ -462,8 +462,8 @@ td.prod{padding-left:3mm}.listo{width:11mm;text-align:center}.listo i{display:in
 `;
 
 const ESTILOS_PRUEBA = `
-.prueba-marca{position:fixed;top:44%;left:0;right:0;text-align:center;font:600 120px 'Instrument Sans',Helvetica,sans-serif;color:rgba(154,69,36,.09);transform:rotate(-28deg);pointer-events:none}
-.prueba-aviso{margin:5mm 0 1mm;padding:3.2mm 4mm;border:.9pt solid var(--rauli);background:var(--soft);color:var(--rauli);font:500 15pt/1.2 'Fraunces',Georgia,serif;text-align:center}
+.prueba-marca{position:fixed;top:44%;left:0;right:0;text-align:center;font:600 120px 'Instrument Sans',Helvetica,sans-serif;color:rgba(45,73,56,.08);transform:rotate(-28deg);pointer-events:none}
+.prueba-aviso{margin:5mm 0 1mm;padding:3.2mm 4mm;border:.9pt solid var(--green);background:var(--soft);color:var(--green);font:500 15pt/1.2 'Fraunces',Georgia,serif;text-align:center}
 .meta dd.codigo{font:400 8.2pt 'JetBrains Mono',ui-monospace,Menlo,monospace}
 .prueba-nota{margin-top:6mm;font-size:8.6pt;color:var(--muted)}
 `;

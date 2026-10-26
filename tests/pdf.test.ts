@@ -568,10 +568,42 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
       // Sin ligaduras (también donde el atajo `font:` las restablece) y sin interletrado: pdfjs parte el texto por letras.
       expect(css).toContain('*{font-variant-ligatures:none!important}');
       expect(css).not.toContain('letter-spacing');
-      // Los colores del estándar; el pardo y el verde de antes ya no se usan.
-      expect(css).toContain('--rauli:#9a4524');
-      expect(css).not.toMatch(/#8a5a37|45,73,56/);
+      // Cada aplicación conserva sus colores: la tienda, los de la clave `tienda` del archivo de tokens (el terracota,
+      // que es el acento de la fábrica, no aparece).
+      const paleta = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8')).colores.tienda;
+      const variable = (nombre: string) => css.match(new RegExp(`--${nombre}:(#[0-9a-f]{6})`))?.[1];
+      expect({
+        tinta: variable('ink'),
+        gris: variable('muted'),
+        filete: variable('line'),
+        fondoSuave: variable('soft'),
+        acento: variable('green'),
+        calido: variable('calido'),
+        total: variable('total'),
+        anulada: variable('anulada'),
+      }).toEqual(paleta);
+      expect(css).not.toMatch(/#9a4524|154,69,36/);
     }
+  });
+
+  it('el plano con cotas y la celda de producto coinciden con los tokens del estándar', async () => {
+    await aislarBaseDatos();
+    const { plano, roles } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
+    const html = await plantilla(cotizacion(), { ...nota, montos: unaPuerta() });
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)![1];
+    expect(css).toContain(`.plano-c{width:${plano.celdaMm}mm}.plano{height:${plano.alturaMm}mm;`);
+    expect(css).toContain(`.dibujo{width:${plano.miniaturaMm.ancho}mm;height:${plano.miniaturaMm.alto}mm;`);
+    expect(css).toContain(`.plano text{font:${plano.cotas.peso} ${plano.cotas.tamanoPx}px '${plano.cotas.familia}'`);
+    expect(css).toContain(`.plano .cota{stroke:var(--ink);stroke-width:${plano.cotas.trazoPx};`);
+    // El lienzo de un plano con cotas: el dibujo base más el espacio de las dos cotas.
+    expect(html).toContain(`viewBox="0 0 ${plano.lienzoConCotasPx.ancho} ${plano.lienzoConCotasPx.alto}"`);
+    expect(plano.lienzoConCotasPx).toEqual({ ancho: plano.dibujoBasePx.ancho + 205, alto: plano.dibujoBasePx.alto + 190 });
+    // La celda de producto: título, medida, detalle, referencia y la etiqueta de la firma.
+    expect(css).toContain(`.prod b{display:block;font-size:${roles.productoTitulo.tamanoPt}pt}`);
+    expect(css).toContain(`.prod span{display:block;color:var(--muted);font-size:${roles.productoDetalle.tamanoPt}pt;`);
+    expect(css).toContain(`.prod .medida{color:var(--ink);font-weight:${roles.productoMedida.peso}}`);
+    expect(css).toContain(`.prod .cod{font-size:${roles.productoReferencia.tamanoPt}pt;`);
+    expect(css).toContain(`font-size:${roles.firma.tamanoPt}pt;color:var(--muted)}`);
   });
 
   it('el código va en mono solo cuando es un campo propio: en la cotización sí, dentro de «Referencia de catálogo» no', async () => {

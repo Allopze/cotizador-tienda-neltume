@@ -1,6 +1,6 @@
 # Estilo común de los documentos v1 (tienda ↔ fábrica)
 
-**Estado:** acordado entre los agentes de los dos repositorios y aprobado por el usuario el 25-10-2026. La fábrica lo aplicó y lo desplegó (fase F22, el lector tolerante, y F23, el restilo de sus cuatro PDF; su ADR-0025). En la tienda está implementado en la rama `feat/estandar-documentos`, pendiente de mergear y desplegar.
+**Estado:** acordado entre los agentes de los dos repositorios y aprobado por el usuario el 25-10-2026. La fábrica aplicó y desplegó la primera parte (fase F22, el lector tolerante, y F23, el restilo de sus cuatro PDF; su ADR-0025). El mismo día se amplió: la tabla, el plano con cotas, el bloque «Para fábrica» y las notas junto a los totales pasan a ser comunes (fase F25 de la fábrica; la tienda ya los tiene). En la tienda está implementado y mergeado en `main`, pendiente de desplegar.
 
 **Alcance:** el aspecto de los PDF que emite cada aplicación (cotización, nota de pedido, orden de trabajo y prueba de conexión). No cambia el contrato de la integración ([`integracion-fabrica.md`](integracion-fabrica.md)) ni qué datos lleva cada documento: cada aplicación conserva sus campos propios (sección 9).
 
@@ -13,15 +13,18 @@
 
 ## 2. Colores
 
-| Token | Valor | Uso |
-| --- | --- | --- |
-| `tinta` | `#1d2b24` | Texto, filetes fuertes |
-| `gris` | `#58615a` | Etiquetas, texto secundario, pie |
-| `filete` | `#dcddd3` | Líneas entre filas |
-| `fondoSuave` | `#f2f3ec` | Cajas («Para fábrica», «Para aceptar», avisos) |
-| `verde` | `#2d4938` | Acento principal: filete del encabezado, insignia de la fábrica, cifra del total |
-| `rauli` | `#9a4524` | Acento cálido: ahorro por descuento especial (el texto del ítem y la línea «Ahorro desc. especiales»), rótulo y marca de la prueba de conexión |
-| `anulada` | `#aa1e1e` | Solo ANULADA: aviso y marca de agua |
+**Cada aplicación conserva sus colores.** El estándar fija los roles de color y dónde se usan; cada app los llena con su paleta (`colores.tienda` y `colores.fabrica` en el archivo de tokens). La paleta de la fábrica es la que usaba antes del estándar, confirmada por su repositorio.
+
+| Rol | Uso | Tienda | Fábrica |
+| --- | --- | --- | --- |
+| `tinta` | Texto, filetes fuertes | `#1d2b24` | `#1d2920` |
+| `gris` | Etiquetas, texto secundario, pie | `#58615a` | `#62645c` |
+| `filete` | Líneas entre filas | `#dcddd3` | `#dddddd` |
+| `fondoSuave` | Cajas («Para fábrica», «Para aceptar», avisos) | `#f2f3ec` | `#f2f3ec` |
+| `acento` | Filete del encabezado, insignia de la fábrica, rótulo y marca de la prueba de conexión | verde `#2d4938` | terracota (raulí) `#9a4524` |
+| `total` | La cifra grande del «Total» | verde `#2d4938` (el mismo acento) | tinta `#1d2920` (no lleva color) |
+| `calido` | Ahorro por descuento especial (el texto del ítem y la línea «Ahorro desc. especiales») | pardo `#8a5a37` | terracota (raulí) `#9a4524` |
+| `anulada` | Solo ANULADA: aviso y marca de agua | `#aa1e1e` | `#aa1e1e` |
 
 ## 3. Tipografía
 
@@ -35,28 +38,32 @@
 - Los cuatro archivos son los mismos, byte a byte, en las dos aplicaciones (licencia SIL Open Font 1.1, `OFL`); el sha256 de cada uno está en el archivo de tokens y cada repositorio lo comprueba.
 - Tamaños y colores por rol: sección `roles` del archivo de tokens (texto 9,2 pt; etiqueta 7,3 pt; tipo 11 pt; número 29 pt; título de bloque 15 pt; cifra del total 22 pt; pie 7,5 pt).
 - **Sin ligaduras, sin separación silábica y sin interletrado** en los textos que lee la fábrica (sección 8) y, por uniformidad, en los demás. Con un interletrado grande pdfjs parte el texto por letras (en los PDF de Chromium, desde unos 0,12 em); en los PDF de la fábrica también ocurre con ligaduras.
-- **Mono solo cuando el código es un campo propio** (el código del producto en la cotización, el código de la prueba de conexión). Dentro de una frase («Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m») va en la fuente del texto: cambiar de fuente parte el fragmento que lee la fábrica.
+- **Mono solo cuando el código es un campo propio** (el código del producto en la cotización, el código de la prueba de conexión y la columna de código de la fábrica). Dentro de una frase («Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m») va en la fuente del texto: cambiar de fuente parte el fragmento que lee la fábrica.
 - El encabezado de la tabla no se fuerza a mayúsculas.
 
 ## 4. Encabezado
 
-- **Izquierda: solo el logo, el de cada aplicación** (imagen vectorial; el estándar fija dónde va, no cuál es: la tienda pone la caja NEL/TU/ME o el que se guarde en Ajustes; la fábrica, el suyo). Ningún texto a la izquierda a la altura del tipo y del número (en la nota de la tienda, que lee la fábrica, es el ancla 1 de la sección 8). Los datos de la empresa van en el bloque «Emisor» o «Cliente» y en el pie; la fábrica, además, puede llevar un bloque con sus datos bajo el logo, siempre más abajo que el número.
-- **Derecha, en dos líneas:** el tipo del documento («Nota de pedido», «Cotización», «Orden de trabajo», «Prueba de conexión») en gris, y debajo su número como `N.º 577` en un solo fragmento. En una nota, la insignia verde `Fábrica Panguipulli`.
-- **Debajo, en columnas con la etiqueta arriba y el valor abajo** (alineadas a la derecha): Fecha, Cotización, Válida hasta, Aprobada por, Emitida por… según el documento.
-- Un filete verde de 0,7 pt cierra el encabezado.
+- **Izquierda: solo el logo, el de cada aplicación** (imagen vectorial; el estándar fija dónde va, no cuál es: la tienda pone la caja NEL/TU/ME o el que se guarde en Ajustes; la fábrica, el suyo). Ningún texto a la izquierda a la altura del tipo y del número (en la nota de la tienda, que lee la fábrica, es el ancla 1 de la sección 8). Los datos de la empresa van en el pie (sección 6), no bajo el logo.
+- **Derecha, en dos líneas:** el tipo del documento («Nota de pedido», «Cotización», «Orden de trabajo», «Prueba de conexión») en gris, y debajo su número como `N.º 577` en un solo fragmento. En una nota, la insignia `Fábrica Panguipulli` en el color de acento.
+- **Debajo, en columnas con la etiqueta arriba y el valor abajo** (alineadas a la derecha): Fecha, Cotización, Válida hasta, Aprobada por, Emitida por… según el documento («Aprobada por» y «Emitida por» solo si el dato está a mano).
+- Un filete de 0,7 pt en el color de acento cierra el encabezado.
 
 ## 5. Cuerpo
 
 - **Bloques de partes** (Cliente, Obra, Despacho, Emisor, Destino): etiqueta pequeña, título en Fraunces 15 pt y, debajo, los datos como pares etiqueta (gris) y valor.
-- **Tabla:** encabezado en Instrument Sans 600 de 7,3 pt, gris, con filete de tinta debajo; filas con filete suave de 0,5 pt. Cantidad, unitario y total alineados a la derecha. Repetir el encabezado en las páginas siguientes es propio de cada aplicación (la tienda lo repite; la fábrica, hoy, no); si se repite, va en una sola línea.
-- **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, verde, sobre un filete de tinta. El ahorro por descuento especial, en raulí; la línea del descuento general, en gris y tinta.
+- **Tabla:** columnas `N.º` (gris), `Plano` (nota y orden de trabajo; en la cotización, una miniatura junto al producto), `Producto`, `Cant.`, los importes y el stock que lleve cada aplicación (sección 9) y `Listo` (nota y orden). Encabezado en Instrument Sans 600 de 7,3 pt, gris, con filete de tinta debajo; filas con filete suave de 0,5 pt. Cantidad, unitario y total alineados a la derecha. Repetir el encabezado en las páginas siguientes es propio de cada aplicación (la tienda lo repite; la fábrica, hoy, no); si se repite, va en una sola línea.
+- **Celda de producto,** de arriba abajo: el título en Instrument Sans 600 de 9,6 pt; «Medida solicitada: …» en 600 de 8,2 pt; «Observación: …» en gris de 8,2 pt; y una línea de código en gris de 7,3 pt: en la tienda `Referencia de catálogo: CÓDIGO · medidas` (el ancla de la sección 8) y en la fábrica el código en mono (rol `codigoTabla`). La orden de trabajo de la fábrica agrega «Referencias del cliente» y «REVISAR: …».
+- **Dibujos y planos.** Llevan dibujo las cotizaciones (miniatura de 10 × 12,5 mm, sin cotas), las notas y las órdenes de trabajo (plano de 18 mm de alto en una celda de 26 mm, con cotas); la prueba de conexión no. Solo dibujan las puertas y los marcos: una puerta sin dibujo propio usa el esquema genérico (marco, hoja y manilla), el marco siempre tiene el suyo y las demás familias no llevan; el pedido especial («ESPECIAL») nunca usa el dibujo de un modelo y, si es una puerta, lleva el esquema genérico. Las cotas se dibujan solo en la nota y la orden, solo para puertas con ancho y alto pedidos y un dibujo con hoja: el ancho bajo la hoja y el alto a su derecha, con la medida solicitada en mm (la hoja se ubica con las fracciones de `dibujos.json`); sin cotas en la cotización ni en el marco. El texto de las cotas es Instrument Sans 600 de 125 px sobre un lienzo de 660 × 1090 y el trazo mide 3 (valores en `plano` del archivo de tokens). Los 35 dibujos y `dibujos.json` son los mismos en las dos aplicaciones (el origen es la tienda); cada app los lleva en su propia tinta, y el esquema genérico se dibuja vectorial, también en su tinta.
+- **Totales:** a la derecha, con `Neto` / `Subtotal`, `IVA`, y `Total` en Fraunces 12 pt junto a la cifra en Fraunces 22 pt, en el color del total, sobre un filete de tinta. El ahorro por descuento especial, en el color cálido; la línea del descuento general, en gris y tinta.
+- **Notas junto a los totales:** texto gris a la izquierda del bloque de totales, a su altura; su contenido es de cada aplicación.
 - **Montos** `$1.234`, un solo fragmento. Un precio que aún no existe se imprime `Por definir`, nunca `$0`.
 
 ## 6. Cajas, pie y marcas de agua
 
-- **Cajas** (observaciones a mano, «Para fábrica», «Para aceptar»): fondo suave, título en Fraunces 14 pt; el campo para escribir a mano lleva borde de gris y fondo blanco.
-- **Pie de cada página** a 7,5 pt, Instrument Sans, gris: a la izquierda los datos de Neltume y a la derecha `Página n de m`. Si los datos no caben en una línea (con la dirección configurada), pasan a dos y `Página n de m` queda en la última.
-- **Marcas de agua** en diagonal (−28°), Instrument Sans 600 y muy tenues: `ANULADA` en `anulada` (opacidad 0,16) y `PRUEBA` en `rauli` (0,09).
+- **Cajas** («Para fábrica», «Para aceptar»): fondo suave, título en Fraunces 14 pt; el campo para escribir a mano lleva borde de gris y fondo blanco.
+- **«Para fábrica»** (nota y orden de trabajo): la caja con su título, la fila «Entrega comprometida» con el valor sobre una línea, «Observaciones» con el campo blanco y dos líneas de firma. Las etiquetas de firma son de cada aplicación (tienda: «Aprobado por Neltume» y «Recibido por fábrica Panguipulli»; fábrica: «Aprobado por» y «Recibido por la fábrica»).
+- **Pie de cada página** a 7,5 pt, Instrument Sans, gris: a la izquierda los datos de la empresa (nombre, RUT, dirección, teléfono, web y correo) y a la derecha `Página n de m`. Si los datos no caben en una línea (con la dirección configurada), pasan a dos y `Página n de m` queda en la última.
+- **Marcas de agua** en diagonal (−28°), Instrument Sans 600 y muy tenues: `ANULADA` en `anulada` (opacidad 0,16) y `PRUEBA` en `acento` (0,09).
 
 ## 7. Formatos
 
@@ -89,7 +96,7 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 5. **Encabezado de la tabla:** `Cant.`, `Precio fábrica` y `Total` (columna) en una sola línea, con la misma línea base. Si se repite en las páginas siguientes, también va en una sola línea con `Cant.` y `Precio fábrica` en la misma línea base. Requisito del lector de la fábrica: a partir de su F22 ignora toda línea que lleve `Cant.` al buscar descripción, cantidad y totales (hasta entonces, el `Total` de la columna de las páginas siguientes deja el total de la nota en `null`, que nadie usa).
 6. **Cantidad:** un fragmento de solo dígitos cuya x de inicio queda a menos de 20 pt de la x de `Cant.` (la fábrica prevé ensanchar su tolerancia a 30 pt, pero no se depende de ello hasta que lo avise). Si ambas van alineadas a la derecha, el margen es estrecho: no se ensanchan las columnas. Requisito del lector de la fábrica (F22, sin desplegar): la cantidad queda a ≤ 120 pt sobre la `Referencia de catálogo` del ítem y por debajo de la referencia del ítem anterior de la misma página; con descripciones largas la fila crece y la cantidad, que va al centro, se aleja (el límite anterior, 40 pt, lo superaba una descripción de unos 200 caracteres).
 7. **Montos:** cada monto es un solo fragmento (`$159.485`, no `$` aparte). En la línea del ítem la fábrica lee al menos 2 montos: el primero es el unitario y el último el total. Un pedido especial sin costo de fábrica lleva `Por definir` en los dos lugares.
-8. **Misma línea base (±3 pt)** entre la cantidad y los montos del ítem, y entre la etiqueta `Total` y su cifra (la cifra grande en verde y la etiqueta de menor tamaño comparten línea base).
+8. **Misma línea base (±3 pt)** entre la cantidad y los montos del ítem, y entre la etiqueta `Total` y su cifra (la cifra grande en el color del total y la etiqueta de menor tamaño comparten línea base).
 9. **Referencia de catálogo:** `Referencia de catálogo: CÓDIGO · medidas` en un solo fragmento, en la fuente del texto. Es el ancla del ítem: una línea sin ella no se lee (los pedidos especiales llevan `Producto personalizado, fuera de catálogo`; hoy el respaldo manual de la fábrica los omite sin avisar; su F22 propone leerlos como «a pedido, revisar» o, como mínimo, avisar, y lo decide el usuario).
 10. **Descripción:** la fábrica toma el fragmento más alto en la misma x que la referencia (±3 pt), dentro de 20 pt sobre la línea de la cantidad. Ahí no debe haber otro texto (por ejemplo, la referencia del ítem anterior más cerca de 20 pt). De una descripción de dos líneas se lee solo la primera; con filas muy altas el lector toma una línea intermedia, y no importa: la descripción de la nota no se usa (el pedido toma la del catálogo por el código).
 
@@ -106,9 +113,9 @@ La fábrica lee la **nota de pedido comercial** de la tienda con pdfjs, por frag
 
 ## 9. Qué conserva cada aplicación
 
-- **Las dos:** su logo y sus precios. El estándar no toca ni uno ni otro: solo fija el aspecto.
-- **Tienda:** precios al cliente (de venta en la cotización, de fábrica en la nota); encabezado de la tabla repetido en cada página; condiciones de pago, validez y datos bancarios; caja «Para aceptar esta cotización»; dibujo de cada modelo y planos con cotas en la nota; casilla «Listo»; bloque «Para fábrica» con firmas; logo personalizable desde Ajustes; descuentos por ítem y por cantidad.
-- **Fábrica:** sus precios (su lista); sus campos de producción; los códigos en mono; las líneas Pagado/Saldo y Descuento con motivo bajo «Total» del pedido; la caja vacía para escribir a mano en pedido y orden de trabajo.
+- **Las dos:** su logo, sus colores y sus precios. El estándar no toca ninguno de los tres: solo fija el aspecto y la estructura.
+- **Tienda:** precios al cliente (de venta en la cotización, de fábrica en la nota) y sus columnas de importes (Precio unitario o Precio fábrica, y Total); encabezado de la tabla repetido en cada página; condiciones de pago, validez y datos bancarios; caja «Para aceptar esta cotización»; casilla «Listo»; sus etiquetas de firma; logo personalizable desde Ajustes; descuentos por ítem y por cantidad.
+- **Fábrica:** sus precios (su lista) y sus columnas de importes y de stock (Precio unit., En stock, Por fabricar, Total); sus campos de producción; la columna de código en mono y no «Referencia de catálogo»; las líneas Pagado/Saldo y Descuento con motivo bajo «Total» del pedido; «Referencias del cliente» y «REVISAR: …» en la orden de trabajo; sus etiquetas de firma; sus notas junto a los totales (flete, lista de precios, condición de pago, «Por fabricar»).
 
 ## 10. Documentos ya emitidos
 
