@@ -152,6 +152,36 @@
       "peso": 400,
       "tamanoPt": 7.5,
       "color": "gris"
+    },
+    "productoTitulo": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "tamanoPt": 9.6,
+      "color": "tinta"
+    },
+    "productoMedida": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "tamanoPt": 8.2,
+      "color": "tinta"
+    },
+    "productoDetalle": {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "tamanoPt": 8.2,
+      "color": "gris"
+    },
+    "productoReferencia": {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "tamanoPt": 7.3,
+      "color": "gris"
+    },
+    "firma": {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "tamanoPt": 7.3,
+      "color": "gris"
     }
   },
   "trazos": {
@@ -195,5 +225,28 @@
     "fechaEnTablasYCampos": "dd-mm-aaaa",
     "sinPrecio": "Por definir",
     "nombreDeDescarga": "Neltume - {Tipo} N.º {n}[ {Fábrica}][ (anulada)].pdf"
+  },
+  "plano": {
+    "alturaMm": 18,
+    "celdaMm": 26,
+    "miniaturaMm": {
+      "ancho": 10,
+      "alto": 12.5
+    },
+    "dibujoBasePx": {
+      "ancho": 455,
+      "alto": 900
+    },
+    "lienzoConCotasPx": {
+      "ancho": 660,
+      "alto": 1090
+    },
+    "cotas": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "tamanoPx": 125,
+      "trazoPx": 3
+    },
+    "uso": "Medidas del dibujo de puertas y marcos (sección 5 del estándar); los px son del lienzo del dibujo."
   }
 }

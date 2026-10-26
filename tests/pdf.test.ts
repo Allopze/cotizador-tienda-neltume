@@ -586,6 +586,26 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     }
   });
 
+  it('el plano con cotas y la celda de producto coinciden con los tokens del estándar', async () => {
+    await aislarBaseDatos();
+    const { plano, roles } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
+    const html = await plantilla(cotizacion(), { ...nota, montos: unaPuerta() });
+    const css = html.match(/<style>([\s\S]*?)<\/style>/)![1];
+    expect(css).toContain(`.plano-c{width:${plano.celdaMm}mm}.plano{height:${plano.alturaMm}mm;`);
+    expect(css).toContain(`.dibujo{width:${plano.miniaturaMm.ancho}mm;height:${plano.miniaturaMm.alto}mm;`);
+    expect(css).toContain(`.plano text{font:${plano.cotas.peso} ${plano.cotas.tamanoPx}px '${plano.cotas.familia}'`);
+    expect(css).toContain(`.plano .cota{stroke:var(--ink);stroke-width:${plano.cotas.trazoPx};`);
+    // El lienzo de un plano con cotas: el dibujo base más el espacio de las dos cotas.
+    expect(html).toContain(`viewBox="0 0 ${plano.lienzoConCotasPx.ancho} ${plano.lienzoConCotasPx.alto}"`);
+    expect(plano.lienzoConCotasPx).toEqual({ ancho: plano.dibujoBasePx.ancho + 205, alto: plano.dibujoBasePx.alto + 190 });
+    // La celda de producto: título, medida, detalle, referencia y la etiqueta de la firma.
+    expect(css).toContain(`.prod b{display:block;font-size:${roles.productoTitulo.tamanoPt}pt}`);
+    expect(css).toContain(`.prod span{display:block;color:var(--muted);font-size:${roles.productoDetalle.tamanoPt}pt;`);
+    expect(css).toContain(`.prod .medida{color:var(--ink);font-weight:${roles.productoMedida.peso}}`);
+    expect(css).toContain(`.prod .cod{font-size:${roles.productoReferencia.tamanoPt}pt;`);
+    expect(css).toContain(`font-size:${roles.firma.tamanoPt}pt;color:var(--muted)}`);
+  });
+
   it('el código va en mono solo cuando es un campo propio: en la cotización sí, dentro de «Referencia de catálogo» no', async () => {
     await aislarBaseDatos();
     const css = (await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 325, montos: unaPuerta(), fecha: '2026-10-25T12:00:00.000Z' })).match(/<style>([\s\S]*?)<\/style>/)![1];
