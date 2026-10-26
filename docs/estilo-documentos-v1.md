@@ -1,6 +1,6 @@
 # Estilo común de los documentos v1 (tienda ↔ fábrica)
 
-**Estado:** borrador redactado por la tienda el 25-10-2026, aprobado por el usuario como plan ese mismo día y pendiente de la revisión de la fábrica. En la tienda está implementado en la rama `feat/estandar-documentos` (sin desplegar); en la fábrica espera la aprobación del usuario en su sesión (ADR-0025, fases F22 y F23).
+**Estado:** acordado entre los agentes de los dos repositorios y aprobado por el usuario el 25-10-2026. La fábrica lo aplicó y lo desplegó (fase F22, el lector tolerante, y F23, el restilo de sus cuatro PDF; su ADR-0025). En la tienda está implementado en la rama `feat/estandar-documentos`, pendiente de mergear y desplegar.
 
 **Alcance:** el aspecto de los PDF que emite cada aplicación (cotización, nota de pedido, orden de trabajo y prueba de conexión). No cambia el contrato de la integración ([`integracion-fabrica.md`](integracion-fabrica.md)) ni qué datos lleva cada documento: cada aplicación conserva sus campos propios (sección 9).
 
