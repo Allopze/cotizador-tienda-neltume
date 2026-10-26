@@ -130,6 +130,9 @@ test('los pendientes abren su editor y el total se identifica como parcial', asy
   const panel = page.getByLabel('Cotización en curso');
   await expect(panel.locator('.item-details')).toHaveAttribute('open');
   await expect(panel.locator('.quote-toolbar')).toContainText('Total parcial');
+  // Cuánto del pedido suma ya el total parcial, y una línea por causa pendiente.
+  await expect(panel.locator('.quote-toolbar')).toContainText('0 de 1 ítems con precio');
+  await expect(panel.locator('.ayuda-pendientes li')).toHaveCount(1);
   await expect(panel.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeDisabled();
   await panel.getByRole('button', { name: /^Confirmar Huilo Huilo/ }).click();
   await expect(panel.locator('.quote-toolbar')).toContainText('Total del pedido');

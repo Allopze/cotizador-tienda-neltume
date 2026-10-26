@@ -449,6 +449,24 @@
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+/* Avance del total parcial: la parte del pedido que ya tiene precio. */
+.quote-avance {
+  grid-column: 1 / -1;
+  display: block;
+  height: 4px;
+  background: var(--amber-bg);
+}
+.quote-avance > span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+  transition: width var(--motion-enter) var(--curve-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .quote-avance > span {
+    transition: none;
+  }
+}
 .quote-toolbar .quote-actions {
   margin-left: auto;
   justify-content: flex-end;

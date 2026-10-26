@@ -10,7 +10,9 @@ import { pregunta } from '../src/asistente/preguntas';
 import { resolverItem } from '../src/catalogo/resolver';
 import {
   cambiosRespuesta,
+  etiquetaPendiente,
   faltantesItem,
+  listaItems,
   fueraDeRegla,
   preguntasPendientes,
   type PrefillAlta,
@@ -206,6 +208,62 @@ describe('preguntas de los ítems pendientes', () => {
       sugerencia: 'Como el ítem 3',
     });
     expect(preguntas[0].opciones.map((o) => o.valor)).toEqual(['LENGA', 'PINO OREGON', 'RAULI']);
+  });
+
+  it('agrupa los ítems con la misma medida fuera de catálogo; una puerta pide alto y un marco, largo', () => {
+    const fuera = (valor: number, familia: Familia): Rechazo => ({
+      tipo: 'medida_no_disponible',
+      campo: 'alto',
+      valor,
+      disponibles: [],
+      familia,
+      rango: { min: 2, max: 2.4 },
+    });
+    const pendiente = (indice: number, valor: number, familia: Familia, modelo: string) => ({
+      indice,
+      rechazo: fuera(valor, familia),
+      pregunta: pregunta(fuera(valor, familia), modelo),
+    });
+    const solicitudes = Array.from({ length: 9 }, (_, i) => item({ modelo: i % 2 ? 'MARCO' : 'LOS LAGOS', alto: 2.47 }));
+    // Cinco Los Lagos y cuatro marcos a 2,47 m; un Los Lagos más a 2,45 m es otro caso y no entra al grupo.
+    const incompletos = [
+      ...solicitudes.map((s, i) => pendiente(i, 2.47, i % 2 ? 'MARCO' : 'PUERTA', s.modelo!)),
+      pendiente(9, 2.45, 'PUERTA', 'LOS LAGOS'),
+    ];
+    solicitudes.push(item({ modelo: 'LOS LAGOS', alto: 2.45 }));
+    const preguntas = preguntasPendientes({ solicitudes, incompletos });
+    expect(preguntas.map((p) => [p.texto, p.indices])).toEqual([
+      ['Alto para los ítems 1, 3, 5, 7 y 9', [0, 2, 4, 6, 8]],
+      ['Largo para los ítems 2, 4, 6 y 8', [1, 3, 5, 7]],
+      ['Alto para el ítem 10 (Los Lagos)', [9]],
+    ]);
+    // Una sola respuesta deja a los cinco Los Lagos en 2,40 m.
+    expect(cambiosRespuesta(preguntas[0], 2.4)).toEqual({
+      items: [0, 2, 4, 6, 8].map((indice) => ({ indice, cambios: { alto: 2.4 } })),
+    });
+  });
+
+  it('el largo de un marco no se sugiere desde el alto de una puerta, sí desde otro marco', () => {
+    const largo = { tipo: 'faltan_datos' as const, campos: ['alto'], disponibles: { alto: ['2.0', '2.2', '2.4'] }, familia: 'MARCO' as Familia };
+    const pendiente = { indice: 1, rechazo: largo, pregunta: '' };
+    const puerta = item({ modelo: 'HUILO HUILO', alto: 2.2 });
+    const marco = item({ modelo: 'MARCO', ancho: null, medida: '2X4', alto: null });
+    const [soloPuerta] = preguntasPendientes({ solicitudes: [puerta, marco], incompletos: [pendiente] });
+    expect(soloPuerta.etiqueta).toBe('Largo');
+    expect(soloPuerta.opciones.some((o) => o.sugerencia)).toBe(false);
+    const otroMarco = item({ modelo: 'MARCO', ancho: null, medida: '2X4', alto: 2.4 });
+    const [conMarco] = preguntasPendientes({ solicitudes: [puerta, marco, otroMarco], incompletos: [pendiente] });
+    expect(conMarco.opciones[0]).toMatchObject({ valor: 2.4, sugerencia: 'Como el ítem 3' });
+  });
+
+  it('con muchos ítems nombra la cantidad y los primeros; el nombre del campo sigue la familia', () => {
+    expect(listaItems([2, 4, 6, 8, 10, 13, 18, 20])).toBe('8 ítems: 3, 5, 7, 9, 11 y 3 más');
+    expect(listaItems([2, 4, 6, 8, 10, 13])).toBe('los ítems 3, 5, 7, 9, 11 y 14');
+    expect(etiquetaPendiente('alto', ['PUERTA', 'PUERTA'])).toBe('Alto');
+    expect(etiquetaPendiente('alto', ['MARCO', 'MOLDURA'])).toBe('Largo');
+    expect(etiquetaPendiente('alto', ['PUERTA', 'MARCO'])).toBe('Alto o largo');
+    expect(etiquetaPendiente('alto', [null])).toBe('Alto o largo');
+    expect(etiquetaPendiente('ancho', ['PUERTA'])).toBe('Ancho');
   });
 
   it('la respuesta se aplica a todos los ítems del grupo con una edición directa', () => {

@@ -35,6 +35,8 @@ export interface PreguntaPendiente {
    * editor del ítem y, si el ítem tiene un precio o un descuento fijado a mano, la opción de quitarlo.
    */
   campo: CampoPendiente | null;
+  /** Nombre del campo para estos ítems («Alto» en puertas, «Largo» en marcos); null si no se pide un dato. */
+  etiqueta: string | null;
   texto: string;
   /** Explicación del rechazo, sin la lista de opciones («Huilo Huilo no viene en Raulí.»). */
   detalle: string | null;
@@ -62,6 +64,17 @@ export const ETIQUETA_PENDIENTE: Record<CampoPendiente, string> = {
   medida: 'Sección o escuadría',
   cantidad: 'Cantidad',
 };
+
+/**
+ * Nombre del campo para los ítems que lo comparten: una puerta tiene alto y un marco o una moldura, largo. Solo
+ * una mezcla de familias (o una familia que no se sabe) dice «Alto o largo».
+ */
+export function etiquetaPendiente(campo: CampoPendiente, familias: Iterable<Familia | null | undefined> = []) {
+  if (campo !== 'alto') return ETIQUETA_PENDIENTE[campo];
+  const distintas = new Set([...familias].map((f) => (f === 'PUERTA' ? 'alto' : f ? 'largo' : null)));
+  if (distintas.size !== 1 || distintas.has(null)) return ETIQUETA_PENDIENTE.alto;
+  return distintas.has('alto') ? 'Alto' : 'Largo';
+}
 
 /** Qué es una escuadría, en palabras de quien cotiza: el mismo texto de ayuda de la pantalla de Catálogo. */
 const EXPLICA_ESCUADRIA = 'Escuadría: grosor por ancho de la pieza.';
@@ -175,8 +188,10 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
             return parte({ ...base, campo: 'cantidad', opciones: [], entrada: CANTIDAD });
         }
       });
+    // Los rechazos siguientes se agrupan solo entre ítems con el mismo problema: la clave del grupo lleva su
+    // explicación («Los Lagos no viene en 2,47 m de alto…»), así que una misma respuesta vale para todos.
     case 'modelo_desconocido':
-      return [parte({ campo: 'modelo', opciones: opcionesTexto(r.disponibles, bonito), entrada: null })];
+      return [parte({ agrupable: true, campo: 'modelo', opciones: opcionesTexto(r.disponibles, bonito), entrada: null })];
     case 'modelo_posible':
       return [
         parte({
@@ -187,21 +202,22 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
       ];
     case 'madera_desconocida':
     case 'madera_no_disponible':
-      return [parte({ campo: 'madera', opciones: opcionesTexto(r.disponibles, bonito), entrada: null })];
+      return [parte({ agrupable: true, campo: 'madera', opciones: opcionesTexto(r.disponibles, bonito), entrada: null })];
     case 'medida_no_disponible':
       if (r.campo === 'medida')
-        return [parte({ campo: 'medida', opciones: opcionesTexto(r.disponibles), entrada: null })];
+        return [parte({ agrupable: true, campo: 'medida', opciones: opcionesTexto(r.disponibles), entrada: null })];
       return [
         parte({
+          agrupable: true,
           campo: r.campo,
           opciones: r.campo === 'alto' && !r.rango ? opcionesMetros(r.disponibles) : [],
           entrada: r.campo === 'alto' && !r.rango ? null : rangoDe(r.disponibles, familia, r.campo, r.rango),
         }),
       ];
     case 'medida_implausible':
-      return [parte({ campo: r.campo, opciones: [], entrada: medidaLibre(familia, r.campo) })];
+      return [parte({ agrupable: true, campo: r.campo, opciones: [], entrada: medidaLibre(familia, r.campo) })];
     case 'cantidad_invalida':
-      return [parte({ campo: 'cantidad', opciones: [], entrada: CANTIDAD })];
+      return [parte({ agrupable: true, campo: 'cantidad', opciones: [], entrada: CANTIDAD })];
     case 'medidas_invertidas':
       return [
         parte({
@@ -248,9 +264,14 @@ const igual = (campo: CampoPendiente, a: string | number, b: string | number, fa
   if (campo === 'medida') return claveEscuadria(String(a)) === claveEscuadria(String(b));
   return normalizar(String(a)) === normalizar(String(b));
 };
-const listaItems = (indices: number[]) => {
+/** Más ítems que esto se nombran por su cantidad y los primeros («12 ítems: 3, 5, 7, 9, 11 y 7 más»). */
+const MAX_ITEMS_NOMBRADOS = 6;
+export const listaItems = (indices: number[]) => {
   const n = indices.map((i) => String(i + 1));
-  return n.length === 1 ? `el ítem ${n[0]}` : `los ítems ${n.slice(0, -1).join(', ')} y ${n.at(-1)}`;
+  if (n.length === 1) return `el ítem ${n[0]}`;
+  if (n.length <= MAX_ITEMS_NOMBRADOS) return `los ítems ${n.slice(0, -1).join(', ')} y ${n.at(-1)}`;
+  const primeros = MAX_ITEMS_NOMBRADOS - 1;
+  return `${n.length} ítems: ${n.slice(0, primeros).join(', ')} y ${n.length - primeros} más`;
 };
 
 /**
@@ -264,9 +285,12 @@ function sugerir(q: Pick<Cotizacion, 'solicitudes'>, indices: number[], parte: P
   if (!campo || campo === 'cantidad' || campo === 'modelo') return parte.opciones;
   if (campo === 'madera' && indices.some((i) => q.solicitudes[i]?.madera)) return parte.opciones;
   const primero = Math.min(...indices);
+  // Un alto o largo se sugiere solo desde un ítem de la misma familia: el alto de una puerta no es el largo de su
+  // marco ni de una moldura.
+  const mismaFamilia = (s: SolicitudItem) => campo !== 'alto' || familiaItem(s) === parte.familia;
   const otros = q.solicitudes
-    .map((s, i) => ({ i, valor: valorDe(s, campo) }))
-    .filter(({ i, valor }) => !indices.includes(i) && valor !== null)
+    .map((s, i) => ({ i, s, valor: valorDe(s, campo) }))
+    .filter(({ i, s, valor }) => !indices.includes(i) && valor !== null && mismaFamilia(s))
     // El ítem anterior más cercano primero: «la siguiente igual que la anterior».
     .sort(
       (a, b) => (a.i < primero ? primero - a.i : 1000 + a.i) - (b.i < primero ? primero - b.i : 1000 + b.i),
@@ -286,18 +310,20 @@ function sugerir(q: Pick<Cotizacion, 'solicitudes'>, indices: number[], parte: P
 }
 
 export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompletos'>): PreguntaPendiente[] {
-  const grupos = new Map<string, { indices: number[]; parte: Parte }>();
+  const grupos = new Map<string, { indices: number[]; parte: Parte; familias: Familia[] }>();
   const sueltas: { indice: number; parte: Parte; orden: number }[] = [];
   let orden = 0;
   const ordenGrupo = new Map<string, number>();
   for (const pendiente of q.incompletos) {
     for (const parte of partes(pendiente.rechazo, pendiente.pregunta, q.solicitudes[pendiente.indice])) {
       if (parte.agrupable) {
-        const clave = `${parte.campo}|${JSON.stringify(parte.opciones)}|${JSON.stringify(parte.entrada)}`;
+        const clave = `${parte.campo}|${parte.detalle}|${JSON.stringify(parte.opciones)}|${JSON.stringify(parte.entrada)}`;
         const grupo = grupos.get(clave);
-        if (grupo) grupo.indices.push(pendiente.indice);
-        else {
-          grupos.set(clave, { indices: [pendiente.indice], parte });
+        if (grupo) {
+          grupo.indices.push(pendiente.indice);
+          grupo.familias.push(parte.familia);
+        } else {
+          grupos.set(clave, { indices: [pendiente.indice], parte, familias: [parte.familia] });
           ordenGrupo.set(clave, orden++);
         }
       } else sueltas.push({ indice: pendiente.indice, parte, orden: orden++ });
@@ -308,20 +334,23 @@ export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompl
     return modelo ? ` (${bonito(modelo)})` : '';
   };
   const todas = [
-    ...[...grupos.entries()].map(([clave, { indices, parte }]) => ({
+    ...[...grupos.entries()].map(([clave, { indices, parte, familias }]) => ({
       orden: ordenGrupo.get(clave)!,
       indices,
       parte,
+      familias,
     })),
-    ...sueltas.map((s) => ({ orden: s.orden, indices: [s.indice], parte: s.parte })),
+    ...sueltas.map((s) => ({ orden: s.orden, indices: [s.indice], parte: s.parte, familias: [s.parte.familia] })),
   ].sort((a, b) => a.orden - b.orden);
-  return todas.map(({ indices, parte }) => {
+  return todas.map(({ indices, parte, familias }) => {
     const sujeto = indices.length === 1 ? `${listaItems(indices)}${nombre(indices[0])}` : listaItems(indices);
-    const texto = parte.campo ? `${ETIQUETA_PENDIENTE[parte.campo]} para ${sujeto}` : `Revisa ${sujeto}`;
+    const etiqueta = parte.campo ? etiquetaPendiente(parte.campo, familias) : null;
+    const texto = etiqueta ? `${etiqueta} para ${sujeto}` : `Revisa ${sujeto}`;
     return {
       clave: `${parte.campo ?? 'texto'}:${indices.join(',')}`,
       indices,
       campo: parte.campo,
+      etiqueta,
       texto,
       detalle: parte.detalle,
       opciones: sugerir(q, indices, parte),

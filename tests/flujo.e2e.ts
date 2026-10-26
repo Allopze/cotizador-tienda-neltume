@@ -57,14 +57,14 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   await enviar('agrega marcos de oregón');
   const faltantes = conversacion.getByRole('group', { name: 'Datos que faltan para cotizar' });
   await expect(faltantes.getByText('Sección o escuadría para el ítem 2 (Marco)')).toBeVisible();
-  await expect(faltantes.getByText('Alto o largo para el ítem 2 (Marco)')).toBeVisible();
+  await expect(faltantes.getByText('Largo para el ítem 2 (Marco)')).toBeVisible();
   await expect(faltantes.getByText('Cantidad para el ítem 2 (Marco)')).toBeVisible();
   await expect(page.getByText('Incompleto · no suma al total')).toBeVisible();
   await expect(page.getByTestId('total')).toHaveText(pesos(primero.total));
   await expect(page.getByRole('button', { name: 'Emitir y generar PDF', exact: true })).toBeDisabled();
   // Las opciones guardan el dato directamente, sin volver a pasar por la IA; el alto de la puerta se sugiere.
   await faltantes.getByRole('button', { name: /^2X4 · Sección o escuadría/ }).click();
-  await faltantes.getByRole('button', { name: /^2,10 m \(como el ítem 1\) · Alto o largo/ }).click();
+  await faltantes.getByRole('button', { name: /^2,10 m \(como el ítem 1\) · Largo/ }).click();
   await faltantes.getByRole('textbox', { name: /^Cantidad para el ítem 2/ }).fill('3');
   await faltantes.getByRole('button', { name: 'Aplicar' }).click();
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();

@@ -27,7 +27,7 @@ test('reparto entre fábricas: una nota por fábrica, producción por fábrica y
   await enviar('agrega marcos de oregón');
   const faltantes = conversacion.getByRole('group', { name: 'Datos que faltan para cotizar' });
   await faltantes.getByRole('button', { name: /^2X4 · Sección o escuadría/ }).click();
-  await faltantes.getByRole('button', { name: /^2,10 m \(como el ítem 1\) · Alto o largo/ }).click();
+  await faltantes.getByRole('button', { name: /^2,10 m \(como el ítem 1\) · Largo/ }).click();
   await faltantes.getByRole('textbox', { name: /^Cantidad para el ítem 2/ }).fill('3');
   await faltantes.getByRole('button', { name: 'Aplicar' }).click();
   await expect(panel.getByText('MAR-O-2X4-B', { exact: true })).toBeVisible();
