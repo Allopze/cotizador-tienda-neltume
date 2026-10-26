@@ -18,7 +18,7 @@ import {
   type Despacho,
 } from '../negocio/estado';
 import { MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
-import { mismasReferencias } from '../negocio/personalizados';
+import { esLibre, mismasReferencias } from '../negocio/personalizados';
 import { descuentoItemValido, fleteValido, margenValido, pesos, textoDescuentoItem, type Linea } from '../negocio/precios';
 import { textoTarifaAplicada, type TarifaStarkenAplicada } from '../negocio/starken';
 import type { Accion, CambiosCotizacion } from './acciones';
@@ -155,7 +155,7 @@ export function aplicarCambiosItems(
     const siguiente = { ...solicitudes[cambio.indice] };
     if (cambios.personalizado !== undefined) {
       // «Cotizar como especial»: lo que no existe en el catálogo se cotiza con el precio que se indique.
-      const familias = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA'];
+      const familias = ['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA', 'OTRO'];
       if (cambios.personalizado && !familias.includes(cambios.personalizado.familia))
         throw new ErrorUsuario('La familia del pedido especial no es válida.');
       siguiente.personalizado = cambios.personalizado ? { familia: cambios.personalizado.familia } : null;
@@ -166,6 +166,9 @@ export function aplicarCambiosItems(
           throw new ErrorUsuario('Indica el precio unitario del pedido especial.');
       }
     }
+    const libre = esLibre(siguiente);
+    if (libre && cambios.costoFabrica != null)
+      throw new ErrorUsuario('Un ítem libre no va a fábrica: no lleva costo de fábrica.');
     if (cambios.costoFabrica !== undefined) {
       const valor = cambios.costoFabrica;
       if (!siguiente.personalizado)
@@ -182,7 +185,7 @@ export function aplicarCambiosItems(
         throw new ErrorUsuario('Un producto personalizado necesita un precio unitario.');
       if (cambios.margen !== undefined && cambios.margen !== null)
         throw new ErrorUsuario('Un producto personalizado no usa ganancia: cambia directamente su precio unitario.');
-      for (const campo of ['modelo', 'madera'] as const)
+      for (const campo of libre ? (['modelo'] as const) : (['modelo', 'madera'] as const))
         if (cambios[campo] !== undefined && !textoCampo(campo, cambios[campo]))
           throw new ErrorUsuario(
             campo === 'modelo' ? 'El producto personalizado necesita un nombre.' : 'Indica la madera del producto personalizado.',
@@ -243,6 +246,12 @@ export function aplicarCambiosItems(
       despues: producto(siguiente, anterior),
     });
     if (descartes) avisos.push(avisoProductoCambiado(cambio.indice + 1, descartes));
+    // Un ítem libre es nombre, cantidad y precio: no conserva madera, medidas ni fábrica de lo que fue.
+    if (esLibre(siguiente)) {
+      Object.assign(siguiente, { madera: null, ancho: null, alto: null, medida: null, tipoMedida: null, fabrica: null });
+      delete siguiente.costoFabrica;
+      delete siguiente.medidaPorDefecto;
+    }
     solicitudes[cambio.indice] = siguiente;
   }
   return { solicitudes, avisos };

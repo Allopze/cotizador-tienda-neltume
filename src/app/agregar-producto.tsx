@@ -304,6 +304,9 @@ function SeleccionProducto({
   );
 }
 
+/** Tipos de un producto personalizado: las familias del catálogo y el ítem libre, que no va a fábrica. */
+const TIPOS_PERSONALIZADO: [Familia, string][] = [...FAMILIAS, ['OTRO', 'Otro (ítem libre, no va a fábrica)']];
+
 const TIPOS_MEDIDA = [
   { value: 'no_especificado', label: 'Por confirmar' },
   { value: 'hoja', label: 'Hoja (la puerta)' },
@@ -337,6 +340,8 @@ function FormPersonalizado({
     observaciones: '',
   });
   const [familia, setFamilia] = useState<Familia>('PUERTA');
+  // Un ítem libre (una bebida, la instalación) es nombre, cantidad y precio: sin madera ni medidas.
+  const libre = familia === 'OTRO';
   const [tipoMedida, setTipoMedida] = useState<ProductoPersonalizadoElegido['tipoMedida']>('no_especificado');
   const [referencias, setReferencias] = useState<ReferenciaItem[]>([]);
   // Mientras sube una referencia no se agrega: el producto quedaría sin ella y sin aviso.
@@ -359,10 +364,10 @@ function FormPersonalizado({
       alto = medida(campos.alto, 'alto'),
       cantidad = Number(campos.cantidad),
       precio = campos.precio.trim() ? leerPesos(campos.precio) : null;
-    const ilegible = (texto: string, n: number | null) => !!texto.trim() && n === null;
+    const ilegible = (texto: string, n: number | null) => !libre && !!texto.trim() && n === null;
     const nuevos: typeof errores = {
       ...(!campos.nombre.trim() && { nombre: 'Escribe el nombre del producto.' }),
-      ...(!campos.madera.trim() && { madera: 'Indica la madera.' }),
+      ...(!libre && !campos.madera.trim() && { madera: 'Indica la madera.' }),
       ...(ilegible(campos.ancho, ancho) && { ancho: errorMedida('ancho', familia) }),
       ...(ilegible(campos.alto, alto) && { alto: errorMedida('alto', familia) }),
       ...((!Number.isInteger(cantidad) || cantidad < 1 || cantidad > 10000) && {
@@ -378,10 +383,10 @@ function FormPersonalizado({
       await agregar({
         nombre: campos.nombre.trim(),
         familia,
-        madera: campos.madera.trim(),
+        madera: libre ? '' : campos.madera.trim(),
         descripcion: campos.descripcion.trim() || null,
-        ancho,
-        alto,
+        ancho: libre ? null : ancho,
+        alto: libre ? null : alto,
         tipoMedida: familia === 'PUERTA' ? tipoMedida : 'no_especificado',
         cantidad,
         precioUnitario: precio!,
@@ -419,7 +424,9 @@ function FormPersonalizado({
         ← Volver al catálogo
       </button>
       <p className="ayuda">
-        Se agrega solo a esta cotización, con el precio que indiques. No se crea en el catálogo.
+        {libre
+          ? 'Se agrega solo a esta cotización, con el precio que indiques. No va a ninguna nota de pedido.'
+          : 'Se agrega solo a esta cotización, con el precio que indiques. No se crea en el catálogo.'}
       </p>
       <div className="producto-medidas">
         {campo('nombre', 'Nombre del producto', {
@@ -431,20 +438,21 @@ function FormPersonalizado({
           <SelectorFamilia
             id={`${uid}-familia`}
             value={familia}
-            opciones={FAMILIAS}
+            opciones={TIPOS_PERSONALIZADO}
             vacio="Elige el tipo"
             disabled={ocupado}
             seleccionar={(f) => setFamilia(f as Familia)}
           />
         </div>
-        {campo('madera', 'Madera', { placeholder: 'Ej.: Roble' })}
+        {!libre && campo('madera', 'Madera', { placeholder: 'Ej.: Roble' })}
         {campo('cantidad', 'Cantidad', { inputMode: 'numeric', maxLength: 6 })}
-        {campo('ancho', 'Ancho (m) · opcional', { placeholder: '0,80', inputMode: 'decimal', maxLength: 12 })}
-        {campo('alto', familia === 'PUERTA' ? 'Alto (m) · opcional' : 'Largo (m) · opcional', {
-          placeholder: familia === 'PUERTA' ? '2,10' : '3,60',
-          inputMode: 'decimal',
-          maxLength: 12,
-        })}
+        {!libre && campo('ancho', 'Ancho (m) · opcional', { placeholder: '0,80', inputMode: 'decimal', maxLength: 12 })}
+        {!libre &&
+          campo('alto', familia === 'PUERTA' ? 'Alto (m) · opcional' : 'Largo (m) · opcional', {
+            placeholder: familia === 'PUERTA' ? '2,10' : '3,60',
+            inputMode: 'decimal',
+            maxLength: 12,
+          })}
         {familia === 'PUERTA' && (
           <div className="producto-campo">
             <span>La medida corresponde a</span>

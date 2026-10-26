@@ -52,7 +52,7 @@ const solicitudSchema = z.object({
   modeloOriginal: z.string().max(300).nullable().optional(),
   coincidenciaModelo: z.enum(['canonico', 'alias', 'posible']).nullable().optional(),
   fuente: z.string().max(300).nullable().optional(),
-  personalizado: z.object({ familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']) }).nullable().optional(),
+  personalizado: z.object({ familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA', 'OTRO']) }).nullable().optional(),
   costoFabrica: z.number().int().positive().max(100_000_000).nullable().optional(),
   referencias: z
     .array(
@@ -73,9 +73,10 @@ const solicitudSchema = z.object({
 const productoSchema = z.object({
   codigo: z.string(),
   modelo: z.string(),
-  familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']),
+  familia: z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA', 'OTRO']),
   tipo: z.string().nullable(),
-  madera: z.string().min(1),
+  // Vacía solo en un ítem libre (ver el refine).
+  madera: z.string(),
   medida: z.string(),
   anchoMin: z.number().nullable(),
   anchoMax: z.number().nullable(),
@@ -85,7 +86,7 @@ const productoSchema = z.object({
   precioNeto: z.number(),
   descripcion: z.string(),
   filaOrigen: z.number().int(),
-});
+}).refine((p) => p.familia === 'OTRO' || p.madera.length > 0, { path: ['madera'] });
 
 const montosSchema = z.object({
   lineas: z.array(
@@ -324,7 +325,8 @@ export const catalogoPersistidoSchema = z.object({
   fuente: z.string(),
   sha256: z.string().min(1),
   fecha: z.string(),
-  productos: z.array(productoSchema).min(1),
+  // «OTRO» es de los ítems libres: el catálogo nunca la produce.
+  productos: z.array(productoSchema.refine((p) => p.familia !== 'OTRO', { path: ['familia'] })).min(1),
 });
 
 type Registro = Record<string, unknown>;

@@ -14,7 +14,7 @@ import {
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
 import { clienteVacio, type Cliente, type Producto, type SolicitudItem } from '../catalogo/tipos';
 import type { LLM } from '../asistente/llm';
-import { CODIGO_PERSONALIZADO, familiaItem, productoPersonalizado } from '../negocio/personalizados';
+import { CODIGO_PERSONALIZADO, esLibre, familiaItem, productoPersonalizado } from '../negocio/personalizados';
 import { mismoCliente, sanearCliente } from '../negocio/cliente';
 import {
   ANTICIPO_TEXTO,
@@ -860,16 +860,18 @@ export class Servicio {
         throw new ErrorUsuario('La cantidad debe ser un entero entre 1 y 10.000.');
       if (!Number.isSafeInteger(d.precioUnitario) || d.precioUnitario <= 0 || d.precioUnitario > 100_000_000)
         throw new ErrorUsuario('El precio unitario debe ser un entero entre $1 y $100.000.000.');
+      // Un ítem libre no tiene madera ni medidas: lo que llegue en esos campos no se guarda.
+      const libre = d.familia === 'OTRO';
       const item: SolicitudItem = {
         modelo: textoCampo('modelo', d.nombre),
-        madera: textoCampo('madera', d.madera),
-        ancho: d.ancho ?? null,
-        alto: d.alto ?? null,
+        madera: libre ? null : textoCampo('madera', d.madera),
+        ancho: libre ? null : (d.ancho ?? null),
+        alto: libre ? null : (d.alto ?? null),
         medida: null,
         cantidad: d.cantidad,
         precioUnitario: d.precioUnitario,
         margen: null,
-        tipoMedida: d.tipoMedida ?? 'no_especificado',
+        tipoMedida: libre ? null : (d.tipoMedida ?? 'no_especificado'),
         descripcion: textoCampo('descripcion', d.descripcion),
         observaciones: textoCampo('observaciones', d.observaciones),
         personalizado: { familia: d.familia },
@@ -883,7 +885,9 @@ export class Servicio {
             ? errorMedida('ancho', d.familia)
             : r.campos.includes('alto')
               ? errorMedida('alto', d.familia)
-              : 'Indica el nombre, la madera, la cantidad y el precio del producto personalizado.',
+              : libre
+                ? 'Indica el nombre, la cantidad y el precio del ítem libre.'
+                : 'Indica el nombre, la madera, la cantidad y el precio del producto personalizado.',
         );
       return this.agregarItem(u, accion, item);
     });
@@ -1638,9 +1642,16 @@ export class Servicio {
       if (!q.solicitudes[a.indice]) throw new ErrorUsuario(`No existe el ítem ${a.indice + 1}.`);
       elegidas.set(a.indice, a.fabrica);
     }
+    // Un ítem libre no lo hace ninguna fábrica: no va en las notas ni lleva fábrica.
+    const libre = (i: number | null) => i !== null && esLibre(q.solicitudes[i]);
     const reparto = new Map<Fabrica, Linea[]>();
     const faltan: string[] = [];
-    for (const l of q.montos.lineas) {
+    const lineasFabrica = q.montos.lineas.filter((l) => !libre(l.indice));
+    if (!lineasFabrica.length)
+      throw new ErrorUsuario(
+        'La cotización solo tiene ítems libres, que no van a fábrica: no hay notas de pedido que generar.',
+      );
+    for (const l of lineasFabrica) {
       const fabrica = (l.indice !== null ? elegidas.get(l.indice) : null) ?? porOmision;
       if (!fabrica) faltan.push(l.indice !== null ? this.describir(q.solicitudes[l.indice]) : l.producto.codigo);
       else reparto.set(fabrica, [...(reparto.get(fabrica) ?? []), l]);
@@ -1651,7 +1662,7 @@ export class Servicio {
         'fabrica_sin_asignar',
       );
     // Lo que queda guardado en los ítems: las asignaciones y la fábrica por omisión en los que no tenían.
-    const fabricas = new Map([...elegidas].map(([i, f]) => [i, f ?? porOmision ?? null]));
+    const fabricas = new Map([...elegidas].map(([i, f]) => [i, libre(i) ? null : (f ?? porOmision ?? null)]));
     return { reparto: FABRICAS.filter((f) => reparto.has(f)).map((f) => ({ fabrica: f, lineas: reparto.get(f)! })), fabricas };
   }
 
@@ -1883,7 +1894,8 @@ export class Servicio {
       if (!s) throw new ErrorUsuario(`No existe el ítem ${indice + 1}.`);
       if (vistos.has(indice)) throw new ErrorUsuario(`El ítem ${indice + 1} viene dos veces.`);
       vistos.add(indice);
-      if ((s.fabrica ?? null) === fabrica) continue;
+      // Un ítem libre no va a fábrica: se ignora si viene en un reparto de todos los ítems.
+      if (esLibre(s) || (s.fabrica ?? null) === fabrica) continue;
       s.fabrica = fabrica;
       cambios.push(`${this.describir(s)} → ${fabrica ? nombreFabrica[fabrica] : 'sin fábrica'}`);
     }

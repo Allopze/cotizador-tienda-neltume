@@ -53,7 +53,7 @@ import {
 } from './formato';
 import { MargenCotizacion, MargenLinea, textoMargenLinea } from './margenes';
 import { DescuentoLinea, descuentoEscrito, errorDescuentoItem, textoDescuentoLinea } from './descuento-item';
-import { esPersonalizado, familiaEspecial, familiaItem, SIN_CATALOGO } from '@/negocio/personalizados';
+import { esLibre, esPersonalizado, familiaEspecial, familiaItem, SIN_CATALOGO } from '@/negocio/personalizados';
 import { ReferenciasItem } from './referencias-item';
 import { MenuAcciones } from './menu-acciones';
 import { Documento, Totales, type AccionesDocumentos } from './panel-totales';
@@ -695,6 +695,7 @@ export function CotizacionPanel({
                   const medidaSinTipo = medidasPendientes.includes(i);
                   // Fuera de catálogo: se titula con su nombre y su precio es el escrito, sin margen ni referencia de catálogo.
                   const personalizado = esPersonalizado(s);
+                  const libre = esLibre(s);
                   return (
                     <Fragment key={`${identidad}#${ocurrencia}`}>
                       <tr
@@ -746,7 +747,9 @@ export function CotizacionPanel({
                           </div>
                           {personalizado ? (
                             <small className="item-personalizado">
-                              Personalizado · fuera de catálogo{s.madera ? ` · ${s.madera}` : ''}
+                              {libre
+                                ? 'Ítem libre · no va a fábrica'
+                                : `Personalizado · fuera de catálogo${s.madera ? ` · ${s.madera}` : ''}`}
                             </small>
                           ) : (
                             <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
@@ -837,6 +840,40 @@ export function CotizacionPanel({
                                   )
                                 }
                               />
+                              {pendiente.rechazo.tipo === 'modelo_desconocido' && (
+                                // Lo que no es carpintería (una bebida, la instalación) va como ítem libre: sin fábrica.
+                                <CampoEditable
+                                  etiqueta={`Precio sin IVA para cotizar como ítem libre: ${descripcion}`}
+                                  etiquetaOculta
+                                  discreto
+                                  vacio="Cotizar como ítem libre"
+                                  valor=""
+                                  editable={editable}
+                                  guardando={guardando === `item.${i}.libre`}
+                                  tipo="text"
+                                  modoEntrada="numeric"
+                                  sufijo="$"
+                                  validar={(v) => {
+                                    const n = leerPesos(v);
+                                    return Number.isSafeInteger(n) && n > 0 && n <= 100_000_000
+                                      ? null
+                                      : 'Escribe el precio unitario sin IVA en pesos, entre $1 y $100.000.000.';
+                                  }}
+                                  guardar={(v) =>
+                                    acciones.editar(
+                                      {
+                                        items: [
+                                          {
+                                            indice: i,
+                                            cambios: { personalizado: { familia: 'OTRO' }, precioUnitario: leerPesos(v) },
+                                          },
+                                        ],
+                                      },
+                                      `item.${i}.libre`,
+                                    )
+                                  }
+                                />
+                              )}
                             </div>
                           )}
                           {medidaSinTipo && (
@@ -1129,125 +1166,130 @@ export function CotizacionPanel({
                                       )
                                     }
                                   />
-                                  <CampoEditable
-                                    className={`item-campo${falta('madera')}`}
-                                    etiqueta="Madera"
-                                    valor={s.madera ?? ''}
-                                    mostrar={s.madera ? nombreProducto(s.madera) : undefined}
-                                    vacio="Agregar madera"
-                                    editable={editable}
-                                    discreto
-                                    guardando={guardando === `item.${i}.madera`}
-                                    maxLength={300}
-                                    guardar={(v) =>
-                                      acciones.editar(
-                                        { items: [{ indice: i, cambios: { madera: v || null } }] },
-                                        `item.${i}.madera`,
-                                      )
-                                    }
-                                  />
-                                  {linea?.producto.familia === 'PUERTA' ||
-                                  s.ancho !== null ||
-                                  (pendiente?.rechazo.tipo === 'faltan_datos' &&
-                                    pendiente.rechazo.campos.includes('ancho')) ? (
-                                    <CampoEditable
-                                      className={`item-campo${falta('ancho')}`}
-                                      etiqueta="Ancho (m)"
-                                      valor={anchoMetros === null ? '' : decimalCampo(anchoMetros)}
-                                      mostrar={anchoMetros === null ? undefined : decimal(anchoMetros)}
-                                      vacio="Agregar ancho"
-                                      editable={editable}
-                                      discreto
-                                      // Texto y no número: el navegador entregaba vacío ante «0,80» o «80 cm».
-                                      tipo="text"
-                                      modoEntrada="decimal"
-                                      maxLength={20}
-                                      sufijo="m"
-                                      guardando={guardando === `item.${i}.ancho`}
-                                      // Solo un accesorio puede quedar sin ancho: a una puerta le hace falta.
-                                      validar={(v) =>
-                                        (v ? leerMedida(v, familia, 'ancho') !== null : familia !== 'PUERTA')
-                                          ? null
-                                          : errorMedida('ancho', familia)
-                                      }
-                                      guardar={(v) =>
-                                        acciones.editar(
-                                          {
-                                            items: [
-                                              { indice: i, cambios: { ancho: v ? leerMedida(v, familia, 'ancho') : null } },
-                                            ],
-                                          },
-                                          `item.${i}.ancho`,
-                                        )
-                                      }
-                                    />
-                                  ) : (
-                                    <CampoEditable
-                                      className={`item-campo${falta('medida')}`}
-                                      etiqueta="Medida"
-                                      valor={s.medida ?? ''}
-                                      vacio="Agregar medida"
-                                      editable={editable}
-                                      discreto
-                                      guardando={guardando === `item.${i}.medida`}
-                                      maxLength={300}
-                                      guardar={(v) =>
-                                        acciones.editar(
-                                          { items: [{ indice: i, cambios: { medida: v || null } }] },
-                                          `item.${i}.medida`,
-                                        )
-                                      }
-                                    />
-                                  )}
-                                  <CampoEditable
-                                    className={`item-campo${falta('alto')}`}
-                                    etiqueta="Alto / largo (m)"
-                                    valor={altoMetros === null ? '' : decimalCampo(altoMetros)}
-                                    mostrar={altoMetros === null ? undefined : decimal(altoMetros)}
-                                    vacio="Agregar alto o largo"
-                                    editable={editable}
-                                    discreto
-                                    tipo="text"
-                                    modoEntrada="decimal"
-                                    maxLength={20}
-                                    sufijo="m"
-                                    guardando={guardando === `item.${i}.alto`}
-                                    validar={(v) => (leerMedida(v, familia) === null ? errorMedida('alto', familia) : null)}
-                                    guardar={(v) =>
-                                      acciones.editar(
-                                        { items: [{ indice: i, cambios: { alto: leerMedida(v, familia) } }] },
-                                        `item.${i}.alto`,
-                                      )
-                                    }
-                                  />
-                                  <div className="ia-field item-select-field item-campo">
-                                    <span>La medida corresponde a</span>
-                                    <SelectorDesplegable
-                                      ariaLabel={`La medida corresponde a, ítem ${i + 1}`}
-                                      value={s.tipoMedida ?? 'no_especificado'}
-                                      opciones={[
-                                        { value: 'no_especificado', label: 'No especificado' },
-                                        { value: 'hoja', label: 'Hoja (la puerta)' },
-                                        { value: 'vano', label: 'Vano (hueco del muro)' },
-                                      ]}
-                                      onChange={(valor) =>
-                                        void acciones.editar(
-                                          {
-                                            items: [
+                                  {/* Un ítem libre es nombre, cantidad y precio: no tiene madera ni medidas. */}
+                                  {!libre && (
+                                    <>
+                                      <CampoEditable
+                                        className={`item-campo${falta('madera')}`}
+                                        etiqueta="Madera"
+                                        valor={s.madera ?? ''}
+                                        mostrar={s.madera ? nombreProducto(s.madera) : undefined}
+                                        vacio="Agregar madera"
+                                        editable={editable}
+                                        discreto
+                                        guardando={guardando === `item.${i}.madera`}
+                                        maxLength={300}
+                                        guardar={(v) =>
+                                          acciones.editar(
+                                            { items: [{ indice: i, cambios: { madera: v || null } }] },
+                                            `item.${i}.madera`,
+                                          )
+                                        }
+                                      />
+                                      {linea?.producto.familia === 'PUERTA' ||
+                                      s.ancho !== null ||
+                                      (pendiente?.rechazo.tipo === 'faltan_datos' &&
+                                        pendiente.rechazo.campos.includes('ancho')) ? (
+                                        <CampoEditable
+                                          className={`item-campo${falta('ancho')}`}
+                                          etiqueta="Ancho (m)"
+                                          valor={anchoMetros === null ? '' : decimalCampo(anchoMetros)}
+                                          mostrar={anchoMetros === null ? undefined : decimal(anchoMetros)}
+                                          vacio="Agregar ancho"
+                                          editable={editable}
+                                          discreto
+                                          // Texto y no número: el navegador entregaba vacío ante «0,80» o «80 cm».
+                                          tipo="text"
+                                          modoEntrada="decimal"
+                                          maxLength={20}
+                                          sufijo="m"
+                                          guardando={guardando === `item.${i}.ancho`}
+                                          // Solo un accesorio puede quedar sin ancho: a una puerta le hace falta.
+                                          validar={(v) =>
+                                            (v ? leerMedida(v, familia, 'ancho') !== null : familia !== 'PUERTA')
+                                              ? null
+                                              : errorMedida('ancho', familia)
+                                          }
+                                          guardar={(v) =>
+                                            acciones.editar(
                                               {
-                                                indice: i,
-                                                cambios: {
-                                                  tipoMedida: valor as 'hoja' | 'vano' | 'no_especificado',
-                                                },
+                                                items: [
+                                                  { indice: i, cambios: { ancho: v ? leerMedida(v, familia, 'ancho') : null } },
+                                                ],
                                               },
-                                            ],
-                                          },
-                                          `item.${i}.tipoMedida`,
-                                        )
-                                      }
-                                      disabled={!editable || ocupado}
-                                    />
-                                  </div>
+                                              `item.${i}.ancho`,
+                                            )
+                                          }
+                                        />
+                                      ) : (
+                                        <CampoEditable
+                                          className={`item-campo${falta('medida')}`}
+                                          etiqueta="Medida"
+                                          valor={s.medida ?? ''}
+                                          vacio="Agregar medida"
+                                          editable={editable}
+                                          discreto
+                                          guardando={guardando === `item.${i}.medida`}
+                                          maxLength={300}
+                                          guardar={(v) =>
+                                            acciones.editar(
+                                              { items: [{ indice: i, cambios: { medida: v || null } }] },
+                                              `item.${i}.medida`,
+                                            )
+                                          }
+                                        />
+                                      )}
+                                      <CampoEditable
+                                        className={`item-campo${falta('alto')}`}
+                                        etiqueta="Alto / largo (m)"
+                                        valor={altoMetros === null ? '' : decimalCampo(altoMetros)}
+                                        mostrar={altoMetros === null ? undefined : decimal(altoMetros)}
+                                        vacio="Agregar alto o largo"
+                                        editable={editable}
+                                        discreto
+                                        tipo="text"
+                                        modoEntrada="decimal"
+                                        maxLength={20}
+                                        sufijo="m"
+                                        guardando={guardando === `item.${i}.alto`}
+                                        validar={(v) => (leerMedida(v, familia) === null ? errorMedida('alto', familia) : null)}
+                                        guardar={(v) =>
+                                          acciones.editar(
+                                            { items: [{ indice: i, cambios: { alto: leerMedida(v, familia) } }] },
+                                            `item.${i}.alto`,
+                                          )
+                                        }
+                                      />
+                                      <div className="ia-field item-select-field item-campo">
+                                        <span>La medida corresponde a</span>
+                                        <SelectorDesplegable
+                                          ariaLabel={`La medida corresponde a, ítem ${i + 1}`}
+                                          value={s.tipoMedida ?? 'no_especificado'}
+                                          opciones={[
+                                            { value: 'no_especificado', label: 'No especificado' },
+                                            { value: 'hoja', label: 'Hoja (la puerta)' },
+                                            { value: 'vano', label: 'Vano (hueco del muro)' },
+                                          ]}
+                                          onChange={(valor) =>
+                                            void acciones.editar(
+                                              {
+                                                items: [
+                                                  {
+                                                    indice: i,
+                                                    cambios: {
+                                                      tipoMedida: valor as 'hoja' | 'vano' | 'no_especificado',
+                                                    },
+                                                  },
+                                                ],
+                                              },
+                                              `item.${i}.tipoMedida`,
+                                            )
+                                          }
+                                          disabled={!editable || ocupado}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
                                   <CampoEditable
                                     className="item-campo item-campo-observacion"
                                     etiqueta="Observación del producto"
@@ -1268,7 +1310,7 @@ export function CotizacionPanel({
                                       )
                                     }
                                   />
-                                  {personalizado && (
+                                  {personalizado && !libre && (
                                     // Lo usa la nota de pedido; sin él, la línea va «Por definir» y fábrica la valoriza.
                                     <CampoEditable
                                       className="item-campo"

@@ -1,6 +1,6 @@
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
-import type { Familia } from '../catalogo/tipos';
+import type { FamiliaCatalogo } from '../catalogo/tipos';
 import {
   ETIQUETA_FAMILIA,
   MAX_ESPESOR_CM,
@@ -61,7 +61,7 @@ export function mensajeErrorConfiguracion(error: z.ZodError) {
   const [problema] = error.issues;
   if (!problema) return 'Configuración inválida.';
   const [, familia] = problema.path;
-  const etiqueta = typeof familia === 'string' ? ETIQUETA_FAMILIA[familia as Familia] : undefined;
+  const etiqueta = typeof familia === 'string' ? ETIQUETA_FAMILIA[familia as FamiliaCatalogo] : undefined;
   // Un peso o espesor que no es número tiene su mensaje; falta un bloque entero o sobra una clave: está incompleta.
   const esMedida = ['kg', 'espesorCm'].includes(String(problema.path.at(-1)));
   if ((problema.code === 'invalid_type' && !esMedida) || problema.code === 'unrecognized_keys')

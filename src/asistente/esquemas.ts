@@ -46,6 +46,11 @@ export const solicitudSchema = z
     precio: precioSchema.nullable().optional(),
     descuento: descuentoSchema.nullable().optional(),
     fabrica: fabricaSchema.optional(),
+    /**
+     * Ítem libre: algo que no es carpintería (una bebida, la instalación, un servicio) que se cotiza con su nombre,
+     * cantidad y precio, sin madera, medidas ni fábrica. El servidor lo ignora si el nombre existe en el catálogo.
+     */
+    libre: z.boolean().nullable().optional(),
   })
   .strict();
 export const clienteSchema = z

@@ -1815,5 +1815,102 @@
         "comuna": "Santiago"
       }
     }
+  },
+  {
+    "id": "libre-cocacola",
+    "descripcion": "Algo que no es carpintería ni está en el catálogo («una cocacola … por $1.490») se cotiza como ítem libre, sin avisar que le faltan ceros",
+    "mensajes": [
+      "añade a la cotización una cocacola bien fría de 593ml por $1.490"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "cocacola",
+          "madera": null,
+          "ancho": null,
+          "alto": null,
+          "medida": null,
+          "cantidad": 1,
+          "precioUnitario": 1490,
+          "libre": true
+        }
+      ],
+      "avisos": [
+        {
+          "categoria": "precio",
+          "ausente": true
+        }
+      ],
+      "pendientes": []
+    }
+  },
+  {
+    "id": "libre-con-puertas",
+    "descripcion": "Un ítem libre junto a puertas del catálogo: las puertas siguen siendo del catálogo y la instalación es libre",
+    "mensajes": [
+      "4 coscos de 80 por 200 en lenga y una instalación por $45.000 + iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "COZ COZ",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 4
+        },
+        {
+          "modelo": "instalación",
+          "madera": null,
+          "ancho": null,
+          "alto": null,
+          "medida": null,
+          "cantidad": 1,
+          "precioUnitario": 45000,
+          "libre": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "libre-sin-precio",
+    "descripcion": "Un ítem libre sin precio se registra igual y queda pendiente de precio",
+    "mensajes": [
+      "agrega 2 bebidas"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "bebidas",
+          "madera": null,
+          "ancho": null,
+          "alto": null,
+          "medida": null,
+          "cantidad": 2,
+          "libre": true
+        }
+      ]
+    }
+  },
+  {
+    "id": "libre-no-reemplaza-catalogo",
+    "descripcion": "Una puerta que no está en el catálogo, con madera, medidas y precio, sigue siendo pedido especial: no es un ítem libre",
+    "mensajes": [
+      "1 puerta Pillo en lenga de 80x200 a $300.000 + iva"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "Pillo",
+          "madera": "LENGA",
+          "ancho": 0.8,
+          "alto": 2,
+          "medida": null,
+          "cantidad": 1,
+          "precioUnitario": 300000
+        }
+      ]
+    }
   }
 ]

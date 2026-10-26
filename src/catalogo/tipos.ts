@@ -2,7 +2,13 @@ import type { OrigenCatalogo } from './origenes';
 import type { Fabrica } from '../negocio/estado';
 /** Nombre canónico de una madera configurada en config/catalogo.json. */
 export type Madera = string;
-export type Familia = 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA';
+/** Familias que produce el catálogo. */
+export type FamiliaCatalogo = 'PUERTA' | 'MARCO' | 'PIEZAS_T' | 'MOLDURA';
+/**
+ * Familia de un producto cotizado: las del catálogo más «OTRO», la de un ítem libre (cualquier cosa que no es
+ * carpintería, con nombre y precio; no va a fábrica). El catálogo nunca la produce.
+ */
+export type Familia = FamiliaCatalogo | 'OTRO';
 export interface Producto {
   codigo: string;
   modelo: string;
@@ -79,6 +85,11 @@ export interface SolicitudItem {
    * pero solo si el mensaje habla de descuento: puede ser un null que la IA puso de más.
    */
   descuentoEscrito?: DescuentoEscrito | null;
+  /**
+   * Solo en tránsito desde el chat: la IA lo marca como ítem libre (no es carpintería). El servidor lo convierte en
+   * `personalizado: { familia: 'OTRO' }` si el nombre no es un modelo del catálogo; nunca se guarda.
+   */
+  libre?: boolean | null;
 }
 /** Descuento especial pedido en el chat, como lo propuso la IA; `valor` es null si la persona no dijo cuánto. */
 export interface DescuentoEscrito {

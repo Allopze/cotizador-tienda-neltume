@@ -3,6 +3,8 @@ import type { Familia, Producto, ReferenciaItem, SolicitudItem } from '../catalo
 
 /** Código con que un producto fuera de catálogo aparece en el detalle y en los documentos. */
 export const CODIGO_PERSONALIZADO = 'ESPECIAL';
+/** Código de un ítem libre: lo que no es carpintería (una bebida, la instalación) y no va a ninguna fábrica. */
+export const CODIGO_LIBRE = 'OTRO';
 
 /**
  * Rechazos que dicen que lo pedido no existe en el catálogo (modelo, madera o medida), no que falten datos:
@@ -67,6 +69,8 @@ export const ACEPTA_REFERENCIA = '.jpg,.jpeg,.png,.webp,.pdf,image/jpeg,image/pn
 export const ARCHIVO_REFERENCIA = /^[0-9a-f]{64}\.(jpg|png|webp|pdf)$/;
 
 export const esPersonalizado = (s: Pick<SolicitudItem, 'personalizado'> | null | undefined) => !!s?.personalizado;
+/** Ítem libre: nombre, cantidad y precio, sin madera, medidas ni fábrica. Suma en la cotización y no va a notas. */
+export const esLibre = (s: Pick<SolicitudItem, 'personalizado'> | null | undefined) => s?.personalizado?.familia === 'OTRO';
 export const esImagen = (r: Pick<ReferenciaItem, 'tipo'>) => r.tipo !== 'application/pdf';
 export const etiquetaTipoReferencia = (r: Pick<ReferenciaItem, 'tipo'>) =>
   r.tipo === 'application/pdf' ? 'Documento PDF' : `Imagen ${TIPOS_REFERENCIA[r.tipo].toUpperCase()}`;
@@ -82,6 +86,9 @@ export const urlReferencia = (r: Pick<ReferenciaItem, 'archivo' | 'nombre'>, des
 export const mismasReferencias = (a: ReferenciaItem[] | undefined, b: ReferenciaItem[] | undefined) =>
   JSON.stringify((a ?? []).map((r) => [r.archivo, r.nombre])) === JSON.stringify((b ?? []).map((r) => [r.archivo, r.nombre]));
 
+const cantidadInvalida = (s: Pick<SolicitudItem, 'cantidad'>) =>
+  s.cantidad === null || !Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000;
+
 export type ResolucionPersonalizado =
   | { ok: true; producto: Producto; ancho: number | null; alto: number | null }
   | { ok: false; campos: string[] };
@@ -89,12 +96,14 @@ export type ResolucionPersonalizado =
 /**
  * Producto con que se valoriza un ítem fuera de catálogo: su precio es el que escribió la persona (precio neto al
  * cliente, sin margen) y su descripción, la del documento o su nombre con la madera. Nunca se guarda en el catálogo.
+ * Un ítem libre (familia `OTRO`) solo pide nombre, cantidad y precio: no tiene madera ni medidas.
  */
 export function productoPersonalizado(s: SolicitudItem, familia: Familia): ResolucionPersonalizado {
+  if (familia === 'OTRO') return productoLibre(s);
   const campos = [
     !s.modelo?.trim() && 'modelo',
     !s.madera?.trim() && 'madera',
-    (s.cantidad === null || !Number.isInteger(s.cantidad) || s.cantidad < 1 || s.cantidad > 10000) && 'cantidad',
+    cantidadInvalida(s) && 'cantidad',
     !s.precioUnitario && 'precio',
   ].filter((c): c is string => !!c);
   // El ancho es de puerta (hasta 3 m); el largo de un accesorio especial llega a 6 m, como en el catálogo.
@@ -123,6 +132,36 @@ export function productoPersonalizado(s: SolicitudItem, familia: Familia): Resol
       largo: alto ?? 0,
       precioNeto: s.precioUnitario!,
       descripcion: `${nombre} · ${madera}`,
+      filaOrigen: 0,
+    },
+  };
+}
+
+function productoLibre(s: SolicitudItem): ResolucionPersonalizado {
+  const campos = [!s.modelo?.trim() && 'modelo', cantidadInvalida(s) && 'cantidad', !s.precioUnitario && 'precio'].filter(
+    (c): c is string => !!c,
+  );
+  if (campos.length) return { ok: false, campos };
+  const nombre = s.modelo!.trim();
+  return {
+    ok: true,
+    ancho: null,
+    alto: null,
+    producto: {
+      codigo: CODIGO_LIBRE,
+      modelo: nombre,
+      familia: 'OTRO',
+      tipo: null,
+      madera: '',
+      medida: '',
+      anchoMin: null,
+      anchoMax: null,
+      altoMin: null,
+      altoMax: null,
+      largo: 0,
+      precioNeto: s.precioUnitario!,
+      // Como en un pedido especial, la descripción del ítem (si la hay) reemplaza a esta en el documento.
+      descripcion: nombre,
       filaOrigen: 0,
     },
   };

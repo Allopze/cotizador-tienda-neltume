@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 27;
+export const VERSION_ESQUEMA = 28;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -501,6 +501,17 @@ function crearEsquema(db: Database.Database) {
         CREATE INDEX IF NOT EXISTS idx_integracion_pruebas ON integracion_pruebas(direccion, fabrica, id);
         PRAGMA user_version = 27;
       `);
+    }).immediate();
+  if (version < 28)
+    db.transaction(() => {
+      // v28: ítems libres (lo que no es carpintería: nombre, cantidad y precio; no van a fábrica). Se marcan aparte y
+      // quedan sin `familia_personalizada`, cuyo CHECK no admite «OTRO». Lo existente no es libre.
+      const tieneColumna = (db.pragma('table_info(solicitudes)') as { name: string }[]).some(
+        (columna) => columna.name === 'item_libre',
+      );
+      if (!tieneColumna)
+        db.exec('ALTER TABLE solicitudes ADD COLUMN item_libre INTEGER NOT NULL DEFAULT 0 CHECK (item_libre IN (0, 1));');
+      db.exec('PRAGMA user_version = 28;');
     }).immediate();
 }
 
