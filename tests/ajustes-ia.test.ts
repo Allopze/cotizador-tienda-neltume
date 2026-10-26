@@ -70,4 +70,13 @@ describe('Ajustes del asistente', () => {
     vi.stubEnv('CMD_API_KEY', 'clave');
     expect(asistenteConfigurado()).toBe(true);
   });
+
+  it('sin clave, el adaptador fijo de las pruebas deja el chat disponible, y solo con el modo de prueba', () => {
+    vi.stubEnv('CMD_API_KEY', '');
+    vi.stubEnv('NELTUME_LLM', 'fijo');
+    vi.stubEnv('NELTUME_TEST_MODE', '');
+    expect(asistenteConfigurado()).toBe(false);
+    vi.stubEnv('NELTUME_TEST_MODE', '1');
+    expect(asistenteConfigurado()).toBe(true);
+  });
 });
