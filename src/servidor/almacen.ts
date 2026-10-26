@@ -1559,7 +1559,17 @@ export class Almacen {
         return [];
       }
     });
-    return new Set([...filas.map((f) => f.archivo), ...archivadas]);
+    // Los documentos emitidos (y las órdenes de trabajo en cola) muestran las imágenes del cliente: al regenerarlos
+    // deben seguir ahí, aunque después se hayan quitado del ítem.
+    const impresas = (
+      this.db
+        .prepare(
+          `SELECT html FROM documentos_snapshot WHERE html LIKE '%neltume-referencia:%'
+           UNION ALL SELECT html_produccion AS html FROM integracion_envios WHERE html_produccion LIKE '%neltume-referencia:%'`,
+        )
+        .all() as { html: string }[]
+    ).flatMap((f) => [...f.html.matchAll(/neltume-referencia:([0-9a-f]{64}\.(?:jpg|png|webp))/g)].map((m) => m[1]));
+    return new Set([...filas.map((f) => f.archivo), ...archivadas, ...impresas]);
   }
 
   /** Cotización dueña de un PDF emitido (cotización o nota de pedido). */

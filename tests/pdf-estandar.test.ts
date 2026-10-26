@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import type { Catalogo, Producto } from '../src/catalogo/tipos';
 import { clienteVacio } from '../src/catalogo/tipos';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
+import { chromium } from 'playwright';
+import { guardarReferencia } from '../src/servidor/archivos-referencia';
 import { chromiumPath } from '../src/servidor/chromium';
 import { prepararEnvio } from '../src/servidor/integracion-pedido';
 import { cerrarNavegadorPdf, generarPdf, plantillaPruebaConexion } from '../src/servidor/pdf';
@@ -86,6 +88,8 @@ interface Leido {
   ancho: number;
   alto: number;
   bytes: number;
+  /** Imágenes incrustadas, con su tamaño en píxeles (el logo es vectorial y no cuenta). */
+  imagenes: { pagina: number; ancho: number; alto: number }[];
 }
 
 async function leer(ruta: string): Promise<Leido> {
@@ -95,6 +99,7 @@ async function leer(ruta: string): Promise<Leido> {
   const documento = await carga.promise;
   const paginas: Fragmento[][] = [];
   const fuentes = new Set<string>();
+  const imagenes: Leido['imagenes'] = [];
   let ancho = 0;
   let alto = 0;
   for (let n = 1; n <= documento.numPages; n++) {
@@ -126,6 +131,9 @@ async function leer(ruta: string): Promise<Leido> {
     paginas.push(lineas.flatMap((l) => l.sort((a, b) => a.x - b.x)));
     const ops = await pagina.getOperatorList();
     for (let i = 0; i < ops.fnArray.length; i++) {
+      // Los argumentos de la operación son el objeto de la imagen, su ancho y su alto en píxeles.
+      if (ops.fnArray[i] === pdfjs.OPS.paintImageXObject)
+        imagenes.push({ pagina: n, ancho: ops.argsArray[i][1], alto: ops.argsArray[i][2] });
       if (ops.fnArray[i] !== pdfjs.OPS.setFont) continue;
       const fuente = await new Promise<{ name: string; isType3Font?: boolean }>((resolver) =>
         pagina.commonObjs.get(ops.argsArray[i][0], resolver),
@@ -134,7 +142,7 @@ async function leer(ruta: string): Promise<Leido> {
     }
   }
   await carga.destroy();
-  return { paginas, fuentes: [...fuentes].sort(), ancho, alto, bytes: archivo.length };
+  return { paginas, fuentes: [...fuentes].sort(), ancho, alto, bytes: archivo.length, imagenes };
 }
 
 const MONTO = /^\$\d{1,3}(\.\d{3})*$/;
@@ -231,6 +239,18 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
           tipoMedida: i % 2 ? 'hoja' : 'vano',
         });
     }
+    // Fotos del cliente como las de un teléfono (más grandes que lo que se imprime) y un croquis en PDF.
+    const navegador = await chromium.launch({ executablePath: chromiumPath() });
+    const lienzo = await navegador.newPage();
+    const foto = async (ancho: number, alto: number) => {
+      await lienzo.setViewportSize({ width: ancho, height: alto });
+      await lienzo.setContent(`<body style="margin:0;height:100vh;background:linear-gradient(135deg,#7a4b2a,#d9c7a8)"></body>`);
+      return lienzo.screenshot({ type: 'jpeg', quality: 95 });
+    };
+    const fotoGrande = await guardarReferencia(dir, await foto(1800, 2400), 'puerta del cliente.jpg');
+    const fotoAncha = await guardarReferencia(dir, await foto(2400, 1200), 'detalle.jpg');
+    await navegador.close();
+    const croquisPdf = await guardarReferencia(dir, new TextEncoder().encode('%PDF-1.4\n% croquis\n'), 'croquis.pdf');
     await ir({
       tipo: 'editar',
       cliente: {
@@ -242,7 +262,10 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
         comuna: 'Valdivia',
         proyecto: 'Edificio Los Robles',
       },
-      items: [{ indice: 0, cambios: { descripcion: DESCRIPCION_LARGA } }],
+      items: [
+        { indice: 0, cambios: { descripcion: DESCRIPCION_LARGA, referencias: [fotoGrande, fotoAncha] } },
+        { indice: 7, cambios: { referencias: [fotoGrande, croquisPdf] } },
+      ],
       observaciones: 'Entregar en obra.',
     });
     await ir({ tipo: 'emitir' });
@@ -262,8 +285,10 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
     const nuestra = q.notas[0];
     numeroNota = nuestra.numero;
     const envio = await prepararEnvio(q, nuestra, { db: almacen.baseDatos() });
+    // Como en el envío a la fábrica: la orden se imprime en otra carpeta y las imágenes salen del directorio de datos.
     await generarPdf(join(dir, 'ot'), 'orden.pdf', envio.htmlProduccion, undefined, {
       logoDe: almacen.baseDatos(),
+      referenciasDe: dir,
     });
     const html = await plantillaPruebaConexion(
       {
@@ -372,6 +397,19 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
       expect(documento.bytes).toBeLessThanOrEqual(5 * 1024 * 1024);
       expect(documento.paginas.length).toBeLessThanOrEqual(20);
     }
+  });
+
+  it('las fotos del cliente se imprimen reducidas a 1000 px de lado mayor; el croquis PDF solo se nombra; no hay dibujos', () => {
+    for (const documento of [cotizacion, nota, orden]) {
+      // Dos fotos en el primer ítem y una en el personalizado; ningún dibujo del catálogo.
+      expect(documento.imagenes).toHaveLength(3);
+      for (const imagen of documento.imagenes) expect(Math.max(imagen.ancho, imagen.alto)).toBe(1000);
+      expect(documento.imagenes.map((i) => i.ancho / i.alto).sort()).toEqual([0.75, 0.75, 2]);
+      const texto = todos(documento).map((f) => f.s).join(' ');
+      expect(texto).toContain('Referencias del cliente: croquis.pdf');
+      expect(texto).not.toMatch(/puerta del cliente|detalle\.jpg|Plano/);
+    }
+    expect(prueba.imagenes).toEqual([]);
   });
 
   describe('anclas de lectura de la nota de pedido (las lee la fábrica)', () => {

@@ -147,13 +147,13 @@ describe('Plantillas', () => {
     expect(html).toContain('<dt class="k">Emitida por</dt><dd>Paula</dd>');
     // El ítem se nombra con la medida pedida; el rango del catálogo solo define el precio. El vano no se repite aparte.
     expect(html).toContain('<b>Molco Pino Oregon 0,82 m × 2,00 m</b><span class="cod">MOL-O-3-A</span>');
-    // Con el dibujo de línea del modelo, como referencia que se incrusta al imprimir.
-    expect(html).toContain('<image href="neltume-dibujo:molco.png"');
+    // Sin el dibujo del modelo: el producto de catálogo puede ser solo la base del precio de un modelo especial.
+    expect(html).not.toMatch(/neltume-dibujo:|<svg|class="dibujo"/);
     expect(html).not.toContain('Medida solicitada');
     expect(html).not.toContain('0,80 a 0,85');
     expect(html).toMatch(/Descuento 10 %.*−\$25\.000/);
     // El flete es una línea del detalle y el subtotal la incluye; el descuento es solo de los productos.
-    expect(html).toMatch(/<b>Flete \/ despacho<\/b><span class="cod">FLETE<\/span><\/div><\/div><\/td><td class="r cant">1<\/td><td class="r unit">\$15\.000<\/td><td class="r tot">\$15\.000/);
+    expect(html).toMatch(/<b>Flete \/ despacho<\/b><span class="cod">FLETE<\/span><\/td><td class="r cant">1<\/td><td class="r unit">\$15\.000<\/td><td class="r tot">\$15\.000/);
     expect(html).toContain('<dt>Subtotal</dt><dd>$265.000</dd>');
     expect(html).toContain('sobre productos');
     expect(html).not.toContain('Flete por despacho</b>');
@@ -272,8 +272,8 @@ describe('Plantillas', () => {
     expect(html).toContain('<dt>Transporte</dt><dd>Camión</dd>');
     expect(html).toContain('<dt class="k">Aprobada por</dt><dd>Paulette</dd>');
     expect(html).toContain('<b>Molco Pino Oregon 0,83 m × 2,00 m</b><span class="medida">Medida solicitada: 830 × 2000 mm (Hoja)</span>');
-    // El plano lleva las cotas de la medida pedida, en milímetros.
-    expect(html).toMatch(/<svg class="plano"[^]*>830<\/text>[^]*>2000<\/text><\/svg>/);
+    // Sin plano ni cotas: la medida pedida va en el texto.
+    expect(html).not.toMatch(/<svg|class="plano|>Plano</);
     // Fábrica ve además la referencia de catálogo (el rango que se cobra).
     expect(html).toContain('Referencia de catálogo: MOL-O-3-A');
     expect(textoVisible(html)).not.toMatch(/descuento/i);
@@ -382,7 +382,7 @@ describe('Plantillas', () => {
     expect(texto).not.toMatch(/margen|No especificado/i);
   });
 
-  it('la nota de un producto personalizado nombra las referencias del cliente en vez del catálogo', async () => {
+  it('la nota de un producto personalizado nombra los PDF del cliente aparte y muestra sus imágenes en las observaciones', async () => {
     const q = cotizacion();
     const { producto } = productoPersonalizado(
       { modelo: 'Puerta japonesa', madera: 'Roble', ancho: 0.8, alto: 2.1, medida: null, cantidad: 1, precioUnitario: 300000 },
@@ -392,13 +392,58 @@ describe('Plantillas', () => {
       {
         modelo: 'Puerta japonesa', madera: 'Roble', ancho: 0.8, alto: 2.1, medida: null, cantidad: 1,
         personalizado: { familia: 'PUERTA' },
-        referencias: [{ archivo: `${'c'.repeat(64)}.pdf`, nombre: 'croquis.pdf', tipo: 'application/pdf', tamano: 10, fecha: '2026-10-06T00:00:00.000Z' }],
+        referencias: [
+          { archivo: `${'c'.repeat(64)}.pdf`, nombre: 'croquis.pdf', tipo: 'application/pdf', tamano: 10, fecha: '2026-10-06T00:00:00.000Z' },
+          { archivo: `${'d'.repeat(64)}.jpg`, nombre: 'foto WhatsApp.jpg', tipo: 'image/jpeg', tamano: 10, fecha: '2026-10-06T00:00:00.000Z' },
+        ],
       },
     ];
     const montos = cotizar([{ producto, cantidad: 1, indice: 0, anchoSolicitado: 0.8, altoSolicitado: 2.1 }], { ajuste: 0, iva: 0.19 });
-    const texto = textoVisible(await plantilla(q, { tipo: 'nota', numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' }));
-    expect(texto).toContain('Producto personalizado, fuera de catálogo · Referencias del cliente: croquis.pdf');
+    const html = await plantilla(q, { tipo: 'nota', numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' });
+    const texto = textoVisible(html);
+    // La línea de código queda sola: el lector de la fábrica la usa de ancla. Los PDF se nombran en su propia línea.
+    expect(html).toContain('<span class="cod">Producto personalizado, fuera de catálogo</span>');
+    expect(html).toContain('<span>Referencias del cliente: croquis.pdf</span><span class="cod">');
     expect(texto).not.toContain('Referencia de catálogo');
+    // La imagen va en las observaciones de «Para fábrica», con el número y el nombre del ítem; el PDF no se incrusta y
+    // la foto no se nombra.
+    expect(html).toMatch(/<div class="obs"><b>Observaciones<\/b><div>[^<]*<div class="imagenes-item"><p class="k">Ítem 1 · Puerta japonesa/i);
+    expect(html).toContain(`<div><img class="ref" src="neltume-referencia:${'d'.repeat(64)}.jpg" alt=""></div></div></div></div>`);
+    expect(html).not.toMatch(/<tr class="imagenes|<tbody><tr[^]*<\/tbody><tbody>/);
+    expect(html).not.toContain(`neltume-referencia:${'c'.repeat(64)}`);
+    expect(texto).not.toContain('foto WhatsApp');
+  });
+
+  it('las imágenes del cliente van en las observaciones de la cotización, la nota y la orden, por ítem', async () => {
+    await aislarBaseDatos();
+    const q = cotizacion();
+    q.observaciones = null;
+    const foto = { archivo: `${'e'.repeat(64)}.png`, nombre: 'puerta.png', tipo: 'image/png' as const, tamano: 10, fecha: '2026-10-06T00:00:00.000Z' };
+    q.solicitudes = [
+      { modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 1 },
+      { modelo: 'MOLCO', madera: 'PINO OREGON', ancho: 0.8, alto: 2, medida: null, cantidad: 2, referencias: [foto] },
+    ];
+    const montos = cotizar([{ producto: puerta, cantidad: 1, indice: 0 }, { producto: puerta, cantidad: 2, indice: 1 }], { ajuste: 0, iva: 0.19 });
+    const base = { numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' };
+    const grupo = `<div class="imagenes-item"><p class="k">Ítem 2 · Molco Pino Oregon 0,80 a 0,85 m × 2 m</p><div><img class="ref" src="neltume-referencia:${foto.archivo}" alt=""></div></div>`;
+    // La cotización abre «Observaciones» aunque no tenga texto: solo con las imágenes.
+    const cotizacionHtml = await plantilla(q, { ...base, tipo: 'cotizacion' });
+    expect(cotizacionHtml).toContain(`<section class="observaciones con-imagenes"><h2>Observaciones</h2>${grupo}</section>`);
+    for (const doc of [{ ...base, tipo: 'nota' as const }, { ...base, tipo: 'nota' as const, produccion: true }]) {
+      const html = await plantilla(q, doc);
+      expect(html).toContain('<section class="fab con-imagenes">');
+      expect(html).toContain(`<div class="obs"><b>Observaciones</b><div>${grupo}</div></div>`);
+    }
+    // La tabla queda solo con texto: un solo grupo de filas y ninguna imagen dentro.
+    for (const html of [cotizacionHtml, await plantilla(q, { ...base, tipo: 'nota' })]) {
+      const tabla = html.match(/<table>[\s\S]*?<\/table>/)![0];
+      expect(tabla.match(/<tbody>/g)).toHaveLength(1);
+      expect(tabla).not.toContain('<img');
+      expect(html.match(/class="ref"/g)).toHaveLength(1);
+    }
+    // Sin imágenes ni observaciones, la cotización no abre el bloque.
+    q.solicitudes[1].referencias = [];
+    expect(await plantilla(q, { ...base, tipo: 'cotizacion' })).not.toContain('class="observaciones');
   });
 
   it('en la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar, y no suma', async () => {
@@ -444,7 +489,7 @@ describe('Plantillas', () => {
     expect(medidaPedida(linea!)).toBe('2x4 pulg. × 2,10 m');
   });
 
-  it('cada nota nombra a la otra nota de la cotización, y una puerta sin modelo 3D lleva el esquema genérico', async () => {
+  it('cada nota nombra a la otra nota de la cotización, y ninguna puerta lleva dibujo ni esquema genérico', async () => {
     await aislarBaseDatos();
     const sinDibujo = { ...puerta, codigo: 'ESP-O-3-A', modelo: 'ESPECIAL', descripcion: 'ESPECIAL PINO OREGON 0,80 A 0,85 MT X 2 MT' };
     const montos = cotizar([{ producto: sinDibujo, cantidad: 2, anchoSolicitado: 0.8, altoSolicitado: 2 }], { ajuste: 0, iva: 0.19 });
@@ -455,9 +500,7 @@ describe('Plantillas', () => {
     expect(textoVisible(html)).toMatch(/La cotización N\.º 325 tiene 2 notas de pedido\. La otra va a Santiago,\s+N\.º 59\s+, con 1 ítem\./);
     expect(html).toContain('<p class="fabrica"><b>Fábrica Panguipulli</b></p>');
     expect(html).toContain('Recibido por fábrica Panguipulli');
-    // Un modelo sin dibujo: esquema genérico, con las cotas igual.
-    expect(html).not.toContain('neltume-dibujo:');
-    expect(html).toMatch(/<g class="generico">[^]*>800<\/text>[^]*>2000<\/text>/);
+    expect(html).not.toMatch(/neltume-dibujo:|class="generico"|<svg/);
   });
 
   it('la nota de Santiago va a nombre de Neltume.co y sin el aviso de las otras notas; la de Panguipulli no cambia', async () => {
@@ -499,26 +542,7 @@ describe('Plantillas', () => {
     expect(q).toEqual(antes);
   });
 
-  it('cada modelo de puerta de la planilla de precios tiene su dibujo, y el PNG mide lo que dice el manifiesto', async () => {
-    const { dibujosModelos, normalizarModelo, RECURSOS } = await import('../src/servidor/dibujos');
-    const modelos = [
-      'ANCACOMOE', 'BAKER', 'CALAFQUEN', 'CHAN CHAN', 'CHAUQUEN', 'COCHAMO', 'COZ COZ', 'ENCO', 'ENSENADA', 'FUTALEUFU',
-      'FUTRONO', 'FUY', 'HUELLAHUE', 'HUERQUEHUE', 'Huilo Huilo', 'LANCO', 'LICAN', 'LIPINZA', 'LOS LAGOS', 'LOS RIOS',
-      'MALALHUE', 'MARCO', 'MOLCO', 'NELTUME', 'PALENA', 'PANGUIPULLI', 'PETROHUE', 'PIRIHUEICO', 'PUÑIR', 'RANCO',
-      'RIÑIHUE', 'RUPANCO', 'TOLEDO', 'TOLTEN', 'YELCHO',
-    ];
-    const dibujos = dibujosModelos();
-    for (const modelo of modelos) {
-      const dibujo = dibujos.get(normalizarModelo(modelo));
-      expect(dibujo, `${modelo} no tiene dibujo`).toBeDefined();
-      const png = await readFile(join(RECURSOS, 'dibujos', dibujo!.archivo));
-      expect([png.readUInt32BE(16), png.readUInt32BE(20)], `${dibujo!.archivo}: tamaño del PNG`).toEqual(dibujo!.px);
-      // El marco no tiene hoja que acotar; las puertas sí.
-      if (modelo !== 'MARCO') expect(dibujo!.hoja, `${modelo}: sin la hoja para las cotas`).not.toBeNull();
-    }
-  });
-
-  it('al imprimir, los dibujos y las fuentes de la plantilla se incrustan; una referencia sin archivo queda igual', async () => {
+  it('al imprimir, las fuentes y los dibujos de un snapshot anterior se incrustan; una referencia sin archivo queda igual', async () => {
     const html = await inyectarRecursos(
       '<style>@font-face{src:url(neltume-fuente:host-grotesk.woff2)}</style><svg><image href="neltume-dibujo:molco.png"/><image href="neltume-dibujo:no-existe.png"/></svg>',
     );
@@ -587,18 +611,19 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     }
   });
 
-  it('el plano con cotas y la celda de producto coinciden con los tokens del estándar', async () => {
+  it('las imágenes del cliente y la celda de producto coinciden con los tokens del estándar', async () => {
     await aislarBaseDatos();
-    const { plano, roles } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
+    const { imagenesReferencia: imagenes, roles, plano } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
+    expect(plano).toBeUndefined();
     const html = await plantilla(cotizacion(), { ...nota, montos: unaPuerta() });
     const css = html.match(/<style>([\s\S]*?)<\/style>/)![1];
-    expect(css).toContain(`.plano-c{width:${plano.celdaMm}mm}.plano{height:${plano.alturaMm}mm;`);
-    expect(css).toContain(`.dibujo{width:${plano.miniaturaMm.ancho}mm;height:${plano.miniaturaMm.alto}mm;`);
-    expect(css).toContain(`.plano text{font:${plano.cotas.peso} ${plano.cotas.tamanoPx}px '${plano.cotas.familia}'`);
-    expect(css).toContain(`.plano .cota{stroke:var(--ink);stroke-width:${plano.cotas.trazoPx};`);
-    // El lienzo de un plano con cotas: el dibujo base más el espacio de las dos cotas.
-    expect(html).toContain(`viewBox="0 0 ${plano.lienzoConCotasPx.ancho} ${plano.lienzoConCotasPx.alto}"`);
-    expect(plano.lienzoConCotasPx).toEqual({ ancho: plano.dibujoBasePx.ancho + 205, alto: plano.dibujoBasePx.alto + 190 });
+    expect(css).not.toMatch(/\.plano|\.dibujo|\.generico/);
+    expect(css).toContain(`.imagenes-item>div{display:flex;flex-wrap:wrap;gap:${imagenes.separacionMm}mm;`);
+    expect(css).toContain(`.ref{display:block;max-width:${imagenes.anchoMaxMm}mm;max-height:${imagenes.altoMaxMm}mm;`);
+    // La reducción al imprimir: lado mayor y calidad del JPEG.
+    const fuente = await readFile(join(process.cwd(), 'src/servidor/pdf.ts'), 'utf8');
+    expect(fuente).toContain(`const LADO_IMAGEN_PX = ${imagenes.ladoMaxPx};`);
+    expect(fuente).toContain(`lienzo.toDataURL('${imagenes.formato}', ${imagenes.calidadJpeg})`);
     // La celda de producto: título, medida, detalle, referencia y la etiqueta de la firma.
     expect(css).toContain(`.prod b{display:block;font-size:${roles.productoTitulo.tamanoPt}pt}`);
     expect(css).toContain(`.prod span{display:block;color:var(--muted);font-size:${roles.productoDetalle.tamanoPt}pt;`);

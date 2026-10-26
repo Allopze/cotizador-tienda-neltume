@@ -12,7 +12,9 @@ snapshot de cada documento guarda solo la referencia (`neltume-fuente:…`, `nel
   (`src/app/layout.tsx`) y los documentos emitidos antes del estándar se reimprimen desde su snapshot, que referencia
   estos archivos (`neltume-fuente:newsreader.woff2`…): no se borran. El guion de Host Grotesk está acortado con
   `scripts/fuentes-pdf.py`: el original mide medio cuadratín y en códigos y RUT se leía como una raya.
-- `dibujos/`: dibujos de línea de cada modelo de puerta y del marco, sacados de los modelos 3D de `modelos-3d/puertas`
+- `dibujos/`: ya no se imprimen en los documentos nuevos (el producto de catálogo puede ser solo la base del precio de un
+  modelo especial; estándar, sección 5). Siguen aquí porque los snapshots de los documentos emitidos antes los referencian
+  (`neltume-dibujo:…`) y se reimprimen como se emitieron: no se borran. Son dibujos de línea de cada modelo de puerta y del marco, sacados de los modelos 3D de `modelos-3d/puertas`
   con `scripts/dibujos/generar.sh` (Blender). `dibujos.json` dice el archivo de cada modelo del catálogo y dónde está la
   hoja en el dibujo, para las cotas de la nota de pedido. Un modelo sin dibujo se imprime con el esquema genérico.
   Los demás modelos no tienen modelo 3D y se dibujaron a mano con `scripts/dibujos/dibujos-2d.py`, sobre el marco de

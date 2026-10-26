@@ -189,7 +189,7 @@ async function mensajeDe(fila: FilaEnvio, contenido: ContenidoEnvio, { directori
   if (!(await existe(rutaProduccion))) {
     if (!fila.html_produccion) throw new ErrorEnvio('El envío no tiene la orden de trabajo.', null, true);
     try {
-      await generarPdf(carpeta, production.archivo, fila.html_produccion, undefined, { logoDe: db });
+      await generarPdf(carpeta, production.archivo, fila.html_produccion, undefined, { logoDe: db, referenciasDe: directorio });
     } catch (error) {
       // Otra pasada pudo imprimirla primero.
       if (!(await existe(rutaProduccion))) throw new ErrorEnvio(`No se pudo imprimir la orden de trabajo: ${(error as Error).message}`.slice(0, 300));
