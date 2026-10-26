@@ -22,7 +22,7 @@ import { CampoEditable, type SugerenciaCampo } from './campo-editable';
 import { CotizarStarken } from './cotizar-starken';
 import { PreguntasPendientes, RESUMEN_FUERA_DE_REGLA, sinExplicacionRepetida } from './preguntas-pendientes';
 import {
-  ETIQUETA_PENDIENTE,
+  etiquetaPendiente,
   faltantesItem,
   fueraDeRegla,
   preguntasPendientes,
@@ -160,8 +160,23 @@ function entendido(s: Cotizacion['solicitudes'][number], familia: Familia) {
       );
   return [s.madera && bonito(s.madera), medidas].filter(Boolean).join(' · ');
 }
-const textoFaltan = (campos: CampoPendiente[]) =>
-  campos.map((c) => ETIQUETA_PENDIENTE[c].toLowerCase()).join(', ');
+/**
+ * Las preguntas pendientes juntas por los ítems a los que se aplican: un marco al que le faltan escuadría, largo y
+ * cantidad es una sola línea, y doce puertas con el mismo ancho fuera de catálogo, otra.
+ */
+function causasPendientes(q: Cotizacion) {
+  const causas = new Map<string, { indices: number[]; etiquetas: string[] }>();
+  for (const p of preguntasPendientes(q)) {
+    const clave = p.indices.join(',');
+    const causa = causas.get(clave) ?? { indices: p.indices, etiquetas: [] };
+    if (p.etiqueta) causa.etiquetas.push(p.etiqueta.toLowerCase());
+    causas.set(clave, causa);
+  }
+  return [...causas.values()];
+}
+/** «alto, madera»: lo que falta en un ítem, con el nombre que lleva en su familia (alto en puertas, largo en marcos). */
+const textoFaltan = (campos: CampoPendiente[], familia: Familia) =>
+  campos.map((c) => etiquetaPendiente(c, [familia]).toLowerCase()).join(', ');
 
 /** Frase que el panel sugiere agregar a las puertas sin tipo de medida; la escribe la persona, no el sistema. */
 const RECTIFICAR_MEDIDA = 'Rectificar si la medida corresponde a hoja o vano.';
@@ -491,6 +506,7 @@ export function CotizacionPanel({
     !!actual && (actual.flete > 0 || !!actual.fleteDescripcion || agregandoFlete === actual.id);
   const indicePendiente = actual.incompletos[0]?.indice ?? medidasPendientes[0];
   const cantidadPendientes = actual.incompletos.length + medidasPendientes.length;
+  const conPrecio = actual.solicitudes.length - new Set(actual.incompletos.map((p) => p.indice)).size;
   const controlesEdicion = () => (
     <>
       <div className="quote-edit-history" aria-label="Historial de edición">
@@ -781,7 +797,7 @@ export function CotizacionPanel({
                           {pendiente && (
                             <small className="pending-resumen">
                               {sabido && <>Entendido: {sabido}. </>}
-                              {faltan.length ? `Falta: ${textoFaltan(faltan)}.` : fueraDeRegla(actual, i)}
+                              {faltan.length ? `Falta: ${textoFaltan(faltan, familia)}.` : fueraDeRegla(actual, i)}
                             </small>
                           )}
                           {pendiente && editable && s.modelo && SIN_CATALOGO.has(pendiente.rechazo.tipo) && (
@@ -1013,7 +1029,7 @@ export function CotizacionPanel({
                                 <span>
                                   {pendiente
                                     ? faltan.length
-                                      ? `Falta: ${textoFaltan(faltan)}`
+                                      ? `Falta: ${textoFaltan(faltan, familia)}`
                                       : explicacionPrecio
                                         ? RESUMEN_FUERA_DE_REGLA
                                         : pendiente.pregunta
@@ -1584,7 +1600,19 @@ export function CotizacionPanel({
         <div className="quote-toolbar-total">
           <span>{actual.incompletos.length ? 'Total parcial' : 'Total del pedido'}</span>
           <strong>{pesos(actual.montos.total)}</strong>
-          <small>IVA incluido · CLP</small>
+          {actual.incompletos.length ? (
+            // Cuánto del pedido suma ya el total parcial.
+            <>
+              <small>
+                IVA incluido · {conPrecio} de {actual.solicitudes.length} ítems con precio
+              </small>
+              <span className="quote-avance" aria-hidden="true">
+                <span style={{ width: `${(conPrecio / actual.solicitudes.length) * 100}%` }} />
+              </span>
+            </>
+          ) : (
+            <small>IVA incluido · CLP</small>
+          )}
         </div>
         {indicePendiente !== undefined && (
           <button
@@ -1680,18 +1708,22 @@ export function CotizacionPanel({
             <div className="ayuda" id="ayuda-emitir">
               <p>{ayudaEmitir}</p>
               {actual.incompletos.length > 0 && (
+                // Una línea por causa, no por ítem: 28 puertas y marcos con la misma medida fuera de catálogo son
+                // dos decisiones. El enlace lleva al primer ítem de cada una.
                 <ul className="ayuda-pendientes">
-                  {actual.incompletos.map((p) => {
-                    const campos = faltantesItem(actual, p.indice) ?? [];
+                  {causasPendientes(actual).map(({ indices, etiquetas }) => {
+                    const [primero] = indices;
+                    const nombres = new Set(indices.map((i) => descripcionItem(actual, i)));
                     return (
-                      <li key={p.indice}>
-                        <button type="button" className="enlace" onClick={() => irAPendiente(p.indice)}>
-                          Ítem {p.indice + 1} · {descripcionItem(actual, p.indice)}
+                      <li key={indices.join(',')}>
+                        <button type="button" className="enlace" onClick={() => irAPendiente(primero)}>
+                          {indices.length === 1 ? `Ítem ${primero + 1}` : plural(indices.length, 'ítem')}
+                          {nombres.size === 1 ? ` · ${[...nombres][0]}` : ''}
                         </button>
                         <span>
-                          {campos.length
-                            ? ` · falta ${textoFaltan(campos)}`
-                            : fueraDeRegla(actual, p.indice)
+                          {etiquetas.length
+                            ? ` · falta ${etiquetas.join(', ')}`
+                            : fueraDeRegla(actual, primero)
                               ? ' · revisar el precio o el descuento'
                               : ' · revisar'}
                         </span>
