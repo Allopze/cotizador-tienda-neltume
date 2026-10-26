@@ -13,17 +13,17 @@
 
 ## 2. Colores
 
-**Cada aplicación conserva sus colores.** El estándar fija los roles de color y dónde se usan; cada app los llena con su paleta (`colores.tienda` y `colores.fabrica` en el archivo de tokens). La paleta de la fábrica es la que usaba antes del estándar; su repositorio la confirma.
+**Cada aplicación conserva sus colores.** El estándar fija los roles de color y dónde se usan; cada app los llena con su paleta (`colores.tienda` y `colores.fabrica` en el archivo de tokens). La paleta de la fábrica es la que usaba antes del estándar, confirmada por su repositorio.
 
 | Rol | Uso | Tienda | Fábrica |
 | --- | --- | --- | --- |
 | `tinta` | Texto, filetes fuertes | `#1d2b24` | `#1d2920` |
 | `gris` | Etiquetas, texto secundario, pie | `#58615a` | `#62645c` |
 | `filete` | Líneas entre filas | `#dcddd3` | `#dddddd` |
-| `fondoSuave` | Cajas («Para fábrica», «Para aceptar», avisos) | `#f2f3ec` | `#f2f3ec` (provisorio) |
+| `fondoSuave` | Cajas («Para fábrica», «Para aceptar», avisos) | `#f2f3ec` | `#f2f3ec` |
 | `acento` | Filete del encabezado, insignia de la fábrica, cifra del total, rótulo y marca de la prueba de conexión | verde `#2d4938` | terracota (raulí) `#9a4524` |
 | `calido` | Ahorro por descuento especial (el texto del ítem y la línea «Ahorro desc. especiales») | pardo `#8a5a37` | terracota (raulí) `#9a4524` |
-| `anulada` | Solo ANULADA: aviso y marca de agua | `#aa1e1e` | `#aa1e1e` (provisorio) |
+| `anulada` | Solo ANULADA: aviso y marca de agua | `#aa1e1e` | `#aa1e1e` |
 
 ## 3. Tipografía
 
