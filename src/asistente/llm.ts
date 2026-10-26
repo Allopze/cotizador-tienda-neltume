@@ -17,6 +17,7 @@ import {
 import type { ModeloMapa } from '../catalogo/mapa';
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { EstadoCotizacion, Fabrica, Mensaje } from '../negocio/estado';
+import { esLibre } from '../negocio/personalizados';
 /** Lo que la IA ve de cada ítem: textos y medidas, nunca precios ni márgenes. */
 export type ItemContexto = { indice: number } & Pick<
   SolicitudItem,
@@ -31,6 +32,7 @@ export type ItemContexto = { indice: number } & Pick<
   | 'observaciones'
   | 'fuente'
   | 'fabrica'
+  | 'libre'
 >;
 /** Números de la cotización y de sus notas de pedido, para entender qué documento renumerar. */
 export interface DocumentosContexto {
@@ -135,8 +137,16 @@ Si la persona escribe el precio de un producto («a $450.000 + IVA», «en 450 m
 - valor: el monto de una unidad tal como está escrito, sin calcular: «450 mil» es 450000 y «$350.00» es 350000. Si es el total de varias unidades, valor es null: nunca divides ni multiplicas.
 - iva: «+ IVA», «más IVA» o «neto» es "neto"; «IVA incluido» o «con IVA» es "incluido"; null si no lo dice.
 - Un precio no es la cantidad ni una medida: «2 Molco de 80x200 a $120.000» es cantidad 2.
-- Vale también para lo que no está en el catálogo (un modelo, una madera o una medida que no existe): regístralo igual, con el nombre, la madera, las medidas y el precio que escribió la persona, sin cambiarlo por algo del catálogo. El sistema lo cotiza como pedido especial.
+- Vale también para la carpintería que no está en el catálogo (un modelo, una madera o una medida que no existe): regístrala igual, con el nombre, la madera, las medidas y el precio que escribió la persona, sin cambiarla por algo del catálogo. El sistema la cotiza como pedido especial.
 - Si el precio llega después («la de 1,90 a $450.000 + IVA»), edita ese ítem con cambios.precio.
+
+## Ítem libre
+La persona puede agregar cualquier cosa que no sea carpintería: una bebida, la instalación, un servicio, un herraje, lo que sea. Regístralo en agregar con libre true, aunque no esté en el catálogo y aunque parezca fuera de lugar; nunca lo rechaces.
+- modelo: el nombre corto tal como lo escribió («cocacola», «instalación»). descripcion: el texto completo con que debe salir en la cotización, con sus detalles («Coca-Cola bien fría 593 ml»).
+- cantidad y precio como en cualquier ítem (ver Precio escrito). Si no dice el precio, omite precio: el sistema lo pregunta.
+- madera, ancho, alto y medida van en null: un «593ml» o un «2 kg» es parte de la descripcion, no una medida. Nunca lleva fábrica.
+- Puertas, marcos, piezas T, molduras y demás carpintería nunca son libres, estén o no en el catálogo. El flete tampoco: va en flete.
+- borrador.items marca con libre true los ítems libres que ya están.
 
 ## Descuento
 Si la persona pide un descuento para uno o más productos («hazle un 15 % de descuento a las Molco», «a la Huilo rebájale $20.000», «10 % de descuento en todo»), regístralo en descuento de cada ítem al que se refiere; si no lo pide, omite descuento.
@@ -189,6 +199,9 @@ modificar_cotizacion {"flete":{"descripcion":"Flete por despacho a Chillán","ca
 Borrador vacío. Mensaje: «1 huilo huilo enchapada en mara de 1,90 x 2,20 a $450.000 + iva»
 modificar_cotizacion {"agregar":[{"modelo":"HUILO HUILO","madera":"MARA ENCHAPADA","ancho":1.9,"alto":2.2,"medida":null,"cantidad":1,"tipoMedida":null,"fuente":"1 huilo huilo enchapada en mara de 1,90 x 2,20 a $450.000 + iva","precio":{"valor":450000,"iva":"neto"}}]}
 (1,90 m no está en el catálogo: se registra igual y el sistema lo cotiza como pedido especial.)
+
+Borrador con ítems. Mensaje: «añade a la cotización una cocacola bien fría de 593ml por $1.490»
+modificar_cotizacion {"agregar":[{"modelo":"cocacola","madera":null,"ancho":null,"alto":null,"medida":null,"cantidad":1,"tipoMedida":null,"descripcion":"Coca-Cola bien fría 593 ml","fuente":"una cocacola bien fría de 593ml por $1.490","precio":{"valor":1490,"iva":null},"libre":true}]}
 
 Borrador: [{"indice":0,"modelo":"Huilo Huilo","madera":"MARA ENCHAPADA","ancho":1.9,"alto":2.2,"cantidad":1}]. Mensaje: «la de 1,90 cotízala en 450 mil más iva»
 modificar_cotizacion {"items":[{"indice":0,"cambios":{"precio":{"valor":450000,"iva":"neto"},"fuente":"la de 1,90 cotízala en 450 mil más iva"}}]}
@@ -249,6 +262,7 @@ export function contextoSeguro(
         observaciones: i.observaciones ?? null,
         fuente: i.fuente ?? null,
         fabrica: i.fabrica ?? null,
+        ...(esLibre(i) ? { libre: true } : {}),
       })),
       cliente: {
         nombre: cliente.nombre,

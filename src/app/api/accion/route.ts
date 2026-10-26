@@ -89,7 +89,7 @@ const referenciaSchema = z
   })
   .strict();
 const referenciasSchema = z.array(referenciaSchema).max(10);
-const familiaSchema = z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA']);
+const familiaSchema = z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA', 'OTRO']);
 const solicitudRestaurarSchema = z.object({
   modelo: z.string().max(300).nullable(),
   madera: z.string().max(300).nullable(),
@@ -133,7 +133,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
         .object({
           nombre: z.string().trim().min(1).max(300),
           familia: familiaSchema,
-          madera: z.string().trim().min(1).max(300),
+          // Un ítem libre (familia OTRO) no tiene madera.
+          madera: z.string().trim().max(300),
           descripcion: texto(300),
           ancho: anchoMetros.nullable().optional(),
           alto: altoMetros.nullable().optional(),
@@ -143,7 +144,8 @@ const accionSchema = z.discriminatedUnion('tipo', [
           observaciones: texto(LARGO_OBSERVACION_ITEM),
           referencias: referenciasSchema.optional(),
         })
-        .strict(),
+        .strict()
+        .refine((item) => item.familia === 'OTRO' || item.madera.length > 0, { path: ['madera'] }),
     })
     .strict()
     .refine((a) => Boolean(a.id) === Boolean(a.actualizada)),

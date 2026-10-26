@@ -11,13 +11,13 @@ import {
   type ConfiguracionStarken,
   type EstadoStarken,
 } from '@/negocio/starken';
-import type { Familia } from '@/catalogo/tipos';
+import type { FamiliaCatalogo } from '@/catalogo/tipos';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { AccionesGuardar, SinPermiso, useAvisarCambios } from './borrador';
 
 type Estado = EstadoStarken & { puedeEditar: boolean };
-type Texto = Record<Familia, { kg: string; espesorCm: string }>;
+type Texto = Record<FamiliaCatalogo, { kg: string; espesorCm: string }>;
 
 const aTextos = (c: ConfiguracionStarken): Texto =>
   Object.fromEntries(
@@ -110,7 +110,7 @@ export function ConfiguracionStarkenAjustes({
   const opciones = [...(ciudades ?? [])];
   if (guardado && !opciones.some((c) => c.codigoCiudad === guardado.codigoCiudad))
     opciones.unshift({ codigoCiudad: guardado.codigoCiudad, nombre: guardado.nombre, comunas: [] });
-  const setTexto = (f: Familia, campo: 'kg' | 'espesorCm', valor: string) => {
+  const setTexto = (f: FamiliaCatalogo, campo: 'kg' | 'espesorCm', valor: string) => {
     setError('');
     setTextos({ ...textos, [f]: { ...textos[f], [campo]: valor } });
   };

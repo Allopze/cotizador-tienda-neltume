@@ -74,7 +74,7 @@ import {
   type ProductoItem,
 } from '../negocio/items';
 import { ANTICIPO_TEXTO, MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
-import { familiaItem, SIN_CATALOGO } from '../negocio/personalizados';
+import { esLibre, familiaItem, SIN_CATALOGO } from '../negocio/personalizados';
 import {
   ahorroLinea,
   cotizar,
@@ -438,6 +438,13 @@ function pedidoSinRegistrar(
   return [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()].some((m) => !enBorrador.has(m));
 }
 
+/** Un ítem que la IA marcó libre lo es si tiene nombre y ese nombre no es (ni se parece a) un modelo del catálogo. */
+function esLibreFuera(ctx: ContextoChat, s: SolicitudItem) {
+  if (!s.modelo?.trim()) return false;
+  const r = resolverItem(ctx.catalogo, { modelo: s.modelo });
+  return !r.ok && (r.rechazo.tipo === 'modelo_desconocido' || r.rechazo.tipo === 'modelo_posible');
+}
+
 /**
  * Precio que la persona escribió para un ítem en el chat. Debe estar en la frase del propio ítem (o en la
  * conversación, si su frase no se ubica): así no toma el de otro producto ni el del flete. Se guarda neto.
@@ -449,10 +456,28 @@ function preciosEscritos(ctx: ContextoChat, items: SolicitudItem[], mensaje: str
   const avisos: string[] = [];
   const reglas = q.reglas ?? REGLAS;
   const resultado = items.map((original, i): SolicitudItem => {
-    const { precio, ...item } = original;
+    const { precio, libre, ...propuesto } = original;
+    // Un ítem libre (lo que no es carpintería) solo si su nombre no es un modelo del catálogo: la marca de la IA
+    // nunca reemplaza un producto que existe.
+    const nuevoLibre = !!libre && !propuesto.personalizado && esLibreFuera(ctx, propuesto);
+    const item: SolicitudItem = nuevoLibre
+      ? {
+          ...propuesto,
+          madera: null,
+          ancho: null,
+          alto: null,
+          medida: null,
+          tipoMedida: null,
+          fabrica: null,
+          margen: null,
+          personalizado: { familia: 'OTRO' },
+        }
+      : propuesto;
+    const nombreLibre = `«${item.modelo}»`;
     // Al editar, la frase del ítem es «pedido original · cambio»: el precio está en la última parte.
     const frase = item.fuente?.split(' · ').at(-1) ?? null;
     if (!precio?.valor) {
+      if (nuevoLibre) avisos.push(`Agregué ${nombreLibre} como ítem libre (no va a fábrica). Indica su precio.`);
       // Un total de varias unidades llega sin valor; sin un monto en la frase, la IA solo rellenó el campo.
       if (precio?.valor === null && frase && conMonto(frase))
         avisos.push(`Escribiste un precio total para el ítem ${i + 1}; indica el valor por unidad.`);
@@ -484,9 +509,12 @@ function preciosEscritos(ctx: ContextoChat, items: SolicitudItem[], mensaje: str
       avisos.push(
         `Tomé ${pesos(neto)} como precio sin IVA del ${etiqueta}. Si lo incluía, escribe «con IVA incluido».`,
       );
-    if (neto < MONTO_BAJO)
+    // Un ítem libre barato (una bebida) es normal: no se avisa como un precio al que le faltan ceros.
+    if (neto < MONTO_BAJO && !esLibre(item))
       avisos.push(`El precio del ${etiqueta} quedó en ${pesos(neto)}: revisa si le faltan ceros.`);
     const conPrecio: SolicitudItem = { ...item, precioUnitario: neto, margen: null };
+    if (nuevoLibre)
+      avisos.push(`Agregué ${nombreLibre} como ítem libre a ${pesos(neto)} sin IVA c/u: no va a fábrica.`);
     if (item.personalizado) return conPrecio;
     const r = resolverItem(ctx.catalogo, conPrecio);
     if (r.ok) {
@@ -917,7 +945,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         if (error instanceof ErrorUsuario) return responder(error.message);
         throw error;
       }
-      const sinFabrica = q.solicitudes.filter((s) => !s.fabrica);
+      const sinFabrica = q.solicitudes.filter((s) => !s.fabrica && !esLibre(s));
       return responder(
         [
           texto ? `Fábricas asignadas: ${texto}.` : 'Esos ítems ya tenían esa fábrica.',

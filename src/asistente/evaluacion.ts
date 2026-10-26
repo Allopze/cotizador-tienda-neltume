@@ -3,6 +3,7 @@ import { metros, normalizar, normalizarMedida } from '../catalogo/resolver';
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { CategoriaAviso } from '../servidor/servicio';
 import { FABRICAS } from '../negocio/estado';
+import { esLibre } from '../negocio/personalizados';
 
 /**
  * Evaluación de la IA con casos reales: cada caso es una conversación (uno o más mensajes) y el pedido que
@@ -27,6 +28,8 @@ const itemEsperado = z
       .optional(),
     /** Fábrica que dijo la persona; ausente es que no la dijo (y la IA no debe deducirla). */
     fabrica: z.enum(FABRICAS).nullable().optional(),
+    /** Ítem libre (no es carpintería, no va a fábrica); ausente es que no lo es. */
+    libre: z.literal(true).optional(),
   })
   .strict();
 /** Línea de flete: valor neto de una unidad y unidades. */
@@ -249,6 +252,20 @@ export function puntuar(
           campo,
           esperado: e ? ve : '(no debía existir)',
           obtenido: o ? vo : '(falta)',
+        });
+    }
+    // Solo se mide si alguno de los dos es libre: así no suma un acierto gratis a cada ítem del catálogo.
+    const libreEsperado = !!e?.libre,
+      libreObtenido = esLibre(o);
+    if (libreEsperado || libreObtenido) {
+      total++;
+      if (e && o && libreEsperado === libreObtenido) aciertos++;
+      else
+        diferencias.push({
+          item: i + 1,
+          campo: 'libre',
+          esperado: e ? libreEsperado : '(no debía existir)',
+          obtenido: o ? libreObtenido : '(falta)',
         });
     }
   }

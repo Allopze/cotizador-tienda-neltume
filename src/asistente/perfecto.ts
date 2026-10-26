@@ -83,6 +83,7 @@ function solicitudDe(i: ItemEsperado, conversacion: string) {
     } | null,
     descuento: i.descuento ?? null,
     ...(i.fabrica ? { fabrica: i.fabrica } : {}),
+    ...(i.libre ? { libre: true } : {}),
   };
 }
 

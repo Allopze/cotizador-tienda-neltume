@@ -1,4 +1,4 @@
-import type { Familia } from '../catalogo/tipos';
+import type { Familia, FamiliaCatalogo } from '../catalogo/tipos';
 import type { ProductoDespacho } from './envios';
 import { estimarUnidad } from './peso-estimado';
 import { pesos, type MedidasSolicitadas } from './precios';
@@ -50,8 +50,8 @@ export interface CiudadRef {
 
 // --- Bulto -------------------------------------------------------------------------------------------
 
-export const FAMILIAS_ENVIO: readonly Familia[] = ['PUERTA', 'MARCO', 'MOLDURA', 'PIEZAS_T'];
-export const ETIQUETA_FAMILIA: Record<Familia, string> = {
+export const FAMILIAS_ENVIO: readonly FamiliaCatalogo[] = ['PUERTA', 'MARCO', 'MOLDURA', 'PIEZAS_T'];
+export const ETIQUETA_FAMILIA: Record<FamiliaCatalogo, string> = {
   PUERTA: 'Puertas',
   MARCO: 'Marcos',
   MOLDURA: 'Molduras',
@@ -65,7 +65,7 @@ export interface ParametrosFamilia {
   kg: number | null;
   espesorCm: number | null;
 }
-export type ParametrosPaquete = Record<Familia, ParametrosFamilia>;
+export type ParametrosPaquete = Record<FamiliaCatalogo, ParametrosFamilia>;
 export const parametrosVacios = (): ParametrosPaquete => ({
   PUERTA: { kg: null, espesorCm: null },
   MARCO: { kg: null, espesorCm: null },
@@ -151,7 +151,8 @@ export function calcularBulto(
   productos: readonly ProductoDespacho[],
   parametros: Partial<Record<Familia, Partial<ParametrosFamilia>>> | null | undefined,
 ): ResultadoBulto {
-  const lineas = productos.filter((p) => p.cantidad > 0);
+  // Un ítem libre no es carpintería ni sale de una fábrica: no forma parte del bulto.
+  const lineas = productos.filter((p) => p.cantidad > 0 && p.producto.familia !== 'OTRO');
   if (!lineas.length)
     return {
       ok: false,
@@ -198,7 +199,7 @@ export function calcularBulto(
 }
 
 const cifra = (n: number) => n.toLocaleString('es-CL', { maximumFractionDigits: 2 });
-const NOMBRE_UNIDAD: Record<Familia, [string, string]> = {
+const NOMBRE_UNIDAD: Record<FamiliaCatalogo, [string, string]> = {
   PUERTA: ['puerta', 'puertas'],
   MARCO: ['marco', 'marcos'],
   MOLDURA: ['moldura', 'molduras'],

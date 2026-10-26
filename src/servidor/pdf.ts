@@ -24,7 +24,7 @@ import {
 import { fechaChilena, fechaHoraChile } from '../negocio/vigencia';
 import { dimensionesEnMilimetros, sufijoTipoMedida } from '../negocio/medidas';
 import { medidaReferencia, metrosTexto } from '../catalogo/escalones';
-import { ARCHIVO_REFERENCIA, CODIGO_PERSONALIZADO, esImagen } from '../negocio/personalizados';
+import { ARCHIVO_REFERENCIA, CODIGO_PERSONALIZADO, esImagen, esLibre } from '../negocio/personalizados';
 import { chromiumPath } from './chromium';
 import { carpetaReferencias } from './archivos-referencia';
 import { datosEmpresa } from './empresa';
@@ -124,6 +124,8 @@ export function filasDocumento(q: Pick<Cotizacion, 'montos' | 'solicitudes'>, do
           (l) =>
             l.indice != null &&
             !!q.solicitudes[l.indice]?.personalizado &&
+            // Un ítem libre no va a ninguna fábrica: nunca aparece en una nota.
+            !esLibre(q.solicitudes[l.indice]) &&
             (!doc.fabrica || (q.solicitudes[l.indice].fabrica ?? doc.fabrica) === doc.fabrica) &&
             !doc.montos.lineas.some((m) => m.indice === l.indice),
         )

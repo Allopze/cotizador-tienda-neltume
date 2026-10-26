@@ -1,7 +1,7 @@
 import { bonito } from '../asistente/preguntas';
 import { metrosTexto } from '../catalogo/escalones';
 import { claveEscuadria, metros, normalizar, type Rechazo } from '../catalogo/resolver';
-import type { Familia, SolicitudItem } from '../catalogo/tipos';
+import type { Familia, FamiliaCatalogo, SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion } from './estado';
 import { rangoMedidas } from './limites';
 import { familiaEspecial, familiaItem } from './personalizados';
@@ -18,7 +18,7 @@ export interface OpcionPendiente {
   sugerencia?: string;
 }
 export type PrefillAlta = {
-  familia: Familia | null;
+  familia: FamiliaCatalogo | null;
   modelo: string | null;
   madera: string | null;
   medida: string | null;
@@ -241,7 +241,8 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
 function prefillAlta(s: SolicitudItem | undefined, r: Rechazo | undefined): PrefillAlta | null {
   if (!s || !r || !['modelo_desconocido', 'modelo_posible', 'madera_desconocida', 'madera_no_disponible', 'medida_no_disponible'].includes(r.tipo))
     return null;
-  const familia = 'familia' in r ? r.familia ?? null : null;
+  const deRechazo = 'familia' in r ? r.familia ?? null : null;
+  const familia = deRechazo === 'OTRO' ? null : deRechazo;
   const ancho = familia === 'PUERTA' && s.ancho !== null ? metros(s.ancho, 'PUERTA') : null;
   return {
     familia,

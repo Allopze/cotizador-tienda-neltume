@@ -64,6 +64,34 @@ export class LLMFijo implements LLM {
     };
     const aprobada = c.mensaje.match(/se aprob[oó] la (\d+)/i);
     if (aprobada) return { name: 'aprobar_cotizacion', input: { numero: Number(aprobada[1]) } };
+    // «añade una cocacola bien fría de 593ml por $1.490»: como la IA real, lo que no es carpintería va como ítem libre.
+    const libre = c.mensaje.match(
+      /\b(?:añade|agrega)(?:\s+a\s+la\s+cotizaci[oó]n)?\s+((?:un|una|\d+)\s+(\p{L}+)[^$]*?)(?:\s+por\s+\$\s*([\d.]+))?$/iu,
+    );
+    if (libre && !/\b(?:marcos?|puertas?)\b/i.test(c.mensaje)) {
+      const [, fuente, nombre, monto] = libre;
+      const cantidad = /^\d+/.exec(fuente)?.[0];
+      return {
+        name: 'modificar_cotizacion',
+        input: {
+          agregar: [
+            {
+              modelo: nombre,
+              madera: null,
+              ancho: null,
+              alto: null,
+              medida: null,
+              cantidad: cantidad ? Number(cantidad) : 1,
+              tipoMedida: null,
+              descripcion: fuente.replace(/^(?:un|una|\d+)\s+/i, ''),
+              fuente: monto ? `${fuente} por $${monto}` : fuente,
+              ...(monto ? { precio: { valor: Number(monto.replace(/\./g, '')), iva: null } } : {}),
+              libre: true,
+            },
+          ],
+        },
+      };
+    }
     if (/agrega marcos/i.test(c.mensaje))
       items.push({
         modelo: 'MARCO',

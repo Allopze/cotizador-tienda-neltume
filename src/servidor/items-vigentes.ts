@@ -10,7 +10,7 @@ import {
 import type { SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion } from '../negocio/estado';
 import { bajoElCosto, precioEnRango, RANGO_MARGEN } from '../negocio/limites';
-import { productoPersonalizado } from '../negocio/personalizados';
+import { esLibre, productoPersonalizado } from '../negocio/personalizados';
 import { descuentoItemValido, margenProducto, pesos, REGLAS, type ItemPrecio } from '../negocio/precios';
 
 /** Un ítem que se valoriza: su índice en el pedido y las medidas pedidas, ya resueltas. */
@@ -66,7 +66,9 @@ export function itemsVigentes(
         incompletos.push({
           indice,
           rechazo: { tipo: 'faltan_datos', campos: r.campos.filter((c) => c !== 'precio'), disponibles: {} },
-          pregunta: 'Completa el nombre, la madera, las medidas, la cantidad y el precio del producto personalizado.',
+          pregunta: esLibre(s)
+            ? `Indica el precio y la cantidad de «${s.modelo?.trim() || 'el ítem libre'}».`
+            : 'Completa el nombre, la madera, las medidas, la cantidad y el precio del producto personalizado.',
         });
         continue;
       }

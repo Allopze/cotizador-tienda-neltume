@@ -21,6 +21,7 @@ import {
 } from '@/negocio/estado';
 import { leerPesos } from '@/negocio/cifras';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
+import { esLibre } from '@/negocio/personalizados';
 import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
 import { fechaChilena, fechaLocal } from '@/negocio/vigencia';
 import { useConfirmacion } from './dialogo';
@@ -124,10 +125,11 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       paso,
       ...(variasFabricas && nota?.fabrica ? { fabrica: nota.fabrica } : {}),
     });
-  // Los ítems valorizados, con la fábrica que tienen asignada: lo que va en las notas de pedido.
+  // Los ítems valorizados, con la fábrica que tienen asignada: lo que va en las notas de pedido. Un ítem libre no va
+  // a ninguna fábrica.
   const lineasReparto = (): LineaReparto[] =>
     actual.montos.lineas.flatMap((l) =>
-      l.indice === null
+      l.indice === null || esLibre(actual.solicitudes[l.indice])
         ? []
         : [
             {

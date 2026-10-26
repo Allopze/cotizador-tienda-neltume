@@ -39,6 +39,9 @@ const mm = (m: number | null, familia: Linea['producto']['familia']) =>
 
 /** Un ítem del pedido: lo mismo que imprime la fila de la nota, en campos. */
 function item(q: Cotizacion, l: Linea, lineNumber: number): ItemFabrica {
+  const familia = l.producto.familia;
+  // El reparto ya deja fuera los ítems libres: uno aquí es un error, no algo que la fábrica deba recibir.
+  if (familia === 'OTRO') throw new Error(`El ítem libre «${l.producto.modelo}» no va en un pedido a fábrica.`);
   const s = l.indice != null ? q.solicitudes[l.indice] : undefined;
   const puerta = l.producto.familia === 'PUERTA';
   const especial = l.producto.codigo === CODIGO_PERSONALIZADO;
@@ -48,7 +51,7 @@ function item(q: Cotizacion, l: Linea, lineNumber: number): ItemFabrica {
     productCode: l.producto.codigo,
     catalogReference: especial ? null : referenciaCatalogo(l),
     isCustom: especial,
-    family: l.producto.familia,
+    family: familia,
     model: l.producto.modelo,
     wood: l.producto.madera || null,
     productType: l.producto.tipo,
