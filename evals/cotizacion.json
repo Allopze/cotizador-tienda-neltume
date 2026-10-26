@@ -1877,17 +1877,17 @@
     "id": "libre-sin-precio",
     "descripcion": "Un ítem libre sin precio se registra igual y queda pendiente de precio",
     "mensajes": [
-      "agrega 2 bebidas"
+      "agrega un termo"
     ],
     "esperado": {
       "items": [
         {
-          "modelo": "bebidas",
+          "modelo": "termo",
           "madera": null,
           "ancho": null,
           "alto": null,
           "medida": null,
-          "cantidad": 2,
+          "cantidad": 1,
           "libre": true
         }
       ]

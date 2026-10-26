@@ -103,6 +103,32 @@ describe('ítem libre desde el chat', () => {
     expect(r.avisos?.some((a) => /faltan ceros/.test(a))).toBe(false);
   });
 
+  it('el monto de un ítem libre no se lee como una medida que faltó anotar', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'neltume-libre-'));
+    dirs.push(dir);
+    // Como producción: el anclaje solo avisa.
+    const llm = { interpretar: vi.fn(), verificarCifras: true, anclaje: 'avisar' as const };
+    const servicio = new Servicio(catalogo, llm, new Almacen(dir));
+    const mensaje = '2 Molco lenga 80x200 y una instalación por $45.000 + iva';
+    llm.interpretar.mockResolvedValueOnce(
+      agregar(molcos, {
+        modelo: 'instalación',
+        madera: null,
+        ancho: null,
+        alto: null,
+        medida: null,
+        cantidad: 1,
+        tipoMedida: null,
+        fuente: 'una instalación por $45.000 + iva',
+        precio: { valor: 45000, iva: 'neto' },
+        libre: true,
+      }),
+    );
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje });
+    expect(r.cotizacion.solicitudes[1].personalizado).toEqual({ familia: 'OTRO' });
+    expect(r.avisos?.filter((a) => /ancho|alto|parece decir/.test(a))).toEqual([]);
+  });
+
   it('la marca de libre nunca reemplaza un modelo del catálogo', async () => {
     const { servicio, llm } = await setup();
     llm.interpretar.mockResolvedValueOnce(agregar({ ...molcos, libre: true }));
