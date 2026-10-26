@@ -150,7 +150,7 @@ test('si el catálogo cambia antes de emitir, muestra los montos nuevos y pide c
     await expect(total).toHaveText(pesos(despues.total));
     const descarga = page.waitForEvent('download');
     await cambio.getByRole('button', { name: 'Emitir con los montos actualizados' }).click();
-    expect((await descarga).suggestedFilename()).toMatch(/^cotizacion-\d+\.pdf$/);
+    expect((await descarga).suggestedFilename()).toMatch(/^Neltume - Cotización N\.º \d+\.pdf$/);
     await expect(total).toHaveText(pesos(despues.total));
   } finally {
     precio.run(puerta.precioNeto, puerta.codigo);

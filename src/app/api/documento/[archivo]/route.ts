@@ -4,13 +4,12 @@ import { Almacen, directorioDatos } from '@/servidor/almacen';
 import { rechazoSesion } from '@/servidor/acceso-autenticado';
 import { documentoAnulado } from '@/servidor/documentos';
 import { registrarError } from '@/servidor/errores';
+import { disposicionDescarga } from '@/servidor/nombre-descarga';
 export const runtime = 'nodejs';
 
 // Las notas anteriores a separar las fábricas no llevan la fábrica en el nombre. Un PDF que se volvió a generar
 // al cambiar un número lleva «-2», «-3»… tras el número: un documento emitido nunca se sobrescribe.
 const ARCHIVO_VALIDO = /^(cotizacion|nota-pedido(-panguipulli|-santiago)?)-\d+(-\d+)?\.pdf$/;
-/** Nombre con que se descarga: sin el sufijo de la versión regenerada («cotizacion-340-2.pdf» → «cotizacion-340.pdf»). */
-const nombreDescarga = (archivo: string) => archivo.replace(/^(.*?-\d+)-\d+((?:-anulada)?\.pdf)$/, '$1$2');
 const noEncontrado = () =>
   Response.json(
     { error: 'Documento no encontrado.' },
@@ -49,7 +48,8 @@ export async function GET(req: Request, ctx: { params: Promise<{ archivo: string
   return new Response(new Uint8Array(pdf), {
     headers: {
       'Content-Type': 'application/pdf',
-      'Content-Disposition': `${disposicion}; filename="${nombreDescarga(nombre)}"`,
+      // Con el nombre del estilo común («Neltume - Cotización N.º 340.pdf»), sin el sufijo de la versión regenerada.
+      'Content-Disposition': disposicionDescarga(disposicion, nombre),
       'Cache-Control': 'private, no-store',
       'X-Content-Type-Options': 'nosniff',
     },

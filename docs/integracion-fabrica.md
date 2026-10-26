@@ -141,7 +141,7 @@ Claves en inglés, como el contrato acordado; los textos (modelos, maderas, desc
 `commercial` y `production`, cada uno `{ filename, mimeType: "application/pdf", contentBase64, sha256 }`. La fábrica debe verificar el `sha256` de los bytes decodificados.
 
 - **`commercial`**: el PDF de la nota de pedido exactamente como lo emitió la tienda (el mismo archivo que se descarga), con precios de fábrica y totales. Nombre: `nota-pedido-panguipulli-{orderNumber}-comercial.pdf`.
-- **`production`**: la **orden de trabajo**, generada con la misma plantilla, los mismos datos y la misma fecha que la nota: mismas filas, planos con cotas, medidas, observaciones y referencias, **sin** precios, totales, IVA ni descuentos (no están en el contenido, no solo ocultos). Nombre: `nota-pedido-panguipulli-{orderNumber}-produccion.pdf`.
+- **`production`**: la **orden de trabajo**, generada con la misma plantilla, los mismos datos y la misma fecha que la nota: mismas filas, planos con cotas, medidas, observaciones y referencias, **sin** precios, totales, IVA ni descuentos (no están en el contenido, no solo ocultos) y **sin** los datos del cliente (nombre, RUT, giro, teléfono, dirección) ni los nombres del personal de la tienda: lleva solo la obra y el despacho, como `customer` (la fábrica no guarda datos personales). Su aspecto sigue el estilo común de los documentos ([`estilo-documentos-v1.md`](estilo-documentos-v1.md)). Nombre: `nota-pedido-panguipulli-{orderNumber}-produccion.pdf`.
 
 Ambos documentos y `order` son la misma versión del pedido.
 

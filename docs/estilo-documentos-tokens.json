@@ -1,0 +1,124 @@
+{
+  "version": 1,
+  "descripcion": "Estilo común de los PDF de la tienda y de la fábrica (estilo-documentos-v1.md). Este archivo es idéntico en los dos repositorios.",
+  "hoja": {
+    "formato": "A4",
+    "margenesMm": { "arriba": 14, "izquierda": 14, "derecha": 14, "abajo": 17 }
+  },
+  "colores": {
+    "tinta": "#1d2b24",
+    "gris": "#58615a",
+    "filete": "#dcddd3",
+    "fondoSuave": "#f2f3ec",
+    "verde": "#2d4938",
+    "rauli": "#9a4524",
+    "anulada": "#aa1e1e"
+  },
+  "fuentes": [
+    {
+      "familia": "Fraunces",
+      "peso": 500,
+      "archivo": "fraunces-latin-500-normal.woff",
+      "sha256": "3f090b71356567fa4f75f0beeff74d38196a8b0f99bf089cce4954910442bfbf"
+    },
+    {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "archivo": "instrument-sans-latin-400-normal.woff",
+      "sha256": "797bd3eaa70edbd4757650ab44dad75fbfbfdf18bacedb4b71022c04621d30ad"
+    },
+    {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "archivo": "instrument-sans-latin-600-normal.woff",
+      "sha256": "9b4ce1f2b26be7cb087fd87d6f99a202136292ec820af75bd38ab9e53895cf28"
+    },
+    {
+      "familia": "JetBrains Mono",
+      "peso": 400,
+      "archivo": "jetbrains-mono-latin-400-normal.woff",
+      "sha256": "658b9ee07b0249cf910a8d6f3d812d46c962bae81d7379a0355b1db35c61586f"
+    }
+  ],
+  "texto": {
+    "ligaduras": false,
+    "separacionSilabica": false,
+    "interletrado": "ninguno en los textos que lee la fábrica; ninguno en los demás salvo acuerdo"
+  },
+  "roles": {
+    "texto": {
+      "familia": "Instrument Sans",
+      "peso": 400,
+      "tamanoPt": 9.2,
+      "interlineado": 1.45,
+      "color": "tinta"
+    },
+    "etiqueta": { "familia": "Instrument Sans", "peso": 400, "tamanoPt": 7.3, "color": "gris" },
+    "valorMeta": { "familia": "Instrument Sans", "peso": 600, "tamanoPt": 8.8, "color": "tinta" },
+    "tipoDocumento": { "familia": "Fraunces", "peso": 500, "tamanoPt": 11, "color": "gris" },
+    "numeroDocumento": {
+      "familia": "Fraunces",
+      "peso": 500,
+      "tamanoPt": 29,
+      "interlineado": 0.92,
+      "color": "tinta"
+    },
+    "tituloBloque": { "familia": "Fraunces", "peso": 500, "tamanoPt": 15, "color": "tinta" },
+    "tituloSeccion": { "familia": "Fraunces", "peso": 500, "tamanoPt": 12, "color": "tinta" },
+    "tituloCaja": { "familia": "Fraunces", "peso": 500, "tamanoPt": 14, "color": "tinta" },
+    "etiquetaTotal": { "familia": "Fraunces", "peso": 500, "tamanoPt": 12, "color": "tinta" },
+    "cifraTotal": { "familia": "Fraunces", "peso": 500, "tamanoPt": 22, "color": "verde" },
+    "encabezadoTabla": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "tamanoPt": 7.3,
+      "color": "gris",
+      "mayusculasForzadas": false
+    },
+    "codigoSolo": {
+      "familia": "JetBrains Mono",
+      "peso": 400,
+      "tamanoPt": 6.8,
+      "color": "gris",
+      "uso": "tienda: código del producto bajo su nombre en la cotización"
+    },
+    "codigoTabla": {
+      "familia": "JetBrains Mono",
+      "peso": 400,
+      "tamanoPt": 8,
+      "color": "tinta",
+      "uso": "fábrica: columna de código de sus tablas"
+    },
+    "pie": { "familia": "Instrument Sans", "peso": 400, "tamanoPt": 7.5, "color": "gris" }
+  },
+  "trazos": {
+    "bajoEncabezado": { "anchoPt": 0.7, "color": "verde" },
+    "bajoEncabezadoTabla": { "anchoPt": 0.7, "color": "tinta" },
+    "entreFilas": { "anchoPt": 0.5, "color": "filete" },
+    "sobreTotal": { "anchoPt": 0.7, "color": "tinta" }
+  },
+  "marcasDeAgua": {
+    "ANULADA": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "color": "anulada",
+      "opacidad": 0.16,
+      "giroGrados": -28
+    },
+    "PRUEBA": {
+      "familia": "Instrument Sans",
+      "peso": 600,
+      "color": "rauli",
+      "opacidad": 0.09,
+      "giroGrados": -28
+    }
+  },
+  "formatos": {
+    "numeroDocumento": "N.º {n}",
+    "monto": "$1.234",
+    "fechaEncabezado": "25 de octubre de 2026",
+    "fechaEnTablasYCampos": "dd-mm-aaaa",
+    "sinPrecio": "Por definir",
+    "nombreDeDescarga": "Neltume - {Tipo} N.º {n}[ {Fábrica}][ (anulada)].pdf"
+  }
+}

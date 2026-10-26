@@ -3,9 +3,15 @@
 Se incrustan en cada PDF al imprimirlo (`inyectarRecursos`, `src/servidor/pdf.ts`): el servidor imprime sin red y el
 snapshot de cada documento guarda solo la referencia (`neltume-fuente:…`, `neltume-dibujo:…`).
 
-- `fuentes/`: Newsreader y Host Grotesk, variables y con el subconjunto latino de Google Fonts, bajo la SIL Open Font
-  License 1.1 (`OFL-*.txt`). El guion de Host Grotesk está acortado con `scripts/fuentes-pdf.py`: el original mide
-  medio cuadratín y en códigos y RUT se leía como una raya.
+- `fuentes/`: las del estilo común de los documentos (docs/estilo-documentos-v1.md): Fraunces 500, Instrument Sans 400 y
+  600 y JetBrains Mono 400, estáticas (`.woff`), con el subconjunto latino y copiadas byte a byte de la fábrica; su
+  licencia, la SIL Open Font License 1.1, es `OFL-estandar.txt`. `docs/estilo-documentos-tokens.json` guarda el sha256
+  de cada archivo y `tests/pdf-estandar.test.ts` lo comprueba: si cambian aquí, cambian también en la fábrica. Al no ser
+  variables, Chromium las incrusta como fuentes normales y el PDF pesa varias veces menos.
+  Newsreader y Host Grotesk (`*.woff2`, variables) siguen aquí por dos razones: la interfaz web las usa
+  (`src/app/layout.tsx`) y los documentos emitidos antes del estándar se reimprimen desde su snapshot, que referencia
+  estos archivos (`neltume-fuente:newsreader.woff2`…): no se borran. El guion de Host Grotesk está acortado con
+  `scripts/fuentes-pdf.py`: el original mide medio cuadratín y en códigos y RUT se leía como una raya.
 - `dibujos/`: dibujos de línea de cada modelo de puerta y del marco, sacados de los modelos 3D de `modelos-3d/puertas`
   con `scripts/dibujos/generar.sh` (Blender). `dibujos.json` dice el archivo de cada modelo del catálogo y dónde está la
   hoja en el dibujo, para las cotas de la nota de pedido. Un modelo sin dibujo se imprime con el esquema genérico.
