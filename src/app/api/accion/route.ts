@@ -10,7 +10,7 @@ import { cargarCatalogo, ErrorCatalogo } from '@/servidor/catalogo';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { leerJson } from '@/servidor/cuerpo';
 import type { LLM } from '@/asistente/llm';
-import { asistenteConfigurado, crearLLM } from '@/servidor/ajustes-ia';
+import { asistenteConfigurado, crearLLM, llmFijoDePrueba } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { descuentoItemSchema } from '@/servidor/persistencia-esquemas';
 import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
@@ -361,9 +361,7 @@ const papeleraSchema = z.object({
   pagina: z.coerce.number().int().min(1).max(10000).optional(),
   porPagina: z.coerce.number().int().min(1).max(200).optional(),
 });
-const modoFijo = () => process.env.NELTUME_LLM === 'fijo' && process.env.NELTUME_TEST_MODE === '1';
 const sinCache = { 'Cache-Control': 'no-store' };
-const configurado = () => modoFijo() || asistenteConfigurado();
 
 /** Acción reservada a una cuenta administradora: mismo cuerpo y cabeceras que los demás errores. */
 const sinPermiso = () =>
@@ -421,7 +419,7 @@ export async function GET(req: Request) {
           { status: 404, headers: sinCache },
         );
       return Response.json(
-        { cotizacion, eventos: almacen.eventos(cotizacion.id), asistenteConfigurado: configurado() },
+        { cotizacion, eventos: almacen.eventos(cotizacion.id), asistenteConfigurado: asistenteConfigurado() },
         { headers: sinCache },
       );
     }
@@ -459,7 +457,7 @@ export async function GET(req: Request) {
     const filtrosListado: FiltrosListado = { ...resto, estados, comerciales: comercial, operativos: operativo };
     if (formato === 'csv') return exportarCsv(almacen, filtrosListado, parte);
     const pagina = almacen.listar(filtrosListado);
-    return Response.json({ ...pagina, asistenteConfigurado: configurado() }, { headers: sinCache });
+    return Response.json({ ...pagina, asistenteConfigurado: asistenteConfigurado() }, { headers: sinCache });
   } catch (e) {
     return responderError(e);
   }
@@ -526,7 +524,7 @@ export async function POST(req: Request) {
     let llm: LLM;
     if (parsed.data.tipo !== 'chat') {
       llm = { interpretar: async () => { throw new Error('Esta acción no utiliza el asistente.'); } };
-    } else if (modoFijo()) {
+    } else if (llmFijoDePrueba()) {
       const { LLMFijo } = await import('@/asistente/fijo');
       llm = new LLMFijo();
     } else llm = crearLLM();

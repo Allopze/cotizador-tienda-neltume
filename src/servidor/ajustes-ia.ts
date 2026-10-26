@@ -154,8 +154,15 @@ export function quitarClaveCommandCode(db: Database.Database = abrirBaseDatos())
   guardarValorClave(JSON.stringify({ version: 1, desactivada: true }), db);
 }
 
+/** Solo en pruebas (Playwright): el chat responde con el adaptador fijo, sin IA ni clave. */
+export const llmFijoDePrueba = () => process.env.NELTUME_LLM === 'fijo' && process.env.NELTUME_TEST_MODE === '1';
+
+/**
+ * El chat está disponible: hay clave de CommandCode o corre el adaptador fijo de las pruebas. Lo usan la ruta del
+ * chat y Ajustes, que la pantalla consulta para habilitar el pedido: las dos deben responder lo mismo.
+ */
 export function asistenteConfigurado(): boolean {
-  return estadoClaveCommandCode().configurada;
+  return llmFijoDePrueba() || estadoClaveCommandCode().configurada;
 }
 
 export function crearLLM(ajustes: AjustesIA = leerAjustesIA()): LLM {

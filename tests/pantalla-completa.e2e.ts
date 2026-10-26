@@ -128,7 +128,8 @@ test('ajustes y alta conservan sus bloques verticales; las listas cortas no agre
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/ajustes?seccion=asistente');
   await expect(page.getByRole('heading', { name: 'Asistente', level: 2 })).toBeVisible();
-  const estadoAsistente = page.getByText(/El asistente usa la clave definida en el servidor/);
+  // El estado del asistente, sea cual sea: con clave del servidor, guardada en Ajustes o sin clave.
+  const estadoAsistente = page.locator('#ia-nota');
   await estadoAsistente.scrollIntoViewIfNeeded();
   await expect(estadoAsistente).toBeInViewport();
 

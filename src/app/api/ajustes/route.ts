@@ -4,6 +4,7 @@ import { exigirSesion, type UsuarioSesion } from '@/servidor/acceso-autenticado'
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { leerJson } from '@/servidor/cuerpo';
 import {
+  asistenteConfigurado,
   estadoClaveCommandCode,
   ErrorProteccionClave,
   guardarAjustesIA,
@@ -29,7 +30,7 @@ function estado(usuario: UsuarioSesion) {
     ajustes,
     commandcodeClave: apiKey.configurada,
     commandcodeClaveFuente: apiKey.fuente,
-    asistenteConfigurado: apiKey.configurada,
+    asistenteConfigurado: asistenteConfigurado(),
     puedeEditar: usuario.rol === 'admin',
   };
 }
