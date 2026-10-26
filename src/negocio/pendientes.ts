@@ -285,12 +285,9 @@ function sugerir(q: Pick<Cotizacion, 'solicitudes'>, indices: number[], parte: P
   if (!campo || campo === 'cantidad' || campo === 'modelo') return parte.opciones;
   if (campo === 'madera' && indices.some((i) => q.solicitudes[i]?.madera)) return parte.opciones;
   const primero = Math.min(...indices);
-  // Un alto o largo se sugiere solo desde un ítem de la misma familia: el alto de una puerta no es el largo de su
-  // marco ni de una moldura.
-  const mismaFamilia = (s: SolicitudItem) => campo !== 'alto' || familiaItem(s) === parte.familia;
   const otros = q.solicitudes
-    .map((s, i) => ({ i, s, valor: valorDe(s, campo) }))
-    .filter(({ i, s, valor }) => !indices.includes(i) && valor !== null && mismaFamilia(s))
+    .map((s, i) => ({ i, valor: valorDe(s, campo) }))
+    .filter(({ i, valor }) => !indices.includes(i) && valor !== null)
     // El ítem anterior más cercano primero: «la siguiente igual que la anterior».
     .sort(
       (a, b) => (a.i < primero ? primero - a.i : 1000 + a.i) - (b.i < primero ? primero - b.i : 1000 + b.i),

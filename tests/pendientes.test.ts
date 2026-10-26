@@ -243,19 +243,6 @@ describe('preguntas de los ítems pendientes', () => {
     });
   });
 
-  it('el largo de un marco no se sugiere desde el alto de una puerta, sí desde otro marco', () => {
-    const largo = { tipo: 'faltan_datos' as const, campos: ['alto'], disponibles: { alto: ['2.0', '2.2', '2.4'] }, familia: 'MARCO' as Familia };
-    const pendiente = { indice: 1, rechazo: largo, pregunta: '' };
-    const puerta = item({ modelo: 'HUILO HUILO', alto: 2.2 });
-    const marco = item({ modelo: 'MARCO', ancho: null, medida: '2X4', alto: null });
-    const [soloPuerta] = preguntasPendientes({ solicitudes: [puerta, marco], incompletos: [pendiente] });
-    expect(soloPuerta.etiqueta).toBe('Largo');
-    expect(soloPuerta.opciones.some((o) => o.sugerencia)).toBe(false);
-    const otroMarco = item({ modelo: 'MARCO', ancho: null, medida: '2X4', alto: 2.4 });
-    const [conMarco] = preguntasPendientes({ solicitudes: [puerta, marco, otroMarco], incompletos: [pendiente] });
-    expect(conMarco.opciones[0]).toMatchObject({ valor: 2.4, sugerencia: 'Como el ítem 3' });
-  });
-
   it('con muchos ítems nombra la cantidad y los primeros; el nombre del campo sigue la familia', () => {
     expect(listaItems([2, 4, 6, 8, 10, 13, 18, 20])).toBe('8 ítems: 3, 5, 7, 9, 11 y 3 más');
     expect(listaItems([2, 4, 6, 8, 10, 13])).toBe('los ítems 3, 5, 7, 9, 11 y 14');
