@@ -69,9 +69,23 @@ async function main() {
     if (!q || q.estado !== 'aprobada') throw new Error(`La cotización N° ${numero} no existe o no está aprobada.`);
     const notas = q.notas.filter((n) => !n.anulada && n.fabrica && FABRICAS_INTEGRADAS.includes(n.fabrica));
     if (!notas.length) throw new Error(`La cotización N° ${numero} no tiene una nota vigente para una fábrica integrada.`);
+    const forzar = resto.includes('--forzar');
     for (const nota of notas) {
-      if (!configuracionFabrica(nota.fabrica!)) throw new Error(`La integración con ${nombreFabrica[nota.fabrica!]} no está configurada.`);
-      const envio = await prepararEnvio(q, nota, { db: almacen.baseDatos() });
+      const db = almacen.baseDatos();
+      const yaEncolada = db
+        .prepare('SELECT 1 FROM integracion_envios WHERE cotizacion_id = ? AND fabrica = ? LIMIT 1')
+        .get(q.id, nota.fabrica);
+      if (!configuracionFabrica(nota.fabrica!) && !yaEncolada)
+        throw new Error(`La integración con ${nombreFabrica[nota.fabrica!]} no está configurada.`);
+      // Repetir el comando sobre una nota ya entregada crearía una revisión idéntica (auditoría BUG-043).
+      const entregada = db
+        .prepare("SELECT 1 FROM integracion_envios WHERE cotizacion_id = ? AND fabrica = ? AND estado = 'entregado' LIMIT 1")
+        .get(q.id, nota.fabrica);
+      if (entregada && !forzar)
+        throw new Error(
+          `La nota de ${nombreFabrica[nota.fabrica!]} ya se entregó a la fábrica. Repite con --forzar si de verdad quieres enviar otra revisión.`,
+        );
+      const envio = await prepararEnvio(q, nota, { db });
       await almacen.transaccion((u) => {
         // Si la cotización cambió entretanto (se anuló o se renumeró), no se encola una versión vieja.
         const actual = u.obtener(q.id);

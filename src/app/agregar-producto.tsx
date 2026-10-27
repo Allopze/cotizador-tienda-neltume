@@ -347,6 +347,13 @@ function FormPersonalizado({
   // Mientras sube una referencia no se agrega: el producto quedaría sin ella y sin aviso.
   const [subiendo, setSubiendo] = useState(false);
   const [errores, setErrores] = useState<Partial<Record<keyof typeof campos, string>>>({});
+  const formulario = useRef<HTMLFormElement>(null);
+  // Con errores, el foco va al primer campo inválido: con lector de pantalla, si no, nada parece pasar
+  // (auditoría BUG-062).
+  useEffect(() => {
+    if (!Object.keys(errores).length) return;
+    formulario.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errores]);
   const [error, setError] = useState('');
   const cambiar = (campo: keyof typeof campos, valor: string) => {
     setCampos((c) => ({ ...c, [campo]: valor }));
@@ -419,7 +426,7 @@ function FormPersonalizado({
   );
 
   return (
-    <form onSubmit={enviar} className="producto-seleccion producto-personalizado" noValidate>
+    <form ref={formulario} onSubmit={enviar} className="producto-seleccion producto-personalizado" noValidate>
       <button type="button" className="producto-volver" onClick={volver} disabled={ocupado}>
         ← Volver al catálogo
       </button>

@@ -107,7 +107,8 @@ export function SelectorDesplegable({
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={abierto}
-        aria-controls={listaId}
+        // Sin lista en el DOM mientras está cerrado, `aria-controls` apuntaría a un id inexistente (auditoría BUG-061).
+        aria-controls={abierto ? listaId : undefined}
         aria-activedescendant={abierto && opciones.length ? activoId : undefined}
         disabled={disabled}
         onClick={() => (abierto ? setAbierto(false) : abrir())}

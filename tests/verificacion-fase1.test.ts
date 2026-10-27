@@ -163,7 +163,7 @@ describe('#1 · doble emisión', () => {
     const db = t.almacen.baseDatos();
     const marcar = (vence: number) =>
       db
-        .prepare("INSERT OR REPLACE INTO emisiones_en_curso VALUES (?, 'cotizacion', 'otra', ?)")
+        .prepare("INSERT OR REPLACE INTO emisiones_en_curso (cotizacion_id, documento, ficha, vence) VALUES (?, 'cotizacion', 'otra', ?)")
         .run(t.actual().id, new Date(vence).toISOString());
     const antes = t.almacen.correlativos();
     marcar(Date.now() + EMISION_VIGENTE_MS);

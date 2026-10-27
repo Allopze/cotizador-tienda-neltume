@@ -142,7 +142,7 @@ async function limpiarBorradores(almacen: Almacen) {
     console.log(`\n${candidatos.length} borrador(es) irían a la papelera. Repite con --confirmar para hacerlo.`);
     return;
   }
-  const eliminados = await almacen.eliminarBorradores(candidatos.map((b) => b.id));
+  const eliminados = await almacen.eliminarBorradores(candidatos.map((b) => ({ id: b.id, actualizada: b.actualizada })));
   console.log(`\nSe movieron ${eliminados} borrador(es) a la papelera.`);
 }
 

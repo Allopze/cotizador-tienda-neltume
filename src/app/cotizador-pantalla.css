@@ -491,6 +491,12 @@
 .pantalla-cotizador.con-pedido .avisos {
   bottom: 140px;
 }
+/* En Cotizar los avisos van arriba, bajo la cabecera: abajo tapaban «Fecha del pago» y «Registrar pago»
+   (auditoría BUG-058). */
+.pantalla-cotizador .avisos {
+  top: 84px;
+  bottom: auto;
+}
 .cotizador-vistas {
   display: none;
 }

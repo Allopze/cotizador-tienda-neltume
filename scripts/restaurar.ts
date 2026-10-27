@@ -22,6 +22,13 @@ async function main() {
       (r.config ? '; también la configuración del catálogo.' : '.'),
   );
   console.log(`Lo que había antes quedó en ${r.aparte}.`);
+  if (r.integracion.envios || r.integracion.correlativos)
+    console.log(
+      `  Se conservaron ${r.integracion.envios} envíos y ${r.integracion.correlativos} correlativos de la fábrica que no estaban en el respaldo.`,
+    );
+  console.log(
+    'Si después del respaldo se enviaron pedidos a la fábrica, concílialos con ella antes de volver a generar notas.',
+  );
   console.log('Bórralo cuando compruebes que todo está bien. Para deshacer, restaura esa carpeta del mismo modo.');
   console.log('Ahora inicia el cotizador (con Docker: docker compose up -d) y revisa una cotización reciente.');
 }

@@ -1,10 +1,10 @@
 import type Database from 'better-sqlite3';
 import type { Cotizacion, Fabrica, NotaPedido } from '../negocio/estado';
-import { descripcionLinea, REGLAS, type Linea } from '../negocio/precios';
+import { REGLAS, type Linea } from '../negocio/precios';
 import { metros } from '../catalogo/resolver';
 import { CODIGO_PERSONALIZADO } from '../negocio/personalizados';
 import { documentoNota } from './documentos';
-import { descripcionLegible, filasDocumento, medidaPedida, plantilla, referenciaCatalogo, type DocumentoPdf } from './pdf';
+import { descripcionImpresa, filasDocumento, medidaPedida, plantilla, referenciaCatalogo, type DocumentoPdf } from './pdf';
 import {
   CODIGO_FABRICA,
   cancelacionSchema,
@@ -55,7 +55,7 @@ function item(q: Cotizacion, l: Linea, lineNumber: number): ItemFabrica {
     model: l.producto.modelo,
     wood: l.producto.madera || null,
     productType: l.producto.tipo,
-    description: descripcionLegible(descripcionLinea(l)),
+    description: descripcionImpresa(l),
     descriptionEdited: !!l.descripcionDocumento,
     quantity: l.cantidad,
     dimensions: {

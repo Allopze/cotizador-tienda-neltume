@@ -315,6 +315,12 @@ export function Historial({ historial, actualId, duplicar, duplicando }: Props) 
               </label>
             </div>
           )}
+          {!papelera && filtros.desde && filtros.hasta && filtros.desde > filtros.hasta && (
+            // Un rango invertido no tiene resultados, pero decirlo evita creer que no hay cotizaciones (auditoría BUG-064).
+            <p className="campo-error" role="alert">
+              La fecha «Desde» es posterior a «Hasta»: corrige el rango para ver resultados.
+            </p>
+          )}
           {!papelera && (
             <div className="history-seguimiento" role="group" aria-label="Filtrar por seguimiento y vendedora">
               <label>

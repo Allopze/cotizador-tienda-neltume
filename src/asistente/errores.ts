@@ -57,7 +57,7 @@ export function errorProveedor(status?: number, cuerpo?: string): ErrorIA {
     );
   return new ErrorIA(
     'ia_no_disponible',
-    'No pudimos obtener una respuesta del asistente. Reintenta en un momento; tu borrador está guardado.',
+    'No pudimos obtener una respuesta del asistente. Reintenta en un momento; no se perdió lo que ya tenías.',
     503,
   );
 }
@@ -65,7 +65,7 @@ export function errorProveedor(status?: number, cuerpo?: string): ErrorIA {
 export function errorTimeout(ms: number): ErrorIA {
   return new ErrorIA(
     'ia_timeout',
-    `El asistente no respondió dentro de ${Math.ceil(ms / 1000)} ${ms === 1000 ? 'segundo' : 'segundos'}. Tu borrador está guardado: vuelve a enviar el mensaje. Si se repite, pide a quien administra el cotizador que revise el modelo en Ajustes → Asistente.`,
+    `El asistente no respondió dentro de ${Math.ceil(ms / 1000)} ${ms === 1000 ? 'segundo' : 'segundos'}. No se perdió lo que ya tenías: vuelve a enviar el mensaje. Si se repite, pide a quien administra el cotizador que revise el modelo en Ajustes → Asistente.`,
     504,
   );
 }

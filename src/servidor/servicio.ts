@@ -90,8 +90,10 @@ import {
   aplicarFlete,
   cambioDescuento,
   claveDescuento,
+  conIds,
   descuentoDe,
   limpiarTexto,
+  limpiarTextoLibre,
   marca,
   textoActividad,
   textoCambios,
@@ -99,7 +101,7 @@ import {
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, registrarError, VERSION_OBSOLETA } from './errores';
 import { prepararFeriados } from './feriados-sync';
 import { generarPdf, plantilla, prepararPdf, type DocumentoPdf } from './pdf';
-import { documentoCotizacion, documentoNota } from './documentos';
+import { documentoCotizacion, documentoNota, renumerarHtml, snapshotDe } from './documentos';
 import { configuracionFabrica, fabricaIntegrada } from './integracion-configuracion';
 import { cancelacionDeNota, prepararEnvio, type EnvioPreparado } from './integracion-pedido';
 import { itemsVigentes } from './items-vigentes';
@@ -172,10 +174,10 @@ export class Servicio {
     this.admin = usuario ? !!usuario.admin : true;
   }
 
-  private nueva(): Cotizacion {
+  private nueva(id?: string): Cotizacion {
     const fecha = new Date().toISOString();
     return {
-      id: randomUUID(),
+      id: id ?? randomUUID(),
       numero: null,
       estado: 'borrador',
       cliente: clienteVacio(),
@@ -252,7 +254,9 @@ export class Servicio {
       if (
         previa &&
         previa.precioUnitario === b.precio &&
-        (especial ? previa.producto.modelo === b.nombre : previa.producto.codigo === b.nombre && previa.precioFabrica === b.costo)
+        (especial
+          ? previa.producto.modelo === b.nombre && previa.precioFabrica === b.costo
+          : previa.producto.codigo === b.nombre && previa.precioFabrica === b.costo)
       )
         continue;
       avisos.push(`El precio de ${b.nombre} queda bajo el costo de fábrica (${pesos(b.costo)}).`);
@@ -283,6 +287,9 @@ export class Servicio {
           margenCotizacion: q.margenCotizacion ?? null,
         })
       : montosVacios();
+    // La tarifa del despacho se cotizó para un pedido concreto: si el bulto cambió después, ya no corresponde.
+    if (q.despacho?.huella && huellaBulto(montos.lineas) !== q.despacho.huella)
+      avisos.push('El pedido cambió desde que se cotizó el despacho: vuelve a cotizar el envío.');
     // Un vano justo sobre el inicio de su tramo: la hoja probablemente es del tramo anterior. Se avisa una vez.
     // Las líneas iguales (mismo producto, medidas y tipo) comparten un solo aviso que nombra todos sus ítems.
     const vanos = new Map<string, Linea[]>();
@@ -317,7 +324,8 @@ export class Servicio {
     q.descuento = descuento;
     q.montos = montos;
     q.actualizada = marca(q.actualizada);
-    return { avisos, solicitudes };
+    // Todo ítem que entra o sale de una cotización pasa por aquí: aquí se le da su identidad estable.
+    return { avisos, solicitudes: conIds(solicitudes) };
   }
 
   /** Tramo de ancho inmediatamente menor del mismo modelo y madera; null si no hay o si el producto no es una puerta. */
@@ -437,6 +445,20 @@ export class Servicio {
   private mismoContenido(a: Cotizacion, b: Cotizacion) {
     return (
       this.sinCambios(a, b.solicitudes, b.cliente) &&
+      // El cliente, exacto: `mismoCliente` normaliza tildes y mayúsculas, y así una corrección de la revisión
+      // («Pérez») volvía a «Perez» al editar la emitida.
+      JSON.stringify(a.cliente) === JSON.stringify(b.cliente) &&
+      // Lo que `firma` no compara: una foto, una fábrica o un costo de fábrica de la revisión se perdían en silencio
+      // al aplicar la edición sobre la emitida (auditoría BUG-002). Si difieren, no se reutiliza: se responde 409.
+      a.solicitudes.length === b.solicitudes.length &&
+      a.solicitudes.every((s, i) => {
+        const o = b.solicitudes[i];
+        return (
+          (s.fabrica ?? null) === (o.fabrica ?? null) &&
+          (s.costoFabrica ?? null) === (o.costoFabrica ?? null) &&
+          JSON.stringify(s.referencias ?? []) === JSON.stringify(o.referencias ?? [])
+        );
+      }) &&
       a.descuento === b.descuento &&
       descuentoEsManual(a) === descuentoEsManual(b) &&
       a.flete === b.flete &&
@@ -474,6 +496,7 @@ export class Servicio {
       fechaEmision: null,
       vence: null,
       origen: q.numero,
+      origenId: q.id,
       notas: [],
       creada: fecha,
       actualizada: fecha,
@@ -570,6 +593,25 @@ export class Servicio {
     return avisos;
   }
 
+  /**
+   * Avisos de una recotización silenciosa: tras reimportar el catálogo, cualquier edición recalcula los ítems que
+   * nadie tocó con los precios nuevos. Se comparan contra las líneas previas y se devuelven, para que la persona lo
+   * vea y quede en la actividad (auditoría BUG-012).
+   */
+  private avisosRecotizacion(previa: Montos, actual: Montos, tocados: Set<number>) {
+    const avisos: string[] = [];
+    for (const linea of actual.lineas) {
+      if (linea.indice === null || tocados.has(linea.indice)) continue;
+      const antes = previa.lineas.find((l) => l.indice === linea.indice);
+      if (!antes || antes.producto.codigo !== linea.producto.codigo) continue;
+      if (antes.precioUnitario !== linea.precioUnitario)
+        avisos.push(
+          `El precio unitario de ${linea.producto.codigo} cambió de ${pesos(antes.precioUnitario)} a ${pesos(linea.precioUnitario)} según el catálogo vigente.`,
+        );
+    }
+    return avisos;
+  }
+
   async ejecutar(accion: Accion): Promise<Resultado> {
     switch (accion.tipo) {
       case 'chat':
@@ -595,11 +637,16 @@ export class Servicio {
           const q = u.restaurarBorrador(accion.id, accion.actualizada);
           // Sigue revisando su original solo si esta sigue emitida y sin otra revisión abierta: nunca dos.
           const origen = q.origen;
+          const origenId = q.origenId ?? null;
           q.origen = null;
-          const original = origen != null ? u.porNumero(origen) : null;
+          q.origenId = null;
+          // Por id: el número pudo reasignarse a otra cotización después de eliminar esta revisión (auditoría BUG-025).
+          const original = origenId ? u.obtener(origenId) : origen != null ? u.porNumero(origen) : null;
           const avisos: string[] = [];
-          if (original?.estado === 'emitida' && !u.revisionAbierta(original)) q.origen = origen;
-          else if (origen != null) {
+          if (original?.estado === 'emitida' && !u.revisionAbierta(original)) {
+            q.origen = origen;
+            q.origenId = original.id;
+          } else if (origen != null || origenId != null) {
             const aviso = `La cotización N° ${origen} ${original?.estado === 'emitida' ? 'ya tiene otra revisión en borrador' : 'ya no está vigente'}: este borrador sigue como cotización nueva.`;
             q.historial.push({ rol: 'asistente', texto: aviso });
             u.registrarEvento(q.id, 'desvinculada', this.autor, aviso);
@@ -673,7 +720,11 @@ export class Servicio {
         return this.actualizarFacturacion(accion);
       case 'nueva':
         return this.almacen.transaccion((u) => {
-          const q = this.nueva();
+          if (accion.nuevoId) {
+            const previa = u.obtener(accion.nuevoId);
+            if (previa) return { cotizacion: previa };
+          }
+          const q = this.nueva(accion.nuevoId);
           u.guardar(q);
           return { cotizacion: q };
         });
@@ -710,8 +761,13 @@ export class Servicio {
         return this.agregarPersonalizado(accion);
       case 'duplicar':
         return this.almacen.transaccion((u) => {
+          // Un reintento con el mismo `nuevoId` devuelve la copia ya creada, sin duplicar el borrador.
+          if (accion.nuevoId) {
+            const previa = u.obtener(accion.nuevoId);
+            if (previa) return { cotizacion: previa };
+          }
           const origen = this.obtener(u, accion.id);
-          const q = this.nueva();
+          const q = this.nueva(accion.nuevoId);
           q.solicitudes = structuredClone(origen.solicitudes);
           q.cliente = structuredClone(origen.cliente);
           // El descuento y el flete acordados forman parte de lo que se duplica. Uno automático se recalcula
@@ -792,6 +848,7 @@ export class Servicio {
     const revision = q.numero !== null ? u.revisionAbierta(q) : null;
     if (revision) {
       revision.origen = null;
+      revision.origenId = null;
       revision.historial.push({
         rol: 'asistente',
         texto: `La cotización N° ${q.numero} se anuló. Este borrador sigue disponible como cotización nueva.`,
@@ -992,10 +1049,42 @@ export class Servicio {
     throw new ErrorUsuario(p.pregunta);
   }
 
+  /**
+   * Un cambio que solo toca el costo de fábrica de un especial es interno: no cambia la cotización del cliente ni sus
+   * documentos, así que no abre una revisión y también se puede hacer sobre una aprobada sin notas (auditoría BUG-037).
+   */
+  private soloCostoFabrica(accion: Extract<Accion, { tipo: 'editar' }>) {
+    return (
+      !!accion.items?.length &&
+      accion.items.every(
+        ({ cambios }) => Object.keys(cambios).length === 1 && cambios.costoFabrica !== undefined,
+      ) &&
+      accion.cliente === undefined &&
+      accion.cantidades === undefined &&
+      accion.descuento === undefined &&
+      accion.descuentoAutomatico === undefined &&
+      accion.flete === undefined &&
+      accion.fleteLinea === undefined &&
+      accion.margenCotizacion === undefined &&
+      accion.observaciones === undefined &&
+      accion.despacho === undefined &&
+      accion.tarifaStarken === undefined
+    );
+  }
+
+  private exigirCostoEditable(q: Cotizacion) {
+    const conNotas = q.notas.some((n) => !n.anulada);
+    if (q.estado === 'borrador' || q.estado === 'emitida' || (q.estado === 'aprobada' && !conNotas)) return;
+    // Anulada, reemplazada o aprobada con notas: el mismo mensaje que cualquier otra edición.
+    this.exigirEditable(q);
+  }
+
   private editar(accion: Extract<Accion, { tipo: 'editar' }>) {
     return this.almacen.transaccion((u): Resultado => {
       const q = this.obtener(u, accion.id);
-      this.exigirEditable(q);
+      const soloCosto = this.soloCostoFabrica(accion);
+      if (soloCosto) this.exigirCostoEditable(q);
+      else this.exigirEditable(q);
       this.verificarVersion(q, accion.actualizada);
       // Para saber qué deja fuera de regla esta edición y qué ya lo estaba (ver `rechazarFueraDeRegla`).
       const previa = structuredClone({ ...q, historial: [] });
@@ -1037,8 +1126,8 @@ export class Servicio {
       const observaciones =
         accion.observaciones === undefined
           ? q.observaciones
-          : limpiarTexto(accion.observaciones, 2000);
-      const despacho =
+          : limpiarTextoLibre(accion.observaciones, 2000);
+      let despacho =
         accion.despacho === undefined || (accion.despacho !== null && !Object.keys(accion.despacho).length)
           ? q.despacho
           : accion.despacho === null
@@ -1064,6 +1153,8 @@ export class Servicio {
           throw new ErrorUsuario(
             `El valor de despacho debe ser el de la tarifa elegida sin IVA (${pesos(netoDesdeIva(tarifa.costoTotal))}).`,
           );
+        // Se guarda con la tarifa: si el pedido cambia después, se avisa (auditoría BUG-013).
+        despacho = { ...(despacho ?? { direccion: null, transporte: null }), huella: tarifa.huellaBulto };
       }
       if (
         !tarifa &&
@@ -1082,7 +1173,7 @@ export class Servicio {
         const pendientes = new Set(q.incompletos.map((p) => p.indice));
         const resueltas = recalculada.montos.lineas.filter((l) => l.indice !== null && pendientes.has(l.indice));
         if (!resueltas.length) return { cotizacion: q, ...extra };
-        const destino = this.abrirEdicion(q, u);
+        const destino = soloCosto ? q : this.abrirEdicion(q, u);
         destino.solicitudes = recalculada.solicitudes;
         destino.incompletos = recalculada.incompletos;
         destino.montos = recalculada.montos;
@@ -1100,7 +1191,7 @@ export class Servicio {
         const todos = [...avisos, ...recalculada.avisos];
         return { cotizacion: destino, ...(todos.length ? { avisos: todos } : {}) };
       }
-      const destino = this.abrirEdicion(q, u);
+      const destino = soloCosto ? q : this.abrirEdicion(q, u);
       const antes = structuredClone(destino.solicitudes),
         clienteAntes = destino.cliente;
       destino.solicitudes = solicitudes;
@@ -1123,7 +1214,15 @@ export class Servicio {
       Object.assign(destino, generales);
       const recalculo = this.recalcular(destino);
       destino.solicitudes = recalculo.solicitudes;
-      const todos = [...avisos, ...recalculo.avisos];
+      // Los ítems que esta edición no tocó pueden haber cambiado de precio con el catálogo: se avisa y se registra.
+      // Si la edición cambió la ganancia de toda la cotización, el cambio de precio es el que la persona pidió.
+      const tocados = new Set<number>([
+        ...(accion.cantidades ?? []).map((c) => c.indice),
+        ...(accion.items ?? []).map((c) => c.indice),
+      ]);
+      const avisosCatalogo =
+        accion.margenCotizacion === undefined ? this.avisosRecotizacion(previa.montos, destino.montos, tocados) : [];
+      const todos = [...avisos, ...recalculo.avisos, ...avisosCatalogo];
       const precioTocado = new Set(
         (accion.items ?? [])
           .filter(({ cambios: c }) =>
@@ -1133,6 +1232,7 @@ export class Servicio {
       );
       this.rechazarFueraDeRegla(destino, previa, precioTocado);
       extras.unshift(...cambioDescuento(descuentoAntes, destino));
+      extras.unshift(...avisosCatalogo.map((a) => `Recotizado: ${a}`));
       u.guardar(destino);
       const cambios = this.cambios(antes, destino.solicitudes, clienteAntes, cliente);
       // Los avisos (siguiente medida, precio bajo el costo…) quedan en la actividad: la pantalla los muestra una vez.
@@ -1331,7 +1431,7 @@ export class Servicio {
       u.registrarEvento(q.id, 'aprobada', this.autor, `Aprobada por cliente · N° ${q.numero}`);
       const revision = u.revisionAbierta(q);
       if (revision) {
-        revision.origen = null; revision.actualizada = marca(revision.actualizada); u.guardar(revision);
+        revision.origen = null; revision.origenId = null; revision.actualizada = marca(revision.actualizada); u.guardar(revision);
         const aviso = 'La revisión en borrador quedó como cotización nueva.';
         revision.historial.push({ rol: 'asistente', texto: aviso });
         u.registrarEvento(revision.id, 'desvinculada', this.autor, aviso);
@@ -1793,7 +1893,8 @@ export class Servicio {
           fabrica,
           montos,
           fecha,
-          autor: this.autor,
+          // «Aprobada por» es quien aprobó, no quien genera la nota (auditoría BUG-017).
+          autor: copia.aprobadaPor ?? this.autor,
           despacho,
           reglas: copia.reglas,
           observaciones: copia.observaciones,
@@ -1864,10 +1965,16 @@ export class Servicio {
    */
   private async prepararEnvios(q: Cotizacion, notas: { nota: NotaPedido; doc: DocumentoPdf }[]): Promise<EnvioPreparado[]> {
     const envios: EnvioPreparado[] = [];
+    const db = this.almacen.baseDatos();
+    const yaEncolada = (fabrica: Fabrica) =>
+      !!db.prepare('SELECT 1 FROM integracion_envios WHERE cotizacion_id = ? AND fabrica = ? LIMIT 1').get(q.id, fabrica);
     for (const { nota, doc } of notas) {
-      if (nota.anulada || !fabricaIntegrada(nota.fabrica) || !configuracionFabrica(nota.fabrica)) continue;
+      if (nota.anulada || !fabricaIntegrada(nota.fabrica)) continue;
+      // La configuración se exige para empezar a enviar; una revisión de un pedido que ya viajó se encola igual y sale
+      // cuando la configuración vuelva (auditoría BUG-021).
+      if (!configuracionFabrica(nota.fabrica) && !yaEncolada(nota.fabrica)) continue;
       try {
-        envios.push(await prepararEnvio(q, nota, { db: this.almacen.baseDatos(), doc }));
+        envios.push(await prepararEnvio(q, nota, { db, doc }));
       } catch (error) {
         registrarError('integracion', `No se preparó el envío de la nota ${numeroNota(nota)} (cotización N° ${q.numero}): ${(error as Error)?.message ?? error}`);
       }
@@ -1984,7 +2091,11 @@ export class Servicio {
       };
       if (accion.documento === 'cotizacion') {
         const archivo = this.almacen.archivoLibre(`cotizacion-${numero}`);
-        const html = await plantilla(renumerada, documentoCotizacion(renumerada), db);
+        // Se parte del documento emitido y solo cambia el número: el resto no puede cambiar (auditoría BUG-016).
+        const emitido = snapshotDe(this.almacen, copia.id, copia.pdf!);
+        const html = emitido
+          ? renumerarHtml(emitido, [{ de: copia.numero!, a: numero }])
+          : await plantilla(renumerada, documentoCotizacion(renumerada), db);
         await generarPdf(this.almacen.directorio, archivo, html);
         nuevos.push({ archivo, html, anterior: copia.pdf!, fabrica: null });
       }
@@ -1993,7 +2104,13 @@ export class Servicio {
         const base = nota.fabrica ? `nota-pedido-${nota.fabrica}-${nota.numero}` : `nota-pedido-${nota.numero}`;
         const archivoNota = this.almacen.archivoLibre(base);
         const docNota = documentoNota(renumerada, nota);
-        const htmlNota = await plantilla(renumerada, docNota, db);
+        const original = copia.notas.find((n) => n.pdf === nota.pdf);
+        const emitida = original ? snapshotDe(this.almacen, copia.id, original.pdf) : null;
+        const cambios = [
+          ...(original && original.numero !== nota.numero ? [{ de: original.numero, a: nota.numero }] : []),
+          ...(accion.documento === 'cotizacion' && copia.numero !== numero ? [{ de: copia.numero!, a: numero }] : []),
+        ];
+        const htmlNota = emitida && cambios.length ? renumerarHtml(emitida, cambios) : await plantilla(renumerada, docNota, db);
         await generarPdf(this.almacen.directorio, archivoNota, htmlNota);
         nuevos.push({ archivo: archivoNota, html: htmlNota, anterior: nota.pdf, fabrica: nota.fabrica ?? null });
         docsNota.set(archivoNota, docNota);

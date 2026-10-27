@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useRouter } from 'next/navigation';
 import { Avisos, useAvisos, type TipoAviso } from '../avisos';
 import type { Resultado } from '../contrato';
@@ -11,6 +11,9 @@ import { dejarAvisoAlAbrir, esSilencioso, leerAbierta, mensajeDe, pedirJSON } fr
 
 const sinEfecto = () => {};
 const sinSuscripcion = () => () => {};
+/** Id propuesto para la copia (sin contexto seguro no hay UUID). */
+const idNuevo = () =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined;
 
 /** Pantalla del historial: buscar, filtrar, exportar, abrir o duplicar cotizaciones. */
 export function PantallaHistorial({ email, nombre }: { email: string; nombre: string }) {
@@ -36,6 +39,8 @@ function Listado({
   const router = useRouter();
   const historial = useHistorial(sinEfecto);
   const [duplicando, setDuplicando] = useState<string | null>(null);
+  /** Id de la copia en curso; sobrevive a un reintento para no crear dos borradores (auditoría BUG-047). */
+  const copiaPendiente = useRef<{ origen: string; nuevoId: string } | null>(null);
   // La cotización abierta en el cotizador de esta pestaña (sessionStorage no existe en el servidor).
   const actualId = useSyncExternalStore(sinSuscripcion, leerAbierta, () => null);
   // Al volver, el scroll se restaura cuando el listado ya tiene su largo.
@@ -51,8 +56,19 @@ function Listado({
   async function duplicar(id: string) {
     if (duplicando) return;
     setDuplicando(id);
+    if (copiaPendiente.current?.origen !== id) {
+      const nuevoId = idNuevo();
+      copiaPendiente.current = nuevoId ? { origen: id, nuevoId } : null;
+    }
     try {
-      const d = await pedirJSON<Resultado>('/api/accion', { json: { tipo: 'duplicar', id } });
+      const d = await pedirJSON<Resultado>('/api/accion', {
+        json: {
+          tipo: 'duplicar',
+          id,
+          ...(copiaPendiente.current ? { nuevoId: copiaPendiente.current.nuevoId } : {}),
+        },
+      });
+      copiaPendiente.current = null;
       // Lo que cambió al copiar (p. ej. el descuento recortado al máximo vigente) se avisa al abrir la copia.
       if (d.avisos?.length) dejarAvisoAlAbrir(d.cotizacion.id, d.avisos.join(' '));
       antesDeNavegar();

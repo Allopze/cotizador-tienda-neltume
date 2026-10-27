@@ -22,6 +22,23 @@ afterEach(async () => {
   for (const dir of directorios.splice(0)) await rm(dir, { recursive: true, force: true });
 });
 
+/** El id de cada ítem y el del origen los asigna la base al guardar (v29): no vienen en el JSON. */
+const sinIds = (estado: Estado): Estado => ({
+  ...estado,
+  cotizaciones: estado.cotizaciones.map((cotizacion) => {
+    const q = { ...cotizacion };
+    delete q.origenId;
+    return {
+      ...q,
+      solicitudes: q.solicitudes.map((solicitud) => {
+        const s = { ...solicitud };
+        delete s.id;
+        return s;
+      }),
+    };
+  }),
+});
+
 const producto = (overrides: Partial<Producto> = {}): Producto => ({
   codigo: 'MOL-O-3-A',
   modelo: 'MOLCO',
@@ -117,7 +134,13 @@ describe('Persistencia SQLite', () => {
     });
     expect(resultado.yaMigrada).toBe(false);
     // La nota única de entonces queda como la lista `notas` (ver `notasDesdeNota`).
-    expect(await new Almacen(dir, rutaDb).leer()).toEqual(estadoPersistidoSchema.parse(completarEstadoLegado(estado)));
+    const leido = await new Almacen(dir, rutaDb).leer();
+    expect(sinIds(leido)).toEqual(sinIds(estadoPersistidoSchema.parse(completarEstadoLegado(estado))));
+    // v29: cada ítem guardado conserva una identidad estable y propia.
+    const ids = leido.cotizaciones.flatMap((q) => q.solicitudes.map((s) => s.id));
+    expect(ids.length).toBeGreaterThan(0);
+    expect(ids.every(Boolean)).toBe(true);
+    expect(new Set(ids).size).toBe(ids.length);
     const db = abrirBaseDatos(rutaDb);
     expect(new RepositorioCatalogoSqlite(db).todos()).toEqual(catalogo.productos);
     expect(db.pragma('integrity_check', { simple: true })).toBe('ok');
@@ -138,8 +161,10 @@ describe('Persistencia SQLite', () => {
       directorioRespaldo: backup,
     });
     expect(repetida.yaMigrada).toBe(true);
-    // La nota única de entonces queda como la lista `notas` (ver `notasDesdeNota`).
-    expect(await new Almacen(dir, rutaDb).leer()).toEqual(estadoPersistidoSchema.parse(completarEstadoLegado(estado)));
+    // La nota única de entonces queda como la lista `notas` (ver `notasDesdeNota`); los ids ya guardados se conservan.
+    expect(sinIds(await new Almacen(dir, rutaDb).leer())).toEqual(
+      sinIds(estadoPersistidoSchema.parse(completarEstadoLegado(estado))),
+    );
   });
 
   it('migra un catálogo con «HUILO HUILO» y una fecha sin milisegundos: la verificación compara como se guarda', async () => {

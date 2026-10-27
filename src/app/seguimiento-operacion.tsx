@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   anticipoMinimo,
   etapaProduccion,
@@ -29,6 +29,23 @@ import { useRepartoFabricas, useRetroceso, type LineaReparto } from './dialogos-
 import { fechaCorta, fechaLarga, nombreProducto, numeroCotizacion } from './formato';
 import { LineaPasos } from './linea-pasos';
 import { SelectorDesplegable } from './selector-desplegable';
+import { pedirJSON } from './solicitud';
+
+/** Envío de una nota a la fábrica; solo lo necesario para mostrar si llegó (auditoría BUG-004). */
+interface EnvioFabrica {
+  fabrica: string;
+  revision: number;
+  estado: 'pendiente' | 'entregado' | 'fallido' | 'reemplazado';
+  ultimo_error: string | null;
+}
+
+/** Texto del indicador de envío; null si no hay nada que decir (una revisión reemplazada no se muestra). */
+function textoEnvio(envio: EnvioFabrica): string | null {
+  if (envio.estado === 'entregado') return 'Enviada a fábrica';
+  if (envio.estado === 'fallido') return 'No llegó a la fábrica';
+  if (envio.estado === 'pendiente') return 'Pendiente de envío';
+  return null;
+}
 
 interface Props {
   actual: Cotizacion;
@@ -63,6 +80,25 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   const operacionActual = operacionDe(actual);
   const notas = actual.notas;
   const vigentes = notas.filter((n) => !n.anulada);
+  // El estado de la bandeja no viene en la cotización: se consulta aparte y se refresca con cada versión.
+  const [envios, setEnvios] = useState<EnvioFabrica[]>([]);
+  const version = actual.actualizada;
+  const id = actual.id;
+  useEffect(() => {
+    if (!vigentes.length) return;
+    const control = new AbortController();
+    pedirJSON<{ envios: EnvioFabrica[] }>(
+      `/api/integracion/envios?cotizacion=${encodeURIComponent(id)}`,
+      { signal: control.signal, cache: 'no-store' },
+    ).then(
+      (datos) => setEnvios(datos.envios),
+      () => undefined,
+    );
+    return () => control.abort();
+  }, [id, version, vigentes.length]);
+  /** Último envío de la fábrica de la nota (varios envíos = revisiones). */
+  const envioDe = (fabrica: NotaPedido['fabrica']) =>
+    envios.find((e) => e.fabrica === fabrica);
   /** Con varias fábricas, cada paso de producción dice en cuál; con una sola, se nombra como siempre. */
   const variasFabricas = vigentes.length > 1;
   const estadoComercial = actual.estadoComercial ?? (estado === 'emitida' ? 'enviada' : 'pendiente');
@@ -357,6 +393,8 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             <ul>
               {notas.map((n) => {
                 const paso = produciendo && variasFabricas && !n.anulada ? pasoProduccion(n) : null;
+                const envio = n.anulada ? undefined : envioDe(n.fabrica);
+                const texto = envio ? textoEnvio(envio) : null;
                 return (
                   <li key={n.pdf}>
                     <span className="workflow-nota">
@@ -368,6 +406,14 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
                     <span className={`status${n.anulada ? ' anulada' : ''}`}>
                       {n.anulada ? 'Anulada' : etiquetaEtapa[etapaProduccion(n)]}
                     </span>
+                    {texto && (
+                      <span
+                        className={`status${envio!.estado === 'fallido' ? ' anulada' : ''}`}
+                        title={envio!.estado === 'fallido' ? (envio!.ultimo_error ?? undefined) : undefined}
+                      >
+                        {texto}
+                      </span>
+                    )}
                     {paso && (
                       <button type="button" className="button secondary small" disabled={ocupado} onClick={paso.accion}>
                         {paso.etiqueta}

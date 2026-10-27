@@ -1,5 +1,7 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { copyFileSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import type { Fabrica } from '../negocio/estado';
 import { claveIdempotencia, type CancelacionFabrica, type EventoIntegracion, type PedidoFabrica } from './integracion-contrato';
 import type { AdjuntoFabrica, EnvioPreparado } from './integracion-pedido';
@@ -47,6 +49,8 @@ export interface FilaEnvio {
   clave_idempotencia: string;
   contenido: string;
   html_produccion: string | null;
+  /** sha256 del PDF de la orden de trabajo que se generó para este envío; se verifica antes de reutilizarlo. */
+  sha_produccion: string | null;
   estado: EstadoEnvio;
   intentos: number;
   proximo_intento: string;
@@ -59,10 +63,39 @@ export interface FilaEnvio {
 }
 
 /**
+ * Copia el PDF comercial a `integracion/pdf` al encolar, con un nombre propio del envío. Así un reintento manda los
+ * mismos bytes aunque el documento se regenere entretanto (auditoría BUG-044). Si no se puede copiar, se usa el
+ * original: la nota no falla por esto.
+ */
+function congelarComercial(
+  directorio: string | undefined,
+  archivo: string,
+  fabrica: Fabrica,
+  pedido: { orderNumber: string },
+  eventoId: string,
+) {
+  if (!directorio) return archivo;
+  const destino = `nota-comercial-${fabrica}-${pedido.orderNumber}-${eventoId}.pdf`;
+  try {
+    const carpeta = join(directorio, 'integracion', 'pdf');
+    mkdirSync(carpeta, { recursive: true });
+    copyFileSync(join(directorio, 'pdf', archivo), join(carpeta, destino));
+    return destino;
+  } catch {
+    return archivo;
+  }
+}
+
+/**
  * Inserta el evento dentro de la transacción en curso (la llama `Unidad.confirmar`). Devuelve el id, o null si no
  * correspondía encolarlo: una anulación o un cambio de número de un pedido que nunca se encoló.
  */
-export function encolarEnTransaccion(db: Database.Database, item: Encolable, ahora = new Date()): number | null {
+export function encolarEnTransaccion(
+  db: Database.Database,
+  item: Encolable,
+  ahora = new Date(),
+  directorio?: string,
+): number | null {
   const fabrica = item.tipo === 'pedido' ? item.envio.fabrica : item.fabrica;
   const yaEncolado = !!db
     .prepare('SELECT 1 FROM integracion_envios WHERE cotizacion_id = ? AND fabrica = ? LIMIT 1')
@@ -81,6 +114,9 @@ export function encolarEnTransaccion(db: Database.Database, item: Encolable, aho
   ).run(`Reemplazado por la revisión ${revision} antes de salir.`, item.cotizacionId, fabrica, iso);
   let contenido: ContenidoEnvio;
   let html: string | null = null;
+  // El id del evento identifica también la orden de trabajo: nunca se reutiliza el PDF de otro envío, aunque dos
+  // pedidos compartan número de nota o revisión (auditoría BUG-003).
+  const eventoId = randomUUID();
   if (item.tipo === 'pedido') {
     const { pedido, archivoComercial, htmlProduccion, adjuntos } = item.envio;
     const base = `nota-pedido-${fabrica}-${pedido.orderNumber}`;
@@ -88,9 +124,12 @@ export function encolarEnTransaccion(db: Database.Database, item: Encolable, aho
       issuedAt: iso,
       order: pedido,
       documents: {
-        commercial: { archivo: archivoComercial, filename: `${base}-comercial.pdf` },
-        // Cada revisión imprime su propia orden de trabajo: un PDF ya generado nunca se sobrescribe.
-        production: { archivo: `orden-trabajo-${fabrica}-${pedido.orderNumber}-r${revision}.pdf`, filename: `${base}-produccion.pdf` },
+        commercial: {
+          archivo: congelarComercial(directorio, archivoComercial, fabrica, pedido, eventoId),
+          filename: `${base}-comercial.pdf`,
+        },
+        // Cada envío imprime su propia orden de trabajo: un PDF ya generado nunca se sobrescribe.
+        production: { archivo: `orden-trabajo-${fabrica}-${eventoId}.pdf`, filename: `${base}-produccion.pdf` },
       },
       attachments: adjuntos,
     };
@@ -107,7 +146,7 @@ export function encolarEnTransaccion(db: Database.Database, item: Encolable, aho
       fabrica,
       revision,
       item.tipo === 'pedido' ? 'order.ready' : 'order.cancelled',
-      randomUUID(),
+      eventoId,
       claveIdempotencia(item.cotizacionId, fabrica, revision),
       JSON.stringify(contenido),
       html,
@@ -134,7 +173,8 @@ export function reclamarEnvios(
          AND e.fabrica IN (${fabricas.map(() => '?').join(', ')})
          AND NOT EXISTS (
            SELECT 1 FROM integracion_envios a
-           WHERE a.cotizacion_id = e.cotizacion_id AND a.fabrica = e.fabrica AND a.revision < e.revision AND a.estado = 'pendiente'
+           WHERE a.cotizacion_id = e.cotizacion_id AND a.fabrica = e.fabrica AND a.revision < e.revision
+             AND a.estado = 'pendiente' AND a.evento = 'order.ready' AND e.evento = 'order.ready'
          )
        ORDER BY e.id LIMIT ?`,
     )
@@ -223,6 +263,31 @@ export function resumenBandeja(db: Database.Database): ResumenBandeja {
     pendienteMasAntiguo: fila.antiguo,
     ultimoError: fila.error,
   };
+}
+
+export interface EnvioResumen {
+  id: number;
+  fabrica: Fabrica;
+  revision: number;
+  evento: EventoIntegracion;
+  estado: EstadoEnvio;
+  intentos: number;
+  ultimo_error: string | null;
+  creado: string;
+  entregado: string | null;
+}
+
+/**
+ * Envíos de una cotización, del más nuevo al más antiguo: la pantalla muestra si la nota llegó a la fábrica
+ * (auditoría BUG-004). No incluye el contenido del pedido.
+ */
+export function enviosDeCotizacion(db: Database.Database, cotizacionId: string): EnvioResumen[] {
+  return db
+    .prepare(
+      `SELECT id, fabrica, revision, evento, estado, intentos, ultimo_error, creado, entregado
+       FROM integracion_envios WHERE cotizacion_id = ? ORDER BY revision DESC, id DESC`,
+    )
+    .all(cotizacionId) as EnvioResumen[];
 }
 
 /** Los últimos envíos, para `npm run integracion`; sin el contenido del pedido. */

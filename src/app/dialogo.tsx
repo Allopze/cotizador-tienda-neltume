@@ -47,7 +47,12 @@ function DialogoAbierto({
     return () => {
       if (d.open) d.close();
       if (!document.querySelector('dialog[open]')) document.documentElement.classList.remove('con-dialogo');
-      if (previo?.isConnected) previo.focus({ preventScroll: true });
+      // Si el disparador desapareció (emitir, aprobar, pagar), el foco vuelve al título de la cotización en vez de
+      // perderse en el body (auditoría BUG-033).
+      const destino = previo?.isConnected
+        ? previo
+        : (document.getElementById('cotizacion-titulo') as HTMLElement | null);
+      destino?.focus({ preventScroll: true });
     };
   }, [focoInicial]);
   return (

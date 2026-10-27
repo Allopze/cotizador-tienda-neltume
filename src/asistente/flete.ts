@@ -1,6 +1,6 @@
 import { cantidadFlete, unitarioFlete, type Cotizacion } from '../negocio/estado';
 import { fleteValido, pesos } from '../negocio/precios';
-import { cifrasDelTexto } from './anclaje';
+import { cifrasDelTexto, sinTildes } from './anclaje';
 import type { FleteChat } from './esquemas';
 import { MONTO_BAJO, montoEscrito } from './montos';
 
@@ -21,7 +21,13 @@ export function fleteDelChat(
   { textos, iva }: { textos: string[] | null; iva: number },
 ): { linea: LineaFlete | null; avisos: string[] } {
   if (pedido === undefined) return { linea: null, avisos: [] };
-  if (pedido === null) return { linea: { flete: 0, fleteCantidad: 1, fleteDescripcion: null }, avisos: [] };
+  // Quitar el flete (null) solo si el mensaje habla de él: un null que la IA puso de más no lo borra
+  // (auditoría BUG-026).
+  if (pedido === null) {
+    if (textos && !/\bfletes?\b|\bdespach|\benv[ií]o\b/.test(sinTildes(textos.join('\n'))))
+      return { linea: null, avisos: ['No quité el flete: tu mensaje no habla de él.'] };
+    return { linea: { flete: 0, fleteCantidad: 1, fleteDescripcion: null }, avisos: [] };
+  }
   const avisos: string[] = [];
   const existe = actual.flete > 0;
   let unitario: number;
@@ -36,10 +42,25 @@ export function fleteDelChat(
             : `No apliqué el flete: su valor no aparece escrito en el mensaje. Escríbelo, por ejemplo «flete a Chillán $380.000 + IVA».`,
         ],
       };
-    unitario = Math.round(pedido.iva === 'incluido' ? leido.valor / (1 + iva) : leido.valor);
+    // «+ IVA» es neto y «IVA incluido» lo trae dentro: si el modelo dijo lo contrario, manda el texto
+    // (auditoría BUG-028).
+    let ivaDicho = pedido.iva;
+    if (textos) {
+      const escrito = sinTildes(textos.join('\n'));
+      const incluido = /\biva\s+incluido\b|\bcon\s+iva\b|\bincluye\s+iva\b/.test(escrito);
+      const neto = /\+\s*iva\b|\bmas\s+iva\b|\bneto\b/.test(escrito);
+      if (ivaDicho === 'incluido' && neto && !incluido) {
+        ivaDicho = 'neto';
+        avisos.push('Escribiste «+ IVA» en el flete: lo tomé como valor neto.');
+      } else if (ivaDicho === 'neto' && incluido) {
+        ivaDicho = 'incluido';
+        avisos.push('Escribiste «IVA incluido» en el flete: lo tomé con el IVA dentro.');
+      }
+    }
+    unitario = Math.round(ivaDicho === 'incluido' ? leido.valor / (1 + iva) : leido.valor);
     if (unitario < MONTO_BAJO)
       avisos.push(`El flete quedó en ${pesos(unitario)}: revisa si le faltan ceros.`);
-    if (pedido.iva === null)
+    if (ivaDicho === null)
       avisos.push(
         `Tomé ${pesos(unitario)} como valor del flete sin IVA. Si lo incluía, escribe «con IVA incluido».`,
       );

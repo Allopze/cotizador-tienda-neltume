@@ -24,6 +24,7 @@ export function ConexionFabrica() {
   const [actualizando, setActualizando] = useState(false);
   const [ultima, setUltima] = useState<Record<string, RespuestaPrueba['prueba']>>({});
   const [errorEnvio, setErrorEnvio] = useState('');
+  const [listaActualizada, setListaActualizada] = useState(false);
 
   const recibir = useCallback((e: EstadoConexion) => {
     setEstado(e);
@@ -41,8 +42,11 @@ export function ConexionFabrica() {
 
   async function actualizar() {
     setActualizando(true);
+    setListaActualizada(false);
     await pedirJSON<EstadoConexion>('/api/ajustes/conexion', { cache: 'no-store' }).then(recibir, fallar);
     setActualizando(false);
+    // «Actualizar lista» no daba ninguna señal de haber actualizado (auditoría BUG-065).
+    setListaActualizada(true);
   }
 
   async function enviar(f: FabricaConexion) {
@@ -75,6 +79,11 @@ export function ConexionFabrica() {
         al instante. La fábrica tiene el mismo botón en sus Ajustes; lo que ella envíe aparece abajo como «Recibida de la
         fábrica», con el mismo código de prueba que lleva el PDF. Una prueba no crea pedidos ni cotizaciones.
       </p>
+      {listaActualizada && (
+        <p className="notice" role="status">
+          Lista actualizada.
+        </p>
+      )}
       {error && (
         <p className="catalog-error" role="alert">
           {error}
@@ -99,7 +108,7 @@ export function ConexionFabrica() {
               </div>
             </dl>
             {f.configuracion.falta && (
-              <p className="catalog-error" role="status">
+              <p className="catalog-error" role="status" id={`conexion-falta-${f.fabrica}`}>
                 {f.configuracion.falta}
               </p>
             )}
@@ -113,6 +122,10 @@ export function ConexionFabrica() {
                 onClick={() => void enviar(f)}
                 disabled={!f.configuracion.completa || !!enviando}
                 aria-busy={enviando === f.fabrica}
+                // El botón deshabilitado explica por qué (auditoría BUG-065).
+                aria-describedby={
+                  !f.configuracion.completa && f.configuracion.falta ? `conexion-falta-${f.fabrica}` : undefined
+                }
               >
                 {enviando === f.fabrica ? 'Enviando…' : 'Enviar PDF de prueba a la fábrica'}
               </button>

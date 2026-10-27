@@ -69,6 +69,10 @@ export default defineConfig({
       // Starken simulado (src/servidor/starken-fijo.ts): sin red ni credenciales reales.
       NELTUME_STARKEN: 'fijo',
       NELTUME_FERIADOS_SYNC: '0',
+      // La integración con la fábrica queda apagada: `next dev` carga `.env.local` y, sin esto, cada corrida
+      // enviaría pedidos de prueba a la URL configurada (auditoría BUG-022).
+      NELTUME_FABRICA_PANGUIPULLI_URL: '',
+      NELTUME_FABRICA_PANGUIPULLI_SECRETO: '',
       NELTUME_DATA_DIR: dataE2E,
       NELTUME_DB_PATH: dbE2E,
       BETTER_AUTH_SECRET: 'playwright-secret-neltume-0123456789abcdef',

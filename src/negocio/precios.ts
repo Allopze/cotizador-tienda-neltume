@@ -12,6 +12,14 @@ import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, MARGEN_MIN, precioEnRango } from '.
  * 3. neto = subtotal − descuento + flete (el flete ya es neto entero); IVA = round(neto × iva).
  * La nota de pedido usa ajuste 0, sin descuento ni flete.
  */
+
+/**
+ * Precio unitario con un margen (fracción), en pesos enteros. Se calcula en diezmilésimas enteras para que el medio
+ * peso no caiga hacia abajo por la coma flotante (10.990 × 1,15 = 12.638,4999… daba 12.638 y no 12.639) — auditoría
+ * BUG-034. La misma fórmula se usa en `items-vigentes.ts`.
+ */
+export const precioConMargen = (precioNeto: number, margen: number) =>
+  Math.round((precioNeto * (10000 + Math.round(margen * 10000))) / 10000);
 export interface ReglasComerciales {
   /** Ajuste usado por instalaciones antiguas y para categorías todavía sin regla específica. */
   ajuste: number;
@@ -98,6 +106,8 @@ export interface ItemPrecio extends MedidasSolicitadas {
   cantidad: number;
   precioUnitario?: number | null;
   margen?: number | null;
+  /** Costo de fábrica cuando no es el del producto (un pedido especial): la línea y la nota lo usan. */
+  precioFabrica?: number | null;
   tipoMedida?: 'hoja' | 'vano' | 'no_especificado' | null;
   observaciones?: string | null;
   /** Texto escrito por la persona para los documentos; no cambia el producto ni su categoría de margen. */
@@ -230,7 +240,7 @@ export function cotizar(
       throw new ErrorPrecio('precio_invalido');
     if (!Number.isFinite(margenCalculado) || margenCalculado < MARGEN_MIN || margenCalculado > MARGEN_MAX || (margenManual !== null && !margenValido(margenManual)))
       throw new ErrorPrecio('margen_invalido');
-    const precioUnitario = precioUnitarioPersonalizado ?? Math.round(producto.precioNeto * (1 + margenCalculado));
+    const precioUnitario = precioUnitarioPersonalizado ?? precioConMargen(producto.precioNeto, margenCalculado);
     const margen = precioUnitarioPersonalizado === null ? margenCalculado : precioUnitario / producto.precioNeto - 1;
     // El margen calculado ya se validó arriba; un precio escrito debe caer en el rango que deja ese margen.
     if (precioUnitarioPersonalizado !== null && !precioEnRango(precioUnitarioPersonalizado, producto.precioNeto))
@@ -242,7 +252,7 @@ export function cotizar(
       producto,
       cantidad,
       precioUnitario,
-      precioFabrica: producto.precioNeto,
+      precioFabrica: item.precioFabrica ?? producto.precioNeto,
       margen,
       precioCliente: precioUnitario,
       margenPersonalizado: item.margen !== null && item.margen !== undefined,

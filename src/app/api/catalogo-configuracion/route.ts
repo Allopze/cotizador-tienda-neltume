@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { exigirSesion } from '@/servidor/acceso-autenticado';
 import { cargarCatalogo } from '@/servidor/catalogo';
@@ -18,12 +19,23 @@ const configuracionSchema = z
   .strict();
 const sinCache = { 'Cache-Control': 'no-store' };
 
+/** Huella del documento: dos personas guardando a la vez ya no se pisan (auditoría BUG-023). */
+const versionDe = (configuracion: unknown) =>
+  createHash('sha256').update(JSON.stringify(configuracion)).digest('hex');
+
 export async function GET(req: Request) {
   const sesion = await exigirSesion(req);
   if (!sesion.ok) return sesion.respuesta;
   try {
     const catalogo = await cargarCatalogo();
-    return Response.json({ configuracion: catalogo.configuracion, puedeEditar: sesion.usuario.rol === 'admin' }, { headers: sinCache });
+    return Response.json(
+      {
+        configuracion: catalogo.configuracion,
+        version: versionDe(catalogo.configuracion),
+        puedeEditar: sesion.usuario.rol === 'admin',
+      },
+      { headers: sinCache },
+    );
   } catch {
     return Response.json({ error: 'No se pudo leer la configuración del catálogo.' }, { status: 500 });
   }
@@ -39,7 +51,20 @@ export async function POST(req: Request) {
     return Response.json({ error: parsed.error.issues[0]?.message ?? 'Configuración inválida.' }, { status: 400, headers: sinCache });
   try {
     const catalogo = await cargarCatalogo();
-    return Response.json({ configuracion: catalogo.guardarConfiguracion(parsed.data), puedeEditar: true }, { headers: sinCache });
+    const esperada = req.headers.get('if-match');
+    if (esperada && esperada !== versionDe(catalogo.configuracion))
+      return Response.json(
+        {
+          error: 'Otra persona guardó el catálogo antes que tú. Recarga y vuelve a aplicar tus cambios.',
+          codigo: 'version_obsoleta',
+        },
+        { status: 409, headers: sinCache },
+      );
+    const guardada = catalogo.guardarConfiguracion(parsed.data);
+    return Response.json(
+      { configuracion: guardada, version: versionDe(guardada), puedeEditar: true },
+      { headers: sinCache },
+    );
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'No se pudo guardar la configuración.' }, { status: 400, headers: sinCache });
   }

@@ -73,6 +73,21 @@ async function main() {
         return true;
       },
     });
+  // Órdenes de trabajo y copias congeladas de la integración con la fábrica: la bandeja las nombra y la restauración
+  // las necesita para no dejar envíos apuntando a archivos perdidos (auditoría BUG-003).
+  const integracion = join(directorioDatos(), 'integracion');
+  let integracionArchivos = 0;
+  if (await existe(integracion))
+    await cp(integracion, join(carpeta, 'integracion'), {
+      recursive: true,
+      preserveTimestamps: true,
+      filter: (origen) => {
+        if (origen === integracion) return true;
+        if (basename(origen).startsWith('.')) return false;
+        integracionArchivos++;
+        return true;
+      },
+    });
   const config = resolve(process.env.NELTUME_CATALOGO_CONFIG ?? 'config/catalogo.json');
   if (await existe(config)) await copyFile(config, join(carpeta, basename(config)));
 
@@ -82,8 +97,8 @@ async function main() {
 
   console.log(
     json
-      ? JSON.stringify({ carpeta, cotizaciones, pdf: documentos, referencias: archivosReferencia })
-      : `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF, ${archivosReferencia} referencias del cliente.`,
+      ? JSON.stringify({ carpeta, cotizaciones, pdf: documentos, referencias: archivosReferencia, integracion: integracionArchivos })
+      : `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF, ${archivosReferencia} referencias del cliente, ${integracionArchivos} archivos de integración.`,
   );
 }
 

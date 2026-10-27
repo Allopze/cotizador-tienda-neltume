@@ -7,7 +7,7 @@ import { MAX_OPCIONES } from '../asistente/preguntas';
 import type { ModificacionCotizacion } from '../asistente/esquemas';
 import { fleteDelChat } from '../asistente/flete';
 import { salidaSchema } from '../asistente/esquemas';
-import { contextoSeguro, type LLM } from '../asistente/llm';
+import { contextoSeguro, TURNOS_HISTORIAL, type LLM } from '../asistente/llm';
 import {
   anclarCifras,
   anclarFrases,
@@ -27,6 +27,7 @@ import {
   montoTotal,
   montosDelTexto,
   porcentajeEscrito,
+  porcentajesDelTexto,
   textosSinPorcentajes,
 } from '../asistente/montos';
 import { fleteAlFinal, pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
@@ -52,6 +53,7 @@ import {
 import type { Cliente, DescuentoItem, Familia, Producto, SolicitudItem } from '../catalogo/tipos';
 import { sanearCliente } from '../negocio/cliente';
 import {
+  FABRICAS,
   numeroNota,
   cantidadFlete,
   descripcionFlete,
@@ -129,8 +131,11 @@ const PEDIDO_SIN_REGISTRAR =
 const AYUDA_ESPECIAL =
   'Si es un pedido especial, escribe su precio (por ejemplo «la de 1,90 a $450.000 + IVA») o usa «Cotizar como especial» en el detalle.';
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
-const TEXTO_MONETARIO =
-  /\$\s*\d|\d[\d.,]*\s*(?:CLP|USD|pesos|%)|\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i;
+// Se leen igual que el anclaje: «450 mil», «450 lucas», «Precio: 450.000 + IVA» y «20 %» (auditoría BUG-030).
+const textoMonetario = (texto: string) =>
+  montosDelTexto(texto).length > 0 ||
+  porcentajesDelTexto(texto).length > 0 ||
+  /\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i.test(texto);
 /** El mensaje habla del descuento de un producto («sin descuento», «descuéntale», «rebaja»), ya sin tildes. */
 const HABLA_DE_DESCUENTO = /\b(?:descuent|descont|rebaj)/;
 const SOLICITUD_APROBACION =
@@ -146,25 +151,29 @@ const NO_EDITABLE_APROBADA =
   'La cotización está aprobada y no se puede editar. Por chat puedes repartir sus ítems entre las fábricas (antes de generar las notas de pedido) o cambiar su número o el de sus notas.';
 const PREGUNTA_FABRICA =
   '¿A qué fábrica va cada ítem? Dímelo, por ejemplo: «las Molco a Panguipulli y las Coz Coz a Santiago».';
-/** Cómo se nombra cada fábrica en un mensaje (ya sin tildes ni mayúsculas). */
-const NOMBRES_FABRICA: Record<Fabrica, RegExp> = {
-  panguipulli: /\bpangui(?:pulli)?\b/,
-  santiago: /\b(?:santiago|stgo)\b/,
-};
-/** ¿Alguno de los textos de la persona nombra la fábrica? Sin eso, la IA la habría deducido: no se asigna. */
-const fabricaEscrita = (fabrica: Fabrica, textos: string[]) => textos.some((t) => NOMBRES_FABRICA[fabrica].test(sinTildes(t)));
 /**
- * La fábrica dicha como tal («para la fábrica de Panguipulli», «las hace la fábrica de Santiago»). Sueltos,
- * Panguipulli y Santiago también son un modelo, una comuna o un despacho.
+ * La fábrica dicha como tal: «fábrica de Panguipulli», «van a Santiago», «para Panguipulli», «las hace Santiago»,
+ * «las Molco a Panguipulli». Sueltos, Panguipulli y Santiago también son un modelo, una comuna o un despacho: «a
+ * Santiago» no vale cuando es el destino o el cliente (auditoría BUG-027).
  */
-const FABRICA_DICHA = /\bfabricas?\s+(?:de\s+)?(pangui(?:pulli)?|santiago|stgo)\b/g;
+const fabricaDicha = (nombre: string) =>
+  new RegExp(
+    `\\b(?:fabricas?|taller)\\s+(?:de\\s+)?${nombre}\\b` +
+      `|\\b(?:van|va|vamos|manda(?:r|mos)?|lleva(?:r|mos)?|hace|hacen|para)\\s+(?:la\\s+)?(?:f[aá]brica\\s+(?:de\\s+)?)?${nombre}\\b` +
+      `|\\b(?<!despacho )(?<!envio )(?<!entrega )(?<!destino )(?<!comuna )(?<!cliente )(?<!de )a\\s+(?:la\\s+)?(?:f[aá]brica\\s+(?:de\\s+)?)?${nombre}\\b`,
+  );
+const FABRICA_DICHA: Record<Fabrica, RegExp> = {
+  panguipulli: fabricaDicha('pangui(?:pulli)?'),
+  santiago: fabricaDicha('(?:santiago|stgo)'),
+};
+/** ¿Alguno de los textos de la persona nombra la fábrica como tal? Sin eso, la IA la habría deducido: no se asigna. */
+const fabricaEscrita = (fabrica: Fabrica, textos: string[]) =>
+  textos.some((t) => FABRICA_DICHA[fabrica].test(sinTildes(t)));
 /** Fábricas que el mensaje nombra como tales y la respuesta de la IA no asigna a ningún ítem. */
 function fabricasSinAsignar(mensaje: string, input: ModificacionCotizacion): Fabrica[] {
-  const dichas = new Set(
-    [...sinTildes(mensaje).matchAll(FABRICA_DICHA)].map((m): Fabrica => (m[1].startsWith('pangui') ? 'panguipulli' : 'santiago')),
-  );
+  const texto = sinTildes(mensaje);
   const asignadas = new Set([...(input.agregar ?? []), ...(input.items ?? []).map((i) => i.cambios)].map((x) => x.fabrica));
-  return [...dichas].filter((f) => !asignadas.has(f));
+  return FABRICAS.filter((f) => FABRICA_DICHA[f].test(texto) && !asignadas.has(f));
 }
 /** Enteros escritos en el mensaje («1.250» es 1250): los números de documento deben salir de ahí. */
 const enterosEscritos = (texto: string) =>
@@ -217,10 +226,22 @@ function fabricasDichas(
 ): { input: ModificacionCotizacion; avisos: string[] } {
   const avisos: string[] = [];
   const revisar = <T extends { fabrica?: Fabrica | null }>(item: T, nombre: string): T => {
+    if (item.fabrica === null) {
+      // Quitar la fábrica solo si el mensaje lo pide (auditoría BUG-026).
+      const pide = /\b(?:sin|quita(?:r|le|las|los)?|saca(?:r|le|las|los)?|elimina(?:r)?)\b[^.\n]*\bfabric/.test(
+        sinTildes(textos.join('\n')),
+      );
+      if (pide) return item;
+      avisos.push(`No quité la fábrica de ${nombre}: el mensaje no lo pide.`);
+      const sinFabrica = { ...item };
+      delete sinFabrica.fabrica;
+      return sinFabrica as T;
+    }
     if (!item.fabrica || fabricaEscrita(item.fabrica, textos)) return item;
     avisos.push(`No asigné fábrica a ${nombre}: el mensaje no dice a cuál va.`);
-    const { fabrica: _fabrica, ...resto } = item;
-    return resto as T;
+    const sinAsignar = { ...item };
+    delete sinAsignar.fabrica;
+    return sinAsignar as T;
   };
   return {
     input: {
@@ -284,7 +305,7 @@ const ORDINALES = new Map(
  * Molco? Opciones: Mara, Lenga.»): el ítem cuenta como si el borrador ya dijera esa opción. Con más de una
  * lista, o una que no se muestra entera, el orden no dice cuál.
  */
-function opcionElegida(mensaje: string, q: Cotizacion): SolicitudItem[] {
+function opcionElegida(mensaje: string, q: Cotizacion): { indice: number; item: SolicitudItem }[] {
   const palabras = sinTildes(mensaje).split(/[^a-zñ]+/).filter(Boolean);
   const orden = palabras.filter((p) => ORDINALES.has(p));
   if (
@@ -308,7 +329,7 @@ function opcionElegida(mensaje: string, q: Cotizacion): SolicitudItem[] {
   if (listas.length !== 1 || (lista.campo !== 'modelo' && lista.campo !== 'madera')) return [];
   const s = q.solicitudes[lista.indice];
   const valor = lista.opciones.length <= MAX_OPCIONES ? lista.opciones.at(ORDINALES.get(orden[0])!) : undefined;
-  return s && valor ? [{ ...s, [lista.campo]: valor }] : [];
+  return s && valor ? [{ indice: lista.indice, item: { ...s, [lista.campo]: valor } }] : [];
 }
 
 /**
@@ -438,11 +459,12 @@ function pedidoSinRegistrar(
   return [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()].some((m) => !enBorrador.has(m));
 }
 
-/** Un ítem que la IA marcó libre lo es si tiene nombre y ese nombre no es (ni se parece a) un modelo del catálogo. */
+/** Un ítem que la IA marcó libre lo es si tiene nombre y ese nombre no es un modelo del catálogo. */
 function esLibreFuera(ctx: ContextoChat, s: SolicitudItem) {
   if (!s.modelo?.trim()) return false;
   const r = resolverItem(ctx.catalogo, { modelo: s.modelo });
-  return !r.ok && (r.rechazo.tipo === 'modelo_desconocido' || r.rechazo.tipo === 'modelo_posible');
+  // «modelo_posible» es un nombre que se parece a uno del catálogo: no es un ítem libre (auditoría BUG-031).
+  return !r.ok && r.rechazo.tipo === 'modelo_desconocido';
 }
 
 /**
@@ -484,28 +506,60 @@ function preciosEscritos(ctx: ContextoChat, items: SolicitudItem[], mensaje: str
       return item;
     }
     const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
-    // Vale la línea completa del mensaje que contiene la frase, por si la IA la cortó antes del precio.
+    // Vale la línea del mensaje que contiene la frase, sin las frases de los otros ítems ni sus medidas: el precio de
+    // otra puerta de la misma línea no respalda este (auditoría BUG-029).
+    const otrasFrases = items
+      .flatMap((o, j) => (j !== i && o.fuente ? [o.fuente.split(' · ').at(-1)!] : []))
+      // Dos ítems de la misma línea comparten la frase: quitarla borraría el texto del propio ítem.
+      .filter((f) => f && f !== frase);
     const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
-    const leido = montoEscrito(precio.valor, textos && lineas.length ? lineas : textos);
+    const donde = textos
+      ? lineas.length
+        ? lineas.map((l) => sinMedidas(sinFrasesAjenas(l, otrasFrases)))
+        : textos.map(sinMedidas)
+      : null;
+    const leido = montoEscrito(precio.valor, donde);
     if (!leido.ok) {
       avisos.push(
         leido.ambiguo
           ? `No apliqué el precio del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «a $450.000 + IVA».`
-          : `No apliqué el precio del ${etiqueta}: no aparece escrito en su línea del pedido.`,
+          : `No apliqué el precio del ${etiqueta}: no aparece escrito como precio en su línea del pedido.`,
+      );
+      return item;
+    }
+    // Un número suelto (una dirección, un código) no es un precio: tiene que llevar «$», «a», «por», «precio»…
+    if (donde && !MARCADOR_PRECIO.test(donde.join(' '))) {
+      avisos.push(
+        `No apliqué el precio del ${etiqueta}: la cifra aparece en el mensaje, pero no como un precio. Escríbelo, por ejemplo «a $450.000».`,
       );
       return item;
     }
     // Un total de varias unidades nunca se toma como el precio de una, lo haya dejado vacío la IA o no.
-    if ((item.cantidad ?? 0) > 1 && montoTotal(leido.valor, lineas.length ? lineas : [mensaje])) {
+    if ((item.cantidad ?? 0) > 1 && montoTotal(leido.valor, donde ?? [mensaje])) {
       avisos.push(`Escribiste un precio total para el ítem ${i + 1}; indica el valor por unidad.`);
       return item;
     }
-    const neto = Math.round(precio.iva === 'incluido' ? leido.valor / (1 + reglas.iva) : leido.valor);
+    // «+ IVA» es neto y «IVA incluido» lo trae dentro: si el modelo dijo lo contrario, manda el texto
+    // (auditoría BUG-028).
+    let ivaDicho = precio.iva;
+    if (textos) {
+      const escrito = sinTildes((lineas.length ? lineas : textos).join('\n'));
+      const incluido = /\biva\s+incluido\b|\bcon\s+iva\b|\bincluye\s+iva\b/.test(escrito);
+      const neto = /\+\s*iva\b|\bmas\s+iva\b|\bneto\b/.test(escrito);
+      if (ivaDicho === 'incluido' && neto && !incluido) {
+        ivaDicho = 'neto';
+        avisos.push(`Escribiste «+ IVA» en el ${etiqueta}: tomé ${pesos(leido.valor)} como precio neto.`);
+      } else if (ivaDicho === 'neto' && incluido) {
+        ivaDicho = 'incluido';
+        avisos.push(`Escribiste «IVA incluido» en el ${etiqueta}: tomé ${pesos(leido.valor)} con el IVA dentro.`);
+      }
+    }
+    const neto = Math.round(ivaDicho === 'incluido' ? leido.valor / (1 + reglas.iva) : leido.valor);
     if (!Number.isSafeInteger(neto) || neto <= 0 || neto > 100_000_000) {
       avisos.push(`No apliqué el precio del ${etiqueta}: debe ser un monto entre $1 y $100.000.000.`);
       return item;
     }
-    if (precio.iva === null)
+    if (ivaDicho === null)
       avisos.push(
         `Tomé ${pesos(neto)} como precio sin IVA del ${etiqueta}. Si lo incluía, escribe «con IVA incluido».`,
       );
@@ -581,11 +635,17 @@ function descuentosEscritos(items: SolicitudItem[], mensaje: string, textos: str
   const resultado = items.map(({ descuentoEscrito: pedido, ...item }, i): SolicitudItem => {
     if (pedido === undefined) return item;
     const etiqueta = `ítem ${i + 1}${item.modelo ? ` (${item.modelo})` : ''}`;
-    // Al editar, la frase del ítem es «pedido original · cambio»: el descuento está en la última parte.
+    // Al editar, la frase del ítem es «pedido original · cambio»: el descuento está en la última parte. Se excluyen
+    // las frases de los otros ítems de la misma línea (auditoría BUG-049).
     const frase = item.fuente?.split(' · ').at(-1) ?? null;
+    const otrasFrases = items
+      .flatMap((o, j) => (j !== i && o.fuente ? [o.fuente.split(' · ').at(-1)!] : []))
+      // Dos ítems de la misma línea comparten la frase: quitarla borraría el texto del propio ítem.
+      .filter((f) => f && f !== frase);
     const lineas = frase ? mensaje.split('\n').filter((l) => fraseDelMensaje(frase, l)) : [];
+    const lineasPropias = lineas.map((l) => sinFrasesAjenas(l, otrasFrases));
     const hablaDeDescuento =
-      !textos || HABLA_DE_DESCUENTO.test(sinTildes(lineas.length ? lineas.join('\n') : mensaje));
+      !textos || HABLA_DE_DESCUENTO.test(sinTildes((lineasPropias.length ? lineasPropias : [mensaje]).join('\n')));
     if (pedido === null || pedido.valor === 0) {
       if (!item.descuento || !hablaDeDescuento) return item;
       cambiados.set(i, item.descuento);
@@ -600,11 +660,20 @@ function descuentosEscritos(items: SolicitudItem[], mensaje: string, textos: str
         );
       return item;
     }
-    const donde = textos && lineas.length ? lineas : textos;
+    const donde = textos && lineasPropias.length ? lineasPropias : textos;
     let descuento: DescuentoItem;
     if (pedido.tipo === 'porcentaje') {
       if (!(pedido.valor > 0 && pedido.valor <= 100)) {
         avisos.push(`No apliqué el descuento del ${etiqueta}: debe ser un porcentaje mayor que 0 % y hasta 100 %.`);
+        return item;
+      }
+      // «descuento de 2 molco» no dice un porcentaje: sin «%» ni «por ciento», un número seguido de una palabra es
+      // ambiguo (auditoría BUG-049).
+      const texto = donde?.join(' ') ?? '';
+      if (texto && !/(?:%|por\s+ciento)/i.test(texto) && /descuento\s+de\s+\d+(?:[.,]\d+)?\s+[a-zñ]/i.test(texto)) {
+        avisos.push(
+          `No apliqué el descuento del ${etiqueta}: no queda claro si ese número es un porcentaje. Escríbelo con «%», por ejemplo «15 % de descuento».`,
+        );
         return item;
       }
       const valor = porcentajeEscrito(pedido.valor, donde);
@@ -621,6 +690,13 @@ function descuentosEscritos(items: SolicitudItem[], mensaje: string, textos: str
           leido.ambiguo
             ? `No apliqué el descuento del ${etiqueta}: «${leido.ambiguo}» no es un monto claro en pesos. Escríbelo completo, por ejemplo «$20.000 de descuento c/u».`
             : `No apliqué el descuento del ${etiqueta}: el monto no aparece escrito en su línea del pedido.`,
+        );
+        return item;
+      }
+      // «$20.000 en total» no es un descuento por unidad: se pide el de cada una (auditoría BUG-049).
+      if ((item.cantidad ?? 0) > 1 && montoTotal(leido.valor, donde ?? [mensaje])) {
+        avisos.push(
+          `Escribiste un descuento total para el ${etiqueta}; indica cuánto descuenta por unidad (por ejemplo «$10.000 c/u»).`,
         );
         return item;
       }
@@ -696,7 +772,83 @@ function pedidosOmitidos(
   return faltan;
 }
 
-function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: ModificacionCotizacion) {
+/**
+ * Texto libre que la IA agregó a un ítem solo vale si está escrito en el mensaje o en su frase: una descripción o una
+ * observación inventada llegaba al PDF del cliente y a la nota de fábrica (auditoría BUG-009).
+ */
+function anclarTextos(items: SolicitudItem[], textos: string[]): { items: SolicitudItem[]; avisos: string[] } {
+  const avisos: string[] = [];
+  const plano = (t: string) => sinTildes(t).toLowerCase().replace(/\s+/g, ' ').trim();
+  const escrito = (valor: string) =>
+    !!plano(valor) && textos.some((t) => plano(t).includes(plano(valor)));
+  const resultado = items.map((item, i) => {
+    const siguiente = { ...item };
+    // Un ítem libre se nombra con su descripción: ahí el nombre es el dato.
+    if (item.libre || esLibre(siguiente)) return siguiente;
+    for (const campo of ['descripcion', 'observaciones'] as const) {
+      const valor = siguiente[campo];
+      if (!valor || escrito(valor)) continue;
+      delete siguiente[campo];
+      avisos.push(
+        `No guardé ${campo === 'descripcion' ? 'la descripción' : 'la observación'} que el asistente agregó al ítem ${i + 1}: no aparece en tu mensaje.`,
+      );
+    }
+    return siguiente;
+  });
+  return { items: resultado, avisos };
+}
+
+/** Los datos del cliente que la IA cambió también deben estar escritos: no se sobrescribe con lo inventado. */
+function anclarCliente(cliente: Partial<Cliente>, textos: string[]): { cliente: Partial<Cliente>; avisos: string[] } {
+  const avisos: string[] = [];
+  const plano = (t: string) => sinTildes(t).toLowerCase().replace(/\s+/g, ' ').trim();
+  const digitos = (t: string) => t.replace(/\D/g, '');
+  const resultado: Partial<Cliente> = { ...cliente };
+  for (const campo of ['nombre', 'rut', 'giro', 'telefono', 'direccion', 'comuna', 'proyecto'] as const) {
+    const valor = resultado[campo];
+    if (valor === undefined || valor === null) continue;
+    const escrito =
+      campo === 'rut' || campo === 'telefono'
+        ? !!digitos(valor) && textos.some((t) => digitos(t).includes(digitos(valor)))
+        : !!plano(valor) && textos.some((t) => plano(t).includes(plano(valor)));
+    if (escrito) continue;
+    delete resultado[campo];
+    avisos.push(`No guardé el dato del cliente que el asistente agregó (${campo}): no aparece en tu mensaje.`);
+  }
+  return { cliente: resultado, avisos };
+}
+
+/**
+ * El índice que propuso la IA tiene que ser el del ítem que nombra el mensaje (auditoría BUG-007): con dos Molco,
+ * editar o quitar «las Coz Coz» por el índice 0 borraba la puerta equivocada.
+ */
+function indiceCoherente(items: SolicitudItem[], indice: number, texto: string): boolean {
+  const s = items[indice];
+  if (!s?.modelo) return true;
+  const plano = normalizar(texto);
+  const modelos = [...new Set(items.map((i) => i.modelo).filter((m): m is string => !!m))];
+  const mencionados = modelos.filter((m) => plano.includes(normalizar(m)));
+  // Sin un modelo en el mensaje no hay con qué confundir el índice que dio la IA.
+  if (!mencionados.length) return true;
+  return mencionados.includes(s.modelo);
+}
+
+/**
+ * Un texto sin las medidas («90x210», «80 x 200 cm»): una medida nunca es un precio ni un descuento
+ * (auditoría BUG-029).
+ */
+const sinMedidas = (texto: string) =>
+  texto.replace(
+    /\d+(?:[.,]\d+)?\s*(?:m|mt|mts|mtrs|metros?|cm|mm|"|”|pulg(?:adas?)?)?\s*(?:x|×|\*|por)\s*\d+(?:[.,]\d+)?(?:\s*(?:m|mt|mts|mtrs|metros?|cm|mm|"|”|pulg(?:adas?)?))?/gi,
+    ' ',
+  );
+/** Un precio escrito lleva una marca de monto; un número suelto (una dirección, un código) no lo es. */
+const MARCADOR_PRECIO = /(?:\$|\ba\b|\bpor\b|\bprecio\b|\bvalor\b|\bc\/u\b|\bmil\b|\blucas?\b|\bpesos?\b)/i;
+/** Lo escrito sin las frases de los otros ítems: el precio o el descuento de uno no vale para otro. */
+const sinFrasesAjenas = (texto: string, frases: string[]) =>
+  frases.reduce((t, frase) => (frase ? t.split(frase).join(' ') : t), texto);
+
+function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: ModificacionCotizacion, mensaje: string) {
   const items = structuredClone(base.solicitudes);
   const descartados: [SolicitudItem, Descartes][] = [];
   const actualizar = cambios.items ?? [];
@@ -718,6 +870,8 @@ function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: Modif
       !Object.keys(cambio.cambios).length
     )
       return null;
+    // La frase del cambio, si la trae, es lo que la persona escribió para ese ítem.
+    if (!indiceCoherente(items, cambio.indice, cambio.cambios.fuente ?? mensaje)) return null;
     actualizarIndices.add(cambio.indice);
     const siguiente = { ...items[cambio.indice], ...desdeIA(cambio.cambios) };
     // La frase del cambio se suma a la del pedido original: juntas explican de dónde sale el ítem. Si no
@@ -744,15 +898,37 @@ function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: Modif
   }
   for (const indice of quitar) {
     if (indice >= items.length || quitarIndices.has(indice) || actualizarIndices.has(indice)) return null;
+    if (!indiceCoherente(items, indice, mensaje)) return null;
     quitarIndices.add(indice);
   }
   for (const indice of [...quitarIndices].sort((a, b) => b - a)) items.splice(indice, 1);
-  items.push(...(cambios.agregar ?? []).map((s) => desdeIA(s)));
+  // Un ítem que la IA repite (en el mismo turno o con la frase de un turno anterior) suma en silencio y duplica el
+  // pedido. Se descarta, con un aviso (auditoría BUG-008).
+  const claveItem = (s: SolicitudItem) =>
+    JSON.stringify([s.modelo?.toLowerCase(), s.madera?.toLowerCase(), s.ancho, s.alto, s.medida?.toLowerCase(), s.cantidad, s.tipoMedida]);
+  const vistos = new Set(items.map(claveItem));
+  const duplicados: string[] = [];
+  const nuevos: SolicitudItem[] = [];
+  for (const s of (cambios.agregar ?? []).map((x) => desdeIA(x))) {
+    const clave = claveItem(s);
+    if (vistos.has(clave)) {
+      duplicados.push(ctx.describir(s));
+      continue;
+    }
+    vistos.add(clave);
+    nuevos.push(s);
+  }
+  items.push(...nuevos);
   if (items.length > 100) return null;
   return {
     items,
     cliente: { ...base.cliente, ...(cambios.cliente ?? {}) },
-    avisos: descartados.map(([d, descartes]) => avisoProductoCambiado(items.indexOf(d) + 1, descartes)),
+    avisos: [
+      ...descartados.map(([d, descartes]) => avisoProductoCambiado(items.indexOf(d) + 1, descartes)),
+      ...(duplicados.length
+        ? [`No dupliqué ${duplicados.join(', ')}: ya estaba en la cotización con la misma cantidad.`]
+        : []),
+    ],
   };
 }
 
@@ -804,7 +980,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
   const nuevo = previo ? null : { ...ctx.nueva(), ...(accion.nuevoId ? { id: accion.nuevoId } : {}) };
   const base = previo ?? nuevo!;
   // Sin borrador, el contexto de la conversación es el intercambio previo que no se guardó.
-  const historialIA = nuevo ? (accion.contexto ?? []) : base.historial;
+  const historialIA = (nuevo ? (accion.contexto ?? []) : base.historial).slice(-TURNOS_HISTORIAL);
   const resolver = resolverNombres(ctx.catalogo);
   // Familia del modelo que nombró la persona o la IA (también con un alias): fija el rango de sus medidas.
   const familia = (modelo: string) => ctx.familiaDe(resolver.modelo(modelo) ?? modelo);
@@ -889,6 +1065,11 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
     if (!directa) herramienta = res.name;
     if (res.name === 'aprobar_cotizacion') {
       const numero = res.input.numero;
+      // El número de la cotización tiene que estar escrito: la IA no lo propone de la nada (auditoría BUG-051).
+      if (!enterosEscritos(accion.mensaje).has(numero))
+        return responder(
+          `¿Qué cotización quieres aprobar? Escribe su número, por ejemplo «el cliente aprobó la N° ${numero}».`,
+        );
       const objetivo = u.porNumero(numero);
       if (!objetivo) return responder(`No existe la cotización N° ${numero}. Genera primero su PDF.`);
       if (objetivo.estado === 'anulada')
@@ -967,6 +1148,18 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
     let avisosFabrica: string[] = [];
     if (res.name === 'actualizar_cotizacion') {
       if (modo === 'modificacion_anterior') return responder(NO_ENTENDI);
+      // La IA ya no reemplaza la lista completa sin que el mensaje lo pida: podía borrar una puerta en silencio
+      // (auditoría BUG-026). Si la lista nueva deja fuera una puerta, el mensaje tiene que nombrarla.
+      if (q.solicitudes.length && res.input.items.length < q.solicitudes.length) {
+        const texto = normalizar(accion.mensaje);
+        const nuevos = res.input.items.map((i) => normalizar(i.modelo ?? ''));
+        const puertaPerdida = q.solicitudes.some((s) => {
+          if (!s.modelo || nuevos.includes(normalizar(s.modelo))) return false;
+          const familia = s.personalizado?.familia ?? ctx.familiaDe(s.modelo);
+          return familia === 'PUERTA' && !texto.includes(normalizar(s.modelo));
+        });
+        if (puertaPerdida) return responder(NO_ENTENDI);
+      }
       // La IA devuelve la lista completa sin margen ni precio: se recuperan las ediciones manuales de q. Una fábrica
       // que el mensaje no nombra no se toma (el ítem conserva la que tenía).
       const { items, avisos: avisosFusion } = fusionarItems(
@@ -999,7 +1192,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         ),
       ];
       // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
-      const aplicado = aplicarModificacion(ctx, q, dichas.input);
+      const aplicado = aplicarModificacion(ctx, q, dichas.input, accion.mensaje);
       if (!aplicado) return responder(avisosFabrica.length ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n') : NO_ENTENDI);
       propuesta = aplicado;
     } else if (res.name === 'responder') {
@@ -1010,7 +1203,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
           : [];
       // No deja pasar montos inventados ni texto monetario desde el modelo.
       return responder(
-        TEXTO_MONETARIO.test(res.input.texto)
+        textoMonetario(res.input.texto)
           ? 'Puedo ayudarte con modelos, maderas, medidas, cantidades y datos del cliente. Los montos se muestran en la cotización.'
           : res.input.texto,
         sinRegistrar.length ? { avisos: sinRegistrar } : {},
@@ -1033,7 +1226,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       // «sí» a «¿Te refieres a X?» (lo que pide el prompt): el ítem cuenta como si el borrador ya dijera X.
       // Respalda solo ese nombre; las cifras y los demás nombres siguen saliendo de lo que escribió la persona.
       // «la primera» a una pregunta con opciones respalda igual esa opción.
-      const confirmados = [
+      const confirmados: { indice: number; item: SolicitudItem }[] = [
         ...(afirmacionBreve(accion.mensaje)
           ? q.incompletos.flatMap(({ indice, rechazo }) => {
               const s = q.solicitudes[indice];
@@ -1043,12 +1236,13 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
                 sugerido = resolver.modelo(rechazo.sugerido);
               const modelo =
                 propio && sugerido && resolver.modelo(propio) === sugerido ? propio : rechazo.sugerido;
-              return [{ ...s, modelo }];
+              return [{ indice, item: { ...s, modelo } }];
             })
           : []),
         ...opcionElegida(accion.mensaje, q),
       ];
-      const previos = [...q.solicitudes, ...confirmados];
+      // Lo confirmado respalda su valor por ser una confirmación explícita de la persona, en cualquier índice.
+      const previos = [...q.solicitudes, ...confirmados.map(({ item }) => ({ ...item, confirmado: true }))];
       // Primero cada ítem contra su propia frase, para que no tome la madera o la cantidad de otro.
       const anteriores = historialIA.filter((m) => m.rol === 'usuario').map((m) => m.texto);
       const leidoPorFrase = anclarFrases(
@@ -1118,6 +1312,18 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
             ]),
           );
       }
+    }
+    // Texto libre y datos del cliente que la IA agregó: valen solo si están escritos en lo que vio el modelo.
+    if (ctx.llm.verificarCifras && !directa) {
+      const textosLibres = [...textosIA, ...propuesta.items.flatMap((s) => (s.fuente ? [s.fuente] : []))];
+      const conTextos = anclarTextos(propuesta.items, textosLibres);
+      const conCliente = anclarCliente(propuesta.cliente, textosLibres);
+      propuesta = {
+        ...propuesta,
+        items: conTextos.items,
+        cliente: conCliente.cliente,
+        avisos: [...propuesta.avisos, ...marcar('campo', [...conTextos.avisos, ...conCliente.avisos])],
+      };
     }
     const conPrecios = preciosEscritos(
       ctx,

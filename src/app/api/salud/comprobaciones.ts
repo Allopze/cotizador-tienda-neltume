@@ -307,6 +307,9 @@ export async function comprobacionesBasicas(): Promise<Record<string, Comprobaci
     autenticacion: comprobarAutenticacion(),
     disco: comprobarDisco(),
     chromium: await comprobarChromium(),
+    // Un envío que no llegó a la fábrica es tan importante como la base: lo vea también el healthcheck de Compose
+    // (auditoría BUG-004).
+    integracion: comprobarIntegracion(),
   };
 }
 
@@ -318,7 +321,6 @@ export async function comprobacionesCompletas(ahora = new Date()): Promise<Recor
     starken: comprobarStarken(),
     feriados: comprobarFeriados(ahora),
     respaldo: comprobarRespaldo(ahora),
-    integracion: comprobarIntegracion(ahora),
   };
 }
 

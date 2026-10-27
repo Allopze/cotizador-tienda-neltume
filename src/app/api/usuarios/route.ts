@@ -35,6 +35,18 @@ const confirmacionesFallidas = new Map<string, { cantidad: number; desde: number
 type Contexto = Awaited<typeof auth.$context>;
 
 /**
+ * Serializa las operaciones sobre cuentas: entre leer cuántas administradoras están activas y escribir, hay
+ * `await`s, y dos desactivaciones simultáneas podían dejar cero cuentas activas (auditoría BUG-045).
+ * El cotizador corre en un solo proceso; una cola en memoria basta y no depende del adaptador de auth.
+ */
+let colaCuentas: Promise<unknown> = Promise.resolve();
+function enSerie<T>(operacion: () => Promise<T>): Promise<T> {
+  const siguiente = colaCuentas.then(operacion, operacion);
+  colaCuentas = siguiente.catch(() => undefined);
+  return siguiente;
+}
+
+/**
  * Cambiar el correo o la contraseña de una cuenta permite tomarla: con una sesión ajena abierta en un equipo
  * compartido bastaría un clic. Por eso se pide la contraseña de quien hace el cambio. Devuelve la respuesta de error
  * o `null` si la confirmación es correcta.
@@ -116,7 +128,8 @@ export async function PATCH(req: Request) {
     const usuarios = await contexto.internalAdapter.listUsers(1000, 0);
     const objetivo = usuarios.find((usuario) => usuario.id === parsed.data.id);
     if (!objetivo) return Response.json({ error: 'No se encontró la cuenta.' }, { status: 404, headers: sinCache });
-    const cuenta = objetivo as typeof objetivo & { role?: string | null; banned?: boolean };
+    // Los campos que agrega el plugin admin no están en el tipo del adaptador.
+    type Cuenta = typeof objetivo & { role?: string | null; banned?: boolean };
     const actor = sesion.usuario.email;
     let descripcionObjetivo = objetivo.email;
     const cambiaAcceso =
@@ -148,14 +161,21 @@ export async function PATCH(req: Request) {
           { error: 'No puedes desactivar tu propia cuenta. Pide a otra persona administradora que lo haga.' },
           { status: 409, headers: sinCache },
         );
-      const activos = usuarios.filter((usuario) => {
-        const u = usuario as typeof cuenta;
-        return (u.role ?? 'admin') === 'admin' && !u.banned;
+      const conflicto = await enSerie(async () => {
+        // Se vuelve a leer dentro de la cola: la nómina de arriba pudo quedar vieja por una operación simultánea.
+        const actuales = (await contexto.internalAdapter.listUsers(1000, 0)) as typeof usuarios;
+        const otra = actuales.find((usuario) => usuario.id === objetivo.id) as Cuenta | undefined;
+        const activos = actuales.filter((usuario) => {
+          const u = usuario as Cuenta;
+          return (u.role ?? 'admin') === 'admin' && !u.banned;
+        });
+        if (!otra?.banned && activos.length <= 1) return 'última';
+        await contexto.internalAdapter.updateUser(objetivo.id, { banned: true, banReason: 'Cuenta desactivada desde Ajustes.', banExpires: null });
+        await contexto.internalAdapter.deleteUserSessions(objetivo.id);
+        return null;
       });
-      if (!cuenta.banned && activos.length <= 1)
+      if (conflicto)
         return Response.json({ error: 'No se puede desactivar la última cuenta administradora.' }, { status: 409, headers: sinCache });
-      await contexto.internalAdapter.updateUser(objetivo.id, { banned: true, banReason: 'Cuenta desactivada desde Ajustes.', banExpires: null });
-      await contexto.internalAdapter.deleteUserSessions(objetivo.id);
     } else if (parsed.data.accion === 'activar') {
       await contexto.internalAdapter.updateUser(objetivo.id, { banned: false, banReason: null, banExpires: null });
     } else {

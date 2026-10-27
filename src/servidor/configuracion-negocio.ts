@@ -4,6 +4,7 @@ import { errorTramos, MAX_TRAMOS, ordenarTramos } from '../negocio/descuento-can
 import { MARGENES_INICIALES, REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { AJUSTE_MAX, AJUSTE_MIN, MARGEN_MAX, DESCUENTO_MAXIMO } from '../negocio/limites';
 import { abrirBaseDatos } from './base-datos';
+import { ErrorConflicto } from './errores';
 import { problemaSvg } from './svg-seguro';
 import { tramoDescuentoSchema } from './persistencia-esquemas';
 import type { DatosEmpresa } from './empresa';
@@ -155,14 +156,38 @@ export function leerConfiguracionNegocio(db: Database.Database = abrirBaseDatos(
   }
 }
 
+/** Versión de la configuración guardada: cambia con cada escritura y sirve para detectar dos guardados a la vez. */
+export function versionConfiguracionNegocio(db: Database.Database = abrirBaseDatos()): string | null {
+  const fila = db.prepare('SELECT actualizada FROM ajustes WHERE clave = ?').get('negocio') as
+    | { actualizada: string }
+    | undefined;
+  return fila?.actualizada ?? null;
+}
+
+/**
+ * Guarda la configuración. Con `esperada`, exige que sea la versión que la persona vio: si otra guardó antes,
+ * responde 409 en vez de pisar sus cambios (auditoría BUG-023). La comprobación y la escritura van en la misma
+ * transacción, así dos guardados simultáneos no pueden pasar los dos.
+ */
 export function guardarConfiguracionNegocio(
   configuracion: ConfiguracionNegocio,
   db: Database.Database = abrirBaseDatos(),
+  esperada?: string | null,
 ) {
   const valida = configuracionNegocioSchema.parse(configuracion);
-  db.prepare(
-    `INSERT INTO ajustes (clave, valor_json, actualizada) VALUES (?, ?, ?)
-     ON CONFLICT(clave) DO UPDATE SET valor_json = excluded.valor_json, actualizada = excluded.actualizada`,
-  ).run('negocio', JSON.stringify(valida), new Date().toISOString());
+  db.transaction(() => {
+    const anterior = versionConfiguracionNegocio(db);
+    if (esperada !== undefined && esperada !== anterior)
+      throw new ErrorConflicto(
+        'Otra persona guardó la configuración antes que tú. Recarga y vuelve a aplicar tus cambios.',
+        'version_obsoleta',
+      );
+    // Estrictamente posterior a la anterior, aunque dos guardados caigan en el mismo milisegundo.
+    const sello = new Date(Math.max(Date.now(), anterior ? Date.parse(anterior) + 1 : 0)).toISOString();
+    db.prepare(
+      `INSERT INTO ajustes (clave, valor_json, actualizada) VALUES (?, ?, ?)
+       ON CONFLICT(clave) DO UPDATE SET valor_json = excluded.valor_json, actualizada = excluded.actualizada`,
+    ).run('negocio', JSON.stringify(valida), sello);
+  }).immediate();
   return valida;
 }

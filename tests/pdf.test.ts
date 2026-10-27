@@ -56,7 +56,7 @@ vi.mock('playwright', () => ({
     }),
   },
 }));
-const { cerrarNavegadorPdf, descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, plantillaPruebaConexion, prepararPdf } =
+const { cerrarNavegadorPdf, descripcionImpresa, descripcionLegible, generarPdf, inyectarRecursos, medidaPedida, plantilla, plantillaPruebaConexion, prepararPdf } =
   await import('../src/servidor/pdf');
 
 const puerta: Producto = {
@@ -489,6 +489,19 @@ describe('Plantillas', () => {
     expect(medidaPedida(linea!)).toBe('2x4 pulg. × 2,10 m');
   });
 
+  it('lo escrito a mano en mayúsculas se imprime y se envía tal cual: solo se normaliza lo de la planilla', () => {
+    const escrita = 'PUERTA MOLCO MODELO X CON VIDRIO TIPO A';
+    const [aMano, deCatalogo] = cotizar([
+      { producto: puerta, cantidad: 1, descripcionDocumento: escrita },
+      { producto: { ...puerta, descripcion: 'HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2,1 MT' }, cantidad: 1 },
+    ]).lineas;
+    expect(descripcionImpresa(aMano!)).toBe(escrita);
+    expect(descripcionImpresa({ ...aMano!, descripcionDocumento: null, producto: { ...puerta, codigo: 'OTRO', familia: 'OTRO', descripcion: 'INSTALACIÓN TIPO X' } })).toBe(
+      'INSTALACIÓN TIPO X',
+    );
+    expect(descripcionImpresa(deCatalogo!)).toBe('Huilo Huilo Pino Oregon 0,80 a 0,85 m × 2,1 m');
+  });
+
   it('cada nota nombra a la otra nota de la cotización, y ninguna puerta lleva dibujo ni esquema genérico', async () => {
     await aislarBaseDatos();
     const sinDibujo = { ...puerta, codigo: 'ESP-O-3-A', modelo: 'ESPECIAL', descripcion: 'ESPECIAL PINO OREGON 0,80 A 0,85 MT X 2 MT' };
@@ -623,7 +636,8 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     // La reducción al imprimir: lado mayor y calidad del JPEG.
     const fuente = await readFile(join(process.cwd(), 'src/servidor/pdf.ts'), 'utf8');
     expect(fuente).toContain(`const LADO_IMAGEN_PX = ${imagenes.ladoMaxPx};`);
-    expect(fuente).toContain(`lienzo.toDataURL('${imagenes.formato}', ${imagenes.calidadJpeg})`);
+    expect(fuente).toContain(`let calidad = ${imagenes.calidadJpeg};`);
+    expect(fuente).toContain(`lienzo.toDataURL('${imagenes.formato}', calidad)`);
     // La celda de producto: título, medida, detalle, referencia y la etiqueta de la firma.
     expect(css).toContain(`.prod b{display:block;font-size:${roles.productoTitulo.tamanoPt}pt}`);
     expect(css).toContain(`.prod span{display:block;color:var(--muted);font-size:${roles.productoDetalle.tamanoPt}pt;`);

@@ -8,6 +8,10 @@ import { MARGEN_MAX, MARGEN_MIN } from './limites';
  */
 export function interpretarCifra(cifra: string): number {
   const c = cifra.replace(/\s/g, '');
+  // En pesos no hay centavos: «350.00» es $350.000 con un cero de menos, igual que lo lee el chat
+  // (auditoría BUG-035). «1490.00» no encaja: queda como 1490.
+  if (/^\d{1,3}(?:\.\d{3})*\.0{1,2}$/.test(c))
+    return Number(c.slice(0, c.lastIndexOf('.')).replace(/\./g, '')) * 1000;
   const miles = (grupos: string[]) => grupos.slice(1).every((g) => g.length === 3);
   if (c.includes('.') && c.includes(',')) {
     const decimal = c.lastIndexOf('.') > c.lastIndexOf(',') ? '.' : ',';

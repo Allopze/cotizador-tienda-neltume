@@ -37,6 +37,8 @@ interface Configuracion {
 }
 interface Estado {
   configuracion: Configuracion;
+  /** Versión que se devuelve al guardar: dos personas guardando a la vez ya no se pisan (auditoría BUG-023). */
+  actualizada?: string | null;
   puedeEditar: boolean;
 }
 type Avisar = (tipo: TipoAviso, texto: string, extra?: { clave?: string }) => number;
@@ -91,6 +93,8 @@ export function useConfiguracionNegocio() {
     if (!ultimo.current) throw new Error('La configuración comercial aún no se carga.');
     const data = await pedirJSON<Estado>('/api/configuracion-negocio', {
       json: cambio(ultimo.current.configuracion),
+      // Si otra persona guardó desde que se abrió esta pantalla, la respuesta es 409 y no se pisa su cambio.
+      ...(ultimo.current.actualizada ? { headers: { 'If-Match': ultimo.current.actualizada } } : {}),
     });
     ultimo.current = data;
     setEstado(data);

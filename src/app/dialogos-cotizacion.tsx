@@ -133,6 +133,8 @@ interface DatosEmision {
   reemplaza?: number | null;
   /** Solo una cuenta administradora elige el número a mano (la API lo exige igual). */
   numeroManual?: boolean;
+  /** Campos del detalle abiertos con cambios sin guardar: el documento solo lleva lo guardado (auditoría BUG-011). */
+  camposSueltos?: number;
 }
 
 /** Emisión: una cuenta administradora puede elegir un número nuevo por encima del último reservado. */
@@ -227,6 +229,12 @@ function FormEmision({
     <form onSubmit={enviar}>
       <div className="dialogo-mensaje">
         <p>Revisa los datos que verá el cliente antes de generar el documento.</p>
+        {!!datos.camposSueltos && (
+          <p className="dialogo-aviso" role="status">
+            Hay {datos.camposSueltos === 1 ? 'un dato escrito' : `${datos.camposSueltos} datos escritos`} sin guardar
+            en el detalle. Ciérralo o guárdalo antes de emitir: el documento solo incluye lo guardado.
+          </p>
+        )}
         <p>Cliente: <strong>{datos.cliente || 'Sin nombre'}</strong></p>
         {!!datos.productos?.length && (
           <div className="emission-review">

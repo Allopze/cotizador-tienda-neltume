@@ -22,7 +22,12 @@ const MAX_TEXTO = {
 
 /** Espacios colapsados y recortados al largo del campo; un texto vacío queda null. */
 export const textoCampo = (campo: keyof typeof MAX_TEXTO, valor: string | null | undefined) =>
-  valor?.replace(/\s+/g, ' ').trim().slice(0, MAX_TEXTO[campo]) || null;
+  // Las observaciones conservan sus saltos de línea: el PDF los imprime (auditoría BUG-040). Los controles bidi se
+  // quitan: un texto pegado podía invertir lo impreso (auditoría BUG-065).
+  (campo === 'observaciones'
+    ? valor?.replace(/[\u202A-\u202E\u2066-\u2069]/g, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n')
+    : valor?.replace(/[\u202A-\u202E\u2066-\u2069]/g, '').replace(/\s+/g, ' ')
+  )?.trim().slice(0, MAX_TEXTO[campo]) || null;
 
 /** El origen del modelo (alias o coincidencia posible) deja de valer si el modelo cambia; recalcular lo deduce de nuevo. */
 export function reiniciarOrigenModelo(item: SolicitudItem) {
