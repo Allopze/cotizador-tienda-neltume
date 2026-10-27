@@ -131,8 +131,14 @@ const mostrar = (campo: CampoCifra, valor: number, familia: string) =>
   campo === 'cantidad' ? String(valor) : metrosAviso(valor, familia);
 
 /**
- * Deja en null las cifras nuevas que no aparecen en el texto. Una cifra que ya estaba en el borrador (en
- * cualquier ítem, para el mismo campo) se acepta: la persona puede pedir «otra igual» o reordenar.
+ * «otra igual», «las mismas»: la persona pide repetir valores que ya están en el borrador. Sin esa frase, un valor
+ * de otro ítem no respalda al nuevo (auditoría BUG-006).
+ */
+const diceIgual = (item: SolicitudItem, textos: string[] = []) =>
+  /\b(?:igual(?:es)?|otra|otras|misma|mismas)\b/.test(sinTildes([item.fuente ?? '', ...textos].join(' ')));
+/**
+ * Deja en null las cifras nuevas que no aparecen en el texto. Una cifra vale por sí misma si ya estaba en ese mismo
+ * ítem (edición) o si la frase pide «otra igual»; la de otro ítem no respalda a uno nuevo.
  */
 export function anclarCifras(
   items: SolicitudItem[],
@@ -154,8 +160,14 @@ export function anclarCifras(
         false,
       ),
     );
-  const conocidas = (campo: CampoCifra) =>
-    previos.flatMap((p) => (p[campo] === null || p[campo] === undefined ? [] : [p[campo]!]));
+  const conocidas = (campo: CampoCifra, i: number, item: SolicitudItem) => {
+    const propio = previos[i]?.[campo];
+    // Editar el mismo índice conserva su cifra; copiar la de otro ítem exige «otra igual» / «las mismas» o que esa
+    // cifra venga de una confirmación explícita de la persona.
+    const otros = previos.filter((p) => p.confirmado || diceIgual(item, textos));
+    const mismos = otros.flatMap((p) => (p[campo] === null || p[campo] === undefined ? [] : [p[campo]!]));
+    return propio === null || propio === undefined ? mismos : [propio, ...mismos];
+  };
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     let resultado = item;
@@ -163,7 +175,7 @@ export function anclarCifras(
     for (const campo of CAMPOS_CIFRA) {
       const valor = item[campo];
       if (valor === null || valor === undefined) continue;
-      if (conocidas(campo).some((c) => c === valor || cifraRespaldada(campo, valor, [c], familiaDelItem))) continue;
+      if (conocidas(campo, i, item).some((c) => c === valor || cifraRespaldada(campo, valor, [c], familiaDelItem))) continue;
       if (cifraRespaldada(campo, valor, campo === 'cantidad' ? conPalabras : digitosDe(item), familiaDelItem)) continue;
       resultado = { ...resultado, [campo]: null };
       avisos.push(
@@ -330,7 +342,11 @@ export function anclarNombres(
       const valor = item[campo];
       if (!valor) continue;
       const clave = normalizar(valor);
-      if (previos.some((p) => p[campo] && normalizar(p[campo]!) === clave)) continue;
+      // El mismo ítem conserva su nombre; copiarlo de otro exige «otra igual» / «las mismas» o una confirmación
+      // explícita (auditoría BUG-006).
+      const propio = previos[i]?.[campo];
+      if (propio && normalizar(propio) === clave) continue;
+      if (previos.some((p) => (p.confirmado || diceIgual(item, textos)) && p[campo] && normalizar(p[campo]!) === clave)) continue;
       const esDicho = (nombre: string) => {
         const alternativos = Object.entries(alias[campo]).flatMap(([n, lista]) =>
           normalizar(n) === normalizar(nombre) ? lista : [],
@@ -448,6 +464,15 @@ function cantidadAntesDelModelo(frase: string, modelo: string): number | null {
   const i = t.indexOf(nombre);
   // Con el modelo nombrado dos veces («39 marcos… 11 marcos») no hay una sola cifra que le corresponda.
   if (i <= 0 || t.indexOf(nombre, i + nombre.length) >= 0) return null;
+  // «3 molco de 80x200, no, mejor 4»: manda la cifra de la corrección, no la de antes del modelo
+  // (auditoría BUG-032).
+  const correccion = /(?:\bno,?\s+mejor|\bperdon,?|\bdigo|\bmejor dicho)\s+(?:que\s+)?(?:sean\s+|son\s+)?(.+)$/.exec(
+    t.slice(i + nombre.length),
+  );
+  if (correccion) {
+    const cifras = cantidadesDichas(correccion[1]);
+    return cifras.length === 1 ? cifras[0] : null;
+  }
   const m =
     /(?:^|[\s,;])((?:media|una?)\s+docena|un\s+par|\d+|[a-z]+)\s+(?:de\s+)?(?:(?:puertas?|unidades|juegos?(?:\s+de)?|piezas)\s+)?(?:de\s+)?$/.exec(
       t.slice(0, i),
@@ -675,7 +700,9 @@ export function anclarFrases(
       ) {
         resultado = { ...resultado, madera: null };
         avisos.push(
-          `El asistente interpretó la madera del ${etiquetaItem.slice(3)} como «${item.madera}», pero ese nombre corresponde a otro ítem del pedido: quedó pendiente para que la indiques.`,
+          `El asistente interpretó la madera del ${etiquetaItem.slice(3)} como «${item.madera}», pero ${
+            items.length > 1 ? 'ese nombre corresponde a otro ítem del pedido' : 'ese nombre no aparece en tu mensaje'
+          }: quedó pendiente para que la indiques.`,
         );
       }
     }
@@ -769,7 +796,7 @@ export function anclarFrases(
     } else if (ajena) {
       resultado = { ...resultado, cantidad: null };
       // Con un solo ítem, o si ninguna otra frase la dice, la cifra no es de otro ítem: no está en el mensaje.
-      const deOtro = frases.some((f, j) => j !== i && !!f && cifrasDelTexto(f).includes(cantidad));
+      const deOtro = items.length > 1 && frases.some((f, j) => j !== i && !!f && cifrasDelTexto(f).includes(cantidad));
       avisos.push(
         `El asistente propuso la cantidad ${cantidad} para ${etiquetaItem}, pero esa cifra ${deOtro ? 'corresponde a otro ítem del pedido' : 'no aparece en tu mensaje'}: quedó pendiente para que la confirmes.`,
       );
@@ -807,7 +834,9 @@ export function anclarFrases(
         } else if (deOtroItem(campo, v)) {
           resultado = { ...resultado, [campo]: null };
           avisos.push(
-            `El asistente propuso ${campo === 'ancho' ? 'el ancho' : 'el alto'} ${String(metros(v) ?? v).replace('.', ',')} m para ${etiquetaItem}, pero esa medida corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,
+            `El asistente propuso ${campo === 'ancho' ? 'el ancho' : 'el alto'} ${String(metros(v) ?? v).replace('.', ',')} m para ${etiquetaItem}, pero ${
+              items.length > 1 ? 'esa medida corresponde a otro ítem del pedido' : 'esa medida no aparece en tu mensaje'
+            }: quedó pendiente para que la confirmes.`,
           );
         }
       }
@@ -833,7 +862,9 @@ export function anclarFrases(
         } else if (alto != null && deOtroItem('alto', alto, fam)) {
           resultado = { ...resultado, alto: null };
           avisos.push(
-            `El asistente propuso el largo ${metrosAviso(alto, fam)} para ${etiquetaItem}, pero esa medida corresponde a otro ítem del pedido: quedó pendiente para que la confirmes.`,
+            `El asistente propuso el largo ${metrosAviso(alto, fam)} para ${etiquetaItem}, pero ${
+              items.length > 1 ? 'esa medida corresponde a otro ítem del pedido' : 'esa medida no aparece en tu mensaje'
+            }: quedó pendiente para que la confirmes.`,
           );
         }
       }

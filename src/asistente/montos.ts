@@ -130,9 +130,11 @@ export function montosDelTexto(texto: string): number[] {
     const base =
       !unidad && MILES_INCOMPLETOS.test(cifra)
         ? completarMiles(cifra)
-        : /^\d{1,3}(\.\d{3})+$/.test(cifra)
+        : /^\d{1,3}(?:\.\d{3})+$/.test(cifra)
           ? Number(cifra.replace(/\./g, ''))
-          : Number(cifra.replace(',', '.'));
+          : /^\d{1,3}(?:,\d{3})+$/.test(cifra)
+            ? Number(cifra.replace(/,/g, ''))
+            : Number(cifra.replace(',', '.'));
     if (!Number.isFinite(base)) continue;
     const factor = unidad ? (unidad.startsWith('millon') ? 1_000_000 : MULTIPLICADORES[unidad]) : 1;
     montos.push(Math.round(base * factor));

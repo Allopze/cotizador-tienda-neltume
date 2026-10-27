@@ -375,6 +375,8 @@ export function ConfiguracionCatalogo({
   const [ocupado, setOcupado] = useState(false);
   const [intentado, setIntentado] = useState(false);
   const formulario = useRef<HTMLFormElement>(null);
+  /** Versión de la configuración que se está viendo: al guardar va en `If-Match` (si otra persona guardó, 409). */
+  const version = useRef<string | null>(null);
 
   const aplicar = (config: Configuracion) => {
     const nuevas = filasDe(config);
@@ -385,11 +387,12 @@ export function ConfiguracionCatalogo({
 
   useEffect(() => {
     const control = new AbortController();
-    pedirJSON<{ configuracion: Configuracion; puedeEditar: boolean }>('/api/catalogo-configuracion', {
+    pedirJSON<{ configuracion: Configuracion; version: string; puedeEditar: boolean }>('/api/catalogo-configuracion', {
       signal: control.signal,
       cache: 'no-store',
     }).then(
       (data) => {
+        version.current = data.version;
         aplicar(data.configuracion);
         setPuedeEditar(data.puedeEditar);
       },
@@ -450,7 +453,11 @@ export function ConfiguracionCatalogo({
     setOcupado(true);
     setError('');
     try {
-      const data = await pedirJSON<{ configuracion: Configuracion }>('/api/catalogo-configuracion', { json: borrador });
+      const data = await pedirJSON<{ configuracion: Configuracion; version: string }>('/api/catalogo-configuracion', {
+        json: borrador,
+        ...(version.current ? { headers: { 'If-Match': version.current } } : {}),
+      });
+      version.current = data.version;
       aplicar(data.configuracion);
       avisar('exito', 'Nombres y alias guardados.', { clave: 'config-guardada' });
     } catch (causa) {

@@ -51,6 +51,12 @@ export function cabeceraIpCliente(valor = process.env.NELTUME_IP_HEADER): Cabece
 // Las cuentas se gestionan desde rutas propias y scripts/usuarios.ts; el plugin admin no se expone por HTTP.
 export const esRutaAdminAuth = (pathname: string) => /^\/api\/auth\/+admin(\/|$)/i.test(pathname);
 
+/**
+ * Better Auth devuelve los tokens de sesión en `list-sessions`. El navegador no los necesita: Ajustes usa
+ * `/api/sesiones`, que entrega solo un id (auditoría BUG-048).
+ */
+export const esRutaSesionesCruda = (pathname: string) => /^\/api\/auth\/+list-sessions(\/|$)/i.test(pathname);
+
 function secretoAutenticacion() {
   const secreto = process.env.BETTER_AUTH_SECRET || '';
   // En producción validarConfiguracionAutenticacion() rechaza cada solicitud sin secreto; aquí no se
@@ -144,6 +150,7 @@ function hooksInicioSesion(database: Database.Database) {
   return {
     before: createAuthMiddleware(async (ctx) => {
       if (ctx.request && esRutaAdminAuth(new URL(ctx.request.url).pathname)) throw new APIError('NOT_FOUND');
+      if (ctx.request && esRutaSesionesCruda(new URL(ctx.request.url).pathname)) throw new APIError('NOT_FOUND');
       if (ctx.path !== '/sign-in/email') return;
       const email = correoDe(ctx.body);
       if (!email) return;

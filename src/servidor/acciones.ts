@@ -7,7 +7,7 @@ import type { OpcionCotizacion } from './referencias';
 
 export type Accion =
   /** Solo pruebas: la interfaz crea el borrador con el primer mensaje del chat. */
-  | { tipo: 'nueva' }
+  | { tipo: 'nueva'; nuevoId?: string }
   | {
       tipo: 'chat';
       id?: string;
@@ -57,7 +57,11 @@ export type Accion =
       confirmarVencida?: boolean;
       despacho?: Partial<Despacho>;
     }
-  | { tipo: 'duplicar'; id: string }
+  /**
+   * Copia la cotización en un borrador nuevo. `nuevoId` lo propone la interfaz: si la persona reintenta tras un
+   * timeout, el servidor devuelve la copia que ya creó en vez de duplicarla (auditoría BUG-047).
+   */
+  | { tipo: 'duplicar'; id: string; nuevoId?: string }
   | { tipo: 'eliminar'; id: string; actualizada: string }
   | { tipo: 'anular'; id: string; actualizada: string; motivo?: string }
   | {

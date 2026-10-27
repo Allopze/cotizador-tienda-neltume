@@ -2,6 +2,38 @@ import { z } from 'zod';
 import { LARGO_OBSERVACION_ITEM } from '../negocio/limites';
 import { FABRICAS } from '../negocio/estado';
 const texto = z.string().max(300).nullable();
+/** Campos que el modelo a veces devuelve como texto («"2"»): se convierten antes de validar (auditoría BUG-052). */
+const CAMPOS_NUMERO = new Set(['cantidad', 'ancho', 'alto', 'valor', 'indice']);
+/** Listas de la respuesta que no pueden superar los 100 elementos del límite. */
+const LISTAS = ['items', 'agregar', 'quitar', 'asignaciones'];
+/**
+ * Sanea la respuesta cruda del modelo antes de validarla: números que llegaron como texto, frases más largas de lo
+ * permitido y listas enormes. Un solo campo así hacía descartar el turno completo (auditoría BUG-052). Se hace aquí y
+ * no en el esquema para que este siga siendo convertible a JSON Schema en la definición de la herramienta.
+ */
+export function normalizarSalida(salida: unknown): unknown {
+  if (!salida || typeof salida !== 'object') return salida;
+  const copia = structuredClone(salida);
+  const normalizarNodos = (valor: unknown): void => {
+    if (Array.isArray(valor)) {
+      valor.forEach(normalizarNodos);
+      return;
+    }
+    if (!valor || typeof valor !== 'object') return;
+    const nodo = valor as Record<string, unknown>;
+    for (const [clave, contenido] of Object.entries(nodo)) {
+      if (CAMPOS_NUMERO.has(clave) && typeof contenido === 'string' && contenido.trim() !== '' && Number.isFinite(Number(contenido)))
+        nodo[clave] = Number(contenido);
+      else if (clave === 'fuente' && typeof contenido === 'string') nodo[clave] = contenido.slice(0, 300);
+      else if (Array.isArray(contenido) && LISTAS.includes(clave)) {
+        if (contenido.length > 100) nodo[clave] = contenido.slice(0, 100);
+        normalizarNodos(nodo[clave]);
+      } else normalizarNodos(contenido);
+    }
+  };
+  normalizarNodos(copia);
+  return copia;
+}
 /**
  * Fábrica que hace el ítem, solo si la persona la dijo («las Coz Coz van a Santiago»); el servidor la anula si el
  * nombre de la fábrica no está escrito en la conversación.

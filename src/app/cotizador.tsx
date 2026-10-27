@@ -1,5 +1,5 @@
 'use client';
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
@@ -27,6 +27,8 @@ import { falloCompartir } from './compartir';
 import { PreguntasPendientes } from './preguntas-pendientes';
 import { preguntasPendientes } from '@/negocio/pendientes';
 import { AgregarProducto } from './agregar-producto';
+import { CamposAbiertosContext, type RegistroCamposAbiertos } from './campo-editable';
+import { useAvisoSalida } from './secciones-pantalla';
 import { useConfirmacion } from './dialogo';
 import { useAnulacion, useAnulacionPago, useAprobacion, useEmision } from './dialogos-cotizacion';
 import type { AccionesDocumentos } from './panel-totales';
@@ -203,6 +205,8 @@ export function Cotizador({
   const [charla, setCharla] = useState<Mensaje[]>([]);
   /** Id del borrador que creará el mensaje en curso; sobrevive a una cancelación para no duplicar. */
   const idPendiente = useRef<string | null>(null);
+  /** Id de la copia que creará el próximo «Duplicar»; sobrevive a un reintento para no crear dos (BUG-047). */
+  const duplicadoPendiente = useRef<{ origen: string; nuevoId: string } | null>(null);
   const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
   /** Totales de las opciones en selección: se leen aparte, el asistente nunca recibe montos. */
   const [totalesOpciones, setTotalesOpciones] = useState<Record<string, number>>({});
@@ -218,6 +222,26 @@ export function Cotizador({
   const [pedirAnulacion, dialogoAnulacion] = useAnulacion();
   const [pedirAnulacionPago, dialogoAnulacionPago] = useAnulacionPago();
   const [pedirEmision, dialogoEmision] = useEmision();
+  // Campos del detalle abiertos con cambios sin guardar: se avisa al emitir y al salir de la pantalla
+  // (auditoría BUG-011).
+  const camposSucios = useRef(new Set<string>());
+  const [camposSinGuardar, setCamposSinGuardar] = useState(0);
+  const registroCampos = useMemo<RegistroCamposAbiertos>(
+    () => ({
+      registrar: (id, sucio) => {
+        const estaba = camposSucios.current.has(id);
+        if (sucio === estaba) return;
+        if (sucio) camposSucios.current.add(id);
+        else camposSucios.current.delete(id);
+        setCamposSinGuardar(camposSucios.current.size);
+      },
+      quitar: (id) => {
+        if (camposSucios.current.delete(id)) setCamposSinGuardar(camposSucios.current.size);
+      },
+    }),
+    [],
+  );
+  useAvisoSalida(camposSinGuardar > 0, 'Hay datos escritos sin guardar en la cotización. ¿Salir de todos modos?');
   const mensajes = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
     workspace = useRef<HTMLElement>(null),
@@ -277,7 +301,9 @@ export function Cotizador({
     const fin = () => {
       if (!control.signal.aborted) setRestaurando(false);
     };
-    if (abrirId) window.history.replaceState(null, '', '/');
+    // El router (y no `history.replaceState`) deja la URL y la pantalla en el mismo estado: Atrás vuelve a donde
+    // corresponde (auditoría BUG-055).
+    if (abrirId) router.replace('/', { scroll: false });
     Promise.resolve()
       .then(async () => {
         // Lo escrito se conserva aunque se abra otra cotización desde el historial, señalado como de la anterior.
@@ -306,7 +332,7 @@ export function Cotizador({
       .then((d) => setConfigurado(d.asistenteConfigurado))
       .catch(() => {});
     return () => control.abort();
-  }, [leerDetalle, avisar, abrirId]);
+  }, [leerDetalle, avisar, abrirId, router]);
 
   // Al volver a la pestaña se relee el listado y la cotización abierta: la otra persona pudo cambiarlos.
   const idAbierta = useRef<string | null>(null);
@@ -907,6 +933,7 @@ export function Cotizador({
         reemplaza: q.origen,
         numeroManual: admin,
         cliente: q.cliente.nombre,
+        camposSueltos: camposSinGuardar,
         productos: q.montos.lineas.map((linea, i) => ({
           nombre: descripcionItem(q, linea.indice ?? i),
           medida: medidaPedida(linea),
@@ -1133,8 +1160,14 @@ export function Cotizador({
     if (ocupado) return;
     setEnCurso('duplicar');
     limpiar('operacion');
+    // El mismo id en un reintento: el servidor devuelve la copia que ya creó en vez de duplicarla.
+    if (duplicadoPendiente.current?.origen !== id) {
+      const nuevoId = idNuevo();
+      duplicadoPendiente.current = nuevoId ? { origen: id, nuevoId } : null;
+    }
     try {
-      const d = await peticion({ tipo: 'duplicar', id });
+      const d = await peticion({ tipo: 'duplicar', id, ...(duplicadoPendiente.current ? { nuevoId: duplicadoPendiente.current.nuevoId } : {}) });
+      duplicadoPendiente.current = null;
       recibir(d, { previa: null });
       setSeleccion(null);
       setEnfocar((n) => n + 1);
@@ -1792,21 +1825,23 @@ export function Cotizador({
             </form>
           </div>
         </section>
-        <CotizacionPanel
-          asistente={configurado}
-          actual={actual}
-          enCurso={enCurso}
-          guardando={guardando}
-          descargando={descargando}
-          acciones={acciones}
-          documentos={accionesDocumentos}
-          tituloRef={titulo}
-          agregarProducto={() => setAgregandoProducto(true)}
-          mostrarCotizacion={() => setVistaMobile('cotizacion')}
-          cargando={cargando}
-          cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
-          admin={admin}
-        />
+        <CamposAbiertosContext.Provider value={registroCampos}>
+          <CotizacionPanel
+            asistente={configurado}
+            actual={actual}
+            enCurso={enCurso}
+            guardando={guardando}
+            descargando={descargando}
+            acciones={acciones}
+            documentos={accionesDocumentos}
+            tituloRef={titulo}
+            agregarProducto={() => setAgregandoProducto(true)}
+            mostrarCotizacion={() => setVistaMobile('cotizacion')}
+            cargando={cargando}
+            cambioVisual={cambioVisual?.id === actual?.id ? cambioVisual : null}
+            admin={admin}
+          />
+        </CamposAbiertosContext.Provider>
       </main>
       <footer className="site-footer">
         <span>

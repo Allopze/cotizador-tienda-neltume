@@ -1,7 +1,7 @@
 import { chromium, type Browser, type Page } from 'playwright';
 import { constants } from 'node:fs';
 import type Database from 'better-sqlite3';
-import { access, copyFile, chmod, link, mkdir, readFile, rm } from 'node:fs/promises';
+import { access, copyFile, chmod, link, mkdir, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { etiquetaDescuento } from '../negocio/descuento-cantidad';
@@ -29,7 +29,7 @@ import { chromiumPath } from './chromium';
 import { carpetaReferencias } from './archivos-referencia';
 import { datosEmpresa } from './empresa';
 import { abrirBaseDatos } from './base-datos';
-import { ErrorPdf } from './errores';
+import { ErrorPdf, registrarError } from './errores';
 
 /** Recursos de los PDF: las fuentes y los dibujos que usaban los documentos anteriores (ver `inyectarRecursos`). */
 const RECURSOS = join(/* turbopackIgnore: true */ process.cwd(), 'src/servidor/pdf-recursos');
@@ -61,9 +61,15 @@ export function medidaPedida(l: Linea): string | null {
   if (l.producto.familia === 'PUERTA') {
     return dimensionesEnMilimetros(l.anchoSolicitado, l.altoSolicitado, l.tipoMedida);
   }
-  if (!l.medidaSolicitada && l.altoSolicitado === null) return null;
-  const medida = escuadria(l.medidaSolicitada ?? l.producto.medida, l.producto.familia);
-  return `${medida} × ${l.altoSolicitado === null ? '—' : metrosTexto(l.altoSolicitado)} m${sufijoTipoMedida(l.tipoMedida)}`;
+  // Un especial fuera del catálogo puede tener ancho escrito (un marco o una moldura a medida). Sin imprimirlo, la
+  // medida salía como «× 2,10 m», sin el dato que dio el cliente (auditoría BUG-005).
+  const seccion = escuadria(l.medidaSolicitada ?? l.producto.medida ?? '', l.producto.familia);
+  const partes = [
+    seccion || null,
+    l.anchoSolicitado === null ? null : `${metrosTexto(l.anchoSolicitado)} m`,
+    l.altoSolicitado === null ? null : `${metrosTexto(l.altoSolicitado)} m`,
+  ].filter((p): p is string => !!p);
+  return partes.length ? `${partes.join(' × ')}${sufijoTipoMedida(l.tipoMedida)}` : null;
 }
 
 const MINUSCULAS = new Set(['a', 'de', 'del', 'y', 'kit']);
@@ -85,6 +91,17 @@ export function descripcionLegible(texto: string) {
       return p.charAt(0).toUpperCase() + p.slice(1);
     })
     .join(' ');
+}
+
+/**
+ * Texto con que los documentos y el pedido a la fábrica nombran una línea. Lo escrito a mano (la descripción del
+ * documento, el nombre de un especial o de un ítem libre) va tal cual, aunque esté en mayúsculas; solo se normaliza
+ * lo que viene de la planilla (auditoría BUG-039).
+ */
+export function descripcionImpresa(l: Linea) {
+  const texto = descripcionLinea(l);
+  const aMano = !!l.descripcionDocumento || l.producto.codigo === CODIGO_PERSONALIZADO || l.producto.familia === 'OTRO';
+  return aMano ? texto : descripcionLegible(texto);
 }
 
 export interface DocumentoPdf {
@@ -269,15 +286,20 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
       l.observaciones && `Observación: ${l.observaciones}`,
       documentos.length && `Referencias del cliente: ${documentos.map((r) => r.nombre).join(', ')}`,
     ];
-    return `<b>${esc(descripcionLegible(descripcionLinea(l)))}</b>${detalles.map((d) => (d ? `<span${d.startsWith('Medida') ? ' class="medida"' : ''}>${esc(d)}</span>` : '')).join('')}${
+    return `<b>${esc(descripcionImpresa(l))}</b>${detalles.map((d) => (d ? `<span${d.startsWith('Medida') ? ' class="medida"' : ''}>${esc(d)}</span>` : '')).join('')}${
       !produccion && conDescuentoItem(l) && l.descuentoItem
         ? `<span class="descuento-item">Descuento especial ${esc(textoDescuentoItem(l.descuentoItem))}: −${pesos(l.descuentoUnitario!)} c/u · Ahorro ${pesos(ahorroLinea(l))}</span>`
         : ''
     }<span class="cod">${esc(nota ? referenciaFabrica(l) : l.producto.codigo)}</span>`;
   };
-  // Con descuento especial, el precio original queda tachado sobre el rebajado (unitario y total de la línea).
+  // Con descuento especial, el precio original queda tachado en su propia línea, encima del rebajado: en la misma
+  // celda las cifras se tocaban y el cliente podía leer mal la cantidad o el precio (auditoría BUG-015). Una cifra de
+  // 10 dígitos o más se achica en su celda (auditoría BUG-042).
+  const cifra = (texto: string) => (texto.length >= 11 ? `<span class="cifra-media">${texto}</span>` : texto);
   const conOriginal = (l: Linea, original: number, final: number) =>
-    conDescuentoItem(l) ? `<s class="original">${pesos(original)}</s> <span>${pesos(final)}</span>` : pesos(final);
+    conDescuentoItem(l)
+      ? `<s class="original">${cifra(pesos(original))}</s><span class="rebajado">${cifra(pesos(final))}</span>`
+      : cifra(pesos(final));
   // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma.
   const filas = filasDocumento(q, doc);
   const porDefinir = filas.filter((f) => !f.definida);
@@ -295,7 +317,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     .flatMap(({ l }, i) => {
       const imagenes = referenciasDe(l).filter(esImagen);
       return imagenes.length
-        ? [`<div class="imagenes-item"><p class="k">Ítem ${i + 1} · ${esc(descripcionLegible(descripcionLinea(l)))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
+        ? [`<div class="imagenes-item"><p class="k">Ítem ${i + 1} · ${esc(descripcionImpresa(l))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
         : [];
     })
     .join('');
@@ -311,7 +333,10 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
   const { ahorro, subtotalOriginal } = resumenDescuentosItems(montos);
   const fila = (etiqueta: string, valor: string, clase = '') =>
-    `<div${clase ? ` class="${clase}"` : ''}><dt>${etiqueta}</dt><dd>${valor}</dd></div>`;
+    // Una cifra de 10 dígitos o más no cabe a la fuente normal: se achica para no recortarse (auditoría BUG-042).
+    `<div${clase ? ` class="${clase}"` : ''}><dt>${etiqueta}</dt><dd>${
+      /^−?\$[\d.]+$/.test(valor) && valor.length >= 11 ? `<span class="cifra-media">${valor}</span>` : valor
+    }</dd></div>`;
   const totales = [
     ...(ahorro
       ? [
@@ -411,7 +436,7 @@ h1,h2,h3,p,dl,dd{margin:0}b{font-weight:600}
 .partes{display:grid;grid-template-columns:1.15fr 1fr;gap:12mm;padding:4mm 0 3mm}.partes.una{grid-template-columns:1fr}
 .parte h2{font:500 15pt/1.1 'Fraunces',Georgia,serif;margin-top:1mm}
 .datos{display:grid;grid-template-columns:auto 1fr;gap:.9mm 4mm;margin-top:2.6mm;font-size:9.2pt}.datos dt{color:var(--muted)}
-table{width:100%;border-collapse:collapse}thead{display:table-header-group}
+table{width:100%;border-collapse:collapse;table-layout:fixed}thead{display:table-header-group}
 th{font-weight:600;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 0 2mm;border-bottom:.7pt solid var(--ink)}
 td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr{break-inside:avoid}
 .r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted)}td.n{font-size:9.2pt}.cant{width:13mm}td.cant{font-weight:600}.unit{width:27mm}.tot{width:29mm;font-weight:600}
@@ -419,7 +444,10 @@ td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr
 /* En la cotización el código va solo en su línea: es un campo de código. En la nota va dentro de «Referencia de catálogo: …»,
    una frase que se lee entera: queda en la fuente del texto. */
 .cotizacion .prod .cod{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:6.8pt}
-.prod .descuento-item{color:var(--calido)}s.original{color:var(--muted);font-size:8pt}
+.prod .descuento-item{color:var(--calido)}s.original{color:var(--muted);font-size:8pt;display:block}
+.rebajado{display:block}
+/* Un texto largo sin espacios (una URL, un código) no puede achicar la hoja ni sacar columnas (auditoría BUG-018). */
+.prod,.prod *,.datos dd,.observaciones p,.cond p{overflow-wrap:anywhere;min-width:0}
 /* En la nota, la casilla «Listo» deja menos ancho: los precios se acotan para que el producto no se corte. */
 .nota .cant{width:11mm}.nota .unit{width:23mm}.nota .tot{width:24mm}
 .prod{padding-left:3mm}
@@ -431,6 +459,9 @@ td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr
 .cierre{display:grid;grid-template-columns:1fr 68mm;gap:12mm;margin-top:3mm;align-items:start;break-inside:avoid}
 .valores{font-size:8.2pt;color:var(--muted);max-width:80mm;padding-top:1.2mm}
 .totales div{display:flex;justify-content:space-between;gap:4mm;padding:.9mm 0;font-size:9.2pt}.totales dt{color:var(--muted)}
+/* El «−» y su monto van juntos: sin esto el signo quedaba en una línea y la cifra en la siguiente (auditoría BUG-038). */
+.totales dd{white-space:nowrap}
+.cifra-media{font-size:8.2pt}
 .totales .original dd{color:var(--muted)}.totales .ahorro dd{color:var(--calido)}
 .totales .total{border-top:.7pt solid var(--ink);margin-top:1.5mm;padding-top:2.4mm;align-items:baseline}
 .totales .total dt{font:500 12pt 'Fraunces',Georgia,serif;color:var(--ink)}.totales .total dd{font:500 22pt/1 'Fraunces',Georgia,serif;color:var(--total)}
@@ -579,6 +610,8 @@ const REFERENCIA_CLIENTE = /<img class="ref" src="neltume-referencia:([0-9a-f]{6
 const ORIGEN_REFERENCIAS = 'https://referencias.neltume.invalid/';
 /** Lado mayor con que se imprime una imagen del cliente: nítida a su tamaño en la hoja y liviana en el PDF. */
 const LADO_IMAGEN_PX = 1000;
+/** Presupuesto de las imágenes de un documento: deja margen bajo el tope de 5 MiB del estándar (§8.4). */
+const PRESUPUESTO_IMAGENES_BYTES = 4 * 1024 * 1024;
 
 /**
  * Apunta las imágenes del cliente (`neltume-referencia:`) a `ORIGEN_REFERENCIAS`, de donde las sirve `generarPdf`. Se
@@ -590,8 +623,14 @@ export async function inyectarReferencias(html: string, directorioDatos: string)
   for (const [, archivo] of html.matchAll(REFERENCIA_CLIENTE))
     if (!archivos.has(archivo))
       archivos.set(archivo, await access(join(carpetaReferencias(directorioDatos), archivo)).then(() => true, () => false));
-  return html.replace(REFERENCIA_CLIENTE, (_, archivo: string) =>
+  const conReferencias = html.replace(REFERENCIA_CLIENTE, (_, archivo: string) =>
     archivos.get(archivo) ? `<img class="ref" src="${ORIGEN_REFERENCIAS}${archivo}" crossorigin="anonymous" alt="">` : '',
+  );
+  // Si todas las imágenes de un ítem faltan, se quita también su rótulo («Ítem n · …»): un título sin imagen no
+  // dice nada (auditoría BUG-041).
+  return conReferencias.replace(
+    /<div class="imagenes-item">([\s\S]*?)<\/div><\/div>/g,
+    (bloque, interior: string) => (interior.includes('<img class="ref"') ? bloque : ''),
   );
 }
 
@@ -735,6 +774,8 @@ export async function generarPdf(
   let pagina: Page | undefined;
   let vencido = false;
   let temporizador: NodeJS.Timeout | undefined;
+  /** Bytes que ocupan las imágenes ya reducidas de este documento (para avisar si no caben). */
+  let imagenesBytes = 0;
   enUso++;
   clearTimeout(cierreInactivo);
   const tarea = (async () => {
@@ -756,25 +797,51 @@ export async function generarPdf(
     // Las fuentes incrustadas se cargan aparte: se imprime recién con ellas, no con la de respaldo.
     await page.evaluate(() => document.fonts.ready);
     // Las fotos del cliente se reducen antes de imprimir: el PDF de la nota tiene un tope de tamaño (estándar §8.4).
-    await page.evaluate(async (lado) => {
-      for (const img of Array.from(document.querySelectorAll<HTMLImageElement>('img.ref'))) {
-        if (!img.naturalWidth) {
-          img.remove();
-          continue;
-        }
-        const escala = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight));
+    // Cada una recibe una parte del presupuesto del documento; si no cabe, se baja la calidad y luego el tamaño
+    // (auditoría BUG-004: 28 fotos con textura pesaban 6,58 MiB).
+    // Bajo tsx (los scripts de terminal, como `npm run integracion -- enviar`), esbuild envuelve la función interna
+    // `codificar` con `__name`, que no existe en la página: sin esta definición ningún PDF se imprimía.
+    await page.evaluate('globalThis.__name ??= (f) => f');
+    const fotos = await page.evaluate(async ({ lado, presupuesto }) => {
+      const imgs = Array.from(document.querySelectorAll<HTMLImageElement>('img.ref'));
+      const codificar = (img: HTMLImageElement, medida: number, calidad: number) => {
+        const escala = Math.min(1, medida / Math.max(img.naturalWidth, img.naturalHeight));
         const lienzo = document.createElement('canvas');
-        lienzo.width = Math.round(img.naturalWidth * escala);
-        lienzo.height = Math.round(img.naturalHeight * escala);
+        lienzo.width = Math.max(1, Math.round(img.naturalWidth * escala));
+        lienzo.height = Math.max(1, Math.round(img.naturalHeight * escala));
         const ctx = lienzo.getContext('2d')!;
         // Fondo blanco: una imagen con transparencia no queda negra en JPEG.
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, lienzo.width, lienzo.height);
         ctx.drawImage(img, 0, 0, lienzo.width, lienzo.height);
-        img.src = lienzo.toDataURL('image/jpeg', 0.8);
+        img.src = lienzo.toDataURL('image/jpeg', calidad);
+      };
+      let medida = lado;
+      let calidad = 0.8;
+      const parte = imgs.length ? presupuesto / imgs.length : presupuesto;
+      let total = 0;
+      for (const img of imgs) {
+        if (!img.naturalWidth) {
+          img.remove();
+          continue;
+        }
+        codificar(img, medida, calidad);
+        let intentos = 0;
+        // El base64 ocupa ~4/3 de los bytes: se compara contra la parte del presupuesto ya convertida.
+        while (img.src.length > parte * (4 / 3) && intentos++ < 8) {
+          if (calidad > 0.5) calidad = Math.round((calidad - 0.1) * 10) / 10;
+          else {
+            medida = Math.max(320, Math.round(medida * 0.8));
+            calidad = 0.7;
+          }
+          codificar(img, medida, calidad);
+        }
         await img.decode();
+        total += Math.round((img.src.length * 3) / 4);
       }
-    }, LADO_IMAGEN_PX);
+      return total;
+    }, { lado: LADO_IMAGEN_PX, presupuesto: PRESUPUESTO_IMAGENES_BYTES });
+    imagenesBytes = fotos;
     await page.pdf({
       path: temporal,
       format: 'A4',
@@ -807,6 +874,14 @@ export async function generarPdf(
         await copyFile(temporal, join(carpeta, archivo), constants.COPYFILE_EXCL);
       else throw error;
     }
+    // El estándar pide documentos de 5 MiB o menos: si no se pudo, queda el aviso en el registro en vez de un PDF
+    // que la fábrica puede rechazar (auditoría BUG-004).
+    const { size } = await stat(join(carpeta, archivo)).catch(() => ({ size: 0 }));
+    if (size > 5 * 1024 * 1024)
+      registrarError(
+        'pdf',
+        `${archivo} pesa ${(size / 1024 / 1024).toFixed(2)} MiB (tope 5 MiB); imágenes: ${(imagenesBytes / 1024 / 1024).toFixed(2)} MiB.`,
+      );
   } catch (error) {
     fallo = !(error instanceof ErrorPdf && !vencido);
     throw error instanceof ErrorPdf

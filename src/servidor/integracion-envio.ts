@@ -39,7 +39,7 @@ import { generarPdf } from './pdf';
 export const MAX_CUERPO_BYTES = 20 * 1024 * 1024;
 /** Lo que se lee de una respuesta de la fábrica: la confirmación es un JSON chico. */
 export const MAX_RESPUESTA_BYTES = 64 * 1024;
-/** Intentos antes de dejar un envío fallido (con la espera exponencial, unos tres días). */
+/** Intentos antes de dejar un envío fallido (con la espera exponencial, unas 32,5 h). */
 export const MAX_INTENTOS = 15;
 const ESPERA_BASE_MS = 30_000;
 const ESPERA_MAXIMA_MS = 6 * 60 * 60_000;
@@ -180,13 +180,20 @@ async function mensajeDe(fila: FilaEnvio, contenido: ContenidoEnvio, { directori
   } as const;
   if (fila.evento === 'order.cancelled') return mensajeSchema.parse({ ...base, cancellation: contenido.cancellation });
   const { commercial, production } = contenido.documents!;
-  const rutaComercial = join(directorio, 'pdf', commercial.archivo);
+  const carpeta = join(directorio, 'integracion');
+  // La copia congelada al encolar manda: repetir el envío no cambia si el PDF se regeneró entretanto (BUG-044).
+  const congelada = join(carpeta, 'pdf', commercial.archivo);
+  const rutaComercial = (await existe(congelada)) ? congelada : join(directorio, 'pdf', commercial.archivo);
   if (!(await existe(rutaComercial)))
     throw new ErrorEnvio(`Falta el PDF de la nota (${commercial.archivo}): regenéralo desde su documento («Regenerar PDF»).`);
-  // La orden de trabajo se imprime una vez, desde el HTML guardado al encolar, y se reutiliza en cada reintento.
-  const carpeta = join(directorio, 'integracion');
+  // La orden de trabajo se imprime una vez, desde el HTML guardado al encolar. El nombre lleva el id del evento y su
+  // sha256 se guarda: un PDF de otro pedido nunca se reutiliza (auditoría BUG-003).
   const rutaProduccion = join(carpeta, 'pdf', production.archivo);
-  if (!(await existe(rutaProduccion))) {
+  const shaProduccion = async () =>
+    createHash('sha256').update(await readFile(rutaProduccion)).digest('hex');
+  let impresa = await existe(rutaProduccion);
+  if (impresa && fila.sha_produccion) impresa = (await shaProduccion()) === fila.sha_produccion;
+  if (!impresa) {
     if (!fila.html_produccion) throw new ErrorEnvio('El envío no tiene la orden de trabajo.', null, true);
     try {
       await generarPdf(carpeta, production.archivo, fila.html_produccion, undefined, { logoDe: db, referenciasDe: directorio });
@@ -194,6 +201,7 @@ async function mensajeDe(fila: FilaEnvio, contenido: ContenidoEnvio, { directori
       // Otra pasada pudo imprimirla primero.
       if (!(await existe(rutaProduccion))) throw new ErrorEnvio(`No se pudo imprimir la orden de trabajo: ${(error as Error).message}`.slice(0, 300));
     }
+    db.prepare('UPDATE integracion_envios SET sha_produccion = ? WHERE id = ?').run(await shaProduccion(), fila.id);
   }
   return mensajeSchema.parse({
     ...base,
@@ -255,6 +263,9 @@ async function entregar(fila: FilaEnvio, opciones: OpcionesEnvio & Required<Pick
     marcarEntregado(db, fila.id, status, texto, opciones.ahora());
     console.info(`[integracion] ${fila.evento} ${fila.clave_idempotencia} entregado (${ack.data.status}).`);
   } catch (error) {
+    // Si entretanto se encoló una revisión más nueva, esta ya no hace falta: no se reprograma durante horas
+    // (auditoría BUG-019). La anulación de un pedido no queda detrás de una orden de trabajo pendiente.
+    if (fila.evento === 'order.ready' && reemplazarSiHayNueva(db, fila)) return;
     const e = error instanceof ErrorEnvio ? error : new ErrorEnvio(`Error inesperado: ${(error as Error)?.message ?? error}`.slice(0, 300));
     const intentos = fila.intentos + 1;
     const definitivo = e.permanente || intentos >= MAX_INTENTOS;

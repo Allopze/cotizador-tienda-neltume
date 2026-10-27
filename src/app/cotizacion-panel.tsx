@@ -509,7 +509,7 @@ export function CotizacionPanel({
   const conPrecio = actual.solicitudes.length - new Set(actual.incompletos.map((p) => p.indice)).size;
   const controlesEdicion = () => (
     <>
-      <div className="quote-edit-history" aria-label="Historial de edición">
+      <div className="quote-edit-history" role="group" aria-label="Historial de edición">
         <button
           type="button"
           className="button secondary small"
@@ -612,7 +612,7 @@ export function CotizacionPanel({
         <strong>{actual.cliente.nombre || SIN_CLIENTE}</strong>
         <span>
           {[actual.cliente.proyecto, actual.cliente.comuna].filter(Boolean).join(' · ') ||
-            'Cliente opcional · puedes completarlo después'}
+            (editable ? 'Cliente opcional · puedes completarlo después' : '')}
         </span>
       </div>
       {actual.incompletos.length > 0 && (
@@ -669,9 +669,13 @@ export function CotizacionPanel({
               </thead>
               <tbody>
                 {actual.solicitudes.map((s, i) => {
+                  // La identidad la asigna el servidor y viaja con el ítem: al quitar, mover o cambiar otro ítem,
+                  // el campo abierto sigue siendo del mismo producto (auditoría BUG-001). Sin id (datos de antes de
+                  // v29) se conserva la identidad anterior como respaldo.
                   const identidad = JSON.stringify([s.modelo, s.madera, s.fuente]);
                   const ocurrencia = ocurrenciasItems.get(identidad) ?? 0;
                   ocurrenciasItems.set(identidad, ocurrencia + 1);
+                  const claveItem = s.id ?? `${identidad}#${ocurrencia}`;
                   const { pendiente, linea } = lineaDe(actual, i);
                   const medida = linea && medidaPedida(linea);
                   const descripcion = descripcionItem(actual, i);
@@ -697,7 +701,7 @@ export function CotizacionPanel({
                   const personalizado = esPersonalizado(s);
                   const libre = esLibre(s);
                   return (
-                    <Fragment key={`${identidad}#${ocurrencia}`}>
+                    <Fragment key={claveItem}>
                       <tr
                         id={`producto-${i}`}
                         draggable={editable && actual.solicitudes.length > 1}

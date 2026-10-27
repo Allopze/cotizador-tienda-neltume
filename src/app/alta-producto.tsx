@@ -16,6 +16,8 @@ interface Props {
   asistente: boolean;
   inicial?: PrefillAlta;
   alGuardar?: (producto: Producto) => void;
+  /** Informa si el alta tiene datos a medias, para avisar antes de salir de la pantalla (auditoría BUG-063). */
+  alCambiarSucio?: (sucio: boolean) => void;
 }
 /** Atributos que el servidor interpretó o recibió (null = sin dato). */
 interface Borrador {
@@ -84,7 +86,7 @@ export function medidasAlta(c: Pick<Campos, 'familia' | 'anchoMin' | 'anchoMax' 
  * Alta de un producto al catálogo en una sola pantalla: el formulario es la vía manual y el asistente,
  * opcional, lo completa a partir de una descripción. Ambas vías terminan en la misma propuesta revisable.
  */
-export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
+export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: Props) {
   const [ajusteNumero, setAjusteNumero] = useState(REGLAS.ajuste);
   const [campos, setCampos] = useState<Campos>(() => inicial
     ? {
@@ -114,6 +116,13 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
   const [confirmar, confirmacion] = useConfirmacion();
   const uid = useId();
   const inicialAlMontar = useRef(inicial);
+  // Lo escrito a medias: el catálogo lo usa para no perderlo al cambiar de pantalla (auditoría BUG-063).
+  const [baseCampos, setBaseCampos] = useState(() => JSON.stringify(campos));
+  const sucio = !guardado && (JSON.stringify(campos) !== baseCampos || !!mensaje.trim());
+  useEffect(() => {
+    alCambiarSucio?.(sucio);
+    return () => alCambiarSucio?.(false);
+  }, [sucio, alCambiarSucio]);
   const puerta = campos.familia === 'PUERTA';
   const ajuste = porcentaje(ajusteNumero * 100);
   const venta = (neto: number) => Math.round(neto * (1 + ajusteNumero));
@@ -281,6 +290,8 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
       const producto = data.producto ?? propuesta;
       pendiente.current = null;
       setGuardado(producto);
+      // Lo guardado es el punto de partida: editar desde ahí vuelve a marcar el alta como pendiente.
+      setBaseCampos(JSON.stringify(campos));
       setPropuesta(null);
       alGuardar?.(producto);
     } catch (causa) {
@@ -304,6 +315,7 @@ export function AltaProducto({ asistente, inicial, alGuardar }: Props) {
     setMensajes([]);
     setMensaje('');
     setCampos(VACIO);
+    setBaseCampos(JSON.stringify(VACIO));
     setPropuesta(null);
     setGuardado(null);
     setError('');

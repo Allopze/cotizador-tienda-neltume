@@ -35,6 +35,12 @@ export interface Catalogo {
   origen?: OrigenCatalogo;
 }
 export interface SolicitudItem {
+  /**
+   * Identidad estable del ítem dentro de su cotización. La asigna el servidor al crearlo y se conserva al editar,
+   * mover o cambiar de producto; la usa la pantalla como clave de React. Sin ella, dos ítems iguales se confunden y
+   * lo escrito en uno puede guardarse en el otro (auditoría BUG-001). Ausente solo en datos anteriores a v29.
+   */
+  id?: string;
   modelo: string | null;
   madera: string | null;
   ancho: number | null;
@@ -85,6 +91,11 @@ export interface SolicitudItem {
    * pero solo si el mensaje habla de descuento: puede ser un null que la IA puso de más.
    */
   descuentoEscrito?: DescuentoEscrito | null;
+  /**
+   * Solo en tránsito desde el chat: el ítem viene de una confirmación de la persona («sí» a «¿Te refieres a Huilo
+   * Huilo?»). Su valor respalda al ítem sin exigir que esté escrito otra vez (auditoría BUG-006). Nunca se guarda.
+   */
+  confirmado?: boolean;
   /**
    * Solo en tránsito desde el chat: la IA lo marca como ítem libre (no es carpintería). El servidor lo convierte en
    * `personalizado: { familia: 'OTRO' }` si el nombre no es un modelo del catálogo; nunca se guarda.

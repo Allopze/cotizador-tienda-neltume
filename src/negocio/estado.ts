@@ -34,6 +34,11 @@ export interface Despacho {
   entregaComprometida?: string | null;
   destino?: string | null;
   valor?: number | null;
+  /**
+   * Huella del pedido con que se aplicó la tarifa del transportista. Si el bulto cambia después, la tarifa ya no
+   * corresponde y se avisa (auditoría BUG-013).
+   */
+  huella?: string | null;
 }
 export type EstadoComercial = 'pendiente' | 'enviada' | 'seguimiento' | 'aprobada' | 'rechazada' | 'vendida';
 export const etiquetaComercial: Record<EstadoComercial, string> = {
@@ -179,6 +184,11 @@ export interface Cotizacion {
   fechaEmision?: string | null;
   /** Número de la cotización emitida de la que se derivó esta revisión. */
   origen?: number | null;
+  /**
+   * Id de esa misma cotización. El número puede reasignarse (renumerar), así que la relación se resuelve por id;
+   * `origen` queda para mostrarlo (auditoría BUG-025).
+   */
+  origenId?: string | null;
   /** Último día de validez (YYYY-MM-DD, inclusive), 10 días hábiles después de la emisión. */
   vence: string | null;
   /** Porcentaje 0–50 aplicado al neto del cliente antes del IVA. */

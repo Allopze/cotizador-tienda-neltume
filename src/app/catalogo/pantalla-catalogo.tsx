@@ -77,7 +77,9 @@ export function PantallaCatalogo({
   const { avisos, avisar, cerrar } = useAvisos();
   // La configuración es la única sección con un borrador largo que se guarda aparte.
   const [configuracionSucia, setConfiguracionSucia] = useState(false);
-  useAvisoSalida(configuracionSucia, AVISO_SALIDA);
+  // El alta manual también puede quedar a medias: se avisa al salir igual que con la configuración (auditoría BUG-063).
+  const [altaSucia, setAltaSucia] = useState(false);
+  useAvisoSalida(configuracionSucia || altaSucia, AVISO_SALIDA);
   // En móvil las pestañas se desplazan en horizontal: la activa se trae entera a la vista.
   const nav = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -133,7 +135,7 @@ export function PantallaCatalogo({
           )}
           {montada('agregar') && (
             <div hidden={seccion !== 'agregar'}>
-              <AltaProducto asistente={asistente} />
+              <AltaProducto asistente={asistente} alCambiarSucio={setAltaSucia} />
             </div>
           )}
           {montada('manuales') && (

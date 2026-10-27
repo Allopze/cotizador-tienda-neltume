@@ -90,7 +90,10 @@ const referenciaSchema = z
   .strict();
 const referenciasSchema = z.array(referenciaSchema).max(10);
 const familiaSchema = z.enum(['PUERTA', 'MARCO', 'PIEZAS_T', 'MOLDURA', 'OTRO']);
+// Deshacer y Rehacer devuelven los ítems tal como se guardaron: también su identidad (BUG-001), su fábrica y el costo
+// de un especial. Sin ellos en este esquema estricto, cualquier Deshacer respondía 400 y no cambiaba nada.
 const solicitudRestaurarSchema = z.object({
+  id: z.string().max(64).optional(),
   modelo: z.string().max(300).nullable(),
   madera: z.string().max(300).nullable(),
   ancho: z.number().finite().nullable(),
@@ -109,6 +112,8 @@ const solicitudRestaurarSchema = z.object({
   personalizado: z.object({ familia: familiaSchema }).strict().nullable().optional(),
   referencias: referenciasSchema.optional(),
   descuento: descuentoItemSchema.nullable().optional(),
+  costoFabrica: z.number().int().positive().max(100_000_000).nullable().optional(),
+  fabrica: z.enum(FABRICAS).nullable().optional(),
 }).strict();
 const accionSchema = z.discriminatedUnion('tipo', [
   z
@@ -215,7 +220,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       despacho: despachoSchema.optional(),
     })
     .strict(),
-  z.object({ tipo: z.literal('duplicar'), id: z.uuid() }).strict(),
+  z.object({ tipo: z.literal('duplicar'), id: z.uuid(), nuevoId: z.uuid().optional() }).strict(),
   z.object({ tipo: z.literal('eliminar'), id: z.uuid(), actualizada: version }).strict(),
   z
     .object({

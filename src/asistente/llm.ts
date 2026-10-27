@@ -11,6 +11,7 @@ import {
   atributosProductoSchema,
   cambiarNumeroSchema,
   modificarPedidoSchema,
+  normalizarSalida,
   responderSchema,
   salidaSchema,
 } from './esquemas';
@@ -374,6 +375,23 @@ export function problemaSalida(salida: unknown, contexto: ContextoLLM): string |
     return 'Una entrada de items no trae cambios: omítela.';
   if ((res.input.quitar ?? []).some((i) => editados.includes(i)))
     return 'Un mismo índice no puede editarse y quitarse a la vez.';
+  // El índice tiene que ser el del ítem que nombra el mensaje (auditoría BUG-007).
+  const modelosBorrador = [...new Set(contexto.borrador.items.map((i) => i.modelo).filter((m): m is string => !!m))];
+  const nombrados = (texto: string) => modelosBorrador.filter((m) => mismoNombre(texto).includes(mismoNombre(m)));
+  for (const cambio of res.input.items ?? []) {
+    const s = contexto.borrador.items[cambio.indice];
+    if (!s?.modelo) continue;
+    const nombradosEnElCambio = nombrados(cambio.cambios.fuente ?? contexto.mensaje);
+    if (nombradosEnElCambio.length && !nombradosEnElCambio.includes(s.modelo))
+      return `El índice ${cambio.indice} es ${s.modelo}, pero el mensaje habla de ${nombradosEnElCambio[0]}: usa el índice del ítem que nombra el mensaje, no el orden en que aparece.`;
+  }
+  for (const indice of res.input.quitar ?? []) {
+    const s = contexto.borrador.items[indice];
+    if (!s?.modelo) continue;
+    const dichos = nombrados(contexto.mensaje);
+    if (dichos.length && !dichos.includes(s.modelo))
+      return `Vas a quitar el índice ${indice} (${s.modelo}), pero el mensaje habla de ${dichos[0]}: usa el índice del ítem que se quiere quitar.`;
+  }
   if (
     !editados.length &&
     !res.input.quitar?.length &&
@@ -442,19 +460,23 @@ export class CommandCodeLLM implements LLM {
    */
   async interpretar(contexto: ContextoLLM, opciones: OpcionesInterpretar = {}) {
     const consulta = this.nuevaConsulta();
-    const primera = await this.consultarResiliente(consulta, contexto, SYSTEM, HERRAMIENTAS_COTIZACION);
+    const primera = normalizarSalida(
+      await this.consultarResiliente(consulta, contexto, SYSTEM, HERRAMIENTAS_COTIZACION),
+    );
     const formato = problemaSalida(primera, contexto);
     const revision = formato ? null : (opciones.revisar?.(primera) ?? null);
     const problema = formato ?? (typeof revision === 'string' ? revision : revision?.correccion) ?? null;
     if (!problema || this.restante(consulta) < MINIMO_SEGUNDA_MS) return primera;
     const acotado = revision && typeof revision === 'object' ? revision.mensaje : null;
     try {
-      const segunda = await this.consultar(
-        consulta.modelo,
-        { ...contexto, ...(acotado ? { mensaje: acotado } : {}), correccion: problema },
-        SYSTEM,
-        HERRAMIENTAS_COTIZACION,
-        Math.min(timeoutIA(), this.restante(consulta)),
+      const segunda = normalizarSalida(
+        await this.consultar(
+          consulta.modelo,
+          { ...contexto, ...(acotado ? { mensaje: acotado } : {}), correccion: problema },
+          SYSTEM,
+          HERRAMIENTAS_COTIZACION,
+          Math.min(timeoutIA(), this.restante(consulta)),
+        ),
       );
       // La corrección de una respuesta que ya era válida no puede dejarla inutilizable.
       if (!formato && problemaSalida(segunda, contexto)) return primera;

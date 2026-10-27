@@ -27,6 +27,8 @@ export interface ResultadoRestauracion {
   pdf: number;
   referencias: number;
   config: boolean;
+  /** Lo que se conservó de la bandeja de la fábrica para que no retroceda con el respaldo. */
+  integracion: { envios: number; correlativos: number };
 }
 
 interface Opciones {
@@ -122,6 +124,98 @@ function sincronizarArchivo(ruta: string) {
   }
 }
 
+interface EstadoIntegracion {
+  envios: Record<string, unknown>[];
+  correlativos: Record<string, unknown> | undefined;
+  notas: Record<string, unknown>[];
+}
+
+const tablasDe = (db: Database.Database) =>
+  new Set(
+    (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as { name: string }[]).map((t) => t.name),
+  );
+
+/** Foto de la bandeja y los correlativos antes de restaurar, para no hacerlos retroceder (auditoría BUG-020). */
+function capturarIntegracion(rutaDb: string): EstadoIntegracion | null {
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(rutaDb, { readonly: true, fileMustExist: true });
+    const tablas = tablasDe(db);
+    if (!tablas.has('integracion_envios')) return null;
+    return {
+      envios: db.prepare('SELECT * FROM integracion_envios ORDER BY id').all() as Record<string, unknown>[],
+      correlativos: tablas.has('correlativos')
+        ? (db.prepare('SELECT * FROM correlativos WHERE id = 1').get() as Record<string, unknown> | undefined)
+        : undefined,
+      notas: tablas.has('correlativos_nota')
+        ? (db.prepare('SELECT * FROM correlativos_nota').all() as Record<string, unknown>[])
+        : [],
+    };
+  } catch {
+    return null;
+  } finally {
+    db?.close();
+  }
+}
+
+/**
+ * Vuelve a dejar en la base restaurada los envíos que ya existían y los correlativos más altos. Lo que la fábrica ya
+ * recibió no puede desaparecer ni repetirse por volver a un respaldo anterior (auditoría BUG-020).
+ */
+function preservarIntegracion(rutaDb: string, antes: EstadoIntegracion | null) {
+  if (!antes) return { envios: 0, correlativos: 0 };
+  let db: Database.Database | undefined;
+  let envios = 0;
+  let correlativos = 0;
+  try {
+    db = new Database(rutaDb);
+    db.transaction(() => {
+      const tablas = tablasDe(db!);
+      if (tablas.has('integracion_envios') && antes!.envios.length) {
+        const columnas = (db!.pragma('table_info(integracion_envios)') as { name: string }[]).map((c) => c.name);
+        const deLaCopia = new Set(Object.keys(antes!.envios[0]));
+        // Si el respaldo es de un esquema anterior, no se inventan columnas: se deja como quedó.
+        if (columnas.every((c) => deLaCopia.has(c))) {
+          const insertar = db!.prepare(
+            `INSERT OR IGNORE INTO integracion_envios (${columnas.join(', ')}) VALUES (${columnas.map((c) => `@${c}`).join(', ')})`,
+          );
+          for (const fila of antes!.envios) {
+            const existeCotizacion = db!.prepare('SELECT 1 FROM cotizaciones WHERE id = ?').get(fila.cotizacion_id);
+            if (!existeCotizacion) continue;
+            try {
+              envios += insertar.run(fila).changes;
+            } catch {
+              // Un envío de un pedido que ya no está: no impide restaurar.
+            }
+          }
+        }
+      }
+      const c = antes!.correlativos;
+      if (tablas.has('correlativos') && typeof c?.siguiente_cotizacion === 'number' && typeof c.siguiente_nota === 'number') {
+        correlativos += db!
+          .prepare(
+            'UPDATE correlativos SET siguiente_cotizacion = MAX(siguiente_cotizacion, ?), siguiente_nota = MAX(siguiente_nota, ?) WHERE id = 1',
+          )
+          .run(c.siguiente_cotizacion, c.siguiente_nota).changes;
+      }
+      if (tablas.has('correlativos_nota')) {
+        const subir = db!.prepare('UPDATE correlativos_nota SET siguiente = MAX(siguiente, ?) WHERE fabrica = ?');
+        for (const nota of antes!.notas)
+          if (typeof nota.fabrica === 'string' && typeof nota.siguiente === 'number')
+            correlativos += subir.run(nota.siguiente, nota.fabrica).changes;
+      }
+    }).immediate();
+  } catch (error) {
+    console.error(
+      '[restaurar] no se pudo conservar la bandeja de integración:',
+      error instanceof Error ? error.message : error,
+    );
+  } finally {
+    db?.close();
+  }
+  return { envios, correlativos };
+}
+
 /** Busca la base dentro de la carpeta del respaldo: el nombre de la base activa o el único .sqlite que haya. */
 async function baseDelRespaldo(carpeta: string, rutaDb: string) {
   const preferida = join(carpeta, basename(rutaDb));
@@ -149,6 +243,8 @@ export async function restaurarRespaldo(carpetaRespaldo: string, opciones: Opcio
     );
   const { cotizaciones, cuentas } = verificarCopia(copiaDb);
   await exigirServidorDetenido(datos, rutaDb, ahora);
+  // Antes de tocar nada: lo que la fábrica ya recibió no puede desaparecer con el respaldo.
+  const integracionAntes = capturarIntegracion(rutaDb);
 
   // 1. Apartar lo actual (solo lo que existe). Se anota cada movimiento para deshacerlo si algo falla después.
   const aparte = join(datos, `antes-de-restaurar-${ahora.toISOString().replace(/[:.]/g, '-')}`);
@@ -165,11 +261,14 @@ export async function restaurarRespaldo(carpetaRespaldo: string, opciones: Opcio
   };
 
   let config = false;
+  let integracion = { envios: 0, correlativos: 0 };
   const configAntes = await existe(rutaConfig);
   try {
     for (const sufijo of ['', '-wal', '-shm', '-journal']) await apartar(`${rutaDb}${sufijo}`, `${basename(rutaDb)}${sufijo}`);
     await apartar(pdfActual, 'pdf');
     await apartar(referenciasActual, 'referencias');
+    // Órdenes de trabajo y copias congeladas de la integración: sin esto, la bandeja apuntaría a archivos perdidos.
+    await apartar(join(datos, 'integracion'), 'integracion');
     if (configAntes) await copyFile(rutaConfig, join(aparte, basename(rutaConfig)));
 
     // 2. Base: copia a un temporal en la misma carpeta, a disco, y renombre atómico.
@@ -194,6 +293,10 @@ export async function restaurarRespaldo(carpetaRespaldo: string, opciones: Opcio
     };
     await copiar(join(carpeta, 'pdf'), pdfActual, (nombre) => !nombre.startsWith('.'));
     await copiar(join(carpeta, 'referencias'), referenciasActual, (nombre) => ARCHIVO_REFERENCIA.test(nombre));
+    await copiar(join(carpeta, 'integracion'), join(datos, 'integracion'), (nombre) => !nombre.startsWith('.'));
+
+    // La bandeja y los correlativos no retroceden: los envíos posteriores al respaldo se conservan.
+    integracion = preservarIntegracion(rutaDb, integracionAntes);
 
     // 4. Configuración del catálogo, si el respaldo la trae.
     const copiaConfig = join(carpeta, basename(rutaConfig));
@@ -230,5 +333,6 @@ export async function restaurarRespaldo(carpetaRespaldo: string, opciones: Opcio
     pdf: await archivosDe(pdfActual),
     referencias: await archivosDe(referenciasActual),
     config,
+    integracion,
   };
 }

@@ -1,6 +1,6 @@
 import { toNextJsHandler } from 'better-auth/next-js';
 import { auth } from '@/servidor/autenticacion';
-import { esRutaAdminAuth, validarConfiguracionAutenticacion } from '@/servidor/autenticacion-config';
+import { esRutaAdminAuth, esRutaSesionesCruda, validarConfiguracionAutenticacion } from '@/servidor/autenticacion-config';
 import { rechazoAcceso } from '@/servidor/acceso';
 
 export const runtime = 'nodejs';
@@ -11,7 +11,12 @@ const handler = toNextJsHandler(auth);
 function rutaBloqueada(req: Request) {
   const { pathname } = new URL(req.url);
   try {
-    return esRutaAdminAuth(pathname) || esRutaAdminAuth(decodeURIComponent(pathname));
+    return (
+      esRutaAdminAuth(pathname) ||
+      esRutaAdminAuth(decodeURIComponent(pathname)) ||
+      esRutaSesionesCruda(pathname) ||
+      esRutaSesionesCruda(decodeURIComponent(pathname))
+    );
   } catch {
     return true;
   }

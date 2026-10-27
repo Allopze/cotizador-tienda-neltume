@@ -1,4 +1,11 @@
 @import 'tailwindcss';
+/* Los placeholders usan el color terciario de la interfaz (≥4.5:1). Sin esto cada campo toma el gris del navegador,
+   que en los formularios del cotizador medía 3,1:1 (auditoría BUG-060). */
+input::placeholder,
+textarea::placeholder {
+  color: var(--subtle);
+  opacity: 1;
+}
 :root {
   color-scheme: light;
   --ink: #1d2b24;
@@ -971,6 +978,21 @@ button[type='submit'].button.peligro:not(:disabled) {
 }
 .campo-sufijo {
   color: var(--muted);
+  font-size: var(--fs-sm);
+}
+/* Marca del campo con cambios sin guardar: el mismo formulario usa dos criterios de guardado (auditoría BUG-057). */
+.campo-sin-guardar {
+  color: var(--pending);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+}
+/* Aviso dentro de un diálogo de confirmación (p. ej. campos sin guardar al emitir). */
+.dialogo-aviso {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--pending);
+  background: var(--amber-bg);
+  color: var(--amber-text, var(--ink));
   font-size: var(--fs-sm);
 }
 .campo-error {

@@ -37,6 +37,7 @@ const clienteSchema = z.object({
 });
 
 const solicitudSchema = z.object({
+  id: z.string().max(64).optional(),
   modelo: z.string().nullable(),
   madera: z.string().nullable(),
   ancho: z.number().nullable(),
@@ -238,6 +239,7 @@ const cotizacionBaseSchema = z.looseObject({
   pdf: z.string().nullable(),
   fechaEmision: z.string().nullable().optional(),
   origen: z.number().int().nullable().optional(),
+  origenId: z.string().nullable().optional(),
   vence: z.string().nullable(),
   descuento: z.number().min(0).max(50),
   /** Ausente: el descuento de quien lo guardó antes de existir el automático (se deriva al guardar). */

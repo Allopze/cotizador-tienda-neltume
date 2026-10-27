@@ -153,21 +153,31 @@ describe('anclaje de nombres', () => {
     expect(items[0]).toMatchObject({ modelo: null, madera: 'PINO OREGON' });
     expect(avisos).toEqual([expect.stringMatching(/modelo del ítem 1 como «PIEZAS T».*no aparece/)]);
   });
-  it('reconoce alias, palabras del nombre y valores que ya estaban en el borrador', () => {
-    const { items, avisos } = anclarNombres(
+  it('reconoce alias; un valor de otro ítem solo vale si la frase dice «otra igual»', () => {
+    const previos = [item({ modelo: 'HUILO HUILO', madera: 'LENGA' })];
+    // El alias y la madera de la frase se aceptan; el nombre y la madera que solo estaban en otro ítem, no
+    // (auditoría BUG-006: antes se copiaban de cualquier ítem del borrador).
+    const sinFrase = anclarNombres(
       [
         item({ modelo: 'COZ COZ', madera: 'MARA ENCHAPADA' }),
         item({ modelo: 'Huilo Huilo', madera: 'LENGA' }),
       ],
-      [item({ modelo: 'HUILO HUILO', madera: 'LENGA' })],
+      previos,
       ['4 coscos enchapada en mara'],
       alias,
     );
-    expect(items.map((i) => [i.modelo, i.madera])).toEqual([
+    expect(sinFrase.items.map((i) => [i.modelo, i.madera])).toEqual([
       ['COZ COZ', 'MARA ENCHAPADA'],
-      ['Huilo Huilo', 'LENGA'],
+      [null, null],
     ]);
-    expect(avisos).toEqual([]);
+    // «otra igual» es la excepción: la persona pide repetir lo que ya está en el borrador.
+    const conFrase = anclarNombres(
+      [item({ modelo: 'Huilo Huilo', madera: 'LENGA', fuente: 'otra igual' })],
+      previos,
+      ['4 coscos enchapada en mara'],
+      alias,
+    );
+    expect(conFrase.items[0]).toMatchObject({ modelo: 'Huilo Huilo', madera: 'LENGA' });
   });
   it('a la IA se le exige decidir tipoMedida y fuente en cada ítem nuevo', () => {
     const [modificar] = herramientas(HERRAMIENTAS_COTIZACION);

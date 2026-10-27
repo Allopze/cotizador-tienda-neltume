@@ -354,12 +354,14 @@ export interface TarifaStarken {
 export type LineaPedido = ProductoDespacho & Pick<MedidasSolicitadas, 'medidaSolicitada'>;
 /**
  * El pedido de una tarifa como texto: lo que define el bulto en cada línea (producto con sus medidas, cantidad y
- * medidas pedidas), sin importar el orden. El servidor firma su hash con la tarifa y la pantalla lo compara para
- * saber si las tarifas a la vista siguen valiendo. (En un arreglo JSON, un campo ausente queda como null.)
+ * medidas pedidas), sin importar el orden. Un ítem libre (familia OTRO) no es carpintería ni pesa en el bulto, así
+ * que tampoco invalida la tarifa (auditoría BUG-036). El servidor firma su hash con la tarifa y la pantalla lo
+ * compara para saber si las tarifas a la vista siguen valiendo. (En un arreglo JSON, un campo ausente queda como null.)
  */
 export const clavePedido = (lineas: readonly LineaPedido[]) =>
   JSON.stringify(
     lineas
+      .filter(({ producto: p }) => p.familia !== 'OTRO')
       .map(({ producto: p, ...l }) =>
         JSON.stringify([
           p.codigo,

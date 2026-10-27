@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 28;
+export const VERSION_ESQUEMA = 29;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -46,6 +46,11 @@ function hayJsonLegado(datos: string, revisarCatalogoPredeterminado: boolean) {
   const datosPredeterminados =
     revisarCatalogoPredeterminado && !process.env.NELTUME_DATA_DIR && directorio === resolve('data');
   return existsSync(catalogo) && (relativo || catalogoConfigurado || datosPredeterminados);
+}
+
+/** Columnas actuales de una tabla; las migraciones agregan solo las que faltan. */
+function columnasDe(db: Database.Database, tabla: string) {
+  return (db.pragma(`table_info(${tabla})`) as { name: string }[]).map((columna) => columna.name);
 }
 
 function crearEsquema(db: Database.Database) {
@@ -512,6 +517,25 @@ function crearEsquema(db: Database.Database) {
       if (!tieneColumna)
         db.exec('ALTER TABLE solicitudes ADD COLUMN item_libre INTEGER NOT NULL DEFAULT 0 CHECK (item_libre IN (0, 1));');
       db.exec('PRAGMA user_version = 28;');
+    }).immediate();
+  if (version < 29)
+    db.transaction(() => {
+      // v29: identidad estable por ítem. Sin ella, dos ítems iguales del mismo modelo comparten la clave de React y
+      // lo escrito en uno puede guardarse en el otro (auditoría BUG-001). A los ítems existentes se les asigna una.
+      if (!columnasDe(db, 'solicitudes').includes('item_id'))
+        db.exec('ALTER TABLE solicitudes ADD COLUMN item_id TEXT;');
+      db.exec("UPDATE solicitudes SET item_id = lower(hex(randomblob(16))) WHERE item_id IS NULL OR item_id = '';");
+      db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_solicitudes_item ON solicitudes(cotizacion_id, item_id);');
+      // Y el sha256 de la orden de trabajo que se envió, para no reutilizar un PDF de otro pedido (BUG-003).
+      if (!columnasDe(db, 'integracion_envios').includes('sha_produccion'))
+        db.exec('ALTER TABLE integracion_envios ADD COLUMN sha_produccion TEXT;');
+      // El número que una emisión en curso ya reservó: «Cambiar N°» no puede tomarlo (BUG-024).
+      if (!columnasDe(db, 'emisiones_en_curso').includes('numero'))
+        db.exec('ALTER TABLE emisiones_en_curso ADD COLUMN numero INTEGER;');
+      // Huella del pedido con que se aplicó la tarifa del despacho (BUG-013).
+      if (!columnasDe(db, 'cotizaciones').includes('despacho_huella'))
+        db.exec('ALTER TABLE cotizaciones ADD COLUMN despacho_huella TEXT;');
+      db.exec('PRAGMA user_version = 29;');
     }).immediate();
 }
 

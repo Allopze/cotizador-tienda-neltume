@@ -236,7 +236,24 @@ async function migrarConBloqueo(
       fecha: metadata.fecha,
       productos: repo.todos(),
     };
-    if (!isDeepStrictEqual(estadoLeido, estado))
+    // El id estable de cada ítem y el id del origen los asigna la base al guardar (v29): no forman parte de lo que
+    // traía el JSON y no pueden compararse contra el original.
+    const sinIds = (e: Estado): Estado => ({
+      ...e,
+      cotizaciones: e.cotizaciones.map((cotizacion) => {
+        const q = { ...cotizacion };
+        delete q.origenId;
+        return {
+          ...q,
+          solicitudes: q.solicitudes.map((solicitud) => {
+            const s = { ...solicitud };
+            delete s.id;
+            return s;
+          }),
+        };
+      }),
+    });
+    if (!isDeepStrictEqual(sinIds(estadoLeido), sinIds(estado)))
       throw new Error('La verificación detectó diferencias en las cotizaciones migradas.');
     if (!isDeepStrictEqual(catalogoLeido, comoSeGuarda(catalogo)))
       throw new Error('La verificación detectó diferencias en los productos migrados.');

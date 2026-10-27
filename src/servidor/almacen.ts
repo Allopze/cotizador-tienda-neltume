@@ -37,6 +37,7 @@ import { REGLAS, type ReglasComerciales } from '../negocio/precios';
 import { calcularVence, estaVencida, inicioDiaSantiago, fechaLocal } from '../negocio/vigencia';
 import { abrirBaseDatos, cerrarBaseDatos, directorioDatos, rutaBaseDatos } from './base-datos';
 import { normalizarTexto, textoBusqueda } from './busqueda';
+import { conIds } from './edicion';
 import { ErrorConflicto, ErrorUsuario, registrarError } from './errores';
 import { encolarEnTransaccion, type Encolable } from './integracion-bandeja';
 import { despertarIntegracion } from './integracion-envio';
@@ -139,6 +140,7 @@ type FilaCotizacion = {
   despacho_entrega: string | null;
   despacho_destino: string | null;
   despacho_valor: number | null;
+  despacho_huella: string | null;
   estado_comercial: 'pendiente' | 'enviada' | 'seguimiento' | 'aprobada' | 'rechazada' | 'vendida';
   /** Texto guardado: puede traer el antiguo «produccion_terminada» (ver `leerEstadoOperativo`). */
   estado_operativo: string | null;
@@ -330,8 +332,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
     if (!filas.length) return [];
     const hijos = <T extends { cotizacion_id: string }>(sql: string) =>
       agrupar(db.prepare(sql.replace('$FILTRO', filtro)).all(...param) as T[]);
-    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null; item_libre: number; costo_fabrica: number | null; descuento_tipo: DescuentoItem['tipo'] | null; descuento_valor: number | null }>(`
-      SELECT cotizacion_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, item_libre, costo_fabrica, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor, fabrica FROM solicitudes $FILTRO
+    const solicitudes = hijos<SolicitudItem & { cotizacion_id: string; item_id: string | null; precio_unitario: number | null; medida_por_defecto: number; familia_personalizada: Familia | null; item_libre: number; costo_fabrica: number | null; descuento_tipo: DescuentoItem['tipo'] | null; descuento_valor: number | null }>(`
+      SELECT cotizacion_id, item_id, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida AS tipoMedida, medida_por_defecto, familia_personalizada, item_libre, costo_fabrica, descripcion, observaciones, modelo_original AS modeloOriginal, coincidencia_modelo AS coincidenciaModelo, fuente, descuento_tipo, descuento_valor, fabrica FROM solicitudes $FILTRO
       ORDER BY cotizacion_id, orden`);
     const referencias = hijos<ReferenciaItem & { cotizacion_id: string; item_orden: number }>(`
       SELECT cotizacion_id, item_orden, archivo, nombre, tipo, tamano, fecha FROM referencias_item $FILTRO
@@ -366,6 +368,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           ]);
         const reparadas = (solicitudes.get(f.id) ?? []).map((fila, orden): SolicitudItem => {
           const s: SolicitudItem = {
+            ...(fila.item_id ? { id: fila.item_id } : {}),
             modelo: fila.modelo,
             madera: fila.madera,
             ancho: fila.ancho,
@@ -447,6 +450,7 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
                   entregaComprometida: f.despacho_entrega,
                   destino: f.despacho_destino,
                   valor: f.despacho_valor,
+                  ...(f.despacho_huella ? { huella: f.despacho_huella } : {}),
                 }
               : null,
           reglas: reglasDesdeJson(f.reglas_json),
@@ -472,7 +476,10 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
         };
         if (!f.fecha_emision_ausente) q.fechaEmision = f.fecha_emision;
         if (f.fecha_aprobacion) q.fechaAprobacion = f.fecha_aprobacion;
-        if (!f.origen_ausente) q.origen = f.origen_id ? f.origen_numero : null;
+        if (!f.origen_ausente) {
+          q.origen = f.origen_id ? f.origen_numero : null;
+          q.origenId = f.origen_id;
+        }
         const lineasDeNotas = lineasNota.get(f.id) ?? [];
         q.notas = ordenarNotas(
           (notas.get(f.id) ?? []).map((n) => {
@@ -599,6 +606,8 @@ function insertarLineas(
 
 /** Escribe una cotización y reemplaza sus filas hijas. Valida antes de tocar la base. */
 function persistirCotizacion(db: Database.Database, q: Cotizacion) {
+  // Ningún ítem llega a la base sin identidad: es la clave con que la pantalla lo distingue de uno igual.
+  q.solicitudes = conIds(q.solicitudes);
   const valida = cotizacionSchema.safeParse(q);
   if (!valida.success)
     throw new Error(
@@ -607,12 +616,14 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
   const origenAusente = !Object.hasOwn(q, 'origen');
   const fechaAusente = !Object.hasOwn(q, 'fechaEmision');
   const origen =
-    q.origen == null
-      ? undefined
-      : (db.prepare('SELECT id FROM cotizaciones WHERE numero = ?').get(q.origen) as
-          { id: string } | undefined);
-  if (q.origen != null && !origen)
-    throw new Error(`La cotización de origen ${q.origen} no existe en la base.`);
+    q.origenId != null
+      ? (db.prepare('SELECT id FROM cotizaciones WHERE id = ?').get(q.origenId) as { id: string } | undefined)
+      : q.origen == null
+        ? undefined
+        : (db.prepare('SELECT id FROM cotizaciones WHERE numero = ?').get(q.origen) as
+            { id: string } | undefined);
+  if ((q.origen != null || q.origenId != null) && !origen)
+    throw new Error(`La cotización de origen ${q.origenId ?? q.origen} no existe en la base.`);
   const existente = db.prepare('SELECT orden FROM cotizaciones WHERE id = ?').get(q.id) as
     { orden: number } | undefined;
   const orden =
@@ -628,7 +639,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       fecha_emision_ausente, origen_id, origen_ausente, vence, descuento, descuento_manual, flete, flete_descripcion, flete_cantidad, margen_cotizacion, creada_por, emitida_por,
       aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda,
       observaciones, despacho_direccion, despacho_transporte, despacho_entrega, reglas_json,
-      estado_comercial, estado_operativo, despacho_destino, despacho_valor,
+      estado_comercial, estado_operativo, despacho_destino, despacho_valor, despacho_huella,
       facturacion_estado, facturacion_tipo, facturacion_id_externo, facturacion_fecha, fecha_aprobacion
     ) VALUES (
       @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
@@ -637,7 +648,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       @fecha_emision_ausente, @origen_id, @origen_ausente, @vence, @descuento, @descuento_manual, @flete, @flete_descripcion, @flete_cantidad, @margen_cotizacion, @creada_por, @emitida_por,
       @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda,
       @observaciones, @despacho_direccion, @despacho_transporte, @despacho_entrega, @reglas_json,
-      @estado_comercial, @estado_operativo, @despacho_destino, @despacho_valor,
+      @estado_comercial, @estado_operativo, @despacho_destino, @despacho_valor, @despacho_huella,
       @facturacion_estado, @facturacion_tipo, @facturacion_id_externo, @facturacion_fecha, @fecha_aprobacion
     ) ON CONFLICT(id) DO UPDATE SET
       numero = excluded.numero,
@@ -684,6 +695,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       estado_operativo = excluded.estado_operativo,
       despacho_destino = excluded.despacho_destino,
       despacho_valor = excluded.despacho_valor,
+      despacho_huella = excluded.despacho_huella,
       facturacion_estado = excluded.facturacion_estado,
       facturacion_tipo = excluded.facturacion_tipo,
       facturacion_id_externo = excluded.facturacion_id_externo,
@@ -736,6 +748,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     estado_operativo: operacionDe(q),
     despacho_destino: q.despacho?.destino ?? null,
     despacho_valor: q.despacho ? q.despacho.valor ?? q.flete : null,
+    despacho_huella: q.despacho?.huella ?? null,
     facturacion_estado: q.facturacion?.estado ?? 'pendiente',
     facturacion_tipo: q.facturacion?.tipo ?? null,
     facturacion_id_externo: q.facturacion?.identificadorExterno ?? null,
@@ -767,8 +780,8 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     db.prepare(`DELETE FROM ${tabla} WHERE cotizacion_id = ?`).run(q.id);
 
   const insSolicitud = db.prepare(`
-    INSERT INTO solicitudes (cotizacion_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, item_libre, costo_fabrica, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor, fabrica)
-    VALUES (@cotizacion_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @item_libre, @costo_fabrica, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor, @fabrica)
+    INSERT INTO solicitudes (cotizacion_id, item_id, orden, modelo, madera, ancho, alto, medida, cantidad, precio_unitario, margen, tipo_medida, medida_por_defecto, familia_personalizada, item_libre, costo_fabrica, descripcion, observaciones, modelo_original, coincidencia_modelo, fuente, descuento_tipo, descuento_valor, fabrica)
+    VALUES (@cotizacion_id, @item_id, @orden, @modelo, @madera, @ancho, @alto, @medida, @cantidad, @precio_unitario, @margen, @tipo_medida, @medida_por_defecto, @familia_personalizada, @item_libre, @costo_fabrica, @descripcion, @observaciones, @modelo_original, @coincidencia_modelo, @fuente, @descuento_tipo, @descuento_valor, @fabrica)
   `);
   const insReferencia = db.prepare(`
     INSERT INTO referencias_item (cotizacion_id, item_orden, orden, archivo, nombre, tipo, tamano, fecha)
@@ -777,6 +790,7 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
   q.solicitudes.forEach((s, i) =>
     insSolicitud.run({
       cotizacion_id: q.id,
+      item_id: s.id!,
       orden: i,
       modelo: s.modelo,
       madera: s.madera,
@@ -961,7 +975,7 @@ export class Unidad {
   private sucias = new Set<string>();
   private eliminadas = new Set<string>();
   private eventos: (EventoCotizacion & { id: string })[] = [];
-  constructor(private db: Database.Database) {}
+  constructor(private db: Database.Database, private directorio?: string) {}
 
   /** Fecha del último evento `tipo` ya guardado de una cotización; null si no hay. */
   fechaEvento(id: string, tipo: TipoEvento): string | null {
@@ -992,7 +1006,6 @@ export class Unidad {
       .run(id, documento, ficha, new Date(ahora + EMISION_VIGENTE_MS).toISOString());
     return ficha;
   }
-
   /** Anota una entrada del registro de actividad; se escribe al confirmar, junto con la cotización. */
   registrarEvento(id: string, tipo: TipoEvento, usuario: string | null, detalle: string | null = null) {
     this.eventos.push({ id, tipo, usuario, detalle, fecha: new Date().toISOString() });
@@ -1097,7 +1110,10 @@ export class Unidad {
     return this.db
       .transaction(() => {
         const ficha = this.marcarEmision(id, 'cotizacion');
-        return { numero: this.siguienteCotizacion(numeroSolicitado), ficha };
+        const numero = this.siguienteCotizacion(numeroSolicitado);
+        // El número reservado se anota con la marca: «Cambiar N°» lo verá ocupado mientras se genera el PDF.
+        this.db.prepare('UPDATE emisiones_en_curso SET numero = ? WHERE cotizacion_id = ? AND ficha = ?').run(numero, id, ficha);
+        return { numero, ficha };
       })
       .immediate();
   }
@@ -1137,6 +1153,15 @@ export class Unidad {
       );
     const otra = this.db.prepare('SELECT id FROM cotizaciones WHERE numero = ? AND id <> ?').get(numero, id);
     if (otra) throw new ErrorConflicto(`La cotización N° ${numero} ya existe: elige un número libre.`, 'numero_usado');
+    // Un número que otra emisión ya reservó todavía no está en `cotizaciones`, pero tampoco está libre.
+    const reservada = this.db
+      .prepare('SELECT 1 FROM emisiones_en_curso WHERE numero = ? AND cotizacion_id <> ?')
+      .get(numero, id);
+    if (reservada)
+      throw new ErrorConflicto(
+        `La cotización N° ${numero} se está emitiendo en este momento: elige otro número o espera unos segundos.`,
+        'numero_usado',
+      );
   }
 
   /** Lo mismo que `validarNumeroCotizacion` para la nota de `fabrica`: el número es libre dentro de esa fábrica. */
@@ -1255,7 +1280,8 @@ export class Unidad {
         );
         for (const e of this.eventos)
           if (!this.eliminadas.has(e.id)) insertar.run(e.id, e.fecha, e.usuario, e.tipo, e.detalle);
-        for (const item of this.integracion) if (encolarEnTransaccion(this.db, item) !== null) this.encoladosIntegracion++;
+        for (const item of this.integracion)
+          if (encolarEnTransaccion(this.db, item, new Date(), this.directorio) !== null) this.encoladosIntegracion++;
       })
       .immediate();
     this.integracion = [];
@@ -1421,7 +1447,7 @@ export class Almacen {
   }
 
   revisionAbierta(original: Cotizacion): Cotizacion | null {
-    return new Unidad(this.db).revisionAbierta(original);
+    return new Unidad(this.db, this.directorio).revisionAbierta(original);
   }
 
   /**
@@ -1457,13 +1483,16 @@ export class Almacen {
     }[];
   }
 
-  /** Elimina borradores sin número dentro del bloqueo; ignora los que cambiaron de estado. */
-  async eliminarBorradores(ids: string[]) {
+  /**
+   * Elimina borradores sin número dentro del bloqueo. Cada candidato trae la versión que se vio al listarlo: si
+   * alguien lo retomó entretanto, se deja intacto (auditoría BUG-046).
+   */
+  async eliminarBorradores(candidatos: { id: string; actualizada: string }[]) {
     return this.transaccion((u) => {
       let eliminados = 0;
-      for (const id of ids) {
+      for (const { id, actualizada } of candidatos) {
         const q = u.obtener(id);
-        if (q?.estado !== 'borrador' || q.numero !== null) continue;
+        if (q?.estado !== 'borrador' || q.numero !== null || q.actualizada !== actualizada) continue;
         u.eliminar(id);
         eliminados++;
       }
@@ -1875,7 +1904,7 @@ export class Almacen {
       throw e;
     }
     try {
-      const unidad = new Unidad(this.db);
+      const unidad = new Unidad(this.db, this.directorio);
       const resultado = await fn(unidad);
       if (comprometido) throw new ErrorOcupado();
       unidad.confirmar();

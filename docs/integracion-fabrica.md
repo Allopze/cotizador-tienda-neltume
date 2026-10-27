@@ -331,7 +331,7 @@ Un **código de producto desconocido** para la fábrica (un producto dado de alt
 
 - **Bandeja de salida** (patrón *transactional outbox*): tabla `integracion_envios` de la base SQLite de la tienda (esquema 26). El evento se inserta en la **misma transacción** que guarda la nota de pedido: si la nota no se guarda, no hay envío; si se guarda, el envío no se pierde aunque el servidor se reinicie.
 - **Envío automático**: al confirmar la nota se despierta el envío en segundo plano; además, una pasada cada minuto retoma reintentos y lo que quedó de un reinicio (`src/instrumentation.ts`).
-- **Reintentos**: espera exponencial de 30 s, 1, 2, 4… minutos hasta 6 h, ±20 % al azar; tope de **15 intentos** (≈ 3 días). Después queda «fallido».
+- **Reintentos**: espera exponencial de 30 s, 1, 2, 4… minutos hasta 6 h, ±20 % al azar; tope de **15 intentos** (unas **32,5 h**). Después queda «fallido».
 - **Sin duplicados**: `eventId` y `X-Idempotency-Key` son estables por pedido y revisión en todos los reintentos; un envío en curso queda tomado (no lo toma otra pasada ni otro proceso); la orden de trabajo se imprime una vez y cada reintento manda los mismos bytes.
 - **Orden**: por pedido, las revisiones salen en orden; una revisión nueva deja «reemplazada» a la anterior que aún no había salido (la fábrica recibe directamente el pedido vigente).
 - **Diagnóstico**: cada intento guarda status, error y respuesta; el registro del servidor anota solo identificadores y motivo (`[integracion]`), nunca el pedido ni el secreto. `/api/salud` (sesión administradora) avisa si hay envíos fallidos o pendientes por más de una hora. `npm run integracion` muestra el estado y permite `reintentar <id>`.

@@ -1,5 +1,25 @@
 'use client';
-import { useEffect, useId, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
+
+/**
+ * Campos en edición con cambios sin guardar. El panel los registra para avisar antes de emitir o de salir
+ * (auditoría BUG-011) y para marcar el campo como «sin guardar» (BUG-057).
+ */
+export interface RegistroCamposAbiertos {
+  registrar: (id: string, sucio: boolean) => void;
+  quitar: (id: string) => void;
+}
+export const CamposAbiertosContext = createContext<RegistroCamposAbiertos | null>(null);
 
 /** Sugerencia mientras se escribe (p. ej. un cliente de otra cotización): elegirla la aplica y cierra el campo. */
 export interface SugerenciaCampo {
@@ -94,6 +114,14 @@ export function CampoEditable({
   const devolverFoco = useRef(false);
   const busqueda = useRef<{ temporizador?: ReturnType<typeof setTimeout>; control?: AbortController }>({});
   const id = useId();
+  // Lo escrito que aún no está guardado: el panel lo cuenta para avisar y el campo lo marca.
+  const registro = useContext(CamposAbiertosContext);
+  const sucio = editando && borrador.trim() !== valor.trim();
+  useEffect(() => {
+    if (!registro) return;
+    registro.registrar(id, sucio);
+    return () => registro.quitar(id);
+  }, [registro, id, sucio]);
 
   useEffect(() => {
     if (!abrirAlMontar) return;
@@ -329,6 +357,7 @@ export function CampoEditable({
           />
         )}
         {sufijo && <span className="campo-sufijo">{sufijo}</span>}
+        {sucio && <span className="campo-sin-guardar">Sin guardar</span>}
         <button type="submit" className="campo-guardar" disabled={guardando}>
           {guardando ? 'Guardando…' : 'Guardar'}
         </button>

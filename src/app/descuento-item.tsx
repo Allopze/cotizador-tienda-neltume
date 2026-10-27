@@ -111,7 +111,8 @@ export function DescuentoLinea({
     if (problema) return;
     const nuevo = descuentoEscrito(tipo, texto);
     if (!nuevo) {
-      if (guardado) void guardar(null);
+      // Un campo vacío no quita el descuento: al cambiar el tipo el campo aparece vacío sin que la persona haya
+      // borrado nada. Solo lo quitan «Quitar descuento» o un 0 escrito (auditoría BUG-010).
       return;
     }
     if (guardado?.tipo === tipo && Math.abs(guardado.valor - nuevo.valor) < 0.001) return;

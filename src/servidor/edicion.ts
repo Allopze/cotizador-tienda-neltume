@@ -1,5 +1,6 @@
 // Piezas de la edición de una cotización: aplicar los cambios de los ítems y del flete, el despacho, y los textos
 // que quedan en la actividad. Son funciones sin estado; `Servicio.editar` las orquesta dentro de su transacción.
+import { randomUUID } from 'node:crypto';
 import type { ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
 import { aCentesimas, margenAPorcentaje, redondearMargen } from '../negocio/cifras';
 import { contarPuertas, descuentoEsManual, textoPuertas } from '../negocio/descuento-cantidad';
@@ -33,8 +34,39 @@ export type CambioItem = NonNullable<Editar['items']>[number];
 export const marca = (anterior?: string) =>
   new Date(Math.max(Date.now(), anterior ? Date.parse(anterior) + 1 : 0)).toISOString();
 
+/** Controles bidi que un texto pegado puede traer: invertían lo que se imprime en el PDF (auditoría BUG-065). */
+const BIDI = /[\u202A-\u202E\u2066-\u2069]/g;
+
 export const limpiarTexto = (valor: unknown, max: number) =>
-  typeof valor === 'string' ? valor.replace(/\s+/g, ' ').trim().slice(0, max) || null : null;
+  typeof valor === 'string'
+    ? valor.replace(BIDI, '').replace(/\s+/g, ' ').trim().slice(0, max) || null
+    : null;
+
+/** Como `limpiarTexto`, pero conserva los saltos de línea: las observaciones se imprimen tal como se escribieron. */
+export const limpiarTextoLibre = (valor: unknown, max: number) =>
+  typeof valor === 'string'
+    ? valor.replace(BIDI, '').replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim().slice(0, max) || null
+    : null;
+
+/**
+ * Identidad estable por ítem: asigna un id a los que no lo tengan (un ítem recién agregado o datos anteriores a
+ * v29) y conserva los existentes. Sin ids, dos ítems iguales comparten la clave de React y lo escrito en uno se
+ * guarda en el otro (auditoría BUG-001). Devuelve el mismo arreglo si no hubo nada que asignar.
+ */
+export function conIds(solicitudes: SolicitudItem[]): SolicitudItem[] {
+  let asignado = false;
+  // Un id repetido (una instantánea de Deshacer que llega del navegador) recibe uno nuevo: el índice es único.
+  const vistos = new Set<string>();
+  const resultado = solicitudes.map((s) => {
+    if (s.id && !vistos.has(s.id)) {
+      vistos.add(s.id);
+      return s;
+    }
+    asignado = true;
+    return { ...s, id: randomUUID() };
+  });
+  return asignado ? resultado : solicitudes;
+}
 
 const porcentajeTexto = (n: number) => `${String(n).replace('.', ',')} %`;
 /** Margen (fracción) como porcentaje legible: 0,42 → «42 %»; sin el ruido binario de 0,07 × 100. */
@@ -114,6 +146,9 @@ export function aplicarDespacho(base: Despacho | null | undefined, cambios: Part
     entregaComprometida: base?.entregaComprometida ?? null,
     destino: base?.destino ?? null,
     valor,
+    // La huella sobrevive a cambiar la dirección o el destino: solo la invalida el bulto del pedido. Se omite si no
+    // hay tarifa aplicada, para no cambiar la forma del despacho.
+    ...(base?.huella ? { huella: base.huella } : {}),
   };
   const cambiados: { campo: CampoDespacho; texto: string }[] = [];
   for (const [campo, etiqueta, largo] of CAMPOS_DESPACHO) {
@@ -356,6 +391,11 @@ export function textoActividad({
       extras.push(textoReferencias(cambio.indice, anterior.referencias, solicitudes[cambio.indice].referencias));
     if (cambio.cambios.precioUnitario !== undefined && cambio.cambios.precioUnitario !== anterior.precioUnitario)
       extras.push(`Precio cliente de ${describir(anterior)} actualizado${cambio.cambios.precioUnitario === null ? ' según la ganancia aplicada' : ` a ${pesos(cambio.cambios.precioUnitario)}`}`);
+    const costoNuevo = solicitudes[cambio.indice].costoFabrica ?? null;
+    if (cambio.cambios.costoFabrica !== undefined && (anterior.costoFabrica ?? null) !== costoNuevo)
+      extras.push(
+        `Costo de fábrica de ${describir(anterior)}: ${anterior.costoFabrica ? pesos(anterior.costoFabrica) : 'por definir'} → ${costoNuevo ? pesos(costoNuevo) : 'por definir'}`,
+      );
     const descuentoItem = solicitudes[cambio.indice].descuento ?? null;
     if (cambio.cambios.descuento !== undefined && claveDescuento(anterior) !== claveDescuento(solicitudes[cambio.indice]))
       extras.push(

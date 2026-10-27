@@ -13,7 +13,8 @@ import { generarPdf, plantilla } from '../src/servidor/pdf';
 vi.mock('../src/servidor/pdf', () => ({
   prepararPdf: vi.fn(async () => {}),
   generarPdf: vi.fn(async () => {}),
-  plantilla: vi.fn(async (_q: unknown, doc: { tipo: string; numero: number }) => `<html>${doc.tipo} ${doc.numero}</html>`),
+  // Como la plantilla real: el número se imprime con «N.º», que es lo que renumera la copia (auditoría BUG-016).
+  plantilla: vi.fn(async (_q: unknown, doc: { tipo: string; numero: number }) => `<html><h1>N.º ${doc.numero}</h1>${doc.tipo}</html>`),
 }));
 
 const molco: Producto = {
@@ -216,11 +217,17 @@ describe('Cambio de número desde el documento', () => {
       [CORRELATIVOS_NOTA.panguipulli, `nota-pedido-panguipulli-${CORRELATIVOS_NOTA.panguipulli}-2.pdf`],
       [CORRELATIVOS_NOTA.santiago, `nota-pedido-santiago-${CORRELATIVOS_NOTA.santiago}-2.pdf`],
     ]);
-    expect(vi.mocked(plantilla).mock.calls.map(([doc, d]) => [(doc as Cotizacion).numero, d.tipo, d.numero])).toEqual([
-      [340, 'cotizacion', 340],
-      [340, 'nota', CORRELATIVOS_NOTA.panguipulli],
-      [340, 'nota', CORRELATIVOS_NOTA.santiago],
-    ]);
+    // Se reimprime desde el documento emitido cambiando solo el número (auditoría BUG-016): el HTML nuevo lleva el
+    // número nuevo y conserva todo lo demás del emitido.
+    const htmlDe = (archivo: string) =>
+      (t.almacen.baseDatos().prepare('SELECT html FROM documentos_snapshot WHERE archivo = ?').get(archivo) as {
+        html: string;
+      }).html;
+    expect(htmlDe(q.pdf!)).toContain('N.º 340');
+    expect(htmlDe(q.pdf!)).not.toContain(`N.º ${antes.numero}`);
+    for (const nota of q.notas) {
+      expect(htmlDe(nota.pdf)).toContain(`N.º ${nota.numero}`);
+    }
     const snapshots = (t.almacen.baseDatos().prepare('SELECT archivo FROM documentos_snapshot WHERE cotizacion_id = ? ORDER BY archivo').all(q.id) as { archivo: string }[]).map((f) => f.archivo);
     expect(snapshots).toEqual([q.pdf, ...q.notas.map((n) => n.pdf)].sort());
     expect(snapshots).not.toContain(antes.pdf);
