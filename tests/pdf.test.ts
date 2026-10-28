@@ -274,8 +274,9 @@ describe('Plantillas', () => {
     expect(html).toContain('<b>Molco Pino Oregon 0,83 m × 2,00 m</b><span class="medida">Medida solicitada: 830 × 2000 mm (Hoja)</span>');
     // Sin plano ni cotas: la medida pedida va en el texto.
     expect(html).not.toMatch(/<svg|class="plano|>Plano</);
-    // Fábrica ve además la referencia de catálogo (el rango que se cobra).
-    expect(html).toContain('Referencia de catálogo: MOL-O-3-A');
+    // Fábrica ve además el código del producto, solo, para identificarlo aunque importe el PDF a mano.
+    expect(html).toContain('<span class="cod">MOL-O-3-A</span>');
+    expect(html).not.toContain('Referencia de catálogo');
     expect(textoVisible(html)).not.toMatch(/descuento/i);
     expect(html).toContain('<dt class="k">Cotización</dt><dd>N.º 325</dd>');
     expect(html).toContain('Recibido por fábrica');
@@ -321,8 +322,8 @@ describe('Plantillas', () => {
     const html = await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 326, montos, fecha: '2026-09-28T12:00:00.000Z' });
     const texto = textoVisible(html);
     const [sinTipo, , sinMedida] = html.split('<tr><td class="n">').slice(1).map(textoVisible);
-    // Con descripción escrita, la medida se informa aparte, sin decir que es de vano.
-    expect(texto).toContain('Medida solicitada: 835 × 2000 mm');
+    // La cotización no imprime «Medida solicitada» ni hoja o vano, tampoco con una descripción escrita a mano.
+    expect(texto).not.toContain('Medida solicitada');
     expect(texto).not.toContain('(Vano)');
     expect(texto).toContain('Puerta con cerradura');
     expect(texto).toContain('Observación: Abre hacia adentro');
@@ -356,10 +357,8 @@ describe('Plantillas', () => {
     const fecha = '2026-09-28T12:00:00.000Z';
     const paraCliente = textoVisible(await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 327, montos, fecha }));
     expect(paraCliente).not.toMatch(/vano|hoja/i);
-    // La medida pedida va aparte solo con una descripción escrita a mano: si no, el nombre ya la lleva.
-    expect(veces(paraCliente, 'Medida solicitada')).toBe(2);
-    expect(paraCliente).toContain('Medida solicitada: 835 × 2000 mm');
-    expect(paraCliente).toContain('Medida solicitada: 800 × 2000 mm');
+    // La cotización no repite la medida aparte, ni con una descripción escrita a mano: el nombre de catálogo ya la lleva.
+    expect(paraCliente).not.toContain('Medida solicitada');
     expect(paraCliente).toContain('Molco Pino Oregon 0,84 m × 2,00 m');
     const paraFabrica = textoVisible(await plantilla(cotizacion(), { tipo: 'nota', numero: 9, montos, fecha }));
     expect(paraFabrica).toContain('Medida solicitada: 820 × 2000 mm (Vano)');
@@ -368,7 +367,7 @@ describe('Plantillas', () => {
     expect(paraFabrica).toContain('Medida solicitada: 800 × 2000 mm (Hoja)');
   });
 
-  it('la nota para fábrica suma la referencia de catálogo y la medida exacta, nunca el margen', async () => {
+  it('la nota para fábrica suma el código y la medida exacta, nunca el margen', async () => {
     await aislarBaseDatos();
     const montos = cotizar(
       [{ producto: puerta, cantidad: 1, anchoSolicitado: 0.835, altoSolicitado: 2, tipoMedida: 'hoja', descripcionDocumento: 'Puerta con cerradura' }],
@@ -378,7 +377,8 @@ describe('Plantillas', () => {
     const texto = textoVisible(html);
     expect(texto).toContain('Puerta con cerradura');
     expect(texto).toContain('Medida solicitada: 835 × 2000 mm (Hoja)');
-    expect(texto).toContain('Referencia de catálogo: MOL-O-3-A · 0,80–0,85 × 2,00 m');
+    expect(texto).toContain('MOL-O-3-A');
+    expect(texto).not.toContain('Referencia de catálogo');
     expect(texto).not.toMatch(/margen|No especificado/i);
   });
 
@@ -697,7 +697,7 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     expect(prueba).not.toContain('sin valor comercial · código');
   });
 
-  it('el código va en mono solo cuando es un campo propio: en la cotización sí, dentro de «Referencia de catálogo» no', async () => {
+  it('el código va en mono en la cotización, donde es un campo propio; en la nota, en gris en la fuente del texto', async () => {
     await aislarBaseDatos();
     const css = (await plantilla(cotizacion(), { tipo: 'cotizacion', numero: 325, montos: unaPuerta(), fecha: '2026-10-25T12:00:00.000Z' })).match(/<style>([\s\S]*?)<\/style>/)![1];
     expect(css).toMatch(/\.cotizacion \.prod \.cod\{font-family:'JetBrains Mono'/);

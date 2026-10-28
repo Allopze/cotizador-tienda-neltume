@@ -3,6 +3,7 @@ import type { Rechazo } from '../catalogo/resolver';
 import type { Montos, ReglasComerciales } from './precios';
 import { ANTICIPO_MINIMO, ANTICIPO_TEXTO } from './limites';
 import { fechaLocal } from './vigencia';
+import { esLibre } from './personalizados';
 export interface Mensaje {
   rol: 'usuario' | 'asistente';
   texto: string;
@@ -480,3 +481,19 @@ export const etiquetaEstado: Record<EstadoCotizacion, string> = {
 /** Solo un borrador admite cambios directos; editar una emitida crea (o reutiliza) su revisión. */
 export const esEditable = (q: Pick<Cotizacion, 'estado'>) =>
   q.estado === 'borrador' || q.estado === 'emitida';
+
+/** Aprobada con al menos una nota de pedido vigente: sus ítems se corrigen con `editar_pedido`, no con `editar`. */
+export const pedidoGenerado = (q: Pick<Cotizacion, 'estado' | 'notas'>) =>
+  q.estado === 'aprobada' && q.notas.some((n) => !n.anulada);
+
+/**
+ * El ítem de una aprobada con notas que todavía se puede corregir: su nota sigue vigente y su fábrica no empezó a
+ * producirla. Un ítem libre no va a fábrica: se corrige mientras haya una nota vigente.
+ */
+export function itemCorregible(q: Pick<Cotizacion, 'estado' | 'notas' | 'solicitudes'>, indice: number) {
+  const s = q.solicitudes[indice];
+  if (!s || !pedidoGenerado(q)) return false;
+  if (esLibre(s)) return true;
+  const nota = q.notas.find((n) => !n.anulada && !!n.fabrica && n.fabrica === s.fabrica);
+  return !!nota && !nota.inicioProduccion;
+}

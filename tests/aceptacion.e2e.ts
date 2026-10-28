@@ -174,8 +174,8 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   expect(cotizacionPdf).toContain('Juan Pérez');
   expect(cotizacionPdf).toContain(DESCRIPCION);
   expect(cotizacionPdf).not.toContain('Huilo Huilo Mara 0,8 a 0,85');
-  // El panel muestra que es medida de vano (paso 1-2); al cliente se le informa la medida sin nombrar el vano.
-  expect(cotizacionPdf).toContain('Medida solicitada: 835 × 2360 mm');
+  // El panel muestra que es medida de vano (paso 1-2); la cotización no repite la medida aparte ni nombra el vano.
+  expect(cotizacionPdf).not.toContain('Medida solicitada');
   expect(cotizacionPdf).not.toMatch(/vano/i);
   for (const monto of [unitario, especial.lineas[0].total, especial.neto, especial.iva, especial.total])
     expect(cotizacionPdf).toContain(pesos(monto));
@@ -224,7 +224,8 @@ test('aceptación: pedido en Mara por vano, edición manual, PDF, aprobación, n
   const notaPdf = await textoPdf(`${DIR_E2E}/pdf/nota-pedido-panguipulli-${numeroNota}.pdf`);
   expect(notaPdf).toMatch(new RegExp(`Nota de pedido\\s+N\\.º ${numeroNota}`));
   expect(notaPdf).toMatch(new RegExp(`Cotización\\s+N\\.º ${numero}`));
-  expect(notaPdf).toContain('Referencia de catálogo: HUIL-M-3-E');
+  expect(notaPdf).toContain('HUIL-M-3-E');
+  expect(notaPdf).not.toContain('Referencia de catálogo');
   expect(notaPdf).toContain('Medida solicitada: 835 × 2360 mm (Vano)');
   for (const monto of [
     fabrica.lineas[0].precioUnitario,

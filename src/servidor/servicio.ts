@@ -123,6 +123,12 @@ export type {
 
 /** Resultado de la primera fase de emitir/aprobar: ya estaba hecho o validado (el número se reserva después). */
 type Preparado<T> = { listo: Cotizacion } | ({ listo: null; copia: Cotizacion; version: string } & T);
+/** Los cambios de un ítem sin la cantidad, que `aplicarCambiosItems` recibe aparte. */
+const sinCantidad = <T extends { cantidad?: number }>(cambios: T): Omit<T, 'cantidad'> => {
+  const resto = { ...cambios };
+  delete resto.cantidad;
+  return resto;
+};
 /** Emitir encontró montos distintos a los revisados: se guardaron en el borrador y se pide confirmar. */
 type PreciosCambiados = { listo: null; cambiados: { avisos: string[]; total: number; actualizada: string } };
 
@@ -630,6 +636,8 @@ export class Servicio {
         });
       case 'cambiar_numero':
         return this.cambiarNumero(accion);
+      case 'editar_pedido':
+        return this.editarPedido(accion);
       case 'pago':
         return this.registrarPago(accion);
       case 'restaurar_borrador':
@@ -2169,6 +2177,146 @@ export class Servicio {
         return { cotizacion: q, archivo: propio.archivo };
       });
       // El documento con el número anterior ya no es de nadie: se borra (si falla, solo queda un archivo huérfano).
+      for (const n of nuevos) await rm(join(this.almacen.directorio, 'pdf', n.anterior), { force: true }).catch(() => {});
+      return resultado;
+    } catch (error) {
+      for (const n of nuevos) await rm(join(this.almacen.directorio, 'pdf', n.archivo), { force: true });
+      throw error;
+    }
+  }
+
+  /**
+   * Corrige ítems de una cotización aprobada que ya tiene notas de pedido: cantidad, medidas, hoja o vano,
+   * descripción y observación. Cambia la cotización del cliente (total y saldo) y las notas de las fábricas de esos
+   * ítems, con el mismo número; cada nota reimpresa viaja a su fábrica integrada como una revisión del pedido. No se
+   * puede una vez que esa fábrica empezó a producir. Como al cambiar un número: los PDF se generan fuera del bloqueo
+   * y se confirma solo si nadie cambió la cotización entretanto.
+   */
+  private async editarPedido(accion: Extract<Accion, { tipo: 'editar_pedido' }>): Promise<Resultado> {
+    type Afectada = { nota: NotaPedido; montos: Montos };
+    const revisar = (q: Cotizacion) => {
+      const vigentes = q.notas.filter((n) => !n.anulada);
+      if (q.estado !== 'aprobada' || !vigentes.length)
+        throw new ErrorConflicto('Solo se corrige así una cotización aprobada con nota de pedido.', 'estado_invalido');
+      const fabricas = new Set<Fabrica>();
+      for (const { indice } of accion.items) {
+        const s = q.solicitudes[indice];
+        if (!s) throw new ErrorNoEncontrado('No se encontró el ítem.');
+        if (esLibre(s)) continue; // Un ítem libre no va a fábrica: solo cambia la cotización.
+        const nota = vigentes.find((n) => n.fabrica && n.fabrica === s.fabrica);
+        if (!nota) throw new ErrorConflicto(`El ítem ${indice + 1} no está en ninguna nota de pedido vigente.`, 'estado_invalido');
+        if (nota.inicioProduccion)
+          throw new ErrorConflicto(
+            `${nombreFabrica[nota.fabrica!]} ya empezó a producir la nota de pedido ${numeroNota(nota)}: ya no se puede corregir.`,
+            'estado_invalido',
+          );
+        fabricas.add(nota.fabrica!);
+      }
+      return vigentes.filter((n) => fabricas.has(n.fabrica!));
+    };
+    const preparado = await this.almacen.transaccion(
+      (u): Preparado<{ afectadas: Afectada[]; avisos: string[]; cambios: string[] }> => {
+        const q = this.obtener(u, accion.id);
+        this.verificarVersion(q, accion.actualizada);
+        const notas = revisar(q);
+        const { solicitudes, avisos } = aplicarCambiosItems(
+          q.solicitudes,
+          { items: accion.items.map(({ indice, cambios }) => ({ indice, cambios: sinCantidad(cambios) })),
+            cantidades: accion.items.flatMap(({ indice, cambios }) => (cambios.cantidad === undefined ? [] : [{ indice, cantidad: cambios.cantidad }])) },
+          { directorio: this.almacen.directorio, producto: (s, pareja) => this.producto(s, pareja) },
+        );
+        const cambios = accion.items.flatMap(({ indice }) => {
+          const antes = q.solicitudes[indice], despues = solicitudes[indice];
+          const campos = (
+            [['cantidad', 'cantidad'], ['ancho', 'ancho'], ['alto', 'alto'], ['medida', 'medida'], ['tipoMedida', 'hoja o vano'], ['descripcion', 'descripción'], ['observaciones', 'observación']] as const
+          ).filter(([k]) => JSON.stringify(antes[k] ?? null) !== JSON.stringify(despues[k] ?? null));
+          return campos.length ? [`ítem ${indice + 1} (${campos.map(([, n]) => n).join(', ')})`] : [];
+        });
+        if (!cambios.length) return { listo: q };
+        const copia = structuredClone(q);
+        copia.solicitudes = solicitudes;
+        const calculo = this.recalcular(copia);
+        copia.solicitudes = calculo.solicitudes;
+        // Una aprobada no puede quedar con un ítem sin precio: la nota y el cobro quedarían incompletos.
+        if (copia.incompletos.length)
+          throw new ErrorUsuario(
+            `Con ese cambio el ítem ${copia.incompletos[0].indice + 1} no tiene producto en el catálogo. Revisa la medida.`,
+          );
+        const afectadas = notas.map((nota) => ({
+          nota,
+          montos: this.montosNota(
+            copia,
+            copia.montos.lineas.filter((l) => l.indice !== null && copia.solicitudes[l.indice]?.fabrica === nota.fabrica),
+          ),
+        }));
+        return { listo: null, copia, afectadas, avisos: [...avisos, ...calculo.avisos], cambios, version: q.actualizada };
+      },
+    );
+    if (preparado.listo) return { cotizacion: preparado.listo };
+    const { copia, afectadas, avisos, cambios, version } = preparado;
+    await prepararPdf();
+    const db = this.almacen.baseDatos();
+    const nuevos: { archivo: string; html: string; anterior: string }[] = [];
+    try {
+      const corregida: Cotizacion = {
+        ...copia,
+        notas: copia.notas.map((n) => {
+          const a = afectadas.find((x) => x.nota.pdf === n.pdf);
+          return a ? { ...n, montos: a.montos } : n;
+        }),
+      };
+      const archivo = this.almacen.archivoLibre(`cotizacion-${copia.numero}`);
+      const html = await plantilla(corregida, documentoCotizacion(corregida), db);
+      await generarPdf(this.almacen.directorio, archivo, html);
+      nuevos.push({ archivo, html, anterior: copia.pdf! });
+      const docsNota = new Map<string, DocumentoPdf>();
+      for (const { nota } of afectadas) {
+        const vigente = corregida.notas.find((n) => n.pdf === nota.pdf)!;
+        const archivoNota = this.almacen.archivoLibre(`nota-pedido-${nota.fabrica}-${nota.numero}`);
+        const doc = documentoNota(corregida, vigente);
+        const htmlNota = await plantilla(corregida, doc, db);
+        await generarPdf(this.almacen.directorio, archivoNota, htmlNota);
+        nuevos.push({ archivo: archivoNota, html: htmlNota, anterior: nota.pdf });
+        docsNota.set(archivoNota, doc);
+      }
+      const reimpresa: Cotizacion = {
+        ...corregida,
+        pdf: archivo,
+        notas: corregida.notas.map((n) => ({ ...n, pdf: nuevos.find((x) => x.anterior === n.pdf)?.archivo ?? n.pdf })),
+      };
+      // Cada nota corregida es otra revisión del mismo pedido para su fábrica integrada.
+      const envios = await this.prepararEnvios(
+        reimpresa,
+        reimpresa.notas.flatMap((nota) => (docsNota.has(nota.pdf) ? [{ nota, doc: docsNota.get(nota.pdf)! }] : [])),
+      );
+      const resultado = await this.almacen.transaccion((u): Resultado => {
+        const q = this.obtener(u, accion.id);
+        if (q.actualizada !== version) throw new ErrorConflicto(VERSION_OBSOLETA);
+        revisar(q);
+        for (const envio of envios) u.encolarIntegracion({ tipo: 'pedido', cotizacionId: q.id, envio, soloSiYaEncolado: true });
+        q.solicitudes = reimpresa.solicitudes;
+        q.incompletos = reimpresa.incompletos;
+        q.montos = reimpresa.montos;
+        q.descuento = reimpresa.descuento;
+        if (reimpresa.reglas) q.reglas = reimpresa.reglas;
+        q.pdf = reimpresa.pdf;
+        q.notas = reimpresa.notas;
+        const notasTexto = textoNotas(afectadas.map((a) => a.nota));
+        const texto = `Pedido corregido después de aprobar: ${cambios.join(' · ')}.${afectadas.length ? ` Se volvieron a generar la cotización y ${notasTexto}, con el mismo número.` : ' Se volvió a generar la cotización, con el mismo número.'}`;
+        q.historial.push({ rol: 'asistente', texto });
+        q.actualizada = marca(q.actualizada);
+        u.guardar(q);
+        for (const n of nuevos) {
+          u.descartarDocumento(n.anterior);
+          u.guardarDocumento(q.id, n.archivo, n.html);
+        }
+        u.registrarEvento(q.id, 'modificada', this.autor, `Pedido corregido: ${cambios.join(' · ')}`);
+        const pagado = totalPagado(q);
+        const extra = [...avisos];
+        if (pagado < anticipoMinimo(q.montos.total))
+          extra.push(`Con el total nuevo (${pesos(q.montos.total)}), lo pagado no alcanza el anticipo de ${ANTICIPO_TEXTO} (${pesos(anticipoMinimo(q.montos.total))}).`);
+        return { cotizacion: q, archivo: q.pdf!, ...(extra.length ? { avisos: extra } : {}) };
+      });
       for (const n of nuevos) await rm(join(this.almacen.directorio, 'pdf', n.anterior), { force: true }).catch(() => {});
       return resultado;
     } catch (error) {

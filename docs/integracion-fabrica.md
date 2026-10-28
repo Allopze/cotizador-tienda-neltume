@@ -12,6 +12,7 @@ La fuente de verdad del contrato en este repositorio son los esquemas Zod de [`s
 | Nota de **Santiago** | Nunca | — |
 | Borrador, cotización emitida o aprobada sin nota de pedido | Nunca | — |
 | Se cambia el número de la nota de Panguipulli, de la de Santiago (la de Panguipulli la nombra) o de la cotización: se reimprime la nota | Sí, si el pedido ya se había enviado | `order.ready`, revisión siguiente |
+| Se corrige el pedido después de generar la nota (cantidad, medidas, hoja o vano, descripción u observación de un ítem de Panguipulli, mientras no empiece la producción): se reimprimen la cotización y la nota, con el mismo número | Sí, si el pedido ya se había enviado | `order.ready`, revisión siguiente |
 | Se anula la cotización (la nota queda anulada) | Sí, si el pedido ya se había enviado | `order.cancelled`, revisión siguiente |
 | Notas generadas antes de activar la integración | No (se pueden encolar a mano: `npm run integracion -- encolar <N° cotización>`) | — |
 
@@ -298,6 +299,7 @@ La fábrica responde **2xx solo después de guardar** el evento de forma durable
 - `status`: `"accepted"` (nuevo) o `"duplicate"` (ya lo tenía: misma `X-Idempotency-Key` y mismo contenido). Ambos cuentan como entregado.
 - `eventId`: **obligatorio**, el del mensaje. Un 2xx sin `eventId` igual al enviado no cuenta como entregado y se reintenta.
 - `factoryOrderId`, `receivedAt`: opcionales, para diagnóstico.
+- `202` = recibida, pendiente de revisión en la fábrica: una revisión de un pedido que allá ya tiene pagos u orden de producción queda para que una persona la aplique o la descarte (otra revisión mayor la descarta sola). Mismo cuerpo, con `status: "accepted"`, y `factoryOrderId` es la nota vigente, no una nueva. Para la tienda cuenta como entregado; solo el código HTTP dice que aún no se aplicó.
 
 **Error**: cuerpo `{ "error": { "code": "…", "message": "…" } }` (se guarda para diagnóstico; nunca incluir datos sensibles).
 
