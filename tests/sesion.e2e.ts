@@ -106,6 +106,8 @@ test('sesión vencida al registrar un pago: avisa sin salir y conserva el monto 
   const { vencer } = await sesionPropia(page, USUARIO_E2E);
   const aprobada = await crearEmitida(page.request, { cliente: 'Cliente Sesión Vencida', aprobar: true });
   await page.goto(`/?cotizacion=${encodeURIComponent(aprobada.id)}`);
+  // Abrir por enlace limpia la URL con el router, que vuelve al servidor: la sesión vence después, no en ese viaje.
+  await expect(page).toHaveURL(/\/$/);
   const flujo = page.getByLabel('Cotización en curso').locator('.quote-workflow');
   const monto = flujo.getByLabel(/^Monto recibido/);
   await monto.fill('10.000');

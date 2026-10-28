@@ -258,10 +258,16 @@ export function Cotizador({
   // Al salir de la pantalla se corta la espera del chat: la respuesta ya no tendría dónde mostrarse.
   useEffect(() => () => abortar.current?.abort(), []);
 
+  // La cotización pedida por URL. Limpiar la URL con el router vuelve a pedir la página, que llega sin
+  // `cotizacion`: se sigue con la pedida en vez de reiniciar la carga, que abortaba la apertura en curso y hacía
+  // un segundo viaje al servidor (con la sesión vencida, ese viaje llevaba al login).
+  const [pedidaPorUrl, setPedidaPorUrl] = useState(abrirId);
+  if (abrirId && abrirId !== pedidaPorUrl) setPedidaPorUrl(abrirId);
+
   const cargando = restaurando;
   // Al volver desde otra pantalla, el cotizador sigue a la misma altura. Si llega una cotización pedida
   // por URL (desde el historial), en cambio, la vista va a esa cotización.
-  useScrollRecordado('cotizar', !cargando, !abrirId);
+  useScrollRecordado('cotizar', !cargando, !pedidaPorUrl);
 
   /** Detalle completo de una cotización (el listado solo trae resúmenes). */
   const leerDetalle = useCallback(
@@ -297,28 +303,28 @@ export function Cotizador({
   useEffect(() => {
     const control = new AbortController();
     const b = leerBorrador();
-    const id = abrirId ?? b?.id ?? leerAbierta();
+    const id = pedidaPorUrl ?? b?.id ?? leerAbierta();
     const fin = () => {
       if (!control.signal.aborted) setRestaurando(false);
     };
     // El router (y no `history.replaceState`) deja la URL y la pantalla en el mismo estado: Atrás vuelve a donde
     // corresponde (auditoría BUG-055).
-    if (abrirId) router.replace('/', { scroll: false });
+    if (pedidaPorUrl) router.replace('/', { scroll: false });
     Promise.resolve()
       .then(async () => {
         // Lo escrito se conserva aunque se abra otra cotización desde el historial, señalado como de la anterior.
         if (b?.texto.trim()) {
           setMensaje(b.texto);
-          if (abrirId && b.id !== abrirId) setTextoConservado(true);
+          if (pedidaPorUrl && b.id !== pedidaPorUrl) setTextoConservado(true);
         }
         if (id) {
           const q = await leerDetalle(id, control.signal);
           setActual(q);
           if (q.estado === 'aprobada') setVistaMobile('cotizacion');
-          const aviso = abrirId && !control.signal.aborted ? tomarAvisoAlAbrir(q.id) : null;
+          const aviso = pedidaPorUrl && !control.signal.aborted ? tomarAvisoAlAbrir(q.id) : null;
           if (aviso) avisar('info', aviso);
         }
-        if (abrirId) setEnfocar((n) => n + 1);
+        if (pedidaPorUrl) setEnfocar((n) => n + 1);
       })
       .catch((e) => {
         if (!esSilencioso(e) && id) avisar('info', 'No se pudo reabrir la cotización.');
@@ -332,7 +338,7 @@ export function Cotizador({
       .then((d) => setConfigurado(d.asistenteConfigurado))
       .catch(() => {});
     return () => control.abort();
-  }, [leerDetalle, avisar, abrirId, router]);
+  }, [leerDetalle, avisar, pedidaPorUrl, router]);
 
   // Al volver a la pestaña se relee el listado y la cotización abierta: la otra persona pudo cambiarlos.
   const idAbierta = useRef<string | null>(null);
