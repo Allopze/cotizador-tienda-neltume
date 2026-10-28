@@ -567,6 +567,25 @@ describe('Integración con la fábrica de Panguipulli', () => {
     expect(fabrica.pedidos().at(-1)!.documents).toBeUndefined();
   });
 
+  it('corregir el pedido después de generar la nota envía la revisión 2 con la cantidad nueva y el PDF reimpreso', async () => {
+    const t = await preparar();
+    await t.aprobada();
+    const q = await t.generar();
+    await esperarIntegracion(t.dir);
+    const n = nota(q, 'panguipulli');
+    const indice = n.montos.lineas[0].indice!;
+    await t.ir({ tipo: 'editar_pedido', items: [{ indice, cambios: { cantidad: 7 } }] });
+    await esperarIntegracion(t.dir);
+    const r2 = t.envios().at(-1)!;
+    expect(r2).toMatchObject({ revision: 2, evento: 'order.ready', estado: 'entregado' });
+    const ultimo = fabrica.pedidos().at(-1)!;
+    expect(ultimo).toMatchObject({ sourceOrderRevision: 2, order: { orderNumber: String(n.numero) } });
+    expect(ultimo.order!.items.find((i) => i.sourceItemIndex === indice)!.quantity).toBe(7);
+    const reimpresa = nota(t.actual(), 'panguipulli');
+    expect(reimpresa.pdf).not.toBe(n.pdf);
+    expect(Buffer.from(ultimo.documents!.commercial.contentBase64, 'base64').equals(await readFile(join(t.dir, 'pdf', reimpresa.pdf)))).toBe(true);
+  });
+
   it('un pedido anterior a la integración no se envía al renumerarlo ni al anularlo', async () => {
     vi.unstubAllEnvs();
     const t = await preparar();

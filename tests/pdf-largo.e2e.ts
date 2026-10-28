@@ -82,8 +82,10 @@ test('una cotización de 25 ítems con descripciones largas no corta los totales
     paginas.flatMap((pg, i) =>
       pg.lineas.filter((l) => (typeof texto === 'string' ? l.texto === texto : texto.test(l.texto))).map((l) => ({ pagina: i, ...l })),
     );
-  // Los 25 ítems están: cada uno con su medida, y numerados del 1 al 26 (la 26 es el flete).
-  expect(dondeEsta(/^Medida solicitada/)).toHaveLength(25);
+  // Los 25 ítems están, cada uno con su línea de código, y numerados del 1 al 26 (la 26 es el flete). La cotización
+  // no repite la medida aparte.
+  expect(dondeEsta('ESPECIAL')).toHaveLength(25);
+  expect(dondeEsta(/^Medida solicitada/)).toHaveLength(0);
   expect(dondeEsta('26')).toHaveLength(1);
 
   // Totales: subtotal, IVA y total en una misma página.

@@ -8,6 +8,8 @@ import {
   despachoEditable,
   esEditable,
   etiquetaEstado,
+  itemCorregible,
+  pedidoGenerado,
   puedeAnular,
   sinTransportista,
   unitarioFlete,
@@ -608,6 +610,15 @@ export function CotizacionPanel({
           </button>
         </div>
       )}
+      {pedidoGenerado(actual) && actual.solicitudes.some((_, i) => itemCorregible(actual, i)) && (
+        <div className="panel-aviso" id="aviso-corregir-pedido">
+          <p>
+            Puedes corregir la cantidad, las medidas, hoja o vano, la descripción y la observación de los ítems cuya
+            fábrica aún no empieza a producir, en «Corregir pedido». Cada cambio vuelve a generar esta cotización y su
+            nota de pedido con el mismo número, cambia el total y el saldo, y la fábrica integrada recibe la corrección.
+          </p>
+        </div>
+      )}
       <div className="quote-overview">
         <strong>{actual.cliente.nombre || SIN_CLIENTE}</strong>
         <span>
@@ -700,6 +711,10 @@ export function CotizacionPanel({
                   // Fuera de catálogo: se titula con su nombre y su precio es el escrito, sin margen ni referencia de catálogo.
                   const personalizado = esPersonalizado(s);
                   const libre = esLibre(s);
+                  // Con la nota ya generada se corrigen los datos del pedido mientras su fábrica no empiece a producir:
+                  // cantidad, medidas, hoja o vano, descripción y observación (el resto queda como se aprobó).
+                  const corregible = !admiteCambios && itemCorregible(actual, i);
+                  const editableDato = editable || (corregible && !ocupado);
                   return (
                     <Fragment key={claveItem}>
                       <tr
@@ -909,7 +924,7 @@ export function CotizacionPanel({
                             discreto
                             valor={s.cantidad === null ? '' : String(s.cantidad)}
                             mostrar={s.cantidad ?? '—'}
-                            editable={editable}
+                            editable={editableDato}
                             guardando={guardando === `cantidad.${i}`}
                             tipo="number"
                             min={1}
@@ -1061,14 +1076,16 @@ export function CotizacionPanel({
                           </td>
                         )}
                       </tr>
-                      {admiteCambios && (
+                      {(admiteCambios || corregible) && (
                         <tr className="item-editor-row">
                           <td className="quote-item-editor-cell" colSpan={conQuitar ? 5 : 4}>
                             <details className="item-details" open={pendiente ? true : undefined}>
                               <summary aria-label={`Editar detalles del ítem ${i + 1}: ${descripcion}`}>
-                                {pendiente ? 'Completar producto' : 'Editar detalles'}
+                                {pendiente ? 'Completar producto' : corregible ? 'Corregir pedido' : 'Editar detalles'}
                                 <span>
-                                  {pendiente
+                                  {corregible
+                                    ? 'Cantidad, medidas, hoja o vano, descripción y observación'
+                                    : pendiente
                                     ? faltan.length
                                       ? `Falta: ${textoFaltan(faltan, familia)}`
                                       : explicacionPrecio
@@ -1142,7 +1159,7 @@ export function CotizacionPanel({
                                     // modelo); sin modelo aún no hay descripción y se ve como campo vacío.
                                     valor={s.descripcion || (linea || s.modelo ? descripcion : '')}
                                     vacio="Agregar descripción"
-                                    editable={editable}
+                                    editable={editableDato}
                                     discreto
                                     cursorAlFinal
                                     maxLength={300}
@@ -1200,7 +1217,7 @@ export function CotizacionPanel({
                                           valor={anchoMetros === null ? '' : decimalCampo(anchoMetros)}
                                           mostrar={anchoMetros === null ? undefined : decimal(anchoMetros)}
                                           vacio="Agregar ancho"
-                                          editable={editable}
+                                          editable={editableDato}
                                           discreto
                                           // Texto y no número: el navegador entregaba vacío ante «0,80» o «80 cm».
                                           tipo="text"
@@ -1231,7 +1248,7 @@ export function CotizacionPanel({
                                           etiqueta="Medida"
                                           valor={s.medida ?? ''}
                                           vacio="Agregar medida"
-                                          editable={editable}
+                                          editable={editableDato}
                                           discreto
                                           guardando={guardando === `item.${i}.medida`}
                                           maxLength={300}
@@ -1249,7 +1266,7 @@ export function CotizacionPanel({
                                         valor={altoMetros === null ? '' : decimalCampo(altoMetros)}
                                         mostrar={altoMetros === null ? undefined : decimal(altoMetros)}
                                         vacio="Agregar alto o largo"
-                                        editable={editable}
+                                        editable={editableDato}
                                         discreto
                                         tipo="text"
                                         modoEntrada="decimal"
@@ -1289,7 +1306,7 @@ export function CotizacionPanel({
                                               `item.${i}.tipoMedida`,
                                             )
                                           }
-                                          disabled={!editable || ocupado}
+                                          disabled={!editableDato}
                                         />
                                       </div>
                                     </>
@@ -1302,7 +1319,7 @@ export function CotizacionPanel({
                                       s.observaciones ||
                                       'Agregar observación (ej. confirmar sentido de apertura)'
                                     }
-                                    editable={editable}
+                                    editable={editableDato}
                                     discreto
                                     cursorAlFinal
                                     maxLength={LARGO_OBSERVACION_ITEM}

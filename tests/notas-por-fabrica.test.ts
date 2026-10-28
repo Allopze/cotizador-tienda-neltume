@@ -393,3 +393,60 @@ describe('Migración v25', () => {
     expect(retrocesoOperativo(migrada)).toMatchObject({ destino: 'en_produccion', nota: { campo: 'terminoProduccion' } });
   });
 });
+
+describe('Corregir el pedido después de generar las notas (editar_pedido)', () => {
+  it('cambia la cotización y solo la nota de la fábrica del ítem, con el mismo número y PDF nuevos', async () => {
+    const t = await setup();
+    const antes = await t.conNotas();
+    const [pangui, santiago] = [nota(antes, 'panguipulli'), nota(antes, 'santiago')];
+    const r = await t.servicio.ejecutar({
+      tipo: 'editar_pedido',
+      id: antes.id,
+      actualizada: antes.actualizada,
+      items: [{ indice: 0, cambios: { cantidad: 4, observaciones: 'Bisagras reforzadas' } }],
+    });
+    const q = r.cotizacion;
+    // La cotización del cliente cambia: cantidad, total y PDF (nuevo archivo, mismo número).
+    expect(q.solicitudes[0]).toMatchObject({ cantidad: 4, observaciones: 'Bisagras reforzadas' });
+    expect(q.montos.total).toBeGreaterThan(antes.montos.total);
+    expect([q.estado, q.numero]).toEqual(['aprobada', antes.numero]);
+    expect(q.pdf).not.toBe(antes.pdf);
+    // La nota de Panguipulli se rehace con el mismo número y el costo nuevo; la de Santiago no se toca.
+    const nueva = nota(q, 'panguipulli');
+    expect([nueva.numero, nueva.montos.lineas.map((l) => [l.indice, l.cantidad])]).toEqual([pangui.numero, [[0, 4]]]);
+    expect(nueva.pdf).not.toBe(pangui.pdf);
+    // El despacho se recarga con sus campos nulos explícitos: se compara el resto.
+    expect(nota(q, 'santiago')).toMatchObject({ ...santiago, despacho: expect.anything() });
+    expect(vi.mocked(generarPdf)).toHaveBeenCalledWith(expect.any(String), q.pdf, expect.any(String));
+    expect(vi.mocked(generarPdf)).toHaveBeenCalledWith(expect.any(String), nueva.pdf, expect.any(String));
+    // Queda en el registro y se recarga igual.
+    expect(t.almacen.eventos(q.id).some((e) => e.tipo === 'modificada' && /Pedido corregido: ítem 1 \(cantidad, observación\)/.test(e.detalle ?? ''))).toBe(true);
+    expect(t.recargada().notas.map((n) => [n.numero, n.pdf])).toEqual(q.notas.map((n) => [n.numero, n.pdf]));
+  });
+
+  it('no se puede una vez que la fábrica del ítem empezó a producir; la otra fábrica sí se corrige', async () => {
+    const t = await setup();
+    await t.conNotas();
+    await t.ir({ tipo: 'operacion', paso: 'iniciar_produccion', fabrica: 'panguipulli' });
+    await expect(t.intentar({ tipo: 'editar_pedido', items: [{ indice: 0, cambios: { cantidad: 3 } }] })).rejects.toMatchObject({
+      codigo: 'estado_invalido',
+      message: expect.stringMatching(/Panguipulli ya empezó a producir/),
+    });
+    const q = await t.ir({ tipo: 'editar_pedido', items: [{ indice: 1, cambios: { descripcion: 'Puerta Coz Coz para baño' } }] });
+    expect(q.solicitudes[1].descripcion).toBe('Puerta Coz Coz para baño');
+  });
+
+  it('sin cambios no regenera nada, y una cotización sin notas no se corrige así', async () => {
+    const t = await setup();
+    const antes = await t.conNotas();
+    vi.mocked(generarPdf).mockClear();
+    const q = await t.ir({ tipo: 'editar_pedido', items: [{ indice: 0, cambios: { cantidad: 2 } }] });
+    expect(q.actualizada).toBe(antes.actualizada);
+    expect(vi.mocked(generarPdf)).not.toHaveBeenCalled();
+    const otra = await setup();
+    await otra.aprobada();
+    await expect(otra.intentar({ tipo: 'editar_pedido', items: [{ indice: 0, cambios: { cantidad: 3 } }] })).rejects.toMatchObject({
+      codigo: 'estado_invalido',
+    });
+  });
+});

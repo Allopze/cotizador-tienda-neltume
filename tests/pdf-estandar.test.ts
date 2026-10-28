@@ -19,6 +19,8 @@ import { Servicio } from '../src/servidor/servicio';
 // equipo, la prueba se omite.
 
 const LONGITUD = 14; // Con tantas líneas la nota pasa de una página y repite el encabezado de la tabla.
+// El código del producto, solo, en la celda de la nota (ancla §8.9): «MOL-O-3-A», «MAR-O-2X4-A».
+const ES_CODIGO = /^(?=[A-Z0-9-]*[A-Z])[A-Z0-9]+-[A-Z0-9-]+$/; // con una letra: una fecha «15-11-2026» no es un código
 const ESPECIALES = 1; // Pedidos especiales sin costo de fábrica entre ellas (la séptima línea).
 // El primer ítem lleva una descripción larga: la fila crece y la cantidad, que va al centro, se aleja de la referencia.
 const DESCRIPCION_LARGA =
@@ -487,18 +489,18 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
       expect(items).toBe(LONGITUD);
     });
 
-    it('«Referencia de catálogo: CÓDIGO» es un fragmento entero; el pedido especial no la lleva', () => {
+    it('el código del producto, solo, es un fragmento entero; el pedido especial no lo lleva', () => {
       const frags = todos(nota);
-      const referencias = frags.filter((f) => f.s.startsWith('Referencia de catálogo: '));
+      const referencias = frags.filter((f) => ES_CODIGO.test(f.s));
       expect(referencias.length).toBe(LONGITUD - ESPECIALES);
-      for (const r of referencias) expect(r.s).toMatch(/^Referencia de catálogo: [A-Z0-9]+-[A-Z0-9-]+ · /);
+      expect(frags.filter((f) => f.s.includes('Referencia de catálogo'))).toEqual([]);
       expect(frags.filter((f) => f.s === 'Producto personalizado, fuera de catálogo').length).toBe(
         ESPECIALES,
       );
     });
 
-    it('descripción: sobre la cantidad, a la x de la referencia, solo va el nombre del ítem; la referencia queda cerca de la cantidad', () => {
-      const referencias = todos(nota).filter((f) => f.s.startsWith('Referencia de catálogo: '));
+    it('descripción: sobre la cantidad, a la x del código, solo va el nombre del ítem; el código queda cerca de la cantidad', () => {
+      const referencias = todos(nota).filter((f) => ES_CODIGO.test(f.s));
       const xReferencia = referencias[0].x;
       let filas = 0;
       nota.paginas.forEach((frags) => {
@@ -510,7 +512,7 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
         for (const cantidad of cantidades) {
           // Solo los ítems con referencia de catálogo (el especial no la lleva y la fábrica no lo lee).
           const referencia = frags.filter(
-            (f) => f.s.startsWith('Referencia de catálogo: ') && f.y > cantidad.y,
+            (f) => ES_CODIGO.test(f.s) && f.y > cantidad.y,
           )[0];
           if (!referencia || referencia.y - cantidad.y > 60) continue;
           filas++;
@@ -520,7 +522,7 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
             120,
           );
           const anterior = frags
-            .filter((f) => f.s.startsWith('Referencia de catálogo: ') && f.y < cantidad.y)
+            .filter((f) => ES_CODIGO.test(f.s) && f.y < cantidad.y)
             .pop();
           if (anterior)
             expect(cantidad.y, `cantidad ${cantidad.s} bajo la referencia anterior`).toBeGreaterThan(
@@ -533,7 +535,7 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
             .sort((a, b) => a.y - b.y);
           expect(ventana.length, `descripción sobre la cantidad ${cantidad.s}`).toBeGreaterThan(0);
           expect(ventana[0].tam).toBeGreaterThanOrEqual(9.5);
-          expect(ventana.some((f) => f.s.startsWith('Referencia de catálogo: '))).toBe(false);
+          expect(ventana.some((f) => ES_CODIGO.test(f.s))).toBe(false);
         }
       });
       expect(filas).toBe(LONGITUD - ESPECIALES);

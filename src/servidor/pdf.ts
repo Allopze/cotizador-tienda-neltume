@@ -264,22 +264,19 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
         ['Despacho', montos.flete ? 'Incluido en esta cotización' : 'Se cotiza aparte'],
       ])}</section>`;
 
-  // El cliente no ve datos internos; la nota agrega la referencia de catálogo para que fábrica sepa el producto base.
-  // Un producto fuera de catálogo no tiene referencia de catálogo: fábrica ve las referencias que entregó el cliente.
-  const referenciaFabrica = (l: Linea) =>
-    l.producto.codigo !== CODIGO_PERSONALIZADO
-      ? `Referencia de catálogo: ${referenciaCatalogo(l)}`
-      : 'Producto personalizado, fuera de catálogo';
   // Lo que entregó el cliente para el ítem: las imágenes van en las observaciones; los PDF se nombran en la celda.
   const referenciasDe = (l: Linea) => (l.indice === null ? [] : (q.solicitudes[l.indice]?.referencias ?? []));
+  // La nota y la orden de trabajo llevan solo el código del producto, para que la fábrica identifique el artículo
+  // aunque importe el PDF a mano; un producto fuera de catálogo no tiene código que buscar.
+  const codigoFabrica = (l: Linea) =>
+    l.producto.codigo !== CODIGO_PERSONALIZADO ? l.producto.codigo : 'Producto personalizado, fuera de catálogo';
   const producto = (l: Linea) => {
-    // Hoja o vano es un dato para fábrica: la cotización no lo nombra (el vano, el hueco del muro, confundía al
-    // cliente) y solo la nota de pedido lo dice. En el panel se sigue viendo mientras se edita.
-    const tipoMedida = nota ? l.tipoMedida : null;
-    // El nombre ya lleva la medida pedida; solo una descripción escrita a mano necesita repetirla aparte.
-    const tipoMedidaExplicita = tipoMedida === 'hoja' || tipoMedida === 'vano';
-    const pedida = l.descripcionDocumento || tipoMedidaExplicita ? medidaPedida({ ...l, tipoMedida }) : null;
-    const tipoTexto = tipoMedidaExplicita ? `medida de ${tipoMedida}` : null;
+    // La cotización no imprime «Medida solicitada» ni hoja o vano (el vano, el hueco del muro, confundía al cliente): el
+    // nombre ya lleva la medida pedida. La nota y la orden de trabajo sí: son datos para fabricar. Con la descripción
+    // del catálogo, la medida se repite aparte solo si se indicó hoja o vano.
+    const tipoMedidaExplicita = l.tipoMedida === 'hoja' || l.tipoMedida === 'vano';
+    const pedida = nota && (l.descripcionDocumento || tipoMedidaExplicita) ? medidaPedida(l) : null;
+    const tipoTexto = nota && tipoMedidaExplicita ? `medida de ${l.tipoMedida}` : null;
     const documentos = referenciasDe(l).filter((r) => !esImagen(r));
     const detalles = [
       pedida ? `Medida solicitada: ${pedida}` : tipoTexto && `${tipoTexto[0].toUpperCase()}${tipoTexto.slice(1)}`,
@@ -290,7 +287,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
       !produccion && conDescuentoItem(l) && l.descuentoItem
         ? `<span class="descuento-item">Descuento especial ${esc(textoDescuentoItem(l.descuentoItem))}: −${pesos(l.descuentoUnitario!)} c/u · Ahorro ${pesos(ahorroLinea(l))}</span>`
         : ''
-    }<span class="cod">${esc(nota ? referenciaFabrica(l) : l.producto.codigo)}</span>`;
+    }<span class="cod">${esc(nota ? codigoFabrica(l) : l.producto.codigo)}</span>`;
   };
   // Con descuento especial, el precio original queda tachado en su propia línea, encima del rebajado: en la misma
   // celda las cifras se tocaban y el cliente podía leer mal la cantidad o el precio (auditoría BUG-015). Una cifra de
@@ -441,8 +438,7 @@ th{font-weight:600;font-size:7.3pt;color:var(--muted);text-align:left;padding:0 
 td{padding:1.3mm 0;border-bottom:.5pt solid var(--line);vertical-align:middle}tr{break-inside:avoid}
 .r{text-align:right;white-space:nowrap}.n{width:6mm;color:var(--muted)}td.n{font-size:9.2pt}.cant{width:13mm}td.cant{font-weight:600}.unit{width:27mm}.tot{width:29mm;font-weight:600}
 .prod b{display:block;font-size:9.6pt}.prod span{display:block;color:var(--muted);font-size:8.2pt;line-height:1.35}.prod .medida{color:var(--ink);font-weight:600}.prod .cod{font-size:7.3pt;margin-top:.6mm}
-/* En la cotización el código va solo en su línea: es un campo de código. En la nota va dentro de «Referencia de catálogo: …»,
-   una frase que se lee entera: queda en la fuente del texto. */
+/* En la cotización el código va en mono: es un campo de código. En la nota va en gris, en la fuente del texto. */
 .cotizacion .prod .cod{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:6.8pt}
 .prod .descuento-item{color:var(--calido)}s.original{color:var(--muted);font-size:8pt;display:block}
 .rebajado{display:block}

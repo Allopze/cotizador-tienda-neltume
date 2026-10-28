@@ -76,7 +76,8 @@ async function setup() {
         estado: 'emitida',
         estadoComercial: 'enviada',
         fechaEmision: '2026-10-13T12:00:00.000Z',
-        vence: '2026-10-27',
+        // Corre con el reloj real: un vencimiento fijo la hacía fallar desde el día siguiente (el 28-10-2026).
+        vence: '2099-12-31',
         emitidaPor: 'Paula',
         actualizada: new Date().toISOString(),
       } satisfies Partial<Cotizacion>);

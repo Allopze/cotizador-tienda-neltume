@@ -8,6 +8,7 @@ import {
   anticipoMinimo,
   esEditable,
   etiquetaEstado,
+  pedidoGenerado,
   puedeAnular,
   sumarCharla,
   type Cotizacion,
@@ -1118,6 +1119,15 @@ export function Cotizador({
       if (!q || ocupado) return false;
       setGuardando(campo);
       try {
+        // Con la nota ya generada, el cambio corrige el pedido: vuelve a generar la cotización y la nota, y la fábrica
+        // recibe la revisión. Solo admite los datos del ítem que la pantalla deja editar en ese estado.
+        if (pedidoGenerado(q)) {
+          const items = [
+            ...(cambios.cantidades ?? []).map(({ indice, cantidad }) => ({ indice, cambios: { cantidad } })),
+            ...(cambios.items ?? []),
+          ];
+          return await ejecutar('editar', { tipo: 'editar_pedido', ...versionDe(q), items }, q);
+        }
         return await ejecutar('editar', { tipo: 'editar', ...versionDe(q), ...cambios }, q);
       } finally {
         setGuardando(null);

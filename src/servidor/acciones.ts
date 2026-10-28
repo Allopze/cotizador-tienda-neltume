@@ -91,6 +91,19 @@ export type Accion =
       /** Tarifa de Starken elegida por la persona: el valor de despacho debe ser su neto y la actividad la registra. */
       tarifaStarken?: TarifaStarkenAplicada;
     }
+  /**
+   * Corrige ítems de una cotización aprobada con notas de pedido, mientras su fábrica no empiece a producir: cambia
+   * la cotización y las notas de esos ítems (mismo número) y las envía como revisión a la fábrica integrada.
+   */
+  | {
+      tipo: 'editar_pedido';
+      id: string;
+      actualizada: string;
+      items: {
+        indice: number;
+        cambios: Partial<Pick<SolicitudItem, 'ancho' | 'alto' | 'medida' | 'tipoMedida' | 'descripcion' | 'observaciones'>> & { cantidad?: number };
+      }[];
+    }
   | { tipo: 'pago'; id: string; actualizada: string; monto: number; fecha?: string; observacion?: string | null }
   /** Quita un pago registrado por error mientras la operación no llegue a «Lista para despacho». */
   | { tipo: 'anular_pago'; id: string; actualizada: string; pagoId: string; motivo?: string }

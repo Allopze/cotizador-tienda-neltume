@@ -232,6 +232,34 @@ const accionSchema = z.discriminatedUnion('tipo', [
     .strict(),
   z
     .object({
+      tipo: z.literal('editar_pedido'),
+      id: z.uuid(),
+      actualizada: version,
+      items: z
+        .array(
+          z
+            .object({
+              indice: z.number().int().nonnegative(),
+              cambios: z
+                .object({
+                  cantidad: z.number().int().min(1).max(10000).optional(),
+                  ancho: z.number().finite().nullable().optional(),
+                  alto: z.number().finite().nullable().optional(),
+                  medida: texto(300),
+                  tipoMedida: z.enum(['hoja', 'vano', 'no_especificado']).nullable().optional(),
+                  descripcion: texto(300),
+                  observaciones: texto(LARGO_OBSERVACION_ITEM),
+                })
+                .strict(),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(100),
+    })
+    .strict(),
+  z
+    .object({
       tipo: z.literal('editar'),
       id: z.uuid(),
       actualizada: version,

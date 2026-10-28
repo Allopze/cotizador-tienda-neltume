@@ -119,7 +119,8 @@ test('pedido → accesorio incompleto → PDF 323 → aprobación y nota 1', asy
   expect(nota).toMatch(/Nota de pedido\s+N\.º 577/);
   expect(nota).toContain('Fábrica Panguipulli');
   expect(nota).toMatch(/Cotización\s+N\.º 323/);
-  expect(nota).toContain('Referencia de catálogo: HUIL-O-3-B');
+  expect(nota).toContain('HUIL-O-3-B');
+  expect(nota).not.toContain('Referencia de catálogo');
   expect(nota).toContain(pesos(fabrica.total));
   for (const l of fabrica.lineas) expect(nota).toContain(pesos(l.precioUnitario));
   const estado = await new Almacen(DIR_E2E).leer();
