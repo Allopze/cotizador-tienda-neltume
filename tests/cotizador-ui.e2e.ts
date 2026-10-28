@@ -69,6 +69,7 @@ test('reordena con controles accesibles, persiste el orden y deshace/rehace con 
   const listado = await (await page.request.get('/api/accion?porPagina=1')).json();
   const id = listado.cotizaciones[0].id as string;
   await page.goto(`/?cotizacion=${encodeURIComponent(id)}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   await expect(panel.locator('#producto-0')).toBeVisible();
   await expect.poll(cantidades).toEqual(['4', '3', '2']);
   expect(erroresConsola).toEqual([]);

@@ -34,6 +34,7 @@ async function dobleToque(page: Page, boton: Locator) {
 
 async function abrirVista(page: Page, id: string) {
   await page.goto(`/?cotizacion=${encodeURIComponent(id)}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   const pestana = page
     .getByRole('navigation', { name: 'Vista del cotizador' })
     .getByRole('button', { name: /^(Cotización|Seguimiento)$/ });

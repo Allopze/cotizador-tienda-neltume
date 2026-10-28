@@ -15,6 +15,7 @@ async function abrirBorrador(page: Page, cliente: string) {
   await iniciarSesion(page);
   const borrador = await crearBorrador(page.request, { cliente });
   await page.goto(`/?cotizacion=${encodeURIComponent(borrador.id)}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   const panel = page.getByLabel('Cotización en curso');
   await expect(panel.getByText('HUIL-O-3-B', { exact: true }).first()).toBeVisible();
   return panel;

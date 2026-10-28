@@ -26,6 +26,7 @@ test('lo escrito se conserva al abrir otra cotización y no se cambia de pantall
   await historial.click();
   await expect(page.getByRole('heading', { name: 'Historial de cotizaciones' })).toBeVisible();
   await page.goto(`/?cotizacion=${cotizacion.id}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   await expect(panel.getByRole('heading', { level: 2 })).toHaveText('Sin número');
   await expect(panel.getByText('HUIL-O-3-B', { exact: true })).toBeVisible();
   await expect(compositor).toHaveValue('Agrega marcos en oregón');

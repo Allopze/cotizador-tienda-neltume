@@ -39,6 +39,7 @@ async function aLaVistaSinTapar(locator: Locator) {
 
 async function abrirCotizacion(page: Page, id: string) {
   await page.goto(`/?cotizacion=${encodeURIComponent(id)}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   // En el teléfono se elige la vista: «Cotización» en un borrador o emitida, «Seguimiento» si está aprobada.
   const pestana = page
     .getByRole('navigation', { name: 'Vista del cotizador' })
@@ -214,6 +215,7 @@ test('teléfono en horizontal (844 × 390): sin desplazamiento lateral y con la 
   const borrador = await crearBorrador(page.request, { cliente: 'Cliente Horizontal' });
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto(`/?cotizacion=${encodeURIComponent(borrador.id)}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   const pestana = page.getByRole('button', { name: 'Cotización', exact: true });
   if (await pestana.isVisible()) await pestana.click();
   const barra = page.getByLabel('Resumen y acciones de la cotización');

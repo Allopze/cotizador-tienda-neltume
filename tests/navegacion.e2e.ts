@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures-e2e';
+import { crearBorrador } from './api-e2e';
 import { iniciarSesion } from './login-e2e';
 
 // Corre después de flujo, gestion e historial (orden alfabético): el historial ya tiene varias filas.
@@ -62,4 +63,22 @@ test('cambiar de pantalla o de sección conserva el scroll, los filtros y lo esc
   await page.getByRole('link', { name: 'Cotizar', exact: true }).click();
   await page.getByRole('link', { name: 'Catálogo', exact: true }).click();
   await expect(page.getByLabel('Buscar en el catálogo')).toHaveValue('HUIL-O-3-B');
+});
+
+test('abierta por enlace: Atrás desde Historial muestra el cotizador y la URL lo dice (auditoría BUG-055)', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await iniciarSesion(page);
+  const q = await crearBorrador(page.request, { cliente: 'Cliente Atrás' });
+  await page.goto(`/?cotizacion=${encodeURIComponent(q.id)}`);
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByLabel('Cotización en curso').locator('tr[id^="producto-"]').first()).toBeVisible();
+  await page.getByRole('link', { name: 'Historial' }).click();
+  await expect(page.getByRole('heading', { name: 'Historial de cotizaciones' })).toBeVisible();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole('heading', { name: 'Cotizar', level: 1 })).toBeVisible();
+  // Adelante vuelve al historial: la pila del navegador y la pantalla siguen de acuerdo.
+  await page.goForward();
+  await expect(page).toHaveURL(/\/historial$/);
+  await expect(page.getByRole('heading', { name: 'Historial de cotizaciones' })).toBeVisible();
 });

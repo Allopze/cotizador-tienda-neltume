@@ -126,6 +126,7 @@ test('lo escrito en cantidad, flete, descuento y ganancia se conserva cuando otr
   let q = await crearBorrador(page.request, { cliente: 'Cliente Campos Abiertos', cantidad: 2 });
   q = await accion(page.request, { tipo: 'editar', id: q.id, actualizada: q.actualizada, flete: 40000 });
   await page.goto(`/?cotizacion=${encodeURIComponent(q.id)}`);
+  await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
   const panel = page.getByLabel('Cotización en curso');
   await expect(panel.getByText('HUIL-O-3-B', { exact: true }).first()).toBeVisible();
   const observaciones = panel.locator('.quote-details > summary').filter({ hasText: 'Observaciones' });

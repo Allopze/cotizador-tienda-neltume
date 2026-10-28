@@ -62,6 +62,7 @@ for (const ancho of [1280, 390]) {
     await page.goto('/');
     await revisar(page, `Cotizador vacío (${ancho})`);
     await page.goto(`/?cotizacion=${encodeURIComponent(borrador.id)}`);
+    await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
     await expect(page.getByLabel('Cotización en curso').getByText('HUIL-O-3-B', { exact: true }).first()).toBeAttached();
     await revisar(page, `Cotizador con borrador (${ancho})`);
     for (const ruta of ['/historial', '/clientes', '/ayuda', '/catalogo']) {

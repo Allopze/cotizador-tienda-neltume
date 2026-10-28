@@ -71,6 +71,7 @@ test('duplicar recorta el descuento al máximo vigente y lo avisa, desde el coti
     // Desde el cotizador: «Más acciones» → «Duplicar».
     // La copia que se abrió no tiene nada que recortar: se vuelve al original.
     await page.goto(`/?cotizacion=${encodeURIComponent(q.id)}`);
+    await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
     const panel = page.getByLabel('Cotización en curso');
     await panel.getByRole('button', { name: /^Más acciones/ }).click();
     await panel.locator('.menu-acciones').getByRole('button', { name: 'Duplicar', exact: true }).click();
@@ -97,6 +98,7 @@ test('una tarifa de Starken cotizada antes de que la cotización cambiara en otr
       tipo: 'editar', id: q.id, actualizada: q.actualizada, despacho: { transporte: 'Starken', destino: 'Temuco' },
     });
     await page.goto(`/?cotizacion=${encodeURIComponent(q.id)}`);
+    await expect(page).toHaveURL(/\/$/); // el router limpió la URL: ya no hay viaje en curso
     const panel = page.getByLabel('Cotización en curso');
     await panel.locator('.quote-details > summary').filter({ hasText: 'Despacho' }).click();
     const respuestaCotizar = page.waitForResponse((r) => r.url().endsWith('/api/starken/cotizar'));
