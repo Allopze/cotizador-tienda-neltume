@@ -38,7 +38,7 @@ const mm = (m: number | null, familia: Linea['producto']['familia']) =>
   m === null ? null : Math.round((metros(m, familia) ?? m) * 1000);
 
 /** Un ítem del pedido: lo mismo que imprime la fila de la nota, en campos. */
-function item(q: Cotizacion, l: Linea, lineNumber: number): ItemFabrica {
+export function itemPedido(q: Cotizacion, l: Linea, lineNumber: number): ItemFabrica {
   const familia = l.producto.familia;
   // El reparto ya deja fuera los ítems libres: uno aquí es un error, no algo que la fábrica deba recibir.
   if (familia === 'OTRO') throw new Error(`El ítem libre «${l.producto.modelo}» no va en un pedido a fábrica.`);
@@ -59,7 +59,8 @@ function item(q: Cotizacion, l: Linea, lineNumber: number): ItemFabrica {
     descriptionEdited: !!l.descripcionDocumento,
     quantity: l.cantidad,
     dimensions: {
-      widthMm: puerta ? mm(l.anchoSolicitado, 'PUERTA') : null,
+      // El ancho se valida siempre en el rango de una puerta: en un marco o moldura especial es el que escribe la vendedora.
+      widthMm: puerta || especial ? mm(l.anchoSolicitado, 'PUERTA') : null,
       heightMm: puerta ? mm(l.altoSolicitado, 'PUERTA') : null,
       lengthMm: puerta ? null : mm(l.altoSolicitado, l.producto.familia),
       section: puerta ? null : (l.medidaSolicitada ?? (l.producto.medida || null)),
@@ -108,7 +109,7 @@ export function pedidoDeNota(q: Cotizacion, nota: NotaPedido): PedidoFabrica {
       destination: nota.despacho.destino ?? null,
       committedDelivery: nota.despacho.entregaComprometida ?? null,
     },
-    items: filas.map(({ l }, i) => item(q, l, i + 1)),
+    items: filas.map(({ l }, i) => itemPedido(q, l, i + 1)),
     notes: nota.observaciones ?? '',
     relatedOrders: (doc.otrasNotas ?? []).map((o) => ({
       factoryCode: o.fabrica ? CODIGO_FABRICA[o.fabrica] : 'DESCONOCIDA',

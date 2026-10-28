@@ -1,9 +1,9 @@
 # Seguimiento de la auditoría del 26-10-2026
 
 Estado de cada hallazgo de `AUDITORIA_COTIZADOR_NELTUME.md` tras la implementación del plan
-(`implementacion-auditoria-cotizador-neltume.md`). **Los 65 hallazgos quedaron cerrados.** Quedan dos acuerdos
-operativos (no son defectos de código): el contrato del ancho de los especiales con Panguipulli y correr la
-evaluación completa con el modelo de producción.
+(`implementacion-auditoria-cotizador-neltume.md`). **Los 65 hallazgos quedaron cerrados.** El acuerdo con
+Panguipulli sobre el ancho de los especiales se cerró el 27-10; queda correr la evaluación completa con el modelo de
+producción.
 
 Verificación al cerrar: `npm run typecheck` sin errores, `npm run lint` sin errores (2 avisos previos),
 **1.557 pruebas unitarias verdes** (97 archivos; antes eran 1.541) y las suites E2E de flujo, edición del detalle,
@@ -43,7 +43,7 @@ entorno; `evals/` sí se ejecutó a través de `tests/ia-perfecta.test.ts` (100 
 |---|---|---|
 | 003 | ✅ | La OT se nombra por `evento_id`; su sha256 se guarda y se verifica antes de reutilizarla; el respaldo incluye `data/integracion/`. |
 | 004 | ✅ | `GET /api/integracion/envios?cotizacion=` y el seguimiento muestran «Enviada / Pendiente / No llegó»; `integracion` pasó al healthcheck básico; las fotos se reparten un presupuesto de 4 MiB por documento y se avisa en el registro si el PDF supera 5 MiB. |
-| 005 | ✅ | `medidaPedida` imprime «0,90 m × 2,10 m» para un especial con ancho; el pedido a la fábrica lo lleva en `requested`. `widthMm` queda pendiente del acuerdo con la fábrica. |
+| 005 | ✅ | `medidaPedida` imprime «0,90 m × 2,10 m» para un especial con ancho; el pedido a la fábrica lo lleva en `requested` y, acordado con la fábrica el 27-10, también en `widthMm`. |
 | 019 | ✅ | Una anulación ya no espera detrás de un `order.ready`; al fallar se recalcula si hay una revisión más nueva antes de reprogramar. |
 | 020 | ✅ | La restauración conserva los envíos posteriores al respaldo y sube los correlativos; el comando avisa que hay que conciliar con la fábrica. |
 | 021 | ✅ | Una revisión de un pedido ya encolado se encola aunque falte la configuración (sale cuando vuelva). |
@@ -140,10 +140,10 @@ la arreglada imprime.
 
 ## Notas y acuerdos pendientes
 
-No queda ningún defecto de los 65. Quedan dos acuerdos operativos y una deuda de pruebas:
+No queda ningún defecto de los 65. Quedan estas notas:
 
-- **BUG-005 · contrato con Panguipulli.** El ancho de un especial ya se imprime y viaja en `requested`; el campo
-  `widthMm` sigue `null` hasta acordar con la fábrica que lo lea.
+- **BUG-005 · contrato con Panguipulli.** Acordado el 27-10: el ancho de un marco o moldura especial viaja en
+  `widthMm` (§4 del contrato). El presupuesto de fotos de 4 MiB entró en la sección 5 del estándar común.
 - **Evaluación con el modelo real.** `tests/ia-perfecta.test.ts` da 100 % en ambos modos con el corpus del repo, pero
   conviene correr `evals/` con el modelo de producción antes de cambiar umbrales.
 - **Escenarios S1.x como pruebas fijas.** Se cerraron en el código; los casos S1.02, S1.06, S1.09, S1.15, S1.19/20/28 y
@@ -151,5 +151,4 @@ No queda ningún defecto de los 65. Quedan dos acuerdos operativos y una deuda d
   llevarlos todos a `tests/chat-fiabilidad.test.ts` y a `evals/cotizacion.json`.
 - **Migración v29.** La cubren la migración JSON→SQLite (asigna ids) y la prueba de identidad por ítem; un test
   dedicado partiendo de una base v28 con filas queda como mejora.
-- **Suite E2E completa.** Se corrieron las suites afectadas (24 pruebas); la corrida completa de 102 no se hizo en
-  este entorno.
+- **Suite E2E completa.** Corrida el 27-10 antes del commit: 102 pasan y 1 se omite a propósito.

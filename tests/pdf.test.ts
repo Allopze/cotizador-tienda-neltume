@@ -489,6 +489,24 @@ describe('Plantillas', () => {
     expect(medidaPedida(linea!)).toBe('2x4 pulg. × 2,10 m');
   });
 
+  it('el ancho de un marco o moldura especial viaja en widthMm; sin ancho, null (contrato §4)', async () => {
+    const { itemPedido } = await import('../src/servidor/integracion-pedido');
+    const { producto: marco } = productoPersonalizado(
+      { modelo: 'Marco a medida', madera: 'Pino', ancho: 0.9, alto: 2.1, medida: null, cantidad: 1, precioUnitario: 50000 },
+      'MARCO',
+    ) as Extract<ReturnType<typeof productoPersonalizado>, { ok: true }>;
+    const catalogo: Producto = { ...puerta, codigo: 'MAR-O-2X4-B', familia: 'MARCO', medida: '2X4', largo: 2.1 };
+    const [conAncho, sinAncho, deCatalogo] = cotizar([
+      { producto: marco, cantidad: 1, anchoSolicitado: 0.9, altoSolicitado: 2.1 },
+      { producto: marco, cantidad: 1, altoSolicitado: 2.1 },
+      { producto: catalogo, cantidad: 1, medidaSolicitada: '2X4', altoSolicitado: 2.1 },
+    ]).lineas;
+    const q = cotizacion();
+    expect(itemPedido(q, conAncho!, 1).dimensions).toMatchObject({ widthMm: 900, lengthMm: 2100, requested: '0,90 m × 2,10 m' });
+    expect(itemPedido(q, sinAncho!, 2).dimensions.widthMm).toBeNull();
+    expect(itemPedido(q, deCatalogo!, 3).dimensions.widthMm).toBeNull();
+  });
+
   it('lo escrito a mano en mayúsculas se imprime y se envía tal cual: solo se normaliza lo de la planilla', () => {
     const escrita = 'PUERTA MOLCO MODELO X CON VIDRIO TIPO A';
     const [aMano, deCatalogo] = cotizar([
@@ -638,6 +656,11 @@ describe('Estilo de los documentos (docs/estilo-documentos-v1.md)', () => {
     expect(fuente).toContain(`const LADO_IMAGEN_PX = ${imagenes.ladoMaxPx};`);
     expect(fuente).toContain(`let calidad = ${imagenes.calidadJpeg};`);
     expect(fuente).toContain(`lienzo.toDataURL('${imagenes.formato}', calidad)`);
+    // El presupuesto del documento y sus pisos: calidad mínima y lado menor.
+    expect(imagenes.presupuestoBytes).toBe(4 * 1024 * 1024);
+    expect(fuente).toContain('const PRESUPUESTO_IMAGENES_BYTES = 4 * 1024 * 1024;');
+    expect(fuente).toContain(`if (calidad > ${imagenes.calidadJpegMin})`);
+    expect(fuente).toContain(`medida = Math.max(${imagenes.ladoMinPx},`);
     // La celda de producto: título, medida, detalle, referencia y la etiqueta de la firma.
     expect(css).toContain(`.prod b{display:block;font-size:${roles.productoTitulo.tamanoPt}pt}`);
     expect(css).toContain(`.prod span{display:block;color:var(--muted);font-size:${roles.productoDetalle.tamanoPt}pt;`);
