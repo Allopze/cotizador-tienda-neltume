@@ -233,6 +233,9 @@
     "ladoMaxPx": 1000,
     "formato": "image/jpeg",
     "calidadJpeg": 0.8,
+    "calidadJpegMin": 0.5,
+    "ladoMinPx": 320,
+    "presupuestoBytes": 4194304,
     "uso": "Imágenes que adjunta la persona a un ítem, en las observaciones del documento, agrupadas por ítem con la línea «Ítem n · producto» (sección 5 del estándar). No hay dibujos del catálogo."
   }
 }

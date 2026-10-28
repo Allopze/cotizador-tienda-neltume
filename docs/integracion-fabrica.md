@@ -118,7 +118,8 @@ Claves en inglés, como el contrato acordado; los textos (modelos, maderas, desc
 | `description` | string | Lo que imprime la nota: la descripción escrita a mano o el producto con la medida pedida. |
 | `descriptionEdited` | boolean | `true` si la descripción la escribió la vendedora (siempre en un pedido especial); `false` si es la del catálogo. |
 | `quantity` | entero ≥ 1 | Cantidad. |
-| `dimensions.widthMm`, `dimensions.heightMm` | entero \| null | Ancho y alto pedidos de una puerta. |
+| `dimensions.widthMm` | entero \| null | Ancho pedido en mm; en PUERTA, el de la hoja o el vano; en MARCO y MOLDURA especiales, el que escribe la vendedora, o `null` si no lo escribe. |
+| `dimensions.heightMm` | entero \| null | Alto pedido de una puerta. |
 | `dimensions.lengthMm` | entero \| null | Largo de un marco, moldura o pieza T. |
 | `dimensions.section` | string \| null | Escuadría o sección de un marco, moldura o pieza T (`"2X4"`). |
 | `dimensions.measureType` | `"hoja"` \| `"vano"` \| `"no_especificado"` \| null | Si la medida es de la hoja o del vano (hueco del muro). **Dato crítico para fabricar.** |
