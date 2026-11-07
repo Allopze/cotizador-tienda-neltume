@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/resolver';
 import { coincideBusquedaCatalogo, terminosBusquedaCatalogo, textoBusquedaCatalogo } from './busqueda';
-import { escalon, escalonesSeTocan } from '../catalogo/escalones';
+import { escalon, escalonesSeTocan, metrosTexto } from '../catalogo/escalones';
 import { ETIQUETA_ORIGEN, type OrigenCatalogo } from '../catalogo/origenes';
 import {
   aliasMaderasConfiguradas,
@@ -601,6 +601,31 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
     );
   }
 
+  /**
+   * Un ancho manual puede completar la lista del modelo, pero no abrir un hueco enorme: 1,50 cuando el
+   * modelo llega a 0,90 haría que cualquier ancho 0,91–1,50 se cotizara como la «siguiente medida» de 1,50,
+   * una puerta que la fábrica no lista. Se toleran extensiones de hasta 25 cm; más que eso es pedido especial.
+   */
+  private anchoNoContiguo(producto: Producto, excluirCodigo?: string) {
+    if (producto.familia !== 'PUERTA' || producto.anchoMin === null || producto.anchoMax === null) return null;
+    const otros = this.productosDeModelo(normalizar(producto.modelo)).filter(
+      (p) =>
+        p.codigo !== excluirCodigo &&
+        p.familia === 'PUERTA' &&
+        normalizar(p.madera) === normalizar(producto.madera) &&
+        p.anchoMin !== null &&
+        p.anchoMax !== null,
+    );
+    if (!otros.length) return null;
+    const nuevo = escalon(producto, 'ancho')!;
+    const min = Math.min(...otros.map((p) => escalon(p, 'ancho')!.min));
+    const max = Math.max(...otros.map((p) => escalon(p, 'ancho')!.max));
+    const MARGEN_ANCHO_NUEVO = 0.25;
+    return nuevo.min > max + MARGEN_ANCHO_NUEVO + 1e-9 || nuevo.max < min - MARGEN_ANCHO_NUEVO - 1e-9
+      ? { min, max }
+      : null;
+  }
+
   /** Precios netos de referencia: mismo modelo o, si es nuevo, misma familia. */
   preciosReferencia(modelo: string, familia: Producto['familia']): number[] {
     const delModelo = this.productosDeModelo(normalizar(modelo)).map((p) => p.precioNeto);
@@ -732,7 +757,14 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         const anchoMax = cambios.anchoMax === undefined ? actual.anchoMax : cambios.anchoMax;
         const altoMin = cambios.altoMin === undefined ? (actual.altoMin ?? null) : cambios.altoMin;
         const altoMax = cambios.altoMax === undefined ? (actual.altoMax ?? null) : cambios.altoMax;
-        const largo = cambios.largo ?? actual.largo;
+        const rangoAlto = altoMin !== null && altoMax !== null;
+        // El alto de referencia sigue al máximo del rango. Cambiar solo «Alto» no puede mover el rango
+        // efectivo: eso era lo que hacía que la medida editada se viera guardada pero siguiera rechazada.
+        const largo = cambios.largo ?? (rangoAlto ? altoMax! : actual.largo);
+        if (rangoAlto && cambios.largo !== undefined && Math.abs(largo - altoMax!) > 1e-9)
+          throw new ErrorUsuarioCatalogo(
+            `Este producto tiene un rango de alto (${metrosTexto(altoMin!)}–${metrosTexto(altoMax!)} m). Para cambiarlo, edita Alto mínimo y Alto máximo; el campo Alto es la referencia.`,
+          );
         const precioNeto = cambios.precioNeto ?? actual.precioNeto;
         if (
           (cambios.largo !== undefined || cambios.familia !== undefined) &&
@@ -755,12 +787,21 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           throw new ErrorUsuarioCatalogo(
             `El rango de ancho no es válido: debe estar ${textoRangoMedida('ancho', 'PUERTA')}.`,
           );
+        if ((altoMin === null) !== (altoMax === null))
+          throw new ErrorUsuarioCatalogo(
+            'El rango de alto necesita alto mínimo y alto máximo, o ninguno de los dos.',
+          );
         if (
           (altoMin !== null && (altoMin <= 0 || altoMin > 100)) ||
           (altoMax !== null && (altoMax <= 0 || altoMax > 100)) ||
           (altoMin !== null && altoMax !== null && altoMin > altoMax)
         )
           throw new ErrorUsuarioCatalogo('El rango de alto no es válido.');
+        if (
+          rangoAlto &&
+          (altoMin! < rangoMedidas(familia).min || altoMax! > rangoMedidas(familia).max)
+        )
+          throw new ErrorUsuarioCatalogo(errorMedida('alto', familia));
         if (!Number.isFinite(precioNeto) || precioNeto <= 0 || precioNeto > 100_000_000)
           throw new ErrorUsuarioCatalogo(
             'El precio base sin IVA debe ser mayor que $0 y no superar $100.000.000.',
@@ -795,6 +836,11 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         if (superpuesto)
           throw new ErrorUsuarioCatalogo(
             `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) para el mismo modelo, madera y alto.`,
+          );
+        const noContiguo = this.anchoNoContiguo(candidato, codigo);
+        if (noContiguo)
+          throw new ErrorUsuarioCatalogo(
+            `El ancho ${candidato.medida} no es contiguo a las medidas del modelo (${metrosTexto(noContiguo.min)}–${metrosTexto(noContiguo.max)} m). Para una medida fuera de la lista, cotízala como pedido especial en vez de agregarla al catálogo.`,
           );
         if (fuente === 'manual') {
           this.db
@@ -1061,6 +1107,11 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
         if (superpuesto)
           throw new ErrorUsuarioCatalogo(
             `El rango de ancho se superpone con ${superpuesto.codigo} (${superpuesto.medida}) para el mismo modelo, madera y alto.`,
+          );
+        const noContiguo = this.anchoNoContiguo(producto);
+        if (noContiguo)
+          throw new ErrorUsuarioCatalogo(
+            `El ancho ${producto.medida} no es contiguo a las medidas del modelo (${metrosTexto(noContiguo.min)}–${metrosTexto(noContiguo.max)} m). Para una medida fuera de la lista, cotízala como pedido especial en vez de agregarla al catálogo.`,
           );
         const creada = fechas.creada ?? new Date().toISOString();
         this.db

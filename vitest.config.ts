@@ -10,6 +10,8 @@ export default defineConfig({
     fileParallelism: false,
     // Sin red en las pruebas: la sincronización de feriados se prueba con una fuente simulada.
     // Los reintentos de la IA no esperan en las pruebas.
-    env: { NELTUME_FERIADOS_SYNC: '0', CMD_REINTENTO_MS: '0' },
+    // Vitest define TEST=true; la app solo lo acepta vacío, 0 o false. Los tests de auth que simulan
+    // producción necesitan TEST=0 para llegar a validar el secreto y los orígenes.
+    env: { NELTUME_FERIADOS_SYNC: '0', CMD_REINTENTO_MS: '0', TEST: '0' },
   },
 });

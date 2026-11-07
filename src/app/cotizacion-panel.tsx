@@ -819,12 +819,20 @@ export function CotizacionPanel({
                           {pendiente && (
                             <small className="pending-resumen">
                               {sabido && <>Entendido: {sabido}. </>}
-                              {faltan.length ? `Falta: ${textoFaltan(faltan, familia)}.` : fueraDeRegla(actual, i)}
+                              {faltan.length
+                                ? `Falta: ${textoFaltan(faltan, familia)}.`
+                                : fueraDeRegla(actual, i) ?? pendiente.pregunta}
                             </small>
                           )}
                           {pendiente && editable && s.modelo && SIN_CATALOGO.has(pendiente.rechazo.tipo) && (
                             // Lo que no existe en el catálogo se cotiza como especial con el precio que se indique.
                             <div className="cotizar-especial">
+                              {pendiente.rechazo.tipo === 'medida_no_disponible' && (
+                                <small className="pendiente-detalle">
+                                  Esa medida no está en la lista de fábrica. Si no tienes el precio, pídelo antes de
+                                  cotizar.
+                                </small>
+                              )}
                               <CampoEditable
                                 etiqueta={`Precio sin IVA para cotizar como especial: ${descripcion}`}
                                 etiquetaOculta

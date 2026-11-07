@@ -3,8 +3,11 @@ import { resolve } from 'node:path';
 import { chromiumPath } from './src/servidor/chromium';
 const dataE2E = resolve(process.env.NELTUME_E2E_DIR ?? 'data/test-e2e');
 const dbE2E = resolve(dataE2E, 'cotizador.sqlite');
+// 3101 por omisión: VS Code y otras herramientas suelen ocupar 3100. Se puede cambiar con NELTUME_E2E_PORT.
+const puertoE2E = process.env.NELTUME_E2E_PORT ?? '3101';
+const baseURL = `http://127.0.0.1:${puertoE2E}`;
 process.env.BETTER_AUTH_SECRET = 'playwright-secret-neltume-0123456789abcdef';
-process.env.BETTER_AUTH_URL = 'http://127.0.0.1:3100';
+process.env.BETTER_AUTH_URL = baseURL;
 process.env.NELTUME_DATA_DIR = dataE2E;
 process.env.NELTUME_DB_PATH = dbE2E;
 const conFirefox = process.env.NELTUME_E2E_FIREFOX === '1';
@@ -53,14 +56,14 @@ export default defineConfig({
     },
   ],
   use: {
-    baseURL: 'http://127.0.0.1:3100',
+    baseURL,
     headless: true,
     launchOptions: { executablePath: chromiumPath() },
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'npm run dev -- --port 3100',
-    url: 'http://127.0.0.1:3100',
+    command: `npm run dev -- --port ${puertoE2E}`,
+    url: baseURL,
     reuseExistingServer: false,
     timeout: 120000,
     env: {
@@ -76,7 +79,7 @@ export default defineConfig({
       NELTUME_DATA_DIR: dataE2E,
       NELTUME_DB_PATH: dbE2E,
       BETTER_AUTH_SECRET: 'playwright-secret-neltume-0123456789abcdef',
-      BETTER_AUTH_URL: 'http://127.0.0.1:3100',
+      BETTER_AUTH_URL: baseURL,
     },
   },
 });

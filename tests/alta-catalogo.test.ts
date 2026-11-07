@@ -121,6 +121,49 @@ describe('agregarProductoManual y mantención', () => {
     ]);
   });
 
+  it('rechaza un ancho manual que abre un hueco grande y acepta una extensión cercana', async () => {
+    const r = await repo();
+    const lejano = producto({ codigo: 'IA-HUECO', medida: '1,50 A 1,50', anchoMin: 1.5, anchoMax: 1.5 });
+    expect(() => r.agregarProductoManual(lejano, r.version!)).toThrow(
+      /no es contiguo a las medidas del modelo \(0,80–0,95 m\)/,
+    );
+    // Una extensión de 5 cm sí es una medida nueva razonable del mismo modelo.
+    expect(() =>
+      r.agregarProductoManual(
+        { ...lejano, codigo: 'IA-095', medida: '0,95 A 1,00', anchoMin: 0.95, anchoMax: 1.0, largo: 2.2 },
+        r.version!,
+      ),
+    ).not.toThrow();
+    // La misma protección aplica al editar un producto manual.
+    expect(() =>
+      r.editarManual('IA-095', { medida: '1,50 A 1,50', anchoMin: 1.5, anchoMax: 1.5 }),
+    ).toThrow(/no es contiguo a las medidas del modelo/);
+  });
+
+  it('edita el rango de alto y exige cambiar el rango, no solo el alto de referencia', async () => {
+    const r = await repo();
+    const nuevo = producto({
+      codigo: 'IA-RANGO',
+      modelo: 'RANGO',
+      medida: '1,20 A 1,20',
+      anchoMin: 1.2,
+      anchoMax: 1.2,
+      largo: 2.2,
+    });
+    r.agregarProductoManual(nuevo, r.version!);
+    expect(r.editarManual('IA-RANGO', { altoMin: 2.0, altoMax: 2.4 })).toMatchObject({
+      altoMin: 2.0,
+      altoMax: 2.4,
+      largo: 2.4,
+    });
+    expect(() => r.editarManual('IA-RANGO', { largo: 2.31 })).toThrow(/rango de alto/);
+    expect(r.editarManual('IA-RANGO', { altoMin: 2.1, altoMax: 2.31 })).toMatchObject({
+      altoMin: 2.1,
+      altoMax: 2.31,
+      largo: 2.31,
+    });
+  });
+
   it('edita y elimina solo productos manuales; un borrador que lo usaba queda pendiente', async () => {
     const r = await repo();
     const nuevo = producto({ codigo: 'IA-1', medida: '0,70 A 0,75', anchoMin: 0.7, anchoMax: 0.75 });

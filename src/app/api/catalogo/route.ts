@@ -68,6 +68,8 @@ const peticionSchema = z.discriminatedUnion('tipo', [
           medida: z.string().trim().min(1).max(60).optional(),
           anchoMin: z.number().finite().positive().max(rangoMedidas('PUERTA').max).nullable().optional(),
           anchoMax: z.number().finite().positive().max(rangoMedidas('PUERTA').max).nullable().optional(),
+          altoMin: z.number().finite().positive().max(100).nullable().optional(),
+          altoMax: z.number().finite().positive().max(100).nullable().optional(),
           largo: z.number().finite().min(LARGO.min).max(LARGO.max).optional(),
           precioNeto: z.number().positive().max(100_000_000).optional(),
           descripcion: z.string().trim().min(1).max(300).optional(),

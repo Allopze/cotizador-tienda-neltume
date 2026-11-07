@@ -23,13 +23,35 @@ import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
 type Respuesta = { productos: ProductoAdministrable[]; total: number };
 /** Campos del editor tal como se escriben (decimales con coma). */
 type Campos = Record<
-  'modelo' | 'familia' | 'madera' | 'tipo' | 'medida' | 'anchoMin' | 'anchoMax' | 'largo' | 'precio' | 'descripcion',
+  | 'modelo'
+  | 'familia'
+  | 'madera'
+  | 'tipo'
+  | 'medida'
+  | 'anchoMin'
+  | 'anchoMax'
+  | 'altoMin'
+  | 'altoMax'
+  | 'largo'
+  | 'precio'
+  | 'descripcion',
   string
 >;
 type Cambios = Partial<
   Pick<
     ProductoAdministrable,
-    'modelo' | 'familia' | 'madera' | 'tipo' | 'medida' | 'anchoMin' | 'anchoMax' | 'largo' | 'precioNeto' | 'descripcion'
+    | 'modelo'
+    | 'familia'
+    | 'madera'
+    | 'tipo'
+    | 'medida'
+    | 'anchoMin'
+    | 'anchoMax'
+    | 'altoMin'
+    | 'altoMax'
+    | 'largo'
+    | 'precioNeto'
+    | 'descripcion'
   >
 >;
 
@@ -41,6 +63,8 @@ export const campos = (p: ProductoAdministrable): Campos => ({
   medida: p.medida,
   anchoMin: p.anchoMin == null ? '' : decimalCampo(p.anchoMin),
   anchoMax: p.anchoMax == null ? '' : decimalCampo(p.anchoMax),
+  altoMin: p.altoMin == null ? '' : decimalCampo(p.altoMin),
+  altoMax: p.altoMax == null ? '' : decimalCampo(p.altoMax),
   largo: decimalCampo(p.largo),
   // La planilla trae precios con decimales: se editan redondeados y solo se envían si cambian.
   precio: decimalCampo(Math.round(p.precioNeto)),
@@ -70,7 +94,18 @@ export function cambiosDe(p: ProductoAdministrable, c: Campos) {
     if (texto && valor === null) errores[campo] = errorMedida('ancho', 'PUERTA');
     else if (valor !== p[campo]) cambios[campo] = valor;
   }
-  if (c.largo.trim() !== originales.largo || c.familia !== p.familia) {
+  for (const campo of ['altoMin', 'altoMax'] as const) {
+    const texto = c[campo].trim();
+    if (texto === originales[campo]) continue;
+    const valor = texto ? leerMedida(texto, c.familia, 'alto') : null;
+    if (texto && valor === null) errores[campo] = errorMedida('alto', c.familia);
+    else if (valor !== (p[campo] ?? null)) cambios[campo] = valor;
+  }
+  if (!!c.altoMin.trim() !== !!c.altoMax.trim())
+    errores.altoMax = 'Escribe el alto mínimo y el máximo, o deja ambos vacíos.';
+  if ((c.altoMin.trim() || c.altoMax.trim()) && c.largo.trim() !== originales.largo)
+    errores.largo = 'Con un rango de alto, el alto de referencia se toma del alto máximo.';
+  else if (c.largo.trim() !== originales.largo || c.familia !== p.familia) {
     const largo = leerMedida(c.largo, c.familia);
     if (largo === null) errores.largo = errorMedida('alto', c.familia);
     else if (largo !== p.largo) cambios.largo = largo;
@@ -389,6 +424,7 @@ function EditorProducto({
   const [ocupado, setOcupado] = useState(false);
   const formulario = useRef<HTMLFormElement>(null);
   const puerta = valores.familia === 'PUERTA';
+  const tieneRango = valores.altoMin.trim() !== '' || valores.altoMax.trim() !== '';
 
   async function guardar(evento: FormEvent) {
     evento.preventDefault();
@@ -468,10 +504,21 @@ function EditorProducto({
           {campo('medida', puerta ? 'Medida (texto)' : 'Medida o escuadría', puerta ? undefined : { ayuda: 'Escuadría: grosor por ancho de la pieza.' })}
           {puerta && campo('anchoMin', 'Ancho mínimo', { numero: true, ayuda: 'En metros (0,80), centímetros (80 cm) o milímetros (800 mm).' })}
           {puerta && campo('anchoMax', 'Ancho máximo', { numero: true })}
-          {campo('largo', puerta ? 'Alto' : 'Largo', {
-            numero: true,
-            ayuda: `En metros (2,10), centímetros (210 cm) o milímetros (2100 mm), ${textoRangoMedida('alto', valores.familia)}.`,
-          })}
+          {puerta &&
+            campo('altoMin', 'Alto mínimo del rango', {
+              numero: true,
+              ayuda: 'Opcional. Si lo usas, completa también el alto máximo.',
+            })}
+          {puerta &&
+            campo('altoMax', 'Alto máximo del rango', {
+              numero: true,
+              ayuda: 'El alto de referencia del producto se toma de aquí.',
+            })}
+          {!tieneRango &&
+            campo('largo', puerta ? 'Alto' : 'Largo', {
+              numero: true,
+              ayuda: `En metros (2,10), centímetros (210 cm) o milímetros (2100 mm), ${textoRangoMedida('alto', valores.familia)}.`,
+            })}
           {campo('precio', 'Precio base sin IVA', { numero: true, ayuda: 'Costo de fábrica, sin la ganancia de venta.' })}
           {campo('descripcion', 'Descripción', { ancho: true, ayuda: 'Es el texto que aparece en la cotización y el PDF.' })}
         </div>

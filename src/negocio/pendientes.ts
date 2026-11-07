@@ -47,6 +47,8 @@ export interface PreguntaPendiente {
    */
   entrada: { min: number; max: number; paso: number; unidad: 'm' | null; familia?: Familia } | null;
   alta: PrefillAlta | null;
+  /** El ítem no está incompleto: la combinación pedida no está en la lista de precios de fábrica. */
+  motivo?: 'fuera_de_lista';
   /** Permite rechazar una sugerencia y dar de alta el nombre escrito. */
   modeloNuevo?: boolean;
   /** Puerta con el ancho y el alto al revés: medidas que deja la opción «Intercambiar», en metros. */
@@ -136,6 +138,8 @@ interface Parte {
   /** Las partes de «faltan datos» iguales se agrupan entre ítems; las demás explican un caso propio. */
   agrupable: boolean;
   intercambio?: PreguntaPendiente['intercambio'];
+  /** La medida está presente pero no existe en la lista de fábrica: no se pide un dato ni se da de alta. */
+  motivo?: 'fuera_de_lista';
 }
 
 function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
@@ -206,6 +210,21 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
     case 'medida_no_disponible':
       if (r.campo === 'medida')
         return [parte({ agrupable: true, campo: 'medida', opciones: opcionesTexto(r.disponibles), entrada: null })];
+      // Una puerta con una medida fuera de la lista de fábrica no está incompleta: el dato existe y el
+      // problema es comercial. No se pide el dato ni se ofrece crear un producto de catálogo.
+      if (familia === 'PUERTA') {
+        const explicacion = sinLista(pregunta);
+        return [
+          parte({
+            agrupable: true,
+            campo: null,
+            detalle: `${explicacion ? `${explicacion} ` : ''}No es un dato faltante: esa combinación no está en la lista de precios de fábrica. Puedes cotizarla como pedido especial.`,
+            opciones: [],
+            entrada: null,
+            motivo: 'fuera_de_lista',
+          }),
+        ];
+      }
       return [
         parte({
           agrupable: true,
@@ -239,8 +258,14 @@ function partes(r: Rechazo, pregunta: string, s?: SolicitudItem): Parte[] {
 }
 
 function prefillAlta(s: SolicitudItem | undefined, r: Rechazo | undefined): PrefillAlta | null {
-  if (!s || !r || !['modelo_desconocido', 'modelo_posible', 'madera_desconocida', 'madera_no_disponible', 'medida_no_disponible'].includes(r.tipo))
-    return null;
+  if (!s || !r) return null;
+  // El alta de catálogo se ofrece cuando falta el modelo, la madera o una sección. Una medida de puerta
+  // fuera de la lista no se “arregla” creando un producto: se cotiza como pedido especial.
+  const familiaRechazo = familiaItem(s, null, r);
+  const permiteAlta =
+    ['modelo_desconocido', 'modelo_posible', 'madera_desconocida', 'madera_no_disponible'].includes(r.tipo) ||
+    (r.tipo === 'medida_no_disponible' && (r.campo === 'medida' || familiaRechazo !== 'PUERTA'));
+  if (!permiteAlta) return null;
   const deRechazo = 'familia' in r ? r.familia ?? null : null;
   const familia = deRechazo === 'OTRO' ? null : deRechazo;
   const ancho = familia === 'PUERTA' && s.ancho !== null ? metros(s.ancho, 'PUERTA') : null;
@@ -343,7 +368,12 @@ export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompl
   return todas.map(({ indices, parte, familias }) => {
     const sujeto = indices.length === 1 ? `${listaItems(indices)}${nombre(indices[0])}` : listaItems(indices);
     const etiqueta = parte.campo ? etiquetaPendiente(parte.campo, familias) : null;
-    const texto = etiqueta ? `${etiqueta} para ${sujeto}` : `Revisa ${sujeto}`;
+    const texto =
+      parte.motivo === 'fuera_de_lista'
+        ? `Medida fuera de lista para ${sujeto}`
+        : etiqueta
+          ? `${etiqueta} para ${sujeto}`
+          : `Revisa ${sujeto}`;
     return {
       clave: `${parte.campo ?? 'texto'}:${indices.join(',')}`,
       indices,
@@ -354,6 +384,7 @@ export function preguntasPendientes(q: Pick<Cotizacion, 'solicitudes' | 'incompl
       opciones: sugerir(q, indices, parte),
       entrada: parte.entrada,
       ...(parte.intercambio ? { intercambio: parte.intercambio } : {}),
+      ...(parte.motivo ? { motivo: parte.motivo } : {}),
       modeloNuevo: indices.length === 1 && q.incompletos.find((p) => p.indice === indices[0])?.rechazo.tipo === 'modelo_posible',
       alta: indices.length === 1
         ? prefillAlta(q.solicitudes[indices[0]], q.incompletos.find((p) => p.indice === indices[0])?.rechazo)

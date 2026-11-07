@@ -60,7 +60,6 @@ describe('alta desde las preguntas pendientes', () => {
       { tipo: 'modelo_desconocido', valor: 'Nuevo', disponibles: [] },
       { tipo: 'madera_desconocida', valor: 'Roble', disponibles: [] },
       { tipo: 'madera_no_disponible', valor: 'LENGA', disponibles: [] },
-      { tipo: 'medida_no_disponible', campo: 'alto', valor: 2.27, disponibles: [] },
     ];
     for (const rechazo of rechazos) {
       expect(renderizar(rechazo, true)).toContain('Agregar al catálogo');
@@ -72,6 +71,7 @@ describe('alta desde las preguntas pendientes', () => {
       { tipo: 'medida_implausible', campo: 'alto', valor: 9999, disponibles: [] },
       { tipo: 'producto_ambiguo', valor: 'Huilo Huilo', disponibles: [] },
       { tipo: 'cantidad_invalida', valor: 0, disponibles: [] },
+      { tipo: 'medida_no_disponible', campo: 'alto', valor: 2.315, disponibles: ['2.2'], familia: 'PUERTA' },
     ] satisfies Rechazo[])
       expect(renderizar(rechazo, true)).not.toContain('Agregar al catálogo');
   });
@@ -128,8 +128,6 @@ describe('preguntas de los ítems pendientes', () => {
   it.each<Rechazo>([
     { tipo: 'madera_desconocida', valor: 'Roble', disponibles: [], familia: 'PUERTA' },
     { tipo: 'madera_no_disponible', valor: 'LENGA', disponibles: [], familia: 'PUERTA' },
-    { tipo: 'medida_no_disponible', campo: 'ancho', valor: 0.82, disponibles: [], familia: 'PUERTA' },
-    { tipo: 'medida_no_disponible', campo: 'alto', valor: 2.27, disponibles: [], familia: 'PUERTA' },
   ])('$tipo completa el alta de puerta con la solicitud y convierte centímetros y milímetros', (rechazo) => {
     const [p] = preguntasPendientes({
       solicitudes: [item({ modelo: 'Huilo Huilo', madera: 'Roble', ancho: 82, alto: 2270, medida: 'no aplica' })],
@@ -139,6 +137,21 @@ describe('preguntas de los ítems pendientes', () => {
       familia: 'PUERTA', modelo: 'Huilo Huilo', madera: 'Roble', medida: null,
       anchoMin: 0.82, anchoMax: 0.82, largo: 2.27,
     });
+  });
+
+  it('una medida de puerta fuera de la lista no ofrece alta y se explica como pedido especial', () => {
+    const rechazo: Rechazo = {
+      tipo: 'medida_no_disponible', campo: 'alto', valor: 2.315, disponibles: ['2.2'], familia: 'PUERTA', rango: { min: 2, max: 2.2 },
+    };
+    const q = {
+      solicitudes: [item({ modelo: 'Los Rios', madera: 'PREPINTADA', ancho: 0.75, alto: 2.315 })],
+      incompletos: [{ indice: 0, rechazo, pregunta: 'Los Rios no viene en 2,315 m de alto o largo. Se cotizan altos o largos entre 2,00 y 2,20 m.' }],
+    };
+    const [p] = preguntasPendientes(q);
+    expect(p).toMatchObject({ campo: null, entrada: null, opciones: [], alta: null, motivo: 'fuera_de_lista' });
+    expect(p.texto).toContain('Medida fuera de lista');
+    expect(p.detalle).toContain('No es un dato faltante');
+    expect(faltantesItem(q, 0)).toEqual([]);
   });
 
   it.each<Familia>(['MARCO', 'PIEZAS_T', 'MOLDURA'])('completa el alta de %s con la escuadría original', (familia) => {
@@ -210,7 +223,7 @@ describe('preguntas de los ítems pendientes', () => {
     expect(preguntas[0].opciones.map((o) => o.valor)).toEqual(['LENGA', 'PINO OREGON', 'RAULI']);
   });
 
-  it('agrupa los ítems con la misma medida fuera de catálogo; una puerta pide alto y un marco, largo', () => {
+  it('agrupa los ítems con la misma medida fuera de catálogo; la puerta queda fuera de lista y el marco pide largo', () => {
     const fuera = (valor: number, familia: Familia): Rechazo => ({
       tipo: 'medida_no_disponible',
       campo: 'alto',
@@ -233,14 +246,12 @@ describe('preguntas de los ítems pendientes', () => {
     solicitudes.push(item({ modelo: 'LOS LAGOS', alto: 2.45 }));
     const preguntas = preguntasPendientes({ solicitudes, incompletos });
     expect(preguntas.map((p) => [p.texto, p.indices])).toEqual([
-      ['Alto para los ítems 1, 3, 5, 7 y 9', [0, 2, 4, 6, 8]],
+      ['Medida fuera de lista para los ítems 1, 3, 5, 7 y 9', [0, 2, 4, 6, 8]],
       ['Largo para los ítems 2, 4, 6 y 8', [1, 3, 5, 7]],
-      ['Alto para el ítem 10 (Los Lagos)', [9]],
+      ['Medida fuera de lista para el ítem 10 (Los Lagos)', [9]],
     ]);
-    // Una sola respuesta deja a los cinco Los Lagos en 2,40 m.
-    expect(cambiosRespuesta(preguntas[0], 2.4)).toEqual({
-      items: [0, 2, 4, 6, 8].map((indice) => ({ indice, cambios: { alto: 2.4 } })),
-    });
+    // La puerta fuera de lista no se responde con una medida: se cotiza como pedido especial.
+    expect(cambiosRespuesta(preguntas[0], 2.4)).toEqual({});
   });
 
   it('con muchos ítems nombra la cantidad y los primeros; el nombre del campo sigue la familia', () => {
@@ -361,7 +372,7 @@ describe('preguntas de los ítems pendientes', () => {
     });
   });
 
-  it('una medida fuera de catálogo con tramo pide un valor dentro del tramo y sugiere el de otro ítem', () => {
+  it('una medida de puerta fuera de la lista con tramo no pide un valor: explica el rango y ofrece pedido especial', () => {
     const [p] = preguntasPendientes({
       solicitudes: [item({ madera: 'LENGA', ancho: 0.82 }), item({ madera: 'LENGA', ancho: 1.6 })],
       incompletos: [
@@ -372,14 +383,16 @@ describe('preguntas de los ítems pendientes', () => {
             campo: 'ancho',
             valor: 1.6,
             disponibles: [],
+            familia: 'PUERTA',
             rango: { min: 0.6, max: 1.45 },
           },
           pregunta: 'Huilo Huilo no viene en 1,60 m de ancho. Se cotizan anchos entre 0,60 y 1,45 m.',
         },
       ],
     });
-    expect(p.entrada).toMatchObject({ min: 0.6, max: 1.45 });
-    expect(p.opciones).toEqual([{ etiqueta: '0,82 m', valor: 0.82, sugerencia: 'Como el ítem 1' }]);
+    expect(p).toMatchObject({ campo: null, entrada: null, opciones: [], motivo: 'fuera_de_lista' });
+    expect(p.detalle).toContain('Se cotizan anchos entre 0,60 y 1,45 m');
+    expect(p.detalle).toContain('pedido especial');
   });
 
   it('no sugiere la madera de otro ítem si la persona ya dijo una que no se pudo usar', () => {
