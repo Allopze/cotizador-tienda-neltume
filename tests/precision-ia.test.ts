@@ -517,6 +517,45 @@ describe('servicio: anclaje en modo «avisar»', () => {
     expect(pregunta.avisos).toBeUndefined();
   });
 
+  it('un despacho a un lugar que se llama como un modelo no agrega un producto', async () => {
+    const { servicio, llm } = await setupAvisar();
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: {
+        agregar: [
+          {
+            ...item({ madera: null, ancho: null, alto: null, cantidad: 3 }),
+            fuente: 'Necesito despacho a Molco para 3 pallets',
+          },
+        ],
+      },
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Necesito despacho a Molco para 3 pallets' });
+    expect(r.cotizacion.solicitudes).toEqual([]);
+    expect(r.avisos).toEqual([expect.stringMatching(/^No registré «MOLCO» como producto: tu mensaje no lo pide/)]);
+  });
+
+  it('un despacho sin valor deja la comuna aunque la IA no la registre; con valor es un flete y no la toma', async () => {
+    const { servicio, llm } = await setupAvisar();
+    const pedido = { ...item({ cantidad: 2 }), fuente: '2 Molco oregón 80x200' };
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: { agregar: [pedido] },
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Despacho a Chillán\n2 Molco oregón 80x200' });
+    expect(r.cotizacion.cliente.comuna).toBe('Chillán');
+    expect(r.avisos).toEqual([expect.stringMatching(/^Tomé la comuna del cliente del despacho: Chillán/)]);
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: { agregar: [pedido] },
+    });
+    const conFlete = await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: 'Despacho a Chillán $380.000 + iva\n2 Molco oregón 80x200',
+    });
+    expect(conFlete.cotizacion.cliente.comuna).toBeNull();
+  });
+
   it('una cifra que nadie escribió se anula igual que en «corregir»', async () => {
     const { servicio, llm } = await setupAvisar();
     llm.interpretar.mockResolvedValueOnce({

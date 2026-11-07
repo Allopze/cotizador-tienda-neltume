@@ -30,7 +30,13 @@ import {
   porcentajesDelTexto,
   textosSinPorcentajes,
 } from '../asistente/montos';
-import { fleteAlFinal, pareceUnPedido, pedidosSinRegistrar, sinLineasDeFlete } from '../asistente/cobertura';
+import {
+  fleteAlFinal,
+  parteDelPedido,
+  pareceUnPedido,
+  pedidosSinRegistrar,
+  sinLineasDeFlete,
+} from '../asistente/cobertura';
 import { respuestaDirecta } from '../asistente/respuesta-directa';
 import { mapaCatalogo } from '../catalogo/mapa';
 import { maderasConEquivalente, nombreCanonicoModelo } from '../catalogo/configuracion';
@@ -126,6 +132,8 @@ export interface ContextoChat {
 }
 
 const NO_ENTENDI = 'No entendí, ¿puedes reformularlo?';
+const QUE_COTIZAR =
+  'Cuéntame qué necesitas cotizar: modelo, madera, medidas y cantidad. También puedes agregar los datos del cliente.';
 const PEDIDO_SIN_REGISTRAR =
   'No agregué productos y tu mensaje parece un pedido. Escríbelo de nuevo con modelo, madera, medidas y cantidad.';
 const AYUDA_ESPECIAL =
@@ -457,6 +465,22 @@ function pedidoSinRegistrar(
   if (modo !== 'cotizacion_nueva' || !pareceUnPedido(mensaje, resolver)) return false;
   const enBorrador = new Set(base.solicitudes.flatMap((s) => (s.modelo ? [normalizar(s.modelo)] : [])));
   return [...nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.keys()].some((m) => !enBorrador.has(m));
+}
+
+/**
+ * Un ítem que la IA agrega nombrando un modelo que el mensaje solo menciona como dato (destino de un despacho,
+ * comuna del cliente): «Necesito despacho a Riñihue para 3 pallets» no pide la puerta Riñihue. Un ítem libre o uno
+ * cuyo modelo no está en el mensaje (viene de la conversación: «agrega otra igual») se conserva.
+ */
+function productoNoPedido(
+  mensaje: string,
+  s: { modelo: string | null; libre?: boolean | null },
+  resolver: Record<'modelo' | 'madera', ResolverNombre>,
+) {
+  if (s.libre || !s.modelo) return false;
+  const nombre = normalizar(resolver.modelo(s.modelo) ?? s.modelo);
+  const pedido = nombresDichos(parteDelPedido(mensaje), resolver.modelo, resolver.madera).resueltos;
+  return !pedido.has(nombre) && nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.has(nombre);
 }
 
 /** Un ítem que la IA marcó libre lo es si tiene nombre y ese nombre no es un modelo del catálogo. */
@@ -819,6 +843,21 @@ function anclarCliente(cliente: Partial<Cliente>, textos: string[]): { cliente: 
 }
 
 /**
+ * La comuna que dice un despacho sin valor («Despacho a Chillán»): el prompt la toma como comuna del cliente. Se
+ * descarta un destino en minúscula («a domicilio», «a la fábrica») y una línea con un monto (es un flete).
+ */
+function comunaDelDespacho(mensaje: string): string | null {
+  const destino = /^([A-ZÁÉÍÓÚÑ][\p{L}]+(?:\s+(?:de|del|la|las|los|el)\s+[A-ZÁÉÍÓÚÑ][\p{L}]+|\s+[A-ZÁÉÍÓÚÑ][\p{L}]+)*)/u;
+  for (const linea of mensaje.normalize('NFC').split('\n')) {
+    if (montosDelTexto(linea).length || /\$|\biva\b/i.test(sinTildes(linea))) continue;
+    const cola = /\b(?:despach\w*|depach\w*|env[ií]os?|entrega(?:r)?)\s+(?:a|en|para)\s+(.*)$/iu.exec(linea)?.[1];
+    const nombre = cola && destino.exec(cola.trim())?.[1];
+    if (nombre) return nombre.trim();
+  }
+  return null;
+}
+
+/**
  * El índice que propuso la IA tiene que ser el del ítem que nombra el mensaje (auditoría BUG-007): con dos Molco,
  * editar o quitar «las Coz Coz» por el índice 0 borraba la puerta equivocada.
  */
@@ -1178,6 +1217,15 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
         },
       };
     } else if (res.name === 'modificar_cotizacion') {
+      // La IA a veces registra el destino de un despacho como producto («Necesito despacho a Riñihue para 3
+      // pallets» → 3 RIÑIHUE): no se agrega lo que el mensaje no pide.
+      const noPedidos = (res.input.agregar ?? []).filter((s) => productoNoPedido(accion.mensaje, s, resolver));
+      if (noPedidos.length) res.input.agregar = res.input.agregar!.filter((s) => !noPedidos.includes(s));
+      const avisosNoPedidos = noPedidos.length
+        ? marcar('otros', [
+            `No registré ${noPedidos.map((s) => `«${s.modelo}»`).join(', ')} como producto: tu mensaje no lo pide. Dime qué productos quieres cotizar.`,
+          ])
+        : [];
       const dichas = fabricasDichas(res.input, textosPersona, (i) =>
         q.solicitudes[i] ? ctx.describir(q.solicitudes[i]) : `el ítem ${i + 1}`,
       );
@@ -1193,8 +1241,15 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       ];
       // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
       const aplicado = aplicarModificacion(ctx, q, dichas.input, accion.mensaje);
-      if (!aplicado) return responder(avisosFabrica.length ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n') : NO_ENTENDI);
-      propuesta = aplicado;
+      if (!aplicado) {
+        const texto = avisosFabrica.length
+          ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n')
+          : avisosNoPedidos.length
+            ? QUE_COTIZAR
+            : NO_ENTENDI;
+        return responder(texto, avisosNoPedidos.length ? { avisos: avisosNoPedidos } : {});
+      }
+      propuesta = { ...aplicado, avisos: [...aplicado.avisos, ...avisosNoPedidos] };
     } else if (res.name === 'responder') {
       // En «avisar», si ni el reintento lo registró, un pedido respondido con texto no puede pasar en silencio.
       const sinRegistrar =
@@ -1318,11 +1373,18 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       const textosLibres = [...textosIA, ...propuesta.items.flatMap((s) => (s.fuente ? [s.fuente] : []))];
       const conTextos = anclarTextos(propuesta.items, textosLibres);
       const conCliente = anclarCliente(propuesta.cliente, textosLibres);
+      // «Despacho a Chillán» sin valor es la comuna del cliente: si la IA no la registró, se toma del mensaje.
+      const comuna =
+        conCliente.cliente.comuna == null && conTextos.items.length ? comunaDelDespacho(accion.mensaje) : null;
       propuesta = {
         ...propuesta,
         items: conTextos.items,
-        cliente: conCliente.cliente,
-        avisos: [...propuesta.avisos, ...marcar('campo', [...conTextos.avisos, ...conCliente.avisos])],
+        cliente: comuna ? { ...conCliente.cliente, comuna } : conCliente.cliente,
+        avisos: [
+          ...propuesta.avisos,
+          ...marcar('campo', [...conTextos.avisos, ...conCliente.avisos]),
+          ...(comuna ? marcar('otros', [`Tomé la comuna del cliente del despacho: ${comuna}.`]) : []),
+        ],
       };
     }
     const conPrecios = preciosEscritos(
@@ -1347,10 +1409,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
     const avisos = [...propuesta.avisos, ...avisosItems, ...avisosCliente];
     const extra = avisos.length ? { avisos } : {};
     if (q === nuevo && !solicitudes.length && !cambiaFlete && Object.values(cliente).every((v) => v === null))
-      return responder(
-        'Cuéntame qué necesitas cotizar: modelo, madera, medidas y cantidad. También puedes agregar los datos del cliente.',
-        extra,
-      );
+      return responder(QUE_COTIZAR, extra);
     if (
       ctx.sinCambios(q, solicitudes, cliente) &&
       !cambiaFlete &&
