@@ -6,6 +6,7 @@ const dbE2E = resolve(dataE2E, 'cotizador.sqlite');
 // 3101 por omisión: VS Code y otras herramientas suelen ocupar 3100. Se puede cambiar con NELTUME_E2E_PORT.
 const puertoE2E = process.env.NELTUME_E2E_PORT ?? '3101';
 const baseURL = `http://127.0.0.1:${puertoE2E}`;
+const distE2E = process.env.NELTUME_DIST_DIR ?? '.next-e2e';
 process.env.BETTER_AUTH_SECRET = 'playwright-secret-neltume-0123456789abcdef';
 process.env.BETTER_AUTH_URL = baseURL;
 process.env.NELTUME_DATA_DIR = dataE2E;
@@ -13,6 +14,7 @@ process.env.NELTUME_DB_PATH = dbE2E;
 const conFirefox = process.env.NELTUME_E2E_FIREFOX === '1';
 export default defineConfig({
   testDir: 'tests',
+  outputDir: process.env.NELTUME_E2E_OUTPUT_DIR ?? 'test-results',
   fullyParallel: false,
   workers: 1,
   timeout: 60000,
@@ -78,6 +80,7 @@ export default defineConfig({
       NELTUME_FABRICA_PANGUIPULLI_SECRETO: '',
       NELTUME_DATA_DIR: dataE2E,
       NELTUME_DB_PATH: dbE2E,
+      NELTUME_DIST_DIR: distE2E,
       BETTER_AUTH_SECRET: 'playwright-secret-neltume-0123456789abcdef',
       BETTER_AUTH_URL: baseURL,
     },

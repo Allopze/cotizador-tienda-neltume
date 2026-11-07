@@ -5,9 +5,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { zipSync, strToU8 } from 'fflate';
-import { verificar } from './verificar.mjs';
+import { advertenciaSinIa, huellaEntrega, leerManifiesto, puedeReusar, verificar } from './verificar.mjs';
 
-export { advertenciaSinIa } from './verificar.mjs';
+export { advertenciaSinIa };
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -23,6 +23,7 @@ async function principal() {
       'solo-verificar': { type: 'boolean' },
       'sin-verificar': { type: 'boolean' },
       serial: { type: 'boolean' },
+      reverificar: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -33,7 +34,9 @@ async function principal() {
         '     npm run verificar\n' +
         'Con --ssh <host> --dir <ruta> sube la entrega por SSH y la levanta con Docker Compose;\n' +
         'sin --ssh genera un ZIP en deploy/. --forzar omite el chequeo de recursos del servidor.\n' +
-        'Antes de empaquetar corre tipos, lint, pruebas y la evaluación de la IA en paralelo; si algo falla, no se despliega.\n' +
+        'Si no hay una verificación vigente del mismo árbol, corre tipos, lint, pruebas y la evaluación de la IA en paralelo; si algo falla, no se despliega.\n' +
+        'npm run verificar deja esa verificación lista para reutilizar.\n' +
+        '--reverificar ignora una verificación vigente y vuelve a correr todo.\n' +
         '--serial ejecuta la verificación paso a paso para diagnosticar.\n' +
         '--sin-ia omite solo la evaluación de la IA (por ejemplo, si el proveedor no responde).\n' +
         '--solo-verificar corre la verificación y no empaqueta ni despliega (npm run verificar).\n' +
@@ -49,11 +52,21 @@ async function principal() {
     throw new Error('--solo-verificar y --sin-verificar no van juntos.');
   // Verificar (en el equipo de desarrollo o en CI) y desplegar son pasos separados: --sin-verificar permite generar
   // o subir una entrega urgente sin la planilla privada ni la clave de IA de este equipo.
+  const forzarVerificacion = values.reverificar || values['solo-verificar'];
   if (values['sin-verificar'])
     console.warn(
       'Se omite la verificación (--sin-verificar): la entrega no pasó por tipos, lint, pruebas ni evaluación de la IA.',
     );
-  else await verificar({ sinIa: values['sin-ia'], serial: values.serial });
+  else {
+    const huella = await huellaEntrega();
+    const manifiesto = await leerManifiesto();
+    if (!forzarVerificacion && puedeReusar(manifiesto, { huella, sinIa: values['sin-ia'] })) {
+      console.log(
+        `\n▶ Verificación vigente del ${manifiesto.fecha}; se reutiliza (${manifiesto.huella.slice(0, 12)}…).`,
+      );
+      if (values['sin-ia'] && !manifiesto.ia) console.warn(advertenciaSinIa());
+    } else await verificar({ sinIa: values['sin-ia'], serial: values.serial });
+  }
   if (values['solo-verificar']) return;
 
   let origen = '';
@@ -122,6 +135,15 @@ async function principal() {
     '\n# Puerto publicado en el servidor; el proxy HTTPS debe apuntar aquí.\n' +
     `NELTUME_BIND_IP=127.0.0.1\nNELTUME_PORT=${values.port}\n`;
   archivos['.env'] = strToU8(entorno);
+  if (!values['sin-verificar']) {
+    // La verificación pudo reutilizarse; si el árbol cambió mientras se armaba la entrega, no se sube.
+    const huella = await huellaEntrega();
+    const manifiesto = await leerManifiesto();
+    if (!puedeReusar(manifiesto, { huella, sinIa: values['sin-ia'] }))
+      throw new Error(
+        'El árbol cambió después de verificar. Vuelve a ejecutar npm run verificar o npm run deploy.',
+      );
+  }
   const zip = zipSync(archivos, { level: 6 });
 
   if (values.ssh) {

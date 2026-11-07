@@ -1,9 +1,122 @@
 import { spawn } from 'node:child_process';
-import { dirname, resolve } from 'node:path';
+import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const MANIFIESTO = join(raiz, '.verificacion', 'entrega.json');
+const CARPETAS_VERIFICADAS = ['src', 'public', 'config', 'scripts', 'tests', 'evals', 'docker', 'docs'];
+const ARCHIVOS_VERIFICADOS = [
+  'package.json',
+  'package-lock.json',
+  'next.config.ts',
+  'next-env.d.ts',
+  'tsconfig.json',
+  'postcss.config.mjs',
+  'eslint.config.mjs',
+  'playwright.config.ts',
+  'playwright.smoke.config.ts',
+  'playwright.aceptacion.config.ts',
+  'vitest.config.ts',
+  'Dockerfile',
+  'compose.yaml',
+  '.dockerignore',
+  '.env.example',
+];
+const PRIVADOS_VERIFICADOS = [
+  'datos-privados/COTIZADOR_2026.xlsx',
+  'datos-privados/VALORES PUERTAS ENCHAPADAS_NELTUME.CO.xlsx',
+];
+const IGNORAR = new Set([
+  '.git',
+  'node_modules',
+  'data',
+  'deploy',
+  'test-results',
+  'playwright-report',
+  '.next',
+  '.next-e2e',
+  '.verificacion',
+  'capturas',
+  'screenshots',
+  'ui-audit',
+  'modelos-3d',
+  'respaldos',
+]);
+
+/** Lista recursiva de archivos de una carpeta, en rutas relativas a la raíz. */
+async function listarArchivos(carpeta) {
+  const salida = [];
+  const pendientes = [carpeta];
+  while (pendientes.length) {
+    const actual = pendientes.pop();
+    for (const entrada of await readdir(actual, { withFileTypes: true })) {
+      if (IGNORAR.has(entrada.name) || entrada.name === '.DS_Store') continue;
+      if (entrada.isFile() && entrada.name.startsWith('.env') && entrada.name !== '.env.example') continue;
+      const ruta = join(actual, entrada.name);
+      if (entrada.isDirectory()) pendientes.push(ruta);
+      else if (entrada.isFile()) salida.push(relative(raiz, ruta).replaceAll('\\', '/'));
+    }
+  }
+  return salida;
+}
+
+/**
+ * Huella del árbol que se verifica y se despliega: código, configuración, tests, evals y las dos planillas
+ * privadas que usan las pruebas. Un cambio en cualquiera invalida la verificación anterior. No incluye
+ * .env, datos, respaldos ni artefactos.
+ */
+export async function huellaEntrega() {
+  const archivos = [];
+  for (const ruta of [...ARCHIVOS_VERIFICADOS, ...PRIVADOS_VERIFICADOS])
+    if (existsSync(join(raiz, ruta))) archivos.push(ruta);
+  for (const carpeta of CARPETAS_VERIFICADAS)
+    if (existsSync(join(raiz, carpeta))) archivos.push(...(await listarArchivos(join(raiz, carpeta))));
+  const ordenados = [...new Set(archivos)].sort();
+  const hash = createHash('sha256');
+  for (const ruta of ordenados) {
+    hash.update(ruta);
+    hash.update('\0');
+    hash.update(await readFile(join(raiz, ruta)));
+    hash.update('\0');
+  }
+  return hash.digest('hex');
+}
+
+export async function leerManifiesto() {
+  try {
+    const datos = JSON.parse(await readFile(MANIFIESTO, 'utf8'));
+    return datos && typeof datos === 'object' ? datos : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Una verificación sirve para desplegar si es del mismo árbol y, salvo --sin-ia explícito, incluyó la IA. */
+export function puedeReusar(manifiesto, { huella, sinIa }) {
+  return (
+    !!manifiesto &&
+    manifiesto.version === 1 &&
+    manifiesto.ok === true &&
+    manifiesto.huella === huella &&
+    (sinIa || manifiesto.ia === true)
+  );
+}
+
+async function escribirManifiesto({ huella, ia, etapas }) {
+  await mkdir(dirname(MANIFIESTO), { recursive: true });
+  await writeFile(
+    MANIFIESTO,
+    JSON.stringify({ version: 1, huella, ok: true, ia, fecha: new Date().toISOString(), etapas }, null, 2),
+  );
+}
+
+async function borrarManifiesto() {
+  await rm(MANIFIESTO, { force: true });
+}
 
 /**
  * Advertencia destacada de --sin-ia: la entrega no pasó la evaluación de la IA (precisión, errores
@@ -66,8 +179,8 @@ function pasos({ sinIa }) {
     { nombre: 'Tipos', comando: 'npx', argumentos: ['tsc', '--noEmit'], grupo: 1 },
     { nombre: 'Lint', comando: 'npm', argumentos: ['run', 'lint'], grupo: 1 },
     { nombre: 'Unitarios', comando: 'npm', argumentos: ['run', 'test:unit'], grupo: 1 },
-    // El reporter de línea evita que el progreso de Playwright se mezcle con los otros procesos.
-    { nombre: 'E2E', comando: 'npm', argumentos: ['run', 'test:e2e', '--', '--reporter=line'], grupo: 2 },
+    // El runner paralelo aísla base, puerto y distDir por grupo; su salida viene prefijada.
+    { nombre: 'E2E', comando: 'npm', argumentos: ['run', 'test:e2e:paralelo'], grupo: 2 },
     ...(sinIa ? [] : [{ nombre: 'IA', comando: 'npm', argumentos: ['run', 'evaluar:regresion'], grupo: 2 }]),
   ];
 }
@@ -109,22 +222,32 @@ export async function verificar({ sinIa = false, serial = false } = {}) {
     }
   }
   const fallas = [];
+  const etapas = [];
   for (const paso of lista) {
     const resultado = resultados.get(paso);
     if (!resultado) {
       console.log(`— ${paso.nombre}: no ejecutado`);
+      etapas.push({ nombre: paso.nombre, ok: false, noEjecutado: true });
       continue;
     }
     const bien = resultado.codigo === 0;
     console.log(`${bien ? '✔' : '✘'} ${paso.nombre} (${(resultado.ms / 1000).toFixed(1)} s)`);
+    etapas.push({ nombre: paso.nombre, ok: bien, ms: resultado.ms });
     if (!bien) fallas.push(paso.nombre);
   }
-  if (sinIa) console.warn(advertenciaSinIa());
-  if (fallas.length)
+  if (fallas.length) {
+    // Una verificación fallida no puede dejar vigente la atestación de una corrida anterior.
+    await borrarManifiesto();
+    if (sinIa) console.warn(advertenciaSinIa());
     throw new Error(
       `${fallas.join(', ')}: falló. No se despliega; corrige el problema y vuelve a intentarlo.` +
         (fallas.includes('IA') ? ' Si el proveedor de IA no respondía, repite más tarde.' : ''),
     );
+  }
+  const huella = await huellaEntrega();
+  await escribirManifiesto({ huella, ia: !sinIa, etapas });
+  console.log(`Manifiesto: ${relative(raiz, MANIFIESTO)}`);
+  if (sinIa) console.warn(advertenciaSinIa());
   console.log('\nVerificación completa.');
 }
 
@@ -142,7 +265,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       'Uso: npm run verificar -- [--sin-ia] [--serial]\n' +
         'Por omisión los grupos de verificación corren en paralelo.\n' +
         '--serial ejecuta cada paso por separado para diagnosticar.\n' +
-        '--sin-ia omite la evaluación de la IA solo si el proveedor no responde.',
+        '--sin-ia omite la evaluación de la IA solo si el proveedor no responde.\n' +
+        'Al terminar deja .verificacion/entrega.json; npm run deploy lo reutiliza si el árbol no cambió.',
     );
     process.exit(0);
   }
