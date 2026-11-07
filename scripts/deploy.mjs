@@ -5,6 +5,9 @@ import { dirname, join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { zipSync, strToU8 } from 'fflate';
+import { verificar } from './verificar.mjs';
+
+export { advertenciaSinIa } from './verificar.mjs';
 
 const raiz = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -19,6 +22,7 @@ async function principal() {
       'sin-ia': { type: 'boolean' },
       'solo-verificar': { type: 'boolean' },
       'sin-verificar': { type: 'boolean' },
+      serial: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
     },
   });
@@ -29,7 +33,8 @@ async function principal() {
         '     npm run verificar\n' +
         'Con --ssh <host> --dir <ruta> sube la entrega por SSH y la levanta con Docker Compose;\n' +
         'sin --ssh genera un ZIP en deploy/. --forzar omite el chequeo de recursos del servidor.\n' +
-        'Antes de empaquetar corre tipos, lint, pruebas y la evaluación de la IA; si algo falla, no se despliega.\n' +
+        'Antes de empaquetar corre tipos, lint, pruebas y la evaluación de la IA en paralelo; si algo falla, no se despliega.\n' +
+        '--serial ejecuta la verificación paso a paso para diagnosticar.\n' +
         '--sin-ia omite solo la evaluación de la IA (por ejemplo, si el proveedor no responde).\n' +
         '--solo-verificar corre la verificación y no empaqueta ni despliega (npm run verificar).\n' +
         '--sin-verificar empaqueta o despliega sin verificar: solo para una entrega ya verificada en otro equipo.\n' +
@@ -48,11 +53,7 @@ async function principal() {
     console.warn(
       'Se omite la verificación (--sin-verificar): la entrega no pasó por tipos, lint, pruebas ni evaluación de la IA.',
     );
-  else {
-    // Se advierte al empezar y al terminar: entre medio, la salida de las pruebas la deja fuera de la vista.
-    if (values['sin-ia']) console.warn(advertenciaSinIa());
-    await verificar({ sinIa: values['sin-ia'] });
-  }
+  else await verificar({ sinIa: values['sin-ia'], serial: values.serial });
   if (values['solo-verificar']) return;
 
   let origen = '';
@@ -140,61 +141,6 @@ async function principal() {
   console.log('Instalación nueva: descomprime el ZIP y ejecuta docker compose up -d.');
   console.log('Actualización: sh <instalación>/scripts/actualizar.sh <zip> (conserva .env y respaldos).');
   console.log('Instrucciones de dominio, primera cuenta, respaldos y actualizaciones: docker/LEEME.md');
-}
-
-/**
- * Advertencia destacada de --sin-ia: la entrega no pasó la evaluación de la IA (precisión, errores silenciosos y
- * falsas alarmas), así que un cambio en el asistente puede llegar a las vendedoras sin medir.
- */
-export function advertenciaSinIa() {
-  const lineas = [
-    'ATENCIÓN: SE OMITIÓ LA EVALUACIÓN DE LA IA (--sin-ia)',
-    '',
-    'Esta entrega no midió la precisión del asistente, sus errores',
-    'silenciosos ni sus falsas alarmas. Si cambió el asistente, el',
-    'anclaje o los casos, corre «npm run evaluar:regresion» antes',
-    'de usarlo con las vendedoras.',
-  ];
-  const ancho = Math.max(...lineas.map((l) => l.length));
-  const borde = `+${'-'.repeat(ancho + 2)}+`;
-  const cuerpo = lineas.map((l) => `| ${l.padEnd(ancho)} |`);
-  const texto = ['', borde, ...cuerpo, borde, ''].join('\n');
-  // Amarillo y negrita en una terminal; texto plano si la salida va a un archivo.
-  return process.stderr.isTTY ? `\x1b[1;33m${texto}\x1b[0m` : texto;
-}
-
-/**
- * Nada llega al servidor sin pasar las pruebas: unos tests rotos estuvieron días sin que nadie lo notara, y no
- * hay CI. La evaluación de la IA corre cada caso varias veces (cuesta unos centavos de dólar).
- */
-async function verificar({ sinIa }) {
-  const pasos = [
-    ['Tipos', 'npx', ['tsc', '--noEmit']],
-    ['Lint', 'npm', ['run', 'lint']],
-    ['Pruebas unitarias y de interfaz', 'npm', ['test']],
-    ...(sinIa ? [] : [['Evaluación de la IA', 'npm', ['run', 'evaluar:regresion']]]),
-  ];
-  for (const [nombre, comando, argumentos] of pasos) {
-    console.log(`\n▶ ${nombre}…`);
-    const codigo = await new Promise((resolver, rechazar) => {
-      const proceso = spawn(comando, argumentos, {
-        cwd: raiz,
-        stdio: 'inherit',
-        shell: process.platform === 'win32',
-      });
-      proceso.on('error', rechazar);
-      proceso.on('close', resolver);
-    });
-    if (codigo !== 0)
-      throw new Error(
-        `${nombre}: falló. No se despliega; corrige el problema y vuelve a intentarlo.` +
-          (nombre === 'Evaluación de la IA'
-            ? ' Si el proveedor de IA no respondía, repite más tarde o usa --sin-ia.'
-            : ''),
-      );
-  }
-  if (sinIa) console.warn(advertenciaSinIa());
-  console.log('\nVerificación completa.');
 }
 
 // Corre en el servidor: recibe el ZIP por stdin, sincroniza el código conservando el .env existente (su secreto
