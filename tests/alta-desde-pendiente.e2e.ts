@@ -16,33 +16,33 @@ test('agrega al catálogo desde un pendiente con el formulario completado y coti
   await editor.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(panel.getByText('Incompleto · no suma al total')).toBeVisible();
   await expect(editor.getByRole('group', { name: /^Madera para el ítem 1/ })).toBeVisible();
-  await expect(panel.getByRole('button', { name: 'Agregar al catálogo', exact: true })).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Crear en el catálogo', exact: true })).toHaveCount(0);
 
   // Una madera inexistente conserva las medidas y permite dar de alta ese producto.
   await editor.getByRole('button', { name: /^Editar madera/ }).click();
   await editor.getByLabel('Madera', { exact: true }).fill('Roble pendiente e2e');
   await editor.getByRole('button', { name: 'Guardar', exact: true }).click();
-  await expect(panel.getByRole('button', { name: 'Agregar al catálogo', exact: true })).toBeVisible();
-  await panel.getByRole('button', { name: 'Agregar al catálogo', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Crear en el catálogo', exact: true })).toBeVisible();
+  await panel.getByRole('button', { name: 'Crear en el catálogo', exact: true }).click();
 
-  const dialogo = page.getByRole('dialog', { name: 'Agregar al catálogo', exact: true });
+  const dialogo = page.getByRole('dialog', { name: 'Crear en el catálogo', exact: true });
   const datos = dialogo.getByRole('form', { name: 'Datos del producto' });
-  await expect(datos.getByRole('combobox', { name: 'Familia' })).toContainText('Puerta');
+  await expect(datos.getByRole('combobox', { name: 'Tipo de producto' })).toContainText('Puerta');
   await expect(datos.getByLabel('Modelo', { exact: true })).toHaveValue('Huilo Huilo');
   await expect(datos.getByLabel('Madera', { exact: true })).toHaveValue('Roble pendiente e2e');
   await expect(datos.getByLabel('Ancho mínimo')).toHaveValue('0,8');
   await expect(datos.getByLabel('Ancho máximo')).toHaveValue('0,8');
   await expect(datos.getByRole('textbox', { name: /^Alto / })).toHaveValue('2,1');
-  await expect(datos.getByLabel('Precio base sin IVA')).toHaveValue('');
-  await expect(datos.getByLabel('Precio base sin IVA')).toBeFocused();
-  await datos.getByLabel('Precio base sin IVA').fill('145.000');
+  await expect(datos.getByLabel('Costo de fábrica sin IVA')).toHaveValue('');
+  await expect(datos.getByLabel('Costo de fábrica sin IVA')).toBeFocused();
+  await datos.getByLabel('Costo de fábrica sin IVA').fill('145.000');
   await datos.getByRole('button', { name: 'Revisar propuesta' }).click();
 
   const revision = dialogo.locator('.catalog-preview');
   await expect(revision).toContainText('Huilo Huilo Roble Pendiente E2E');
   await expect(revision).toContainText('$145.000');
   const codigo = (await revision.locator('dl > div').filter({ hasText: 'Código interno asignado' }).locator('dd').innerText()).trim();
-  const precio = (await revision.locator('dl > div').filter({ hasText: 'Unitario en cotizaciones' }).locator('dd').innerText()).trim();
+  const precio = (await revision.locator('dl > div').filter({ hasText: 'Precio de venta sin IVA' }).locator('dd').innerText()).trim();
   await revision.getByRole('button', { name: 'Confirmar y guardar' }).click();
   await page.getByRole('alertdialog', { name: 'Agregar al catálogo' })
     .getByRole('button', { name: 'Agregar al catálogo', exact: true }).click();

@@ -117,3 +117,69 @@ const EVENTO_SALIDA = 'neltume:antes-de-navegar';
 export function antesDeNavegar() {
   window.dispatchEvent(new Event(EVENTO_SALIDA));
 }
+
+// Preferencias de quien usa este navegador (no de la cotización): sobreviven a recargar y cerrar la pestaña.
+const PREFIJO_LOCAL = 'neltume:preferencia:';
+const EVENTO_PREFERENCIA = 'neltume:preferencia';
+const suscribirPreferencia = (avisar: () => void) => {
+  window.addEventListener(EVENTO_PREFERENCIA, avisar);
+  window.addEventListener('storage', avisar);
+  return () => {
+    window.removeEventListener(EVENTO_PREFERENCIA, avisar);
+    window.removeEventListener('storage', avisar);
+  };
+};
+const leerPreferencia = (clave: string) => {
+  try {
+    return localStorage.getItem(PREFIJO_LOCAL + clave) === '1';
+  } catch {
+    return false;
+  }
+};
+/** Interruptor guardado en este navegador; `false` si el almacenamiento está bloqueado. */
+export function usePreferencia(clave: string): [boolean, (valor: boolean) => void] {
+  const valor = useSyncExternalStore(
+    suscribirPreferencia,
+    () => leerPreferencia(clave),
+    () => false,
+  );
+  const cambiar = (nuevo: boolean) => {
+    try {
+      localStorage.setItem(PREFIJO_LOCAL + clave, nuevo ? '1' : '0');
+    } catch {
+      // Bloqueado: el interruptor no se recuerda, pero la pantalla sigue funcionando.
+    }
+    window.dispatchEvent(new Event(EVENTO_PREFERENCIA));
+  };
+  return [valor, cambiar];
+}
+
+const leerPreferenciaTexto = (clave: string) => {
+  try {
+    return localStorage.getItem(PREFIJO_LOCAL + clave);
+  } catch {
+    return null;
+  }
+};
+/** Opción guardada en este navegador; `predeterminada` si no hay una válida o el almacenamiento está bloqueado. */
+export function usePreferenciaOpcion<T extends string>(
+  clave: string,
+  opciones: readonly T[],
+  predeterminada: T,
+): [T, (valor: T) => void] {
+  const guardada = useSyncExternalStore(
+    suscribirPreferencia,
+    () => leerPreferenciaTexto(clave),
+    () => null,
+  );
+  const valor = opciones.includes(guardada as T) ? (guardada as T) : predeterminada;
+  const cambiar = (nuevo: T) => {
+    try {
+      localStorage.setItem(PREFIJO_LOCAL + clave, nuevo);
+    } catch {
+      // Bloqueado: la opción vale para esta visita, pero no se recuerda.
+    }
+    window.dispatchEvent(new Event(EVENTO_PREFERENCIA));
+  };
+  return [valor, cambiar];
+}

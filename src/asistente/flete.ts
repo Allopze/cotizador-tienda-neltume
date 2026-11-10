@@ -25,7 +25,8 @@ export function fleteDelChat(
   // (auditoría BUG-026).
   if (pedido === null) {
     if (textos && !/\bfletes?\b|\bdespach|\benv[ií]o\b/.test(sinTildes(textos.join('\n'))))
-      return { linea: null, avisos: ['No quité el flete: tu mensaje no habla de él.'] };
+      // Un null de relleno no cambia nada y no se avisa (auditoría 2026-11, N-10).
+      return { linea: null, avisos: [] };
     return { linea: { flete: 0, fleteCantidad: 1, fleteDescripcion: null }, avisos: [] };
   }
   const avisos: string[] = [];

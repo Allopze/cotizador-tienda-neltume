@@ -4,6 +4,7 @@ import Image from 'next/image';
 import { aCentesimas, conDosDecimales, leerPorcentaje, margenAPorcentaje, porcentajeAMargen } from '@/negocio/cifras';
 import { MAX_TRAMOS, problemaTramos, type ProblemaTramos } from '@/negocio/descuento-cantidad';
 import { MARGEN_MAX } from '@/negocio/limites';
+import { NOMBRES_CATEGORIA_MARGEN } from '@/negocio/precios';
 import type { TipoAviso } from '../avisos';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
 import { SeccionAvanzada } from './avanzado';
@@ -49,19 +50,7 @@ interface PropsBloque {
 }
 
 const vacío = (v: string | null) => v ?? '';
-const ETIQUETAS_MARGEN: [string, string][] = [
-  ['puertas_solidas_mara_lenga', 'Puertas sólidas Mara / Lenga'],
-  ['puertas_solidas_oregon', 'Puertas sólidas Pino Oregón'],
-  ['puertas_solidas_rauli', 'Puertas sólidas Raulí'],
-  ['puertas_prepintadas', 'Puertas prepintadas'],
-  ['puertas_enchapadas_mara', 'Puertas enchapadas Mara'],
-  ['marcos_finger_sin_enchape', 'Marcos Pino Finger sin enchape'],
-  ['marcos_finger_enchapados', 'Marcos Pino Finger enchapados'],
-  ['marcos_solidos_oregon', 'Marcos sólidos Pino Oregón'],
-  ['marcos_solidos_lenga', 'Marcos sólidos Lenga'],
-  ['accesorios_madera_solida', 'Marcos, molduras y piezas T de madera sólida'],
-  ['otros', 'Otros productos (último recurso)'],
-];
+const ETIQUETAS_MARGEN = Object.entries(NOMBRES_CATEGORIA_MARGEN) as [string, string][];
 
 /**
  * Configuración comercial, leída una vez para los tres bloques de Ajustes (empresa, precios y cotizaciones).

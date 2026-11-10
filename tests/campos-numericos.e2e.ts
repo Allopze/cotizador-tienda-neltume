@@ -62,7 +62,7 @@ test('«Agregar producto»: la cantidad numérica se valida en español y un ent
   const panel = await abrirBorrador(page, 'Cliente Agregar Numérico');
   await panel.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
-  await dialogo.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
+  await dialogo.getByLabel('Busca por modelo, madera, medida o código').fill('HUIL-O-3-B');
   await dialogo.locator('.producto-resultados button').first().click();
   const cantidad = dialogo.getByLabel('Cantidad', { exact: true });
   await expect(cantidad).toHaveAttribute('type', 'number');

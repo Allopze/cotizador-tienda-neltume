@@ -1,5 +1,5 @@
 import { errorMedida, rangoCampoMedida, rangoMedidas, textoRangoMedida } from '../negocio/limites';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type Database from 'better-sqlite3';
 import { z } from 'zod';
 import { normalizar, normalizarMedida, type FuenteCatalogo } from '../catalogo/resolver';
@@ -804,7 +804,7 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           throw new ErrorUsuarioCatalogo(errorMedida('alto', familia));
         if (!Number.isFinite(precioNeto) || precioNeto <= 0 || precioNeto > 100_000_000)
           throw new ErrorUsuarioCatalogo(
-            'El precio base sin IVA debe ser mayor que $0 y no superar $100.000.000.',
+            'El costo de fábrica sin IVA debe ser mayor que $0 y no superar $100.000.000.',
           );
         const descripcion = cambios.descripcion?.replace(/\s+/g, ' ').trim() || actual.descripcion;
         const tipo =
@@ -1076,6 +1076,155 @@ export class RepositorioCatalogoSqlite implements FuenteCatalogo {
           .run(codigo, JSON.stringify(producto), new Date().toISOString());
         this.db.prepare('DELETE FROM productos_adicionales WHERE codigo = ?').run(codigo);
         this.tocarMetadata();
+      })
+      .immediate();
+  }
+
+  /**
+   * Modelos del catálogo con sus maderas, cantidad de medidas y de dónde vienen (planilla o agregados a mano).
+   * Es la vista «por modelo» que una persona entiende; por debajo cada medida sigue siendo una fila.
+   */
+  listarModelos() {
+    const filas = this.db
+      .prepare(
+        `
+        SELECT modelo, familia, madera, COUNT(*) AS filas, MIN(precio_neto) AS desde, MAX(precio_neto) AS hasta,
+               SUM(origen = 'manual') AS manuales
+        FROM (
+          SELECT modelo, familia, madera, precio_neto, 'planilla' AS origen FROM productos_catalogo
+          UNION ALL
+          SELECT modelo, familia, madera, precio_neto, 'manual' AS origen FROM productos_adicionales
+        )
+        GROUP BY modelo, familia, madera
+        ORDER BY modelo, madera
+      `,
+      )
+      .all() as { modelo: string; familia: Producto['familia']; madera: string; filas: number; desde: number; hasta: number; manuales: number }[];
+    const modelos = new Map<
+      string,
+      { modelo: string; familia: Producto['familia']; filas: number; manuales: number; maderas: { madera: string; filas: number; desde: number; hasta: number }[] }
+    >();
+    for (const f of filas) {
+      const m = modelos.get(f.modelo) ?? { modelo: f.modelo, familia: f.familia, filas: 0, manuales: 0, maderas: [] };
+      m.filas += f.filas;
+      m.manuales += f.manuales;
+      m.maderas.push({ madera: f.madera, filas: f.filas, desde: f.desde, hasta: f.hasta });
+      modelos.set(f.modelo, m);
+    }
+    return [...modelos.values()].map(({ manuales, ...m }) => ({
+      ...m,
+      origen: manuales === 0 ? ('planilla' as const) : manuales === m.filas ? ('manual' as const) : ('mixto' as const),
+    }));
+  }
+
+  /**
+   * Crea un modelo nuevo copiando las medidas de uno existente (todas sus maderas o las elegidas), con los costos
+   * ajustados por `factor` (1,10 = 10 % más caro). Los productos nuevos quedan como agregados a mano, con códigos
+   * propios. Crear una puerta como las del catálogo eran cientos de formularios (auditoría 2026-11, N-06).
+   */
+  duplicarModelo(
+    { origen, nombre, maderas, factor }: { origen: string; nombre: string; maderas?: string[] | null; factor: number },
+    creadaPor: string | null,
+  ) {
+    const nuevo = nombre.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-CL');
+    if (!nuevo) throw new ErrorUsuarioCatalogo('Escribe el nombre del modelo nuevo.');
+    if (!Number.isFinite(factor) || factor < 0.5 || factor > 3)
+      throw new ErrorUsuarioCatalogo('El ajuste de precio debe estar entre −50 % y +200 %.');
+    return this.db
+      .transaction(() => {
+        if (this.productosDeModelo(normalizar(nuevo)).length || this.modelos().some((m) => normalizar(m) === normalizar(nuevo)))
+          throw new ErrorUsuarioCatalogo(`Ya existe un modelo llamado ${nuevo}. Elige otro nombre.`);
+        const elegidas = maderas?.length ? new Set(maderas.map(normalizar)) : null;
+        const copiar = this.productosDeModelo(normalizar(origen)).filter((p) => !elegidas || elegidas.has(normalizar(p.madera)));
+        if (!copiar.length) throw new ErrorUsuarioCatalogo('No encontré medidas para copiar de ese modelo y esas maderas.');
+        const prefijo =
+          nuevo
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^A-Z0-9]/g, '')
+            .slice(0, 4) || 'MOD';
+        const ahora = new Date().toISOString();
+        const insertar = this.db.prepare(`
+          INSERT INTO productos_adicionales (
+            codigo, modelo, modelo_normalizado, familia, tipo, madera, medida, ancho_min, ancho_max, alto_min, alto_max,
+            largo, precio_neto, descripcion, fila_origen, creada, creada_por, actualizada
+          ) VALUES (
+            @codigo, @modelo, @modelo_normalizado, @familia, @tipo, @madera, @medida, @ancho_min, @ancho_max, @alto_min, @alto_max,
+            @largo, @precio_neto, @descripcion, 0, @creada, @creada_por, NULL
+          )
+        `);
+        const reemplazarNombre = new RegExp(origen.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        const usados = new Set<string>();
+        for (const p of copiar) {
+          // El código sigue el patrón de la planilla con el prefijo del modelo nuevo («RAN-O-3-B» → «ROBL-O-3-B»).
+          let codigo = /^[^-]+-/.test(p.codigo) && !p.codigo.startsWith('IA-') ? p.codigo.replace(/^[^-]+/, prefijo) : `${prefijo}-${randomUUID().slice(0, 6).toUpperCase()}`;
+          const base = codigo;
+          for (let n = 2; usados.has(codigo) || this.buscarPorCodigo(codigo); n++) codigo = `${base}-${n}`;
+          usados.add(codigo);
+          insertar.run({
+            codigo,
+            modelo: nombreCanonicoModelo(nuevo),
+            modelo_normalizado: normalizar(nuevo),
+            familia: p.familia,
+            tipo: p.tipo,
+            madera: p.madera,
+            medida: p.medida,
+            ancho_min: p.anchoMin,
+            ancho_max: p.anchoMax,
+            alto_min: p.altoMin ?? null,
+            alto_max: p.altoMax ?? null,
+            largo: p.largo,
+            precio_neto: Math.max(1, Math.round(p.precioNeto * factor)),
+            descripcion: reemplazarNombre.test(p.descripcion) ? p.descripcion.replace(reemplazarNombre, nuevo) : `${nuevo} ${p.madera} ${p.medida}`,
+            creada: ahora,
+            creada_por: creadaPor,
+          });
+        }
+        this.tocarMetadata();
+        return { modelo: nuevo, creados: copiar.length };
+      })
+      .immediate();
+  }
+
+  /**
+   * Cambia el nombre de un modelo agregado a mano en todas sus medidas. El nombre anterior queda como otro nombre
+   * del modelo: los borradores que lo usan siguen encontrándolo y no quedan pendientes (auditoría 2026-11, N-33).
+   * Un modelo de la planilla se renombra en el Excel: la próxima importación lo volvería al nombre anterior.
+   */
+  renombrarModelo(anterior: string, nombre: string) {
+    const nuevo = nombre.trim().replace(/\s+/g, ' ').toLocaleUpperCase('es-CL');
+    if (!nuevo) throw new ErrorUsuarioCatalogo('Escribe el nombre nuevo.');
+    return this.db
+      .transaction(() => {
+        const productos = this.productosDeModelo(normalizar(anterior));
+        if (!productos.length) throw new ErrorUsuarioCatalogo('No encontré ese modelo.');
+        const deMano = this.db
+          .prepare('SELECT COUNT(*) AS n FROM productos_adicionales WHERE modelo_normalizado = ?')
+          .get(normalizar(anterior)) as { n: number };
+        if (deMano.n !== productos.length)
+          throw new ErrorUsuarioCatalogo(
+            'Este modelo viene de la planilla: cámbiale el nombre en el Excel e impórtalo, o la próxima importación lo devolverá al nombre anterior.',
+          );
+        if (normalizar(nuevo) !== normalizar(anterior) && this.productosDeModelo(normalizar(nuevo)).length)
+          throw new ErrorUsuarioCatalogo(`Ya existe un modelo llamado ${nuevo}.`);
+        const reemplazar = new RegExp(anterior.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+        for (const p of productos)
+          this.db
+            .prepare('UPDATE productos_adicionales SET modelo = ?, modelo_normalizado = ?, descripcion = ?, actualizada = ? WHERE codigo = ?')
+            .run(
+              nombreCanonicoModelo(nuevo),
+              normalizar(nuevo),
+              reemplazar.test(p.descripcion) ? p.descripcion.replace(reemplazar, nuevo) : p.descripcion,
+              new Date().toISOString(),
+              p.codigo,
+            );
+        // El nombre anterior pasa a ser otro nombre del modelo nuevo.
+        const config = structuredClone(this.configuracion);
+        const alias = config.aliasModelos[nuevo] ?? [];
+        config.aliasModelos[nuevo] = [...new Set([...alias, anterior.trim().toLocaleUpperCase('es-CL')])];
+        delete config.aliasModelos[anterior.trim().toLocaleUpperCase('es-CL')];
+        (this as { configuracion: ConfiguracionCatalogo }).configuracion = this.guardarConfiguracion(config);
+        return { modelo: nuevo, renombrados: productos.length };
       })
       .immediate();
   }

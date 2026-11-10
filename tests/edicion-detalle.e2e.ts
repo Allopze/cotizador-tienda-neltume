@@ -12,7 +12,7 @@ const rut = (cuerpo: string) => `${cuerpo.replace(/\B(?=(\d{3})+(?!\d))/g, '.')}
 async function agregarPuerta(page: Page) {
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
-  await dialogo.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
+  await dialogo.getByLabel('Busca por modelo, madera, medida o código').fill('HUIL-O-3-B');
   await dialogo.locator('.producto-resultados button').first().click();
   await dialogo.getByLabel('Ancho (m)', { exact: true }).fill('0,8');
   await dialogo.getByLabel('La medida corresponde a').selectOption('hoja');
@@ -36,15 +36,15 @@ test('una moldura de 3,6 m se ve y se edita con el rango de 6 m de los accesorio
 
   // Pedido especial: antes el formulario solo admitía hasta 3 m.
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
-  await page.getByRole('dialog', { name: 'Agregar producto' }).getByRole('button', { name: 'Crear producto personalizado' }).click();
-  const form = page.getByRole('dialog', { name: 'Producto personalizado' });
+  await page.getByRole('dialog', { name: 'Agregar producto' }).getByRole('button', { name: 'Crear producto especial' }).click();
+  const form = page.getByRole('dialog', { name: 'Producto especial' });
   await form.getByLabel('Nombre del producto').fill('Cornisa de prueba largo');
   await form.getByRole('combobox', { name: 'Tipo de producto' }).click();
   await form.getByRole('option', { name: 'Moldura' }).click();
   await form.getByLabel('Madera').fill('Roble');
   await form.getByLabel('Cantidad').fill('2');
   await form.getByLabel('Largo (m) · opcional').fill('7');
-  await form.getByLabel('Precio unitario sin IVA ($)').fill('20.000');
+  await form.getByLabel('Precio de venta sin IVA ($)').fill('20.000');
   await form.getByRole('button', { name: 'Agregar al pedido' }).click();
   await expect(form.getByText('Indica un largo entre 0,3 y 6 m')).toBeVisible();
   await form.getByLabel('Largo (m) · opcional').fill('3,60');
@@ -96,7 +96,7 @@ test('una moldura de más de 3 m del catálogo se agrega y muestra su largo', as
   expect(larga.largo).toBe(3.6);
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
-  await dialogo.getByLabel('Busca por modelo, madera o código').fill(larga.codigo);
+  await dialogo.getByLabel('Busca por modelo, madera, medida o código').fill(larga.codigo);
   await dialogo.locator('.producto-resultados button').first().click();
   await dialogo.getByRole('button', { name: 'Agregar al pedido' }).click();
   await expect(dialogo).toHaveCount(0);

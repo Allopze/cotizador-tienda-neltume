@@ -57,6 +57,41 @@ function escuadria(medida: string, familia: Linea['producto']['familia']) {
 }
 
 /** Medida exacta pedida, que la fábrica necesita aunque el producto cubra un rango. */
+const EXCLUSIONES: [string, RegExp][] = [
+  ['instalación', /\binstala/],
+  ['pintura', /\bpintur|\bpintad/],
+  ['barniz', /\bbarniz/],
+  ['protecciones metálicas', /\bprotecci/],
+  ['vidrios', /\bvidri/],
+  ['estructura para correderas', /\bcorreder/],
+];
+/** «No incluye»: las exclusiones habituales, menos las que alguna línea de la cotización sí trae. */
+export function textoNoIncluye(lineas: Linea[]) {
+  const contenido = lineas
+    .map((l) => [l.producto.modelo, l.producto.descripcion, l.descripcionDocumento, l.observaciones].filter(Boolean).join(' '))
+    .join(' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+  const excluidas = EXCLUSIONES.filter(([, patron]) => !patron.test(contenido)).map(([nombre]) => nombre);
+  const lista = excluidas.length
+    ? `No se considera: ${excluidas.length > 1 ? `${excluidas.slice(0, -1).join(', ')} ni ${excluidas.at(-1)}` : excluidas[0]}. `
+    : '';
+  return `${lista[0]?.toUpperCase() ?? ''}${lista.slice(1)}No se consideran elementos no indicados en la cotización.`;
+}
+
+const metrosCliente = (m: number) => m.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+/** La medida de una línea como la lee el cliente («0,85 × 2,20 m»; «2x4 · 3,00 m»), sin hoja ni vano. */
+export function medidaParaCliente(l: Linea): string | null {
+  if (l.producto.familia === 'PUERTA') {
+    if (l.anchoSolicitado == null || l.altoSolicitado == null) return null;
+    return `${metrosCliente(l.anchoSolicitado)} × ${metrosCliente(l.altoSolicitado)} m`;
+  }
+  const seccion = escuadria(l.medidaSolicitada ?? l.producto.medida ?? '', l.producto.familia);
+  const partes = [seccion || null, l.altoSolicitado != null ? `${metrosCliente(l.altoSolicitado)} m` : null].filter(Boolean);
+  return partes.length ? partes.join(' · ') : null;
+}
+
 export function medidaPedida(l: Linea): string | null {
   if (l.producto.familia === 'PUERTA') {
     return dimensionesEnMilimetros(l.anchoSolicitado, l.altoSolicitado, l.tipoMedida);
@@ -278,8 +313,16 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     const pedida = nota && (l.descripcionDocumento || tipoMedidaExplicita) ? medidaPedida(l) : null;
     const tipoTexto = nota && tipoMedidaExplicita ? `medida de ${l.tipoMedida}` : null;
     const documentos = referenciasDe(l).filter((r) => !esImagen(r));
+    // En la cotización, una línea con nombre escrito a mano o un especial no lleva la medida en el nombre: se
+    // imprime aparte, sin hoja ni vano. Sin ella, dos «Ranco vidriada» de 0,85 y 1,00 salían iguales (auditoría
+    // 2026-11, N-13).
+    const medidaCliente =
+      !nota && (l.descripcionDocumento || l.producto.codigo === CODIGO_PERSONALIZADO) && l.producto.familia !== 'OTRO'
+        ? medidaParaCliente(l)
+        : null;
     const detalles = [
       pedida ? `Medida solicitada: ${pedida}` : tipoTexto && `${tipoTexto[0].toUpperCase()}${tipoTexto.slice(1)}`,
+      medidaCliente && `Medida: ${medidaCliente}`,
       l.observaciones && `Observación: ${l.observaciones}`,
       documentos.length && `Referencias del cliente: ${documentos.map((r) => r.nombre).join(', ')}`,
     ];
@@ -356,7 +399,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   ].join('');
   const valores = nota
     ? 'Valores a precio de fábrica, sin la ganancia de venta.'
-    : 'Valores en pesos chilenos, puestos en fábrica.';
+    : montos.flete
+      ? 'Valores en pesos chilenos. El despacho va en el detalle.'
+      : 'Valores en pesos chilenos, puestos en fábrica.';
   // La orden de trabajo no lleva totales.
   const cierreTotales = produccion
     ? '<section class="cierre"><p class="valores">Orden de trabajo sin precios.</p></section>'
@@ -372,10 +417,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   const condicion = (titulo: string, texto: string) => `<div><b>${titulo}</b><p>${texto}</p></div>`;
   const condiciones = [
     condicion('Validez', validez),
-    condicion(
-      'No incluye',
-      'No se considera: Instalación, pintura, barniz, protecciones metálicas, vidrios ni estructura para correderas. No se consideran elementos no indicados en la cotización.',
-    ),
+    // Lo que la cotización sí cobra no se lista como excluido: una línea de instalación o una puerta vidriada
+    // contradecían «No incluye: instalación… vidrios» (auditoría 2026-11, N-26).
+    condicion('No incluye', textoNoIncluye(montos.lineas)),
     // Con el flete en el detalle, «consultar el despacho» contradiría el documento.
     ...(montos.flete ? [] : [condicion('Despacho', 'Consultar valor despacho.')]),
     ...(empresa.plazoEntrega ? [condicion('Plazo de entrega', esc(empresa.plazoEntrega))] : []),

@@ -124,7 +124,7 @@ describe('maderas compatibles con las medidas pedidas', () => {
       preguntas, editable: true, asistente: false, guardando: null, responder: async () => true,
     }));
     expect(h).toContain(texto);
-    expect(h).toContain('Agregar al catálogo');
+    expect(h).toContain('Crear en el catálogo');
     expect(h).not.toContain('<select');
     expect(h).not.toContain('Maderas disponibles:');
   });

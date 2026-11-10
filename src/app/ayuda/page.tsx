@@ -39,6 +39,15 @@ export default async function AyudaPage() {
               <a href="#ayuda-estados">Qué significa cada estado</a>
             </li>
             <li>
+              <a href="#ayuda-lineas">Líneas repetidas, copias y productos especiales</a>
+            </li>
+            <li>
+              <a href="#ayuda-catalogo">El catálogo en 5 minutos</a>
+            </li>
+            <li>
+              <a href="#ayuda-palabras">Qué significa cada palabra</a>
+            </li>
+            <li>
               <a href="#ayuda-deshacer">Cómo deshacer</a>
             </li>
             <li>
@@ -160,13 +169,120 @@ export default async function AyudaPage() {
           </dl>
         </section>
 
+        <section className="ayuda-seccion" aria-labelledby="ayuda-lineas">
+          <h2 id="ayuda-lineas">Líneas repetidas, copias y productos especiales</h2>
+          <ul className="ayuda-lista">
+            <li>
+              <strong>Varias puertas iguales en líneas separadas:</strong> agrégalas una por una, o pídeselo al
+              asistente («4 Ranco pino oregón: 0,85, 1,00, 0,85 y 1,00, todas de 2,20»). Cada línea es independiente:
+              cambiar una no toca las otras.
+            </li>
+            <li>
+              <strong>Una copia para modificar:</strong> el botón de copiar en la fila de un producto la duplica justo
+              debajo, con su precio, descuento, observaciones y fotos, y abre la copia para que cambies lo que la hace
+              distinta. Al asistente: «duplica la Ranco y que la copia sea vidriada».
+            </li>
+            <li>
+              <strong>Una puerta con algo que el catálogo no tiene</strong> (vidrio, otro espesor): en «Editar
+              detalles», «Convertir en producto especial». Conserva el precio de partida y después puedes cambiar el
+              nombre, la descripción o el precio sin que la línea quede pendiente.
+            </li>
+            <li>
+              <strong>Algo que no está en el catálogo:</strong> «Agregar producto» → «Crear producto especial». Queda
+              solo en esta cotización; el catálogo no cambia. Si lo fabrica Neltume, elige su tipo de producto y va a
+              la nota de pedido. Si es otro cargo (instalación, flete local), elige «Otro cargo»: no va a fábrica.
+            </li>
+            <li>
+              <strong>Varios productos seguidos a mano:</strong> en «Agregar producto», «Agregar y seguir» te deja en
+              la búsqueda para elegir el siguiente sin cerrar la ventana.
+            </li>
+          </ul>
+        </section>
+
+        <section className="ayuda-seccion" aria-labelledby="ayuda-catalogo">
+          <h2 id="ayuda-catalogo">El catálogo en 5 minutos</h2>
+          <ul className="ayuda-lista">
+            <li>
+              <strong>Cada producto del catálogo es una combinación:</strong> un modelo (Ranco), en una madera (Pino
+              Oregón), para un rango de anchos (0,80 a 0,85 m) y un alto (2,10 m). Por eso un modelo tiene muchas
+              filas: una por cada madera y medida, cada una con su costo.
+            </li>
+            <li>
+              <strong>El precio de venta</strong> es el costo de fábrica más la ganancia de su categoría (por ejemplo,
+              «Puertas sólidas Pino Oregón»). La categoría la deciden el tipo de producto y la madera. Al crear un
+              producto, la revisión muestra el precio de venta exacto antes de guardar.
+            </li>
+            <li>
+              <strong>Buscar:</strong> escribe como lo dice el cliente: «willow mara 82 210», «ranco 1 metro». El
+              buscador entiende los mismos nombres que el asistente y, con muchos resultados, primero muestra los
+              modelos para que elijas uno. En Catálogo → Consultar, «Cotizar» lo lleva directo a la cotización.
+            </li>
+            <li>
+              <strong>Crear un producto en el catálogo</strong> (Catálogo → Agregar producto) lo deja disponible para
+              todas las cotizaciones. Después de guardar, «Agregar otra medida o madera» conserva el modelo y la madera
+              para cargar la siguiente medida. Si es algo para un solo cliente, usa un producto especial en la
+              cotización.
+            </li>
+            <li>
+              <strong>No hace falta crear tipos de producto:</strong> son fijos (puerta, marco, pieza T, moldura) y
+              deciden cómo se mide cada producto: ancho × alto en las puertas, sección × largo en los accesorios.
+            </li>
+          </ul>
+        </section>
+
+        <section className="ayuda-seccion" aria-labelledby="ayuda-palabras">
+          <h2 id="ayuda-palabras">Qué significa cada palabra</h2>
+          <dl className="ayuda-estados">
+            <div>
+              <dt>Tipo de producto</dt>
+              <dd>Puerta, marco, pieza T o moldura. Antes se llamaba «familia».</dd>
+            </div>
+            <div>
+              <dt>Modelo</dt>
+              <dd>El nombre de la puerta o accesorio: Ranco, Huilo Huilo, Marco.</dd>
+            </div>
+            <div>
+              <dt>Estilo</dt>
+              <dd>Dato informativo del producto (panel, bloque). «Puerta especial» en la planilla son las de 1,10 m o más de ancho.</dd>
+            </div>
+            <div>
+              <dt>Costo de fábrica</dt>
+              <dd>Lo que cobra la fábrica, sin IVA y sin ganancia. Es lo que se escribe al crear un producto.</dd>
+            </div>
+            <div>
+              <dt>Precio de venta</dt>
+              <dd>Lo que paga el cliente sin IVA: costo de fábrica más la ganancia de su categoría.</dd>
+            </div>
+            <div>
+              <dt>Producto especial</dt>
+              <dd>Algo que no está en el catálogo, cotizado solo en esta cotización con el precio que escribes.</dd>
+            </div>
+            <div>
+              <dt>Otro cargo (ítem libre)</dt>
+              <dd>Lo que no es carpintería: instalación, flete local, un servicio. No va a fábrica.</dd>
+            </div>
+            <div>
+              <dt>Hoja / vano</dt>
+              <dd>Hoja es la puerta misma; vano, el hueco del muro donde va instalada.</dd>
+            </div>
+            <div>
+              <dt>Sección (escuadría)</dt>
+              <dd>Grosor por ancho de un marco o moldura, por ejemplo 2 × 4 pulgadas.</dd>
+            </div>
+            <div>
+              <dt>Nota de pedido</dt>
+              <dd>El documento que va a cada fábrica con lo que tiene que hacer, a precio de fábrica.</dd>
+            </div>
+          </dl>
+        </section>
+
         <section className="ayuda-seccion" aria-labelledby="ayuda-deshacer">
           <h2 id="ayuda-deshacer">Cómo deshacer</h2>
           <ul className="ayuda-lista">
             <li>
-              <strong>Un cambio en los productos:</strong> «Deshacer» en el detalle de la cotización (o Ctrl/⌘ + Z)
-              revierte los últimos cambios mientras sigas en esa cotización. Los datos del cliente, el descuento o el
-              despacho se corrigen escribiéndolos de nuevo.
+              <strong>Un cambio en la cotización:</strong> «Deshacer» en el detalle de la cotización (o Ctrl/⌘ + Z)
+              revierte los últimos cambios mientras sigas en esa cotización: productos, datos del cliente, descuento,
+              flete, ganancia y observaciones. El despacho se corrige escribiéndolo de nuevo.
             </li>
             <li>
               <strong>Un borrador eliminado:</strong> en <Link href="/historial">Historial</Link>, filtro «Papelera»,

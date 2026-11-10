@@ -3,7 +3,16 @@ import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import type { Familia, Producto } from '@/catalogo/tipos';
 import type { PrefillAlta } from '@/negocio/pendientes';
 import { leerPesos } from '@/negocio/cifras';
-import { pesos, porcentaje, REGLAS } from '@/negocio/precios';
+import {
+  categoriaMargen,
+  margenProducto,
+  NOMBRES_CATEGORIA_MARGEN,
+  pesos,
+  porcentaje,
+  precioConMargen,
+  REGLAS,
+  type ReglasComerciales,
+} from '@/negocio/precios';
 import { useConfirmacion } from './dialogo';
 import { FAMILIAS, etiquetaFamilia } from '@/catalogo/familias';
 import { decimalCampo, enterEnvia, errorMedida, leerMedida, nombreProducto, type CampoMedida } from './formato';
@@ -87,7 +96,9 @@ export function medidasAlta(c: Pick<Campos, 'familia' | 'anchoMin' | 'anchoMax' 
  * opcional, lo completa a partir de una descripción. Ambas vías terminan en la misma propuesta revisable.
  */
 export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: Props) {
-  const [ajusteNumero, setAjusteNumero] = useState(REGLAS.ajuste);
+  // Las reglas de precio vigentes: la vista previa usa la misma ganancia por categoría que la cotización
+  // (auditoría 2026-11, N-02). Antes mostraba el ajuste general, que casi nunca es el que se cobra.
+  const [reglasPrecio, setReglasPrecio] = useState<Pick<ReglasComerciales, 'ajuste' | 'margenes'>>(REGLAS);
   const [campos, setCampos] = useState<Campos>(() => inicial
     ? {
         ...VACIO,
@@ -123,9 +134,17 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
     alCambiarSucio?.(sucio);
     return () => alCambiarSucio?.(false);
   }, [sucio, alCambiarSucio]);
-  const puerta = campos.familia === 'PUERTA';
-  const ajuste = porcentaje(ajusteNumero * 100);
-  const venta = (neto: number) => Math.round(neto * (1 + ajusteNumero));
+  // Sin tipo elegido se muestran los campos de puerta (lo más común), no los de accesorio (QA 2026-11).
+  const puerta = !campos.familia || campos.familia === 'PUERTA';
+  /** Precio de venta, ganancia y categoría con que se cotizará el producto propuesto. */
+  const venta = (p: Producto) => {
+    const margen = margenProducto(p, reglasPrecio);
+    return {
+      precio: precioConMargen(p.precioNeto, margen),
+      ganancia: porcentaje(margen * 100),
+      categoria: reglasPrecio.margenes ? NOMBRES_CATEGORIA_MARGEN[categoriaMargen(p)] : null,
+    };
+  };
 
   useEffect(() => {
     if (!inicialAlMontar.current) return;
@@ -141,8 +160,10 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
 
   useEffect(() => {
     const control = new AbortController();
-    pedirJSON<{ configuracion: { reglas: { ajuste: number } } }>('/api/configuracion-negocio', { signal: control.signal, cache: 'no-store' })
-      .then((data) => setAjusteNumero(data.configuracion.reglas.ajuste), () => {});
+    pedirJSON<{ configuracion: { reglas: Pick<ReglasComerciales, 'ajuste' | 'margenes'> } }>(
+      '/api/configuracion-negocio',
+      { signal: control.signal, cache: 'no-store' },
+    ).then((data) => setReglasPrecio(data.configuracion.reglas), () => {});
     return () => control.abort();
   }, []);
 
@@ -221,7 +242,7 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
     const precio = campos.precio.trim() ? leerPesos(campos.precio) : null;
     // Lo que falta se marca en su campo antes de ir al servidor; el foco va al primero.
     const faltan: Partial<Record<keyof Campos, string>> = {};
-    if (!campos.familia) faltan.familia = 'Elige la familia.';
+    if (!campos.familia) faltan.familia = 'Elige el tipo de producto.';
     if (!campos.modelo.trim()) faltan.modelo = 'Escribe el modelo.';
     if (!campos.madera.trim()) faltan.madera = 'Escribe la madera.';
     const medidas = medidasAlta(campos);
@@ -230,7 +251,7 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
       if (medidas.errores.anchoMax) faltan.anchoMax = medidas.errores.anchoMax;
     } else if (!campos.medida.trim()) faltan.medida = 'Escribe la medida o escuadría.';
     if (medidas.errores.largo) faltan.largo = medidas.errores.largo;
-    if (precio === null || !Number.isFinite(precio) || precio <= 0) faltan.precio = 'Escribe el precio base sin IVA, en pesos.';
+    if (precio === null || !Number.isFinite(precio) || precio <= 0) faltan.precio = 'Escribe el costo de fábrica sin IVA, en pesos.';
     setErrores(faltan);
     const primero = Object.keys(faltan)[0];
     if (primero) {
@@ -275,9 +296,9 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
       titulo: 'Agregar al catálogo',
       mensaje: (
         <p>
-          ¿Agregar «{propuesta.descripcion}» al catálogo con precio base sin IVA{' '}
-          {pesos(propuesta.precioNeto)}? En las cotizaciones se mostrará a{' '}
-          {pesos(venta(propuesta.precioNeto))} (precio base + {ajuste}).
+          ¿Agregar «{propuesta.descripcion}» al catálogo con costo de fábrica sin IVA{' '}
+          {pesos(propuesta.precioNeto)}? Se venderá a {pesos(venta(propuesta).precio)} sin IVA (ganancia de{' '}
+          {venta(propuesta).ganancia}).
         </p>
       ),
       aceptar: 'Agregar al catálogo',
@@ -299,6 +320,25 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
     } finally {
       setOcupado(null);
     }
+  }
+
+  /**
+   * Otro producto como el recién guardado: conserva tipo, modelo, madera y estilo, y deja vacías las medidas y el
+   * costo. Un modelo son muchas medidas y maderas; antes cada una partía de un formulario vacío (auditoría 2026-11,
+   * N-06).
+   */
+  function otroComoEste() {
+    const base = { ...VACIO, familia: campos.familia, modelo: campos.modelo, madera: campos.madera, tipo: campos.tipo };
+    setId(null);
+    setMensajes([]);
+    setMensaje('');
+    setCampos(base);
+    setBaseCampos(JSON.stringify(base));
+    setPropuesta(null);
+    setGuardado(null);
+    setError('');
+    setErrores({});
+    setAvisosAlta([]);
   }
 
   /** Descarta la conversación y los datos, y deja la pantalla lista para otro producto. */
@@ -336,9 +376,14 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
             Código {guardado.codigo} ·{' '}
             {mensajes.length ? 'Completado con el asistente y revisado por ti.' : 'Ingresado a mano.'}
           </small>
-          <button ref={listo} type="button" className="button primary" onClick={reiniciar}>
-            Agregar otro producto
-          </button>
+          <div className="catalog-success-acciones">
+            <button ref={listo} type="button" className="button primary" onClick={otroComoEste}>
+              Agregar otra medida o madera de {nombreProducto(guardado.modelo)}
+            </button>
+            <button type="button" className="button secondary" onClick={reiniciar}>
+              Agregar otro producto
+            </button>
+          </div>
         </div>
         {confirmacion}
       </div>
@@ -375,8 +420,9 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
       <p className="catalog-modal-intro">
         Completa los datos a mano o describe el producto y deja que el asistente llene el formulario. En ambos
         casos revisas la propuesta antes de guardarla.{' '}
-        <strong>Ingresa el precio base sin IVA, no el de venta:</strong> las cotizaciones le suman {ajuste}{' '}
-        automáticamente, igual que a los productos de la planilla.
+        <strong>Ingresa el costo de fábrica sin IVA, no el precio de venta:</strong> las cotizaciones le suman
+        la ganancia de su categoría (por ejemplo, Puertas sólidas Pino Oregón), igual que a los productos de la
+        planilla. Antes de guardar verás el precio de venta exacto.
       </p>
 
       <section className="alta-bloque" aria-labelledby={`${uid}-asistente`}>
@@ -437,12 +483,12 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
         </h3>
         <div className="alta-campos">
           <div className="alta-campo">
-            <span id={`${uid}-familia-label`}>Familia</span>
+            <span id={`${uid}-familia-label`}>Tipo de producto</span>
             <SelectorFamilia
               id={`${uid}-familia-label`}
               value={campos.familia}
               opciones={FAMILIAS}
-              vacio="Elige una familia"
+              vacio="Elige el tipo de producto"
               disabled={!!ocupado}
               seleccionar={(familia) => cambiar('familia', familia)}
             />
@@ -450,14 +496,20 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
           </div>
           {campo('modelo', 'Modelo', { placeholder: 'Ej.: Roble' })}
           {campo('madera', 'Madera', { placeholder: 'Ej.: Raulí' })}
-          {campo('tipo', 'Tipo (opcional)')}
+          {campo('tipo', 'Estilo (opcional)', {
+            placeholder: 'Ej.: panel, bloque',
+            ayuda: 'Solo informativo. Si dice «prepintada» o «enchapada», cambia la ganancia: lo verás en la revisión.',
+          })}
           {puerta ? (
             <>
               {campo('anchoMin', 'Ancho mínimo', {
                 placeholder: 'Ej.: 0,80',
-                ayuda: 'En metros (0,80), centímetros (80 cm) o milímetros (800 mm).',
+                ayuda: 'Este precio sirve para los anchos entre el mínimo y el máximo. En metros (0,80), centímetros (80 cm) o milímetros (800 mm).',
               })}
-              {campo('anchoMax', 'Ancho máximo', { placeholder: 'Ej.: 0,85' })}
+              {campo('anchoMax', 'Ancho máximo', {
+                placeholder: 'Ej.: 0,85',
+                ayuda: 'Si es una sola medida, repite el mínimo.',
+              })}
               {campo('largo', 'Alto', {
                 placeholder: 'Ej.: 2,10',
                 ayuda: 'En metros (2,10), centímetros (210 cm) o milímetros (2100 mm).',
@@ -475,9 +527,9 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
               })}
             </>
           )}
-          {campo('precio', 'Precio base sin IVA', {
+          {campo('precio', 'Costo de fábrica sin IVA', {
             placeholder: 'Ej.: 145.000',
-            ayuda: 'Costo de fábrica, sin la ganancia de venta.',
+            ayuda: 'Lo que cobra la fábrica, sin la ganancia de venta: la revisión muestra el precio de venta.',
           })}
         </div>
         <div className="alta-acciones">
@@ -510,17 +562,23 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
               <dd>{propuesta.codigo}</dd>
             </div>
             <div>
-              <dt>Familia</dt>
+              <dt>Tipo de producto</dt>
               <dd>{etiquetaFamilia(propuesta.familia)}</dd>
             </div>
             <div>
-              <dt>Precio base sin IVA</dt>
+              <dt>Costo de fábrica sin IVA</dt>
               <dd>{pesos(propuesta.precioNeto)}</dd>
             </div>
             <div>
-              <dt>Unitario en cotizaciones (+{ajuste})</dt>
-              <dd>{pesos(venta(propuesta.precioNeto))}</dd>
+              <dt>Precio de venta sin IVA (ganancia {venta(propuesta).ganancia})</dt>
+              <dd>{pesos(venta(propuesta).precio)}</dd>
             </div>
+            {venta(propuesta).categoria && (
+              <div>
+                <dt>Categoría de ganancia</dt>
+                <dd>{venta(propuesta).categoria}</dd>
+              </div>
+            )}
           </dl>
           {avisosAlta.length > 0 && (
             <ul className="catalog-avisos">
@@ -529,7 +587,7 @@ export function AltaProducto({ asistente, inicial, alGuardar, alCambiarSucio }: 
               ))}
             </ul>
           )}
-          <p className="catalog-price-note">Confirma que el precio base sin IVA y los datos del producto sean correctos.</p>
+          <p className="catalog-price-note">Confirma que el costo de fábrica y los datos del producto sean correctos: el producto queda en el catálogo para todas las cotizaciones.</p>
           <button type="button" className="button primary" onClick={guardar} disabled={!!ocupado}>
             {ocupado === 'guardar' ? 'Guardando…' : 'Confirmar y guardar'}
           </button>

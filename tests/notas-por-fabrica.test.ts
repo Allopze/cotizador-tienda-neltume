@@ -436,6 +436,38 @@ describe('Corregir el pedido después de generar las notas (editar_pedido)', () 
     expect(q.solicitudes[1].descripcion).toBe('Puerta Coz Coz para baño');
   });
 
+  it('con el catálogo cambiado, corregir solo una observación no cambia ningún precio aprobado (auditoría N-01)', async () => {
+    const t = await setup();
+    const antes = await t.conNotas();
+    // El catálogo baja 10 % después de aprobar: lo aprobado no se vuelve a cotizar.
+    const rebajado: Catalogo = {
+      ...catalogo,
+      sha256: 'test-2',
+      productos: catalogo.productos.map((p) => ({ ...p, precioNeto: Math.round(p.precioNeto * 0.9) })),
+    };
+    const servicio = new Servicio(rebajado, t.llm, t.almacen, admin);
+    const { cotizacion: q, avisos } = await servicio.ejecutar({
+      tipo: 'editar_pedido',
+      id: antes.id,
+      actualizada: antes.actualizada,
+      items: [{ indice: 0, cambios: { observaciones: 'Bisagras reforzadas' } }],
+    });
+    expect(q.solicitudes[0].observaciones).toBe('Bisagras reforzadas');
+    expect(q.montos.total).toBe(antes.montos.total);
+    expect(q.montos.lineas.map((l) => l.precioUnitario)).toEqual(antes.montos.lineas.map((l) => l.precioUnitario));
+    expect(nota(q, 'panguipulli').montos.total).toBe(nota(antes, 'panguipulli').montos.total);
+    expect(avisos ?? []).not.toContainEqual(expect.stringMatching(/total de la cotización pasa/));
+    // Una cantidad nueva sí cambia el total, con el precio aprobado, y se avisa.
+    const { cotizacion: q2, avisos: avisos2 } = await servicio.ejecutar({
+      tipo: 'editar_pedido',
+      id: q.id,
+      actualizada: q.actualizada,
+      items: [{ indice: 0, cambios: { cantidad: 3 } }],
+    });
+    expect(q2.montos.lineas[0].precioUnitario).toBe(antes.montos.lineas[0].precioUnitario);
+    expect(avisos2).toContainEqual(expect.stringMatching(/total de la cotización pasa de/));
+  });
+
   it('sin cambios no regenera nada, y una cotización sin notas no se corrige así', async () => {
     const t = await setup();
     const antes = await t.conNotas();

@@ -77,7 +77,9 @@ function Pregunta({
   const desplegable = p.opciones.length > MAX_BOTONES;
   const botonAlta = p.alta && editable && (
     <button type="button" disabled={deshabilitado} onClick={() => setAltaAbierta(true)}>
-      {p.modeloNuevo ? 'Es un modelo nuevo' : 'Agregar al catálogo'}
+      {/* Crea un producto para todas las cotizaciones: el nombre lo dice, para no confundirlo con un especial de
+          esta cotización (auditoría 2026-11, N-08). */}
+      {p.modeloNuevo ? 'Es otro modelo: crearlo en el catálogo' : 'Crear en el catálogo'}
     </button>
   );
   return (
@@ -116,9 +118,13 @@ function Pregunta({
         <Dialogo
           abierto={altaAbierta}
           alCerrar={() => setAltaAbierta(false)}
-          titulo="Agregar al catálogo"
+          titulo="Crear en el catálogo"
           className="dialogo-alta"
         >
+          <p className="aviso-permanente">
+            Lo que crees aquí queda en el catálogo para <strong>todas las cotizaciones</strong>. Si es algo solo para
+            este cliente (otro espesor, una medida especial), cierra esta ventana y usa «Cotizar como especial».
+          </p>
           <AltaProducto
             inicial={p.alta}
             asistente={asistente}

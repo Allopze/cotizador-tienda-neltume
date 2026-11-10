@@ -157,6 +157,23 @@ const modificarSchema = z
       .max(100)
       .optional(),
     agregar: z.array(solicitudSchema).max(100).optional(),
+    /**
+     * Copias de ítems que ya están en borrador.items («otra igual a la primera», «duplica la Ranco y que la copia
+     * sea vidriada», «tres iguales separadas»). Cada copia lleva todos los datos del original (precio propio,
+     * descuento, observaciones, fábrica) y queda justo debajo de él; `cambios` modifica solo la copia.
+     */
+    duplicar: z
+      .array(
+        z
+          .object({
+            indice: z.number().int().nonnegative(),
+            veces: z.number().int().min(1).max(20).nullable().optional(),
+            cambios: solicitudCambioSchema.nullable().optional(),
+          })
+          .strict(),
+      )
+      .max(20)
+      .optional(),
     quitar: z.array(z.number().int().nonnegative()).max(100).optional(),
     cliente: clienteCambioSchema.optional(),
     /** Agrega o cambia la línea de flete; null la quita. */

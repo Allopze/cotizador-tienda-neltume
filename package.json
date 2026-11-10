@@ -40,7 +40,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
-    "better-auth": "^1.7.6",
+    "better-auth": "^1.7.14",
     "better-sqlite3": "^13.0.3",
     "fflate": "^0.8.2",
     "next": "^16.4.3",
@@ -51,7 +51,7 @@
     "saxes": "^6.0.0",
     "three": "^0.170.0",
     "tsx": "^4.20.0",
-    "zod": "^4.0.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.0",

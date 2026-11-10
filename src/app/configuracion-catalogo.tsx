@@ -57,7 +57,7 @@ const DURACION_DESHACER = 8000;
 const TITULOS: Record<Grupo, string> = {
   maderas: 'Maderas',
   modelos: 'Modelos',
-  familias: 'Familia de cada modelo',
+  familias: 'Tipo de producto al importar la planilla',
 };
 const limpiar = (alias: string[]) => alias.map((a) => a.trim()).filter(Boolean);
 
@@ -502,7 +502,8 @@ export function ConfiguracionCatalogo({
         <legend>{TITULOS.maderas}</legend>
         <p className="catalog-modal-intro">
           En la última columna van otras palabras con que un cliente nombra la madera: abreviaciones, otros nombres o errores
-          comunes. No hace falta repetirlas con tildes o en minúsculas.
+          comunes. No hace falta repetirlas con tildes o en minúsculas. El código es la letra con que se arman los códigos
+          de producto que reconoce la fábrica: no lo cambies en una madera que ya tiene productos.
         </p>
         <div className="config-tabla config-tabla-maderas">
           <div className="config-cabecera" aria-hidden="true">
@@ -519,6 +520,15 @@ export function ConfiguracionCatalogo({
               <label className="ia-field">
                 <span className="config-etiqueta">Código</span>
                 <input value={madera.codigo} onChange={(e) => editar('maderas', i, { codigo: e.target.value })} maxLength={10} {...invalida('maderas', i, 'codigo')} />
+                {/* Cambiar el código re-codifica todos los productos de esa madera al importar (auditoría 2026-11, N-21). */}
+                {base?.maderas.some(
+                  (m) => normalizarCatalogo(m.nombre) === normalizarCatalogo(madera.nombre) && m.codigo && m.codigo !== madera.codigo,
+                ) && (
+                  <small className="campo-aviso" role="status">
+                    Al importar la planilla, todos los productos de {madera.nombre.trim() || 'esta madera'} cambiarán de
+                    código y la fábrica no reconocerá los anteriores.
+                  </small>
+                )}
               </label>
               <div className="ia-field">
                 <span className="config-etiqueta" aria-hidden="true">
@@ -601,11 +611,15 @@ export function ConfiguracionCatalogo({
 
       <fieldset id="config-familias" className="config-grupo" disabled={!editable}>
         <legend>{TITULOS.familias}</legend>
-        <p className="catalog-modal-intro">Qué tipo de producto es cada modelo, para cotizarlo con la tabla de precios correcta.</p>
+        <p className="catalog-modal-intro">
+          Qué tipo de producto es cada modelo que llega en la planilla principal. <strong>Se aplica la próxima vez
+          que importes la planilla</strong>: no cambia los productos que ya están en el catálogo ni los agregados a
+          mano. Un modelo que no está en esta lista se importa como puerta.
+        </p>
         <div className="config-tabla config-tabla-familias">
           <div className="config-cabecera" aria-hidden="true">
             <span>Modelo</span>
-            <span>Familia</span>
+            <span>Tipo de producto</span>
           </div>
           {filas.familias.map((fila, i) => (
             <div className={`config-editor-fila${conError('familias', i)}`} key={i}>
@@ -615,13 +629,13 @@ export function ConfiguracionCatalogo({
               </label>
               <div className="ia-field">
                 <span id={`${uid}-familia-${i}`} className="config-etiqueta">
-                  Familia
+                  Tipo de producto
                 </span>
                 <SelectorFamilia
                   id={`${uid}-familia-${i}`}
                   value={fila.familia}
                   opciones={FAMILIAS}
-                  vacio="Elige una familia"
+                  vacio="Elige el tipo"
                   disabled={!editable}
                   seleccionar={(familia) => editar('familias', i, { familia: familia as Familia })}
                 />

@@ -12,6 +12,8 @@ const tsconfigOriginal = await readFile(tsconfig, 'utf8');
 const nextEnv = join(raiz, 'next-env.d.ts');
 const nextEnvOriginal = await readFile(nextEnv, 'utf8');
 const workers = Math.max(1, Math.min(4, Number(process.env.NELTUME_E2E_WORKERS) || 2));
+// Primer puerto de los grupos; configurable porque otra E2E (la de la fábrica usa 3200–3206) puede ocuparlos.
+const puertoBase = Number(process.env.NELTUME_E2E_PORT_BASE) || 3201;
 const archivos = (await readdir(join(raiz, 'tests')))
   .filter((nombre) => nombre.endsWith('.e2e.ts') && nombre !== 'aceptacion.e2e.ts' && nombre !== 'primer-uso.e2e.ts')
   .sort();
@@ -46,7 +48,7 @@ for (let i = 0; i < bloques.length; i++) {
   grupos.push({
     nombre: `flujos-${i + 1}`,
     datos: `data/test-e2e-p${i + 1}`,
-    puerto: String(3201 + i),
+    puerto: String(puertoBase + i),
     dist: `.next-e2e/p${i + 1}`,
     salida: `test-results/flujos-${i + 1}`,
     argumentos: ['playwright', 'test', '--project=flujos', ...bloques[i].map((archivo) => `tests/${archivo}`)],
@@ -55,7 +57,7 @@ for (let i = 0; i < bloques.length; i++) {
 grupos.push({
   nombre: 'aceptacion',
   datos: 'data/test-e2e-aceptacion',
-  puerto: String(3201 + grupos.length),
+  puerto: String(puertoBase + grupos.length),
   dist: '.next-e2e/aceptacion',
   salida: 'test-results/aceptacion',
   argumentos: ['playwright', 'test', '--config=playwright.aceptacion.config.ts'],

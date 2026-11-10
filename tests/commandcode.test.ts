@@ -28,6 +28,7 @@ afterEach(() => {
 
 describe('Proveedor CommandCode', () => {
   it('envía al endpoint de CommandCode con su clave e ignora configuración de Anthropic', async () => {
+    vi.stubEnv('CMD_RAZONAMIENTO', 'no');
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
     vi.stubEnv('CMD_MODEL', 'claude-sonnet-4-6');
     vi.stubEnv('ANTHROPIC_API_KEY', 'placeholder-unused-key');
@@ -227,6 +228,7 @@ describe('Proveedor CommandCode', () => {
   });
 
   it('envía temperature 0 y la quita si el modelo no la acepta', async () => {
+    vi.stubEnv('CMD_RAZONAMIENTO', 'no');
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
     vi.stubEnv('CMD_MODEL', 'claude-sonnet-5');
     const rechazo = (mensaje: string) =>
@@ -249,6 +251,57 @@ describe('Proveedor CommandCode', () => {
       ['any', 0],
       ['auto', 0],
       ['auto', undefined],
+    ]);
+  });
+
+  it('por omisión pide razonamiento (high) con la herramienta en «auto», sin temperature', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-haiku-5-5');
+    const fetchMock = vi.fn<typeof fetch>().mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    await new CommandCodeLLM().interpretar(contexto);
+    const body = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect([body.thinking, body.output_config, body.tool_choice.type, body.temperature]).toEqual([
+      { type: 'adaptive' },
+      { effort: 'high' },
+      'auto',
+      undefined,
+    ]);
+  });
+
+  it('el nivel elegido junto al chat manda sobre CMD_RAZONAMIENTO; «no» pide sin razonar', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-haiku-5-5');
+    vi.stubEnv('CMD_RAZONAMIENTO', 'high');
+    const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    await new CommandCodeLLM().interpretar(contexto, { razonamiento: 'low' });
+    await new CommandCodeLLM().interpretar(contexto, { razonamiento: 'no' });
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies.map((b) => [b.output_config?.effort, b.tool_choice.type])).toEqual([
+      ['low', 'auto'],
+      [undefined, 'any'],
+    ]);
+  });
+
+  it('un proveedor que rechaza el razonamiento recibe la petición sin él', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'claude-haiku-5-5');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { type: 'error', error: { type: 'invalid_request_error', message: 'thinking is not supported for this model.' } },
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(respuesta([llamada]));
+    vi.stubGlobal('fetch', fetchMock);
+    await new CommandCodeLLM().interpretar(contexto);
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies.map((b) => [b.thinking?.type, b.tool_choice.type, b.temperature])).toEqual([
+      ['adaptive', 'auto', undefined],
+      [undefined, 'any', 0],
     ]);
   });
 
@@ -313,6 +366,7 @@ describe('Proveedor CommandCode', () => {
   });
 
   it('reintenta con tool_choice «auto» si el modelo Claude no acepta «any»', async () => {
+    vi.stubEnv('CMD_RAZONAMIENTO', 'no');
     vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
     vi.stubEnv('CMD_MODEL', 'claude-sonnet-5-5');
     const rechazo = Response.json(
@@ -635,5 +689,90 @@ describe('#38 · diagnóstico de los rechazos del proveedor', () => {
     });
     expect(llm.modeloEfectivo).toBe('Qwen/Qwen3.7-Flash');
     expect(llm.usoRespaldo).toBe(true);
+  });
+});
+
+describe('nivel de razonamiento por modelo', () => {
+  it('Claude parte en «high»; los demás, en «no» (como antes del selector); CMD_RAZONAMIENTO vale para todos', async () => {
+    const { razonamientoPredeterminado, esModeloClaude } = await import('../src/asistente/configuracion');
+    const modelos = ['claude-haiku-5-5', 'anthropic/claude-sonnet-5', 'Qwen/Qwen3.7-Flash', 'gpt-5.5', '', null];
+    expect(modelos.map(esModeloClaude)).toEqual([true, true, false, false, false, false]);
+    expect(modelos.map(razonamientoPredeterminado)).toEqual(['high', 'high', 'no', 'no', 'no', 'no']);
+    vi.stubEnv('CMD_RAZONAMIENTO', 'medium');
+    expect(modelos.map(razonamientoPredeterminado)).toEqual(Array(6).fill('medium'));
+    vi.stubEnv('CMD_RAZONAMIENTO', 'cualquiera');
+    expect(razonamientoPredeterminado('gpt-5.5')).toBe('no');
+  });
+
+  const respuestaChat = () =>
+    Response.json({
+      choices: [
+        {
+          finish_reason: 'tool_calls',
+          message: {
+            tool_calls: [{ type: 'function', function: { name: llamada.name, arguments: JSON.stringify(llamada.input) } }],
+          },
+        },
+      ],
+    });
+
+  it.each(['gpt-5.5', 'Qwen/Qwen3.7-Flash', 'deepseek/deepseek-v4.1-flash'])(
+    '%s recibe reasoning_effort con la herramienta en «auto», sin temperature y con más tokens',
+    async (modelo) => {
+      vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+      vi.stubEnv('CMD_MODEL', modelo);
+      const fetchMock = vi.fn<typeof fetch>().mockImplementation(async () => respuestaChat());
+      vi.stubGlobal('fetch', fetchMock);
+      await new CommandCodeLLM().interpretar(contexto, { razonamiento: 'high' });
+      await new CommandCodeLLM().interpretar(contexto, { razonamiento: 'no' });
+      await new CommandCodeLLM().interpretar(contexto);
+      const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+      expect(bodies.map((b) => [b.reasoning_effort, b.tool_choice, b.temperature, b.max_tokens])).toEqual([
+        ['high', 'auto', undefined, 16384],
+        [undefined, 'required', 0, 8192],
+        [undefined, 'required', 0, 8192],
+      ]);
+    },
+  );
+
+  it('un modelo de Chat Completions que rechaza reasoning_effort recibe la petición sin él', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    vi.stubEnv('CMD_MODEL', 'google/gemini-3.5-flash-lite');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(
+          { error: { message: 'Model does not support reasoning_effort', type: 'invalid_request_error' } },
+          { status: 400 },
+        ),
+      )
+      .mockResolvedValueOnce(respuestaChat());
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await new CommandCodeLLM().interpretar(contexto, { razonamiento: 'max' })).toEqual({
+      name: llamada.name,
+      input: llamada.input,
+    });
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies.map((b) => [b.reasoning_effort, b.tool_choice])).toEqual([
+      ['max', 'auto'],
+      [undefined, 'required'],
+    ]);
+  });
+
+  it('sin nivel elegido, el respaldo usa su propio predeterminado: Claude razona, Qwen no', async () => {
+    vi.stubEnv('CMD_API_KEY', 'placeholder-commandcode-key');
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ error: { message: 'sin acceso' } }, { status: 404 }))
+      .mockResolvedValueOnce(respuestaChat());
+    vi.stubGlobal('fetch', fetchMock);
+    await new CommandCodeLLM('claude-haiku-5-5', undefined, { respaldo: 'Qwen/Qwen3.7-Flash' }).interpretar(contexto);
+    const bodies = fetchMock.mock.calls.map((c) => JSON.parse(String(c[1]?.body)));
+    expect(bodies[0].output_config).toEqual({ effort: 'high' });
+    expect([bodies[1].model, bodies[1].reasoning_effort, bodies[1].tool_choice]).toEqual([
+      'Qwen/Qwen3.7-Flash',
+      undefined,
+      'required',
+    ]);
   });
 });

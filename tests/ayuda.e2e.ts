@@ -20,7 +20,7 @@ test('guía «Cómo funciona»: desde la pantalla vacía y el menú de cuenta, e
   await expect(page).toHaveURL(/\/ayuda$/);
   await expect(page.getByRole('heading', { name: 'Cómo funciona', level: 1 })).toBeVisible();
   const guia = page.getByRole('main');
-  for (const titulo of ['Los pasos de una cotización', 'Qué significa cada estado', 'Cómo deshacer', 'A quién pedir ayuda'])
+  for (const titulo of ['Los pasos de una cotización', 'Qué significa cada estado', 'Líneas repetidas, copias y productos especiales', 'El catálogo en 5 minutos', 'Qué significa cada palabra', 'Cómo deshacer', 'A quién pedir ayuda'])
     await expect(guia.getByRole('heading', { name: titulo, level: 2 })).toBeVisible();
   // El ciclo completo, con los nombres de los botones tal como se ven.
   for (const paso of ['Emitir y generar PDF', 'Registrar aprobación del cliente', 'Registrar pago', 'Generar notas de pedido', 'Repartir entre fábricas', 'Cambiar N°', 'Registrar despacho', 'Marcar como facturada'])

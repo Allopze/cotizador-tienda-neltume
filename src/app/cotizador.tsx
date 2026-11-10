@@ -21,7 +21,8 @@ import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import type { OpcionCotizacion } from '@/servidor/referencias';
 import { CotizacionPanel, descripcionItem, type AccionesPanel, type Operacion } from './cotizacion-panel';
 import { Encabezado } from './encabezado';
-import { antesDeNavegar, useScrollRecordado } from './memoria-pantalla';
+import { antesDeNavegar, usePreferenciaOpcion, useScrollRecordado } from './memoria-pantalla';
+import { NIVELES_RAZONAMIENTO, type NivelRazonamiento } from '@/asistente/configuracion';
 import { Avisos, useAvisos } from './avisos';
 import { TextoMensaje } from './texto-mensaje';
 import { falloCompartir } from './compartir';
@@ -76,6 +77,14 @@ import {
 import { guardarDiagnosticoIA } from './diagnostico-ia';
 
 const ejemplo = 'Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco';
+/** Cuánto piensa el asistente antes de responder: más es más preciso, y algo más lento y caro. */
+const ETIQUETAS_RAZONAMIENTO: Record<NivelRazonamiento, string> = {
+  no: 'Rápido',
+  low: 'Poco',
+  medium: 'Medio',
+  high: 'Alto',
+  max: 'Máximo',
+};
 const LIMITE = 6000,
   AVISO_LIMITE = 5000;
 /** Quita del texto las preguntas de los ítems pendientes: el bloque estructurado las reemplaza. */
@@ -110,11 +119,43 @@ const MAX_AVISOS_LOCALES = 6;
 const esTactil = () => typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches;
 const urlDocumento = (archivo: string, ver = false) =>
   `/api/documento/${encodeURIComponent(archivo)}${ver ? '?ver=1' : ''}`;
+/**
+ * Lo que Deshacer devuelve: los productos y también los datos generales que se editan en la cotización (cliente,
+ * descuento, flete, ganancia y observaciones). Antes solo volvían los productos (auditoría 2026-11, N-16).
+ */
+interface Instantanea {
+  solicitudes: SolicitudItem[];
+  general: {
+    cliente: Cotizacion['cliente'];
+    descuento: number;
+    descuentoManual: boolean;
+    flete: number;
+    fleteCantidad: number;
+    fleteDescripcion: string | null;
+    margenCotizacion: number | null;
+    observaciones: string | null;
+  };
+}
+const instantaneaDe = (q: Cotizacion): Instantanea =>
+  structuredClone({
+    solicitudes: q.solicitudes,
+    general: {
+      cliente: q.cliente,
+      descuento: q.descuento,
+      descuentoManual: !!q.descuentoManual,
+      flete: q.flete,
+      fleteCantidad: q.fleteCantidad && q.fleteCantidad > 0 ? q.fleteCantidad : 1,
+      fleteDescripcion: q.fleteDescripcion ?? null,
+      margenCotizacion: q.margenCotizacion ?? null,
+      observaciones: q.observaciones ?? null,
+    },
+  });
+const mismaInstantanea = (a: Instantanea, b: Instantanea) => JSON.stringify(a) === JSON.stringify(b);
 interface HistorialEdicion {
   id: string | null;
   version: string | null;
-  deshacer: SolicitudItem[][];
-  rehacer: SolicitudItem[][];
+  deshacer: Instantanea[];
+  rehacer: Instantanea[];
 }
 interface EstadoHistorialEdicion {
   id: string | null;
@@ -127,11 +168,31 @@ const MAX_ACCIONES_HISTORIAL = 30;
 const idNuevo = () =>
   typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined;
 
+/**
+ * Cuánto lleva esperando el asistente. Pasados unos segundos dice que se puede cancelar y seguir a mano: mientras
+ * responde, la cotización no se puede editar (auditoría 2026-11, N-14).
+ */
+function EsperaAsistente() {
+  const [segundos, setSegundos] = useState(0);
+  useEffect(() => {
+    const inicio = Date.now();
+    const reloj = setInterval(() => setSegundos(Math.floor((Date.now() - inicio) / 1000)), 1000);
+    return () => clearInterval(reloj);
+  }, []);
+  if (segundos < 6) return null;
+  return (
+    <small className="espera-asistente">
+      {segundos} s. Si prefieres no esperar, usa «Cancelar» y sigue en la cotización con «Agregar producto».
+    </small>
+  );
+}
+
 export function Cotizador({
   email,
   nombre,
   admin,
   abrirId,
+  agregarCodigo = null,
 }: {
   email: string;
   nombre: string;
@@ -139,6 +200,8 @@ export function Cotizador({
   admin: boolean;
   /** Cotización pedida por URL (`/?cotizacion=…`), p. ej. desde el historial. */
   abrirId: string | null;
+  /** Producto elegido en el catálogo («Cotizar»): abre «Agregar producto» con él ya seleccionado. */
+  agregarCodigo?: string | null;
 }) {
   const router = useRouter();
   const [actual, setActual] = useState<Cotizacion | null>(null);
@@ -160,16 +223,18 @@ export function Cotizador({
   function vaciarHistorialEdicion(id: string | null = null) {
     publicarHistorialEdicion({ id, version: null, deshacer: [], rehacer: [] });
   }
-  function registrarCambioItems(anterior: Cotizacion, siguiente: Cotizacion) {
-    if (JSON.stringify(anterior.solicitudes) === JSON.stringify(siguiente.solicitudes)) return;
+  function registrarCambio(anterior: Cotizacion, siguiente: Cotizacion) {
+    const previa = instantaneaDe(anterior);
+    if (mismaInstantanea(previa, instantaneaDe(siguiente))) return;
     const vigente = historialEdicion.current;
-    const base = vigente.id === anterior.id
-      ? vigente
-      : { id: anterior.id, version: anterior.actualizada, deshacer: [], rehacer: [] };
+    const base =
+      vigente.id === anterior.id
+        ? vigente
+        : { id: anterior.id, version: anterior.actualizada, deshacer: [], rehacer: [] };
     publicarHistorialEdicion({
       id: siguiente.id,
       version: siguiente.actualizada,
-      deshacer: [...base.deshacer, structuredClone(anterior.solicitudes)].slice(-MAX_ACCIONES_HISTORIAL),
+      deshacer: [...base.deshacer, previa].slice(-MAX_ACCIONES_HISTORIAL),
       rehacer: [],
     });
   }
@@ -185,7 +250,16 @@ export function Cotizador({
       ? asistentePreferencia.contraido
       : actual?.estado === 'aprobada';
   const [vistaMobile, setVistaMobile] = useState<'pedido' | 'cotizacion'>(abrirId ? 'cotizacion' : 'pedido');
-  const [agregandoProducto, setAgregandoProducto] = useState(false);
+  const [agregandoProducto, setAgregandoProducto] = useState(!!agregarCodigo);
+  const [codigoInicial, setCodigoInicial] = useState(agregarCodigo);
+  /** Cierra «Agregar producto»; el producto de «Cotizar» se ofrece una sola vez y la URL vuelve a «/». */
+  function cerrarAgregarProducto() {
+    setAgregandoProducto(false);
+    if (codigoInicial) {
+      setCodigoInicial(null);
+      router.replace('/', { scroll: false });
+    }
+  }
   const [cambioVisual, setCambioVisual] = useState<{
     id: string;
     indices: number[];
@@ -197,6 +271,16 @@ export function Cotizador({
     const timer = setTimeout(() => setCambioVisual(null), 4500);
     return () => clearTimeout(timer);
   }, [cambioVisual]);
+  /** Modelo configurado y su nivel predeterminado; null hasta leer los ajustes (el selector no se muestra). */
+  const [baseRazonamiento, setBaseRazonamiento] = useState<{
+    modelo: string;
+    predeterminado: NivelRazonamiento;
+  } | null>(null);
+  const [razonamiento, setRazonamiento] = usePreferenciaOpcion<NivelRazonamiento>(
+    `razonamiento:${baseRazonamiento?.modelo ?? ''}`,
+    NIVELES_RAZONAMIENTO,
+    baseRazonamiento?.predeterminado ?? 'no',
+  );
   const [mensaje, setMensaje] = useState(''),
     [textoConservado, setTextoConservado] = useState(false),
     [enCurso, setEnCurso] = useState<Operacion | null>(null),
@@ -208,6 +292,8 @@ export function Cotizador({
   const idPendiente = useRef<string | null>(null);
   /** Id de la copia que creará el próximo «Duplicar»; sobrevive a un reintento para no crear dos (BUG-047). */
   const duplicadoPendiente = useRef<{ origen: string; nuevoId: string } | null>(null);
+  /** Id propuesto para el borrador que crea el primer producto agregado a mano (ver `agregarItem`). */
+  const primerProducto = useRef<string | null>(null);
   const [seleccion, setSeleccion] = useState<Seleccion | null>(null);
   /** Totales de las opciones en selección: se leen aparte, el asistente nunca recibe montos. */
   const [totalesOpciones, setTotalesOpciones] = useState<Record<string, number>>({});
@@ -242,7 +328,10 @@ export function Cotizador({
     }),
     [],
   );
-  useAvisoSalida(camposSinGuardar > 0, 'Hay datos escritos sin guardar en la cotización. ¿Salir de todos modos?');
+  useAvisoSalida(
+    camposSinGuardar > 0,
+    'Hay datos escritos sin guardar en la cotización. ¿Salir de todos modos?',
+  );
   const mensajes = useRef<HTMLDivElement>(null),
     input = useRef<HTMLTextAreaElement>(null),
     workspace = useRef<HTMLElement>(null),
@@ -332,11 +421,17 @@ export function Cotizador({
       })
       .finally(fin);
     // El listado ya no vive aquí: el estado del asistente se lee de los ajustes.
-    pedirJSON<{ asistenteConfigurado: boolean }>('/api/ajustes', {
+    pedirJSON<{
+      asistenteConfigurado: boolean;
+      razonamiento?: { modelo: string; predeterminado: NivelRazonamiento };
+    }>('/api/ajustes', {
       signal: control.signal,
       cache: 'no-store',
     })
-      .then((d) => setConfigurado(d.asistenteConfigurado))
+      .then((d) => {
+        setConfigurado(d.asistenteConfigurado);
+        setBaseRazonamiento(d.razonamiento ?? null);
+      })
       .catch(() => {});
     return () => control.abort();
   }, [leerDetalle, avisar, pedidaPorUrl, router]);
@@ -502,16 +597,25 @@ export function Cotizador({
       avisar('info', mensajeDe(e), {
         clave: 'operacion',
         ...(q
-          ? { accion: { etiqueta: 'Actualizar', fn: () => void recargarActual(q.id, true).catch((x) => fallo(x, null)) } }
+          ? {
+              accion: {
+                etiqueta: 'Actualizar',
+                fn: () => void recargarActual(q.id, true).catch((x) => fallo(x, null)),
+              },
+            }
           : {}),
       });
       return;
     }
     if (codigo === 'version_obsoleta') {
       // Un solo mensaje: el del servidor ya pide revisar y reintentar, y aquí se dice además que se recargó.
-      avisar('error', 'La cotización cambió mientras la tenías abierta. Se cargó la versión actual: revísala y vuelve a intentarlo.', {
-        clave: 'operacion',
-      });
+      avisar(
+        'error',
+        'La cotización cambió mientras la tenías abierta. Se cargó la versión actual: revísala y vuelve a intentarlo.',
+        {
+          clave: 'operacion',
+        },
+      );
     } else avisar('error', mensajeDe(e), { clave: 'operacion' });
     // Conflictos (409): otra persona o pestaña cambió algo; se trae la versión vigente.
     if (e instanceof ErrorSolicitud && e.status === 409) {
@@ -587,7 +691,7 @@ export function Cotizador({
       else if (opciones.sinHistorial) {
         const historial = historialEdicion.current;
         if (historial.id === q.id) publicarHistorialEdicion({ ...historial, version: q.actualizada });
-      } else if (JSON.stringify(previa.solicitudes) !== JSON.stringify(q.solicitudes)) registrarCambioItems(previa, q);
+      } else if (!mismaInstantanea(instantaneaDe(previa), instantaneaDe(q))) registrarCambio(previa, q);
       else {
         const historial = historialEdicion.current;
         if (historial.id === q.id) publicarHistorialEdicion({ ...historial, version: q.actualizada });
@@ -598,11 +702,16 @@ export function Cotizador({
     if (d.avisos?.length) avisar('info', d.avisos.join(' '));
     // Los de una edición directa quedan además como nota en la conversación: el aviso dura 7 s. Se omiten los
     // que el servidor ya dejó en el historial (p. ej. una revisión desvinculada).
-    const nuevos = opciones.anunciar || d.eliminada ? [] : (d.avisos ?? []).filter((a) => !q.historial.some((m) => m.texto === a));
+    const nuevos =
+      opciones.anunciar || d.eliminada
+        ? []
+        : (d.avisos ?? []).filter((a) => !q.historial.some((m) => m.texto === a));
     if (nuevos.length)
       setAvisosLocales((v) => ({
         id: q.id,
-        textos: [...(v?.id === q.id ? v.textos.filter((t) => !nuevos.includes(t)) : []), ...nuevos].slice(-MAX_AVISOS_LOCALES),
+        textos: [...(v?.id === q.id ? v.textos.filter((t) => !nuevos.includes(t)) : []), ...nuevos].slice(
+          -MAX_AVISOS_LOCALES,
+        ),
       }));
     if (
       previa &&
@@ -636,15 +745,19 @@ export function Cotizador({
    */
   function entregarDocumento(archivo: string, detalle?: string) {
     if (!esTactil()) return void descargar(archivo, false, detalle);
-    avisar('exito', `PDF listo: ${archivo}. ${detalle ?? 'También queda junto al total para verlo, descargarlo o compartirlo.'}`, {
-      clave: 'descarga',
-      accion: {
-        etiqueta: 'Ver PDF',
-        fn: () => {
-          if (!ver(archivo)) void descargar(archivo);
+    avisar(
+      'exito',
+      `PDF listo: ${archivo}. ${detalle ?? 'También queda junto al total para verlo, descargarlo o compartirlo.'}`,
+      {
+        clave: 'descarga',
+        accion: {
+          etiqueta: 'Ver PDF',
+          fn: () => {
+            if (!ver(archivo)) void descargar(archivo);
+          },
         },
       },
-    });
+    );
   }
 
   function nuevaCotizacion() {
@@ -674,7 +787,9 @@ export function Cotizador({
     try {
       const { blob, nombre } = await pedirArchivo(urlDocumento(archivo));
       guardarArchivo(blob, nombre ?? archivo);
-      avisar('exito', `Documento listo: se descargó ${nombre ?? archivo}.${detalle ? ` ${detalle}` : ''}`, { clave: 'descarga' });
+      avisar('exito', `Documento listo: se descargó ${nombre ?? archivo}.${detalle ? ` ${detalle}` : ''}`, {
+        clave: 'descarga',
+      });
     } catch (e) {
       if (reintento || !(e instanceof ErrorSolicitud && e.status === 404)) return fallo(e);
       setDescargando(null);
@@ -705,8 +820,9 @@ export function Cotizador({
       titulo: 'No se encontró el PDF',
       mensaje: (
         <p>
-          El archivo de {nota ? `la nota de pedido ${numeroNota(nota)}` : `la cotización ${numeroCotizacion(q.numero)}`}{' '}
-          ya no está en el servidor. Se puede regenerar con los mismos datos con que se emitió.
+          El archivo de{' '}
+          {nota ? `la nota de pedido ${numeroNota(nota)}` : `la cotización ${numeroCotizacion(q.numero)}`} ya
+          no está en el servidor. Se puede regenerar con los mismos datos con que se emitió.
         </p>
       ),
       aceptar: 'Regenerar PDF',
@@ -770,10 +886,11 @@ export function Cotizador({
         if (e instanceof ErrorSolicitud && e.status === 404) {
           setDescargando(null);
           const recuperado = await recuperarPdf(archivo);
-          if (recuperado) avisar('info', 'PDF regenerado: toca «Compartir» para enviarlo.', {
-            clave: 'descarga',
-            accion: { etiqueta: 'Compartir', fn: () => void compartir(recuperado) },
-          });
+          if (recuperado)
+            avisar('info', 'PDF regenerado: toca «Compartir» para enviarlo.', {
+              clave: 'descarga',
+              accion: { etiqueta: 'Compartir', fn: () => void compartir(recuperado) },
+            });
         } else fallo(e);
         return;
       } finally {
@@ -883,14 +1000,51 @@ export function Cotizador({
     const pila = direccion === 'deshacer' ? historial.deshacer : historial.rehacer;
     const objetivo = pila.at(-1);
     if (!objetivo) return false;
-    const actualGuardado = structuredClone(q.solicitudes);
-    const ok = await ejecutar(
-      'editar',
-      { tipo: 'restaurar_items', ...versionDe(q), items: structuredClone(objetivo) },
-      q,
-      { sinHistorial: true },
-    );
-    if (!ok) return false;
+    const actualGuardado = instantaneaDe(q);
+    const g = objetivo.general;
+    const cambiaGeneral = JSON.stringify(g) !== JSON.stringify(actualGuardado.general);
+    const cambianItems = JSON.stringify(objetivo.solicitudes) !== JSON.stringify(actualGuardado.solicitudes);
+    setEnCurso('editar');
+    limpiar('operacion');
+    let vigente = q;
+    try {
+      // Primero los datos generales y después los productos: cada paso con la versión que dejó el anterior.
+      if (cambiaGeneral) {
+        const d = await peticion({
+          tipo: 'editar',
+          id: vigente.id,
+          ...versionDe(vigente),
+          cliente: g.cliente,
+          ...(g.descuentoManual ? { descuento: g.descuento } : { descuentoAutomatico: true }),
+          fleteLinea:
+            g.flete > 0
+              ? {
+                  descripcion: g.fleteDescripcion,
+                  cantidad: g.fleteCantidad,
+                  unitario: Math.round(g.flete / g.fleteCantidad),
+                }
+              : null,
+          margenCotizacion: g.margenCotizacion,
+          observaciones: g.observaciones,
+        });
+        recibir(d, { previa: vigente, sinHistorial: true });
+        vigente = d.cotizacion;
+      }
+      if (cambianItems || !cambiaGeneral) {
+        const d = await peticion({
+          tipo: 'restaurar_items',
+          id: vigente.id,
+          ...versionDe(vigente),
+          items: structuredClone(objetivo.solicitudes),
+        });
+        recibir(d, { previa: vigente, sinHistorial: true });
+      }
+    } catch (e) {
+      fallo(e, vigente);
+      return false;
+    } finally {
+      setEnCurso(null);
+    }
     const actualizada = historialEdicion.current;
     publicarHistorialEdicion({
       id: q.id,
@@ -1014,6 +1168,11 @@ export function Cotizador({
         },
       });
     },
+    async duplicarLinea(indice) {
+      const q = actual;
+      if (!q || ocupado) return false;
+      return ejecutar('duplicar_item', { tipo: 'duplicar_item', indice, ...versionDe(q) }, q);
+    },
     async quitar(indice) {
       const q = actual;
       if (!q || ocupado) return;
@@ -1040,8 +1199,8 @@ export function Cotizador({
         mensaje: (
           <p>
             ¿Eliminar este borrador{q.cliente.nombre ? ` de ${q.cliente.nombre}` : ''}? Sale del historial con
-            su conversación y sus ítems, y pasa a la papelera: puedes deshacerlo desde el aviso o restaurarlo en
-            Historial → Papelera.
+            su conversación y sus ítems, y pasa a la papelera: puedes deshacerlo desde el aviso o restaurarlo
+            en Historial → Papelera.
           </p>
         ),
         aceptar: 'Eliminar borrador',
@@ -1137,24 +1296,37 @@ export function Cotizador({
     copiar: () => void copiar(),
   };
 
-  const agregarProducto = (producto: ProductoElegido) => agregarItem({ tipo: 'agregar_producto', ...producto });
+  const agregarProducto = (producto: ProductoElegido, opciones?: { seguir?: boolean }) =>
+    agregarItem({ tipo: 'agregar_producto', ...producto }, opciones);
   /** Fuera de catálogo: queda solo en esta cotización, con sus referencias del cliente. */
   const agregarPersonalizado = (item: ProductoPersonalizadoElegido) =>
     agregarItem({ tipo: 'agregar_personalizado', item });
 
-  async function agregarItem(accion: Record<string, unknown>) {
+  /**
+   * Suma un producto. Con `seguir`, el diálogo queda abierto en los resultados para agregar el siguiente sin volver
+   * a buscar (auditoría 2026-11, N-18). El primer producto lleva un id propuesto: un reintento no abre dos borradores.
+   */
+  async function agregarItem(accion: Record<string, unknown>, { seguir = false }: { seguir?: boolean } = {}) {
     if (ocupado) return false;
     const q = actual;
     setEnCurso('editar');
     limpiar('operacion');
+    if (!q && !primerProducto.current) primerProducto.current = idNuevo() ?? null;
     try {
       const d = await peticion({
         ...accion,
-        ...(q ? { id: q.id, ...versionDe(q) } : {}),
+        ...(q
+          ? { id: q.id, ...versionDe(q) }
+          : primerProducto.current
+            ? { nuevoId: primerProducto.current }
+            : {}),
       });
+      primerProducto.current = null;
       recibir(d, { previa: q });
-      setAgregandoProducto(false);
-      setVistaMobile('cotizacion');
+      if (!seguir) {
+        cerrarAgregarProducto();
+        setVistaMobile('cotizacion');
+      }
       // El ítem nuevo queda al final del detalle: se lleva a la vista (el aviso solo no decía dónde quedó).
       const ultimo = d.cotizacion.solicitudes.length - 1;
       requestAnimationFrame(() =>
@@ -1162,7 +1334,7 @@ export function Cotizador({
           .getElementById(`producto-${ultimo}`)
           ?.scrollIntoView({ behavior: comportamientoScroll(), block: 'center' }),
       );
-      avisar('exito', 'Producto agregado al pedido.', { clave: 'operacion' });
+      if (!seguir) avisar('exito', 'Producto agregado al pedido.', { clave: 'operacion' });
       return true;
     } catch (e) {
       fallo(e, q);
@@ -1182,7 +1354,11 @@ export function Cotizador({
       duplicadoPendiente.current = nuevoId ? { origen: id, nuevoId } : null;
     }
     try {
-      const d = await peticion({ tipo: 'duplicar', id, ...(duplicadoPendiente.current ? { nuevoId: duplicadoPendiente.current.nuevoId } : {}) });
+      const d = await peticion({
+        tipo: 'duplicar',
+        id,
+        ...(duplicadoPendiente.current ? { nuevoId: duplicadoPendiente.current.nuevoId } : {}),
+      });
       duplicadoPendiente.current = null;
       recibir(d, { previa: null });
       setSeleccion(null);
@@ -1255,7 +1431,10 @@ export function Cotizador({
   }
 
   /** Cambio de número pedido por chat: se confirma aquí y se aplica con `cambiar_numero`, como desde el documento. */
-  async function cambiarNumeroDesdeChat(c: NonNullable<Resultado['confirmarNumero']>, conversacion: Cotizacion) {
+  async function cambiarNumeroDesdeChat(
+    c: NonNullable<Resultado['confirmarNumero']>,
+    conversacion: Cotizacion,
+  ) {
     const documento =
       c.documento === 'cotizacion'
         ? `la cotización N° ${c.actual}`
@@ -1264,8 +1443,8 @@ export function Cotizador({
       titulo: `¿Cambiar el número de ${documento}?`,
       mensaje: (
         <p>
-          Pasa a ser la N° {c.numero.toLocaleString('es-CL')}. Su PDF se vuelve a generar con el número nuevo y el
-          cambio queda en la actividad.
+          Pasa a ser la N° {c.numero.toLocaleString('es-CL')}. Su PDF se vuelve a generar con el número nuevo
+          y el cambio queda en la actividad.
         </p>
       ),
       aceptar: `Cambiar a N° ${c.numero.toLocaleString('es-CL')}`,
@@ -1326,6 +1505,7 @@ export function Cotizador({
                 ...(charla.length ? { contexto: charla } : {}),
               }),
           mensaje: texto,
+          ...(baseRazonamiento ? { razonamiento } : {}),
         },
         control.signal,
       );
@@ -1376,6 +1556,7 @@ export function Cotizador({
           objetivoId: opcion.id,
           objetivoActualizada: opcion.actualizada,
           mensaje: pendiente.mensaje,
+          ...(baseRazonamiento ? { razonamiento } : {}),
         },
         control.signal,
       );
@@ -1500,7 +1681,8 @@ export function Cotizador({
           aria-controls="panel-cotizacion"
           onClick={() => setVistaMobile('cotizacion')}
         >
-          {aprobada ? 'Seguimiento' : 'Cotización'}{actual?.incompletos.length ? ` (${plural(actual.incompletos.length, 'pendiente')})` : ''}
+          {aprobada ? 'Seguimiento' : 'Cotización'}
+          {actual?.incompletos.length ? ` (${plural(actual.incompletos.length, 'pendiente')})` : ''}
         </button>
       </nav>
       <main className="workspace" ref={workspace} data-vista={vistaMobile}>
@@ -1514,14 +1696,25 @@ export function Cotizador({
             className="chat-toggle"
             aria-expanded={!asistenteContraido}
             aria-controls="chat-contenido"
-            onClick={() => setAsistentePreferencia({ id: actual?.id ?? null, contraido: !asistenteContraido })}
+            onClick={() =>
+              setAsistentePreferencia({ id: actual?.id ?? null, contraido: !asistenteContraido })
+            }
           >
             {asistenteContraido
-              ? aprobada ? 'Ver conversación →' : 'Abrir asistente →'
-              : aprobada ? '← Contraer conversación' : '← Contraer asistente'}
+              ? aprobada
+                ? 'Ver conversación →'
+                : 'Abrir asistente →'
+              : aprobada
+                ? '← Contraer conversación'
+                : '← Contraer asistente'}
           </button>
           {aprobada && asistenteContraido && (
-            <button type="button" className="button secondary small chat-new-quote" onClick={nuevaCotizacion} disabled={ocupado || cargando}>
+            <button
+              type="button"
+              className="button secondary small chat-new-quote"
+              onClick={nuevaCotizacion}
+              disabled={ocupado || cargando}
+            >
               + Nueva cotización
             </button>
           )}
@@ -1615,7 +1808,11 @@ export function Cotizador({
                       />
                     )}
                     {conPreguntas && (
-                      <div className="pendientes-chat" role="group" aria-label="Datos que faltan para cotizar">
+                      <div
+                        className="pendientes-chat"
+                        role="group"
+                        aria-label="Datos que faltan para cotizar"
+                      >
                         <p className="pendientes-intro">
                           Faltan datos en {plural(actual!.incompletos.length, 'producto')}. Elige una opción o
                           escríbelo en tu próximo mensaje.
@@ -1722,6 +1919,7 @@ export function Cotizador({
                     <span>·</span>
                     <span>·</span>
                   </span>
+                  <EsperaAsistente />
                 </div>
               )}
             </div>
@@ -1751,17 +1949,25 @@ export function Cotizador({
             )}
             {aprobada && (
               <p className="chat-readonly-note">
-                Esta cotización está aprobada y no se modifica: duplícala si necesitas una nueva versión. Por chat
-                puedes repartir sus ítems entre las fábricas o cambiar su número o el de sus notas de pedido.
+                Esta cotización está aprobada y no se modifica: duplícala si necesitas una nueva versión. Por
+                chat puedes repartir sus ítems entre las fábricas o cambiar su número o el de sus notas de
+                pedido.
               </p>
             )}
             {bloqueada && actual && (
               <div className="chat-readonly-note chat-bloqueada">
                 <p>
                   Esta cotización está {etiquetaEstado[actual.estado].toLowerCase()} y no admite cambios.
-                  {actual.estado === 'reemplazada' && actual.reemplazadaPor ? ` Modifica la N° ${actual.reemplazadaPor}.` : ''}
+                  {actual.estado === 'reemplazada' && actual.reemplazadaPor
+                    ? ` Modifica la N° ${actual.reemplazadaPor}.`
+                    : ''}
                 </p>
-                <button type="button" className="button secondary small" disabled={ocupado} onClick={() => acciones.duplicar()}>
+                <button
+                  type="button"
+                  className="button secondary small"
+                  disabled={ocupado}
+                  onClick={() => acciones.duplicar()}
+                >
                   Duplicar como cotización nueva
                 </button>
               </div>
@@ -1801,10 +2007,10 @@ export function Cotizador({
                       : actual?.estado === 'aprobada'
                         ? 'Cotización aprobada: puedes repartir sus ítems entre fábricas o cambiar un número.'
                         : seleccion
-                        ? 'Elige una de las cotizaciones de arriba.'
-                        : estadoChat
-                          ? `Escribe un cambio: se creará una revisión de la ${numeroCotizacion(actual!.numero)}.`
-                          : 'Escribe el pedido o agrega un detalle…'
+                          ? 'Elige una de las cotizaciones de arriba.'
+                          : estadoChat
+                            ? `Escribe un cambio: se creará una revisión de la ${numeroCotizacion(actual!.numero)}.`
+                            : 'Escribe el pedido o agrega un detalle…'
                 }
                 disabled={composerDeshabilitado}
                 rows={3}
@@ -1822,6 +2028,26 @@ export function Cotizador({
                   <span id="contador" className={`contador ${mensaje.length >= LIMITE ? 'limite' : ''}`}>
                     {mensaje.length.toLocaleString('es-CL')} / {LIMITE.toLocaleString('es-CL')} caracteres
                   </span>
+                )}
+                {baseRazonamiento && configurado && (
+                  <label
+                    className="composer-razonamiento"
+                    title="Cuánto piensa el asistente antes de responder. Más es más preciso y algo más lento."
+                  >
+                    <span>Razonamiento</span>
+                    <select
+                      value={razonamiento}
+                      onChange={(e) => setRazonamiento(e.target.value as NivelRazonamiento)}
+                      disabled={enCurso === 'chat'}
+                    >
+                      {NIVELES_RAZONAMIENTO.map((n) => (
+                        <option key={n} value={n}>
+                          {ETIQUETAS_RAZONAMIENTO[n]}
+                          {n === baseRazonamiento.predeterminado ? ' (predeterminado)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 )}
                 <span className="composer-botones">
                   {enCurso === 'chat' && (
@@ -1868,7 +2094,8 @@ export function Cotizador({
       <Avisos avisos={avisos} cerrar={cerrarAviso} />
       {agregandoProducto && (
         <AgregarProducto
-          alCerrar={() => setAgregandoProducto(false)}
+          codigoInicial={codigoInicial}
+          alCerrar={cerrarAgregarProducto}
           agregar={agregarProducto}
           agregarPersonalizado={agregarPersonalizado}
           ocupado={ocupado}

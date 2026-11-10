@@ -20,7 +20,8 @@ textarea::placeholder {
   /* Tres bordes: tarjetas y divisores, divisores internos y controles (campos, selectores). */
   --line: #dedfd5;
   --line-soft: #e8ebe1;
-  --line-strong: #cfd5c4;
+  /* Borde de controles: ≥3:1 sobre blanco, papel y panel (WCAG 1.4.11; antes 1,5:1, auditoría 2026-11 N-44). */
+  --line-strong: #878e7f;
   /* Acento verde para citas y ejemplos (borde izquierdo). */
   --accent-line: #8b9e7c;
   --green: #2d4938;

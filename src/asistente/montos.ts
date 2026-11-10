@@ -143,6 +143,29 @@ export function montosDelTexto(texto: string): number[] {
 }
 
 /**
+ * Si un texto del asistente habla de dinero: un «$», una cifra con moneda o multiplicador («120 mil», «35 lucas»,
+ * «2 millones», «50.000 pesos»), un monto en palabras («cien mil») o una cifra suelta de miles que no es una medida
+ * ni un número de documento. Las medidas («0,80 × 2,00», «800 x 2.100 mm»), las cantidades («2 Molco») y los
+ * números de cotización no cuentan: así el asistente puede preguntar «¿la de 0,80 × 2,00?» (auditoría 2026-11,
+ * N-04; antes bastaba cualquier número para bloquear la respuesta).
+ */
+export function hablaDeDinero(texto: string): boolean {
+  const t = sinTildes(texto);
+  if (/\$\s*\d/.test(t)) return true;
+  if (/\d\s*(?:mil|lucas?|k|millon(?:es)?|pesos?|clp|usd)(?![a-zñ])/.test(t)) return true;
+  if (montosEnPalabras(t).some((m) => m >= 1_000)) return true;
+  for (const m of t.matchAll(/(\d{1,3}(?:\.\d{3})+|\d{4,})(?![\d.,])/g)) {
+    const antes = t.slice(0, m.index).trimEnd();
+    const despues = t.slice(m.index! + m[0].length).trimStart();
+    // Medida («800 x 2.100», «2.100 mm») o número de documento («N° 1234», «cotización 1234»).
+    if (/[x×]$/.test(antes) || /^(?:[x×]|mm|cm|mts?|metros?)(?![a-zñ])/.test(despues)) continue;
+    if (/(?:n\s*[°ºo.]|numero|nota|cotizacion|pedido|revision)$/.test(antes)) continue;
+    return true;
+  }
+  return false;
+}
+
+/**
  * El monto que propuso la IA, si está escrito en `textos` (sin `textos`, un doble de prueba, se acepta). Si la
  * IA leyó «$350.00» al pie de la letra ($350), vale lo escrito: $350.000. Si no está, `ambiguo` cita un monto
  * dudoso del texto («$350.50»), si lo hay, para pedir que se escriba completo.

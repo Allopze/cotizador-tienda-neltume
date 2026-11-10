@@ -238,7 +238,7 @@ export class Servicio {
    * reglas. Trae un aviso por cada línea que pasa a cotizarse con la siguiente medida del catálogo, cada precio
    * nuevo bajo el costo, cada ajuste del descuento y cada vano justo sobre el inicio de su tramo.
    */
-  private calcular(q: Cotizacion) {
+  private calcular(q: Cotizacion, congelados?: ReadonlyMap<number, Producto>) {
     const clave = (codigo: string, ancho: number | null, alto: number | null) => `${codigo}|${ancho}|${alto}`;
     const previas = new Set(q.montos.lineas.map((l) => clave(l.producto.codigo, l.anchoSolicitado, l.altoSolicitado)));
     const previasVano = new Set(
@@ -267,7 +267,14 @@ export class Servicio {
         continue;
       avisos.push(`El precio de ${b.nombre} queda bajo el costo de fábrica (${pesos(b.costo)}).`);
     }
-    const validos = vigentes.validos;
+    // Un pedido aprobado conserva lo acordado: la línea que sigue siendo el mismo producto usa la copia que se aprobó
+    // (costo y descripción), no el catálogo vigente. Solo se valoriza de nuevo lo que cambió de producto o medida.
+    const validos = congelados
+      ? vigentes.validos.map((v) => {
+          const previo = congelados.get(v.indice);
+          return previo && previo.codigo === v.producto.codigo ? { ...v, producto: previo } : v;
+        })
+      : vigentes.validos;
     const guardadas = q.reglas ?? REGLAS;
     let reglas = guardadas;
     let ajustadas: typeof guardadas | undefined;
@@ -323,8 +330,8 @@ export class Servicio {
    * versión nueva. No cambia sus solicitudes: devuelve las normalizadas y quien llama las asigna. Trae los avisos
    * de `calcular`; para solo consultar, sin tocar la cotización, está `calcular`.
    */
-  private recalcular(q: Cotizacion) {
-    const { solicitudes, incompletos, montos, descuento, reglas, avisos } = this.calcular(q);
+  private recalcular(q: Cotizacion, congelados?: ReadonlyMap<number, Producto>) {
+    const { solicitudes, incompletos, montos, descuento, reglas, avisos } = this.calcular(q, congelados);
     q.incompletos = incompletos;
     if (reglas) q.reglas = reglas;
     q.descuento = descuento;
@@ -618,6 +625,58 @@ export class Servicio {
     return avisos;
   }
 
+  /**
+   * Avisos de recotización para las acciones que mueven, quitan o suman ítems (quitar, reordenar, agregar,
+   * duplicar, deshacer): las líneas se comparan por la identidad del ítem, no por su posición, que cambia. Un
+   * ítem que nadie tocó y cambió de precio por el catálogo vigente se avisa (auditoría BUG-012 y 2026-11, N-12).
+   */
+  private avisosPreciosPorId(previa: Pick<Cotizacion, 'solicitudes' | 'montos'>, destino: Cotizacion) {
+    const antes = new Map<string, { codigo: string; precio: number }>();
+    for (const l of previa.montos.lineas) {
+      const id = l.indice === null ? undefined : previa.solicitudes[l.indice]?.id;
+      if (id) antes.set(id, { codigo: l.producto.codigo, precio: l.precioUnitario });
+    }
+    const avisos: string[] = [];
+    for (const l of destino.montos.lineas) {
+      const id = l.indice === null ? undefined : destino.solicitudes[l.indice]?.id;
+      const a = id ? antes.get(id) : undefined;
+      if (!a || a.codigo !== l.producto.codigo || a.precio === l.precioUnitario) continue;
+      avisos.push(
+        `El precio unitario de ${l.producto.codigo} cambió de ${pesos(a.precio)} a ${pesos(l.precioUnitario)} según el catálogo vigente.`,
+      );
+    }
+    return avisos;
+  }
+
+  /** Duplica un ítem justo debajo, con todos sus datos; la copia recibe identidad propia y se edita aparte. */
+  private duplicarItem(accion: Extract<Accion, { tipo: 'duplicar_item' }>) {
+    return this.almacen.transaccion((u): Resultado => {
+      const q = this.obtener(u, accion.id);
+      this.exigirEditable(q);
+      this.verificarVersion(q, accion.actualizada);
+      if (!q.solicitudes[accion.indice]) throw new ErrorNoEncontrado('No se encontró el ítem.');
+      if (q.solicitudes.length >= 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
+      const previa = { solicitudes: structuredClone(q.solicitudes), montos: structuredClone(q.montos) };
+      const destino = this.abrirEdicion(q, u);
+      const descuentoAntes = descuentoDe(destino);
+      const copia = structuredClone(destino.solicitudes[accion.indice]);
+      delete copia.id;
+      destino.solicitudes.splice(accion.indice + 1, 0, copia);
+      const { avisos, solicitudes } = this.recalcular(destino);
+      destino.solicitudes = solicitudes;
+      u.guardar(destino);
+      const cambios = this.cambios(previa.solicitudes, destino.solicitudes, q.cliente, destino.cliente);
+      u.registrarEvento(
+        destino.id,
+        'modificada',
+        this.autor,
+        textoCambios(cambios, [`Se duplicó el ítem ${accion.indice + 1}`, ...cambioDescuento(descuentoAntes, destino)]),
+      );
+      const todos = [...avisos, ...this.avisosPreciosPorId(previa, destino)];
+      return { cotizacion: destino, ...(cambios ? { cambios } : {}), ...(todos.length ? { avisos: todos } : {}) };
+    });
+  }
+
   async ejecutar(accion: Accion): Promise<Resultado> {
     switch (accion.tipo) {
       case 'chat':
@@ -743,10 +802,13 @@ export class Servicio {
           this.verificarVersion(q, accion.actualizada);
           if (!q.solicitudes[accion.indice]) throw new ErrorNoEncontrado('No se encontró el ítem.');
           const antes = structuredClone(q.solicitudes);
+          const previa = { solicitudes: antes, montos: structuredClone(q.montos) };
           const destino = this.abrirEdicion(q, u);
           const descuentoAntes = descuentoDe(destino);
           destino.solicitudes.splice(accion.indice, 1);
-          destino.solicitudes = this.recalcular(destino).solicitudes;
+          const calculo = this.recalcular(destino);
+          destino.solicitudes = calculo.solicitudes;
+          const avisos = [...calculo.avisos, ...this.avisosPreciosPorId(previa, destino)];
           u.guardar(destino);
           const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
           u.registrarEvento(
@@ -755,10 +817,12 @@ export class Servicio {
             this.autor,
             textoCambios(cambios, cambioDescuento(descuentoAntes, destino)),
           );
-          return { cotizacion: destino, ...(cambios ? { cambios } : {}) };
+          return { cotizacion: destino, ...(cambios ? { cambios } : {}), ...(avisos.length ? { avisos } : {}) };
         });
       case 'reordenar':
         return this.reordenar(accion);
+      case 'duplicar_item':
+        return this.duplicarItem(accion);
       case 'restaurar_items':
         return this.restaurarItems(accion);
       case 'editar':
@@ -959,17 +1023,30 @@ export class Servicio {
   }
 
   /** Suma un ítem al final de la cotización (o de un borrador nuevo) y registra el cambio. */
-  private agregarItem(u: Unidad, accion: { id?: string; actualizada?: string }, item: SolicitudItem): Resultado {
-    const q = accion.id ? this.obtener(u, accion.id) : this.nueva();
+  private agregarItem(
+    u: Unidad,
+    accion: { id?: string; actualizada?: string; nuevoId?: string },
+    item: SolicitudItem,
+  ): Resultado {
+    // Un reintento del primer producto (doble clic, red lenta) con el mismo `nuevoId` devuelve el borrador ya
+    // creado en vez de abrir otro (auditoría BUG-047 y 2026-11, N-27).
+    if (!accion.id && accion.nuevoId) {
+      const previo = u.obtener(accion.nuevoId);
+      if (previo) return { cotizacion: previo };
+    }
+    const q = accion.id ? this.obtener(u, accion.id) : this.nueva(accion.nuevoId);
     this.exigirEditable(q);
     if (accion.id) this.verificarVersion(q, accion.actualizada!);
     if (q.solicitudes.length >= 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
     const antes = structuredClone(q.solicitudes);
+    const previa = { solicitudes: antes, montos: structuredClone(q.montos) };
     const destino = this.abrirEdicion(q, u);
     const descuentoAntes = descuentoDe(destino);
     destino.solicitudes.push(item);
-    const { avisos, solicitudes } = this.recalcular(destino);
+    const calculo = this.recalcular(destino);
+    const solicitudes = calculo.solicitudes;
     destino.solicitudes = solicitudes;
+    const avisos = [...calculo.avisos, ...this.avisosPreciosPorId(previa, destino)];
     const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
     u.guardar(destino);
     const referencias = item.referencias?.length
@@ -997,14 +1074,17 @@ export class Servicio {
       ) throw new ErrorNoEncontrado('No se encontró la posición del ítem.');
       if (accion.desde === accion.hasta) return { cotizacion: q };
       const antes = structuredClone(q.solicitudes);
+      const previa = { solicitudes: antes, montos: structuredClone(q.montos) };
       const destino = this.abrirEdicion(q, u);
       const [item] = destino.solicitudes.splice(accion.desde, 1);
       destino.solicitudes.splice(accion.hasta, 0, item);
-      destino.solicitudes = this.recalcular(destino).solicitudes;
+      const calculo = this.recalcular(destino);
+      destino.solicitudes = calculo.solicitudes;
+      const avisos = [...calculo.avisos, ...this.avisosPreciosPorId(previa, destino)];
       u.guardar(destino);
       const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
       u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, ['Se reordenaron los productos']));
-      return { cotizacion: destino, ...(cambios ? { cambios } : {}) };
+      return { cotizacion: destino, ...(cambios ? { cambios } : {}), ...(avisos.length ? { avisos } : {}) };
     });
   }
 
@@ -1016,14 +1096,16 @@ export class Servicio {
       this.verificarVersion(q, accion.actualizada);
       if (accion.items.length > 100) throw new ErrorUsuario('Una cotización admite hasta 100 productos.');
       const antes = structuredClone(q.solicitudes);
+      const previa = { solicitudes: antes, montos: structuredClone(q.montos) };
       const destino = this.abrirEdicion(q, u);
       destino.solicitudes = accion.items.map((item) => {
         const limpio = sanearTextos(structuredClone(item));
         if (limpio.referencias) limpio.referencias = sanearReferencias(this.almacen.directorio, limpio.referencias);
         return limpio;
       });
-      const { avisos, solicitudes } = this.recalcular(destino);
-      destino.solicitudes = solicitudes;
+      const calculo = this.recalcular(destino);
+      destino.solicitudes = calculo.solicitudes;
+      const avisos = [...calculo.avisos, ...this.avisosPreciosPorId(previa, destino)];
       u.guardar(destino);
       const cambios = this.cambios(antes, destino.solicitudes, q.cliente, destino.cliente);
       u.registrarEvento(destino.id, 'modificada', this.autor, textoCambios(cambios, ['Se restauró el estado de los productos']));
@@ -2235,7 +2317,11 @@ export class Servicio {
         if (!cambios.length) return { listo: q };
         const copia = structuredClone(q);
         copia.solicitudes = solicitudes;
-        const calculo = this.recalcular(copia);
+        // Lo aprobado no se vuelve a cotizar con el catálogo de hoy (auditoría 2026-11, N-01).
+        const aprobados = new Map(
+          q.montos.lineas.flatMap((l) => (l.indice === null ? [] : [[l.indice, l.producto] as const])),
+        );
+        const calculo = this.recalcular(copia, aprobados);
         copia.solicitudes = calculo.solicitudes;
         // Una aprobada no puede quedar con un ítem sin precio: la nota y el cobro quedarían incompletos.
         if (copia.incompletos.length)
@@ -2249,7 +2335,11 @@ export class Servicio {
             copia.montos.lineas.filter((l) => l.indice !== null && copia.solicitudes[l.indice]?.fabrica === nota.fabrica),
           ),
         }));
-        return { listo: null, copia, afectadas, avisos: [...avisos, ...calculo.avisos], cambios, version: q.actualizada };
+        const avisoTotal =
+          copia.montos.total !== q.montos.total
+            ? [`El total de la cotización pasa de ${pesos(q.montos.total)} a ${pesos(copia.montos.total)}.`]
+            : [];
+        return { listo: null, copia, afectadas, avisos: [...avisos, ...calculo.avisos, ...avisoTotal], cambios, version: q.actualizada };
       },
     );
     if (preparado.listo) return { cotizacion: preparado.listo };

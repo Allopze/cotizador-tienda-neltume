@@ -326,6 +326,8 @@ describe('Plantillas', () => {
     expect(texto).not.toContain('Medida solicitada');
     expect(texto).not.toContain('(Vano)');
     expect(texto).toContain('Puerta con cerradura');
+    // El nombre escrito a mano no lleva la medida: se imprime aparte, sin hoja ni vano (auditoría 2026-11, N-13).
+    expect(veces(texto, 'Medida: 0,835 × 2,00 m')).toBe(1);
     expect(texto).toContain('Observación: Abre hacia adentro');
     // Sin descripción escrita, el nombre es el producto con la medida pedida, no el rango del catálogo.
     expect(veces(texto, 'Molco Pino Oregon 0,835 m × 2,00 m')).toBe(1);

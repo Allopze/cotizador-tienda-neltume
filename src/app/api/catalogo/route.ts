@@ -19,7 +19,10 @@ import { leerConfiguracionNegocio } from '@/servidor/configuracion-negocio';
 import type { Producto } from '@/catalogo/tipos';
 import { ORIGENES_CATALOGO, type OrigenCatalogo } from '@/catalogo/origenes';
 import type { LLM } from '@/asistente/llm';
-import { margenProducto } from '@/negocio/precios';
+import { margenProducto, precioConMargen } from '@/negocio/precios';
+import { describirBusqueda, filtrarCatalogo, interpretarBusqueda } from '@/catalogo/busqueda';
+import { modeloDelCatalogo } from '@/catalogo/resolver';
+import { nombreProducto } from '@/app/formato';
 import { rangoMedidas } from '@/negocio/limites';
 
 export const runtime = 'nodejs';
@@ -80,6 +83,24 @@ const peticionSchema = z.discriminatedUnion('tipo', [
     })
     .strict(),
   z.object({ tipo: z.literal('eliminar'), codigo }).strict(),
+  // Vista por modelo: duplicar uno para crear otro parecido y renombrar uno agregado a mano.
+  z.object({ tipo: z.literal('listar_modelos') }).strict(),
+  z
+    .object({
+      tipo: z.literal('duplicar_modelo'),
+      origen: z.string().trim().min(1).max(100),
+      nombre: z.string().trim().min(1).max(100),
+      maderas: z.array(z.string().trim().min(1).max(80)).max(30).nullable().optional(),
+      factor: z.number().finite().min(0.5).max(3),
+    })
+    .strict(),
+  z
+    .object({
+      tipo: z.literal('renombrar_modelo'),
+      anterior: z.string().trim().min(1).max(100),
+      nombre: z.string().trim().min(1).max(100),
+    })
+    .strict(),
   // Papelera de productos agregados a mano.
   z.object({ tipo: z.literal('listar_eliminados') }).strict(),
   z.object({ tipo: z.literal('restaurar'), codigo }).strict(),
@@ -117,13 +138,33 @@ export async function GET(req: Request) {
   try {
     const catalogo = await cargarCatalogo();
     const consulta = normalizarTexto(filtros.data.q ?? '');
-    const terminos = terminosBusquedaCatalogo(filtros.data.q ?? '');
     const manuales = new Set(catalogo.listarManuales().map((p) => p.codigo));
-    const coinciden = catalogo.todos().filter((p) => {
-      if (filtros.data.familia && p.familia !== filtros.data.familia) return false;
-      const texto = textoBusquedaCatalogo([p.codigo, p.modelo, p.madera, p.tipo, p.medida, p.descripcion]);
-      return coincideBusquedaCatalogo(texto, terminos);
-    });
+    const todos = catalogo.todos().filter((p) => !filtros.data.familia || p.familia === filtros.data.familia);
+    // Primero el código exacto (quien escribe «RAN-O-3-B» busca ese); después, la búsqueda interpretada con las
+    // reglas del asistente (alias, tolerancia, medidas dentro del tramo; auditoría 2026-11, N-07).
+    const porTexto = (p: Producto, libres: string[]) =>
+      coincideBusquedaCatalogo(
+        textoBusquedaCatalogo([p.codigo, p.modelo, p.madera, p.tipo, p.medida, p.descripcion]),
+        terminosBusquedaCatalogo(libres.join(' ')),
+      );
+    const exacto = consulta ? todos.filter((p) => normalizarTexto(p.codigo) === consulta) : [];
+    let interpretada = interpretarBusqueda(filtros.data.q ?? '', catalogo);
+    let coinciden = exacto.length ? exacto : filtrarCatalogo(todos, interpretada, porTexto);
+    let sugerida: string | null = null;
+    if (!coinciden.length && interpretada.sugerencia) {
+      // «ranko»: se muestra lo de Ranco y se dice que se interpretó así.
+      const conSugerencia = {
+        ...interpretada,
+        modelo: interpretada.sugerencia,
+        libres: interpretada.libres.filter((p) => modeloDelCatalogo(catalogo, p).posible !== interpretada.sugerencia),
+      };
+      const alternativa = filtrarCatalogo(todos, conSugerencia, porTexto);
+      if (alternativa.length) {
+        coinciden = alternativa;
+        sugerida = interpretada.sugerencia;
+        interpretada = conSugerencia;
+      }
+    }
     // Orden de lectura, no de código: modelo, madera, alto y luego ancho («CAL-O-1-B» no va tras «CAL-O-9-A»).
     const orden = new Intl.Collator('es-CL', { numeric: true, sensitivity: 'base' });
     const familia = (f: string) => {
@@ -148,9 +189,30 @@ export async function GET(req: Request) {
         orden.compare(a.medida, b.medida),
     );
     const reglas = leerConfiguracionNegocio(abrirBaseDatos()).reglas;
+    // Resumen por modelo y madera: con muchos resultados, la pantalla muestra estos grupos para elegir.
+    const grupos = new Map<string, { modelo: string; madera: string; familia: string; total: number; anchoMin: number | null; anchoMax: number | null; altoMin: number; altoMax: number }>();
+    for (const p of coinciden) {
+      const clave = `${p.modelo}|${p.madera}`;
+      const g = grupos.get(clave);
+      const altoMin = p.altoMin ?? p.largo,
+        altoMax = p.altoMax ?? p.largo;
+      if (!g)
+        grupos.set(clave, { modelo: p.modelo, madera: p.madera, familia: p.familia, total: 1, anchoMin: p.anchoMin, anchoMax: p.anchoMax, altoMin, altoMax });
+      else {
+        g.total++;
+        if (p.anchoMin !== null) g.anchoMin = g.anchoMin === null ? p.anchoMin : Math.min(g.anchoMin, p.anchoMin);
+        if (p.anchoMax !== null) g.anchoMax = g.anchoMax === null ? p.anchoMax : Math.max(g.anchoMax, p.anchoMax);
+        g.altoMin = Math.min(g.altoMin, altoMin);
+        g.altoMax = Math.max(g.altoMax, altoMax);
+      }
+    }
+    const lectura = consulta ? describirBusqueda(interpretada, nombreProducto) : '';
     return Response.json(
       {
         total: coinciden.length,
+        interpretacion: lectura || null,
+        sugerencia: sugerida,
+        grupos: [...grupos.values()].slice(0, 60),
         productos: coinciden.slice(0, MAX_RESULTADOS).map((p) => ({
           codigo: p.codigo,
           modelo: p.modelo,
@@ -164,7 +226,8 @@ export async function GET(req: Request) {
           altoMin: p.altoMin ?? null,
           altoMax: p.altoMax ?? null,
           descripcion: p.descripcion,
-          unitario: Math.round(p.precioNeto * (1 + margenProducto(p, reglas))),
+          // La misma fórmula que la cotización (auditoría BUG-034 y 2026-11, H16).
+          unitario: precioConMargen(p.precioNeto, margenProducto(p, reglas)),
           manual: manuales.has(p.codigo),
         })),
       },
@@ -209,11 +272,28 @@ export async function POST(req: Request) {
         },
         { status: 403, headers: sinCache },
       );
+    if ((peticion.tipo === 'duplicar_modelo' || peticion.tipo === 'renombrar_modelo') && sesion.usuario.rol !== 'admin')
+      return Response.json(
+        { error: 'Solo quien administra el catálogo puede crear o renombrar modelos.', codigo: 'sin_permiso' },
+        { status: 403, headers: sinCache },
+      );
     if (peticion.tipo === 'volver_planilla' && sesion.usuario.rol !== 'admin')
       return Response.json(
         { error: 'Solo quien administra puede importar el catálogo.', codigo: 'sin_permiso' },
         { status: 403, headers: sinCache },
       );
+    if (peticion.tipo === 'listar_modelos')
+      return Response.json({ modelos: catalogo.listarModelos() }, { headers: sinCache });
+    if (peticion.tipo === 'duplicar_modelo')
+      return Response.json(
+        catalogo.duplicarModelo(
+          { origen: peticion.origen, nombre: peticion.nombre, maderas: peticion.maderas ?? null, factor: peticion.factor },
+          usuarioId,
+        ),
+        { headers: sinCache },
+      );
+    if (peticion.tipo === 'renombrar_modelo')
+      return Response.json(catalogo.renombrarModelo(peticion.anterior, peticion.nombre), { headers: sinCache });
     if (peticion.tipo === 'listar_manuales')
       return Response.json({ productos: catalogo.listarManuales() }, { headers: sinCache });
     if (peticion.tipo === 'listar_productos')

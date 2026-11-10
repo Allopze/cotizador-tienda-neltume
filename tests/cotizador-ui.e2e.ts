@@ -4,7 +4,7 @@ import { iniciarSesion } from './login-e2e';
 async function agregarPuerta(page: Page, cantidad = 3, ancho = '0.8') {
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
-  await dialogo.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
+  await dialogo.getByLabel('Busca por modelo, madera, medida o código').fill('HUIL-O-3-B');
   await dialogo.locator('.producto-resultados button').first().click();
   await dialogo.getByLabel('Cantidad', { exact: true }).fill(String(cantidad));
   await dialogo.getByLabel('Ancho (m)', { exact: true }).fill(ancho);
@@ -177,7 +177,7 @@ test('móvil: resuelve hoja o vano en la línea y revisa las medidas antes de em
   await page.getByRole('button', { name: 'Cotización', exact: true }).click();
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const producto = page.getByRole('dialog', { name: 'Agregar producto' });
-  await producto.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
+  await producto.getByLabel('Busca por modelo, madera, medida o código').fill('HUIL-O-3-B');
   await producto.locator('.producto-resultados button').first().click();
   await producto.getByLabel('Ancho (m)', { exact: true }).fill('0.82');
   await producto.getByRole('button', { name: 'Agregar al pedido' }).click();
@@ -196,4 +196,21 @@ test('móvil: resuelve hoja o vano en la línea y revisa las medidas antes de em
   await confirmar.getByRole('button', { name: 'Cancelar' }).click();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/cotizador-mobile-medida.png' });
+});
+
+test('el razonamiento del asistente se elige junto al chat, viaja con el mensaje y se recuerda', async ({ page }) => {
+  await iniciarSesion(page);
+  const compositor = page.locator('form.composer');
+  const selector = compositor.getByLabel('Razonamiento');
+  await expect(selector).toBeVisible();
+  await expect(selector).toHaveValue('high');
+  await selector.selectOption('medium');
+  const peticion = page.waitForRequest(
+    (r) => r.url().endsWith('/api/accion') && r.method() === 'POST' && r.postDataJSON()?.tipo === 'chat',
+  );
+  await compositor.getByLabel('Escribe tu pedido').fill('2 Molco lenga de 80x200');
+  await compositor.getByRole('button', { name: 'Enviar mensaje' }).click();
+  expect((await peticion).postDataJSON().razonamiento).toBe('medium');
+  await page.reload();
+  await expect(page.locator('form.composer').getByLabel('Razonamiento')).toHaveValue('medium');
 });

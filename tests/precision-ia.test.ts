@@ -535,6 +535,32 @@ describe('servicio: anclaje en modo «avisar»', () => {
     expect(r.avisos).toEqual([expect.stringMatching(/^No registré «MOLCO» como producto: tu mensaje no lo pide/)]);
   });
 
+  it('la carga de un despacho no es un ítem libre (salida real de Haiku con razonamiento)', async () => {
+    const { servicio, llm } = await setupAvisar();
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: {
+        agregar: [
+          { ...item({ modelo: 'pallets', madera: null, ancho: null, alto: null, cantidad: 3 }), libre: true, descripcion: 'Pallets', fuente: '3 pallets' },
+        ],
+        cliente: { comuna: 'Riñihue' },
+      },
+    });
+    const r = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Necesito despacho a Riñihue para 3 pallets' });
+    expect(r.cotizacion.solicitudes).toEqual([]);
+    // Un ítem libre del pedido sí se agrega.
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: {
+        agregar: [
+          { ...item({ modelo: 'Instalación', madera: null, ancho: null, alto: null, cantidad: 1 }), libre: true, fuente: 'una instalación' },
+        ],
+      },
+    });
+    const libre = await servicio.ejecutar({ tipo: 'chat', mensaje: 'Cotiza una instalación' });
+    expect(libre.cotizacion.solicitudes.map((x) => x.modelo)).toEqual(['Instalación']);
+  });
+
   it('un despacho sin valor deja la comuna aunque la IA no la registre; con valor es un flete y no la toma', async () => {
     const { servicio, llm } = await setupAvisar();
     const pedido = { ...item({ cantidad: 2 }), fuente: '2 Molco oregón 80x200' };
@@ -554,6 +580,26 @@ describe('servicio: anclaje en modo «avisar»', () => {
       mensaje: 'Despacho a Chillán $380.000 + iva\n2 Molco oregón 80x200',
     });
     expect(conFlete.cotizacion.cliente.comuna).toBeNull();
+  });
+
+  it('el flete que la IA anota además como ítem libre «flete» queda solo como flete (salida real de GPT-6 Luna)', async () => {
+    const { servicio, llm } = await setupAvisar();
+    llm.interpretar.mockResolvedValueOnce({
+      name: 'modificar_cotizacion',
+      input: {
+        agregar: [
+          { ...item({ cantidad: 2 }), fuente: '2 molco oregón de 80x200' },
+          { ...item({ modelo: 'flete', madera: null, ancho: null, alto: null, cantidad: null }), libre: true, fuente: 'un flete a Temuco de $119.000' },
+        ],
+        flete: { descripcion: 'Flete a Temuco', cantidad: 1, valor: 119000, iva: 'incluido' },
+      },
+    });
+    const r = await servicio.ejecutar({
+      tipo: 'chat',
+      mensaje: '2 molco oregón de 80x200 y un flete a Temuco de $119.000 con iva incluido',
+    });
+    expect(r.cotizacion.solicitudes.map((x) => x.modelo)).toEqual(['MOLCO']);
+    expect(r.cotizacion.flete).toBe(100000);
   });
 
   it('una cifra que nadie escribió se anula igual que en «corregir»', async () => {

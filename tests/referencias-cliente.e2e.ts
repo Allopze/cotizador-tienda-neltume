@@ -21,7 +21,7 @@ test('producto personalizado con referencias del cliente por ítem', async ({ pa
   // Ítem 1: producto normal del catálogo, sin referencias.
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
   const dialogo = page.getByRole('dialog', { name: 'Agregar producto' });
-  await dialogo.getByLabel('Busca por modelo, madera o código').fill('HUIL-O-3-B');
+  await dialogo.getByLabel('Busca por modelo, madera, medida o código').fill('HUIL-O-3-B');
   await dialogo.locator('.producto-resultados button').first().click();
   await dialogo.getByLabel('La medida corresponde a').selectOption('hoja');
   await dialogo.getByRole('button', { name: 'Agregar al pedido' }).click();
@@ -29,14 +29,14 @@ test('producto personalizado con referencias del cliente por ítem', async ({ pa
 
   // Ítem 2: producto personalizado con la foto que mandó el cliente.
   await page.getByRole('button', { name: /Agregar producto/ }).first().click();
-  await page.getByRole('dialog', { name: 'Agregar producto' }).getByRole('button', { name: 'Crear producto personalizado' }).click();
-  const form = page.getByRole('dialog', { name: 'Producto personalizado' });
+  await page.getByRole('dialog', { name: 'Agregar producto' }).getByRole('button', { name: 'Crear producto especial' }).click();
+  const form = page.getByRole('dialog', { name: 'Producto especial' });
   await form.getByLabel('Nombre del producto').fill('Puerta según diseño cliente');
   await form.getByLabel('Madera').fill('Roble');
   await form.getByLabel('Cantidad').fill('2');
   await form.getByLabel('Ancho (m) · opcional').fill('80');
   await form.getByLabel('Alto (m) · opcional').fill('2,10');
-  await form.getByLabel('Precio unitario sin IVA ($)').fill('345.000');
+  await form.getByLabel('Precio de venta sin IVA ($)').fill('345.000');
   await form.getByLabel('Descripción para el documento · opcional').fill('Puerta sólida de roble según fotografía adjunta.');
   // Una subida lenta no deja agregar el producto a medias: quedaría sin su referencia y sin aviso.
   await page.route('**/api/referencias', async (ruta) => {
@@ -57,7 +57,7 @@ test('producto personalizado con referencias del cliente por ítem', async ({ pa
   const item1 = panel.locator('#producto-0');
   const item2 = panel.locator('#producto-1');
   await expect(item2.getByText('Puerta según diseño cliente', { exact: true })).toBeVisible();
-  await expect(item2.getByText('Personalizado · fuera de catálogo · Roble')).toBeVisible();
+  await expect(item2.getByText('Producto especial · fuera de catálogo · Roble')).toBeVisible();
   await expect(item2.locator('.referencia-tarjeta')).toHaveCount(1);
   await expect(item2.locator('.referencia-miniatura img')).toBeVisible();
   // El ítem del catálogo solo ofrece la acción compacta.

@@ -279,7 +279,7 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
               <tr>
                 <th scope="col">Producto / código</th>
                 <th scope="col">Medida</th>
-                <th scope="col">Precio base sin IVA</th>
+                <th scope="col">Costo de fábrica sin IVA</th>
                 <th scope="col">
                   <span className="sr-only">Acciones</span>
                 </th>
@@ -295,7 +295,7 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
                     </small>
                   </td>
                   <td data-etiqueta="Medida">{medidaProducto(p)}</td>
-                  <td data-etiqueta="Precio base sin IVA">{pesos(p.precioNeto)}</td>
+                  <td data-etiqueta="Costo de fábrica sin IVA">{pesos(p.precioNeto)}</td>
                   <td className="celda-acciones">
                     <button
                       type="button"
@@ -348,7 +348,7 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
                   <tr>
                     <th scope="col">Producto / código</th>
                     <th scope="col">Medida</th>
-                    <th scope="col">Precio base sin IVA</th>
+                    <th scope="col">Costo de fábrica sin IVA</th>
                     <th scope="col">
                       <span className="sr-only">Acciones</span>
                     </th>
@@ -369,7 +369,7 @@ export function GestionManuales({ avisar }: { avisar: Avisar }) {
                         )}
                       </td>
                       <td data-etiqueta="Medida">{medidaProducto(p)}</td>
-                      <td data-etiqueta="Precio base sin IVA">{pesos(p.precioNeto)}</td>
+                      <td data-etiqueta="Costo de fábrica sin IVA">{pesos(p.precioNeto)}</td>
                       <td className="celda-acciones">
                         <button
                           type="button"
@@ -488,7 +488,7 @@ function EditorProducto({
         )}
         <div className="alta-campos">
           <div className="alta-campo">
-            <span id={`${uid}-familia-label`}>Familia</span>
+            <span id={`${uid}-familia-label`}>Tipo de producto</span>
             <SelectorFamilia
               id={`${uid}-familia-label`}
               value={valores.familia}
@@ -500,7 +500,7 @@ function EditorProducto({
           </div>
           {campo('modelo', 'Modelo')}
           {campo('madera', 'Madera')}
-          {campo('tipo', 'Tipo (opcional)')}
+          {campo('tipo', 'Estilo (opcional)', { ayuda: 'Solo informativo. Si dice «prepintada» o «enchapada», cambia la ganancia.' })}
           {campo('medida', puerta ? 'Medida (texto)' : 'Medida o escuadría', puerta ? undefined : { ayuda: 'Escuadría: grosor por ancho de la pieza.' })}
           {puerta && campo('anchoMin', 'Ancho mínimo', { numero: true, ayuda: 'En metros (0,80), centímetros (80 cm) o milímetros (800 mm).' })}
           {puerta && campo('anchoMax', 'Ancho máximo', { numero: true })}
@@ -519,7 +519,7 @@ function EditorProducto({
               numero: true,
               ayuda: `En metros (2,10), centímetros (210 cm) o milímetros (2100 mm), ${textoRangoMedida('alto', valores.familia)}.`,
             })}
-          {campo('precio', 'Precio base sin IVA', { numero: true, ayuda: 'Costo de fábrica, sin la ganancia de venta.' })}
+          {campo('precio', 'Costo de fábrica sin IVA', { numero: true, ayuda: 'Costo de fábrica, sin la ganancia de venta.' })}
           {campo('descripcion', 'Descripción', { ancho: true, ayuda: 'Es el texto que aparece en la cotización y el PDF.' })}
         </div>
         {error && (

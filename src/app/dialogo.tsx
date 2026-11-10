@@ -32,6 +32,7 @@ function DialogoAbierto({
   alerta,
 }: Omit<Props, 'abierto'>) {
   const ref = useRef<HTMLDialogElement>(null);
+  const abiertoEn = useRef(0);
   const idTitulo = useId();
   const estado = useRef({ cerrable, alCerrar });
   useEffect(() => {
@@ -42,6 +43,7 @@ function DialogoAbierto({
     if (!d) return;
     const previo = document.activeElement as HTMLElement | null;
     if (!d.open) d.showModal();
+    abiertoEn.current = performance.now();
     focoInicial?.current?.focus();
     document.documentElement.classList.add('con-dialogo');
     return () => {
@@ -70,6 +72,8 @@ function DialogoAbierto({
       }}
       onClick={(e) => {
         e.stopPropagation();
+        // El segundo clic de un doble clic en el botón que lo abrió cae en el fondo: no lo cierra (QA 2026-11, H-09).
+        if (performance.now() - abiertoEn.current < 400) return;
         if (e.target === e.currentTarget && estado.current.cerrable) estado.current.alCerrar();
       }}
     >
