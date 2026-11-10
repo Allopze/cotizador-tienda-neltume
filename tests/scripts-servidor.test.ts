@@ -479,7 +479,7 @@ describe('compose.yaml y .dockerignore', () => {
     recorrer('src');
     recorrer('scripts');
     // Solo pruebas, desarrollo o comandos que no corren en el contenedor del servidor. NEXT_RUNTIME la pone Next.
-    for (const fuera of ['NELTUME_TEST_MODE', 'NELTUME_E2E_WORKERS', 'NELTUME_LLM', 'NELTUME_STARKEN', 'TEST', 'NELTUME_PLANILLA', 'NELTUME_CATALOGO', 'NEXT_RUNTIME'])
+    for (const fuera of ['NELTUME_TEST_MODE', 'NELTUME_E2E_WORKERS', 'NELTUME_E2E_PORT_BASE', 'NELTUME_LLM', 'NELTUME_STARKEN', 'TEST', 'NELTUME_PLANILLA', 'NELTUME_CATALOGO', 'NEXT_RUNTIME'])
       encontradas.delete(fuera);
     return [...encontradas].sort();
   }

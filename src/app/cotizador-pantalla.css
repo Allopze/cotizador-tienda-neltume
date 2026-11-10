@@ -166,6 +166,16 @@
   font-size: 1rem;
   line-height: 1;
 }
+.move-item:hover:not(:disabled) {
+  border-color: var(--line-strong);
+  background: var(--tonal, var(--panel));
+}
+.move-item:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.duplicar-item svg {
+  display: block;
+}
 .move-item:disabled {
   opacity: 0.38;
   cursor: not-allowed;
@@ -488,14 +498,14 @@
   color: var(--pending);
   background: var(--amber-bg);
 }
-.pantalla-cotizador.con-pedido .avisos {
-  bottom: 140px;
-}
 /* En Cotizar los avisos van arriba, bajo la cabecera: abajo tapaban «Fecha del pago» y «Registrar pago»
-   (auditoría BUG-058). */
-.pantalla-cotizador .avisos {
+   (auditoría BUG-058). Con pedido también: una regla vieja les fijaba además `bottom` y el aviso se estiraba a
+   toda la altura, tapando cantidades, precios y botones de las líneas (auditoría 2026-11, N-29). */
+.pantalla-cotizador .avisos,
+.pantalla-cotizador.con-pedido .avisos {
   top: 84px;
   bottom: auto;
+  align-content: start;
 }
 .cotizador-vistas {
   display: none;
@@ -800,9 +810,6 @@
   .pantalla-cotizador.con-pedido {
     padding-bottom: 200px;
   }
-  .pantalla-cotizador.con-pedido .avisos {
-    bottom: 190px;
-  }
 }
 @media (max-width: 520px) {
   .pantalla-cotizador .quote-panel {
@@ -1038,4 +1045,306 @@ html:has(.pantalla-cotizador.con-pedido) {
 }
 .producto-personalizado .item-referencias-agregar {
   justify-self: start;
+}
+
+/* «Agregar y seguir»: va a la izquierda del principal, pero después en el documento (Enter usa el principal). */
+.dialogo-acciones .antes {
+  order: -1;
+}
+/* Lo agregado sin cerrar el diálogo: una franja breve sobre la búsqueda, con la salida a la cotización. */
+.productos-agregados {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--accent-line);
+  border-radius: 8px;
+  background: var(--pale);
+}
+.productos-agregados p {
+  margin: 0;
+  color: var(--ink);
+  font-size: var(--fs-md);
+  line-height: 1.45;
+}
+@media (max-width: 520px) {
+  .productos-agregados {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Convertir una línea del catálogo en producto especial, conservando su precio. */
+.convertir-especial {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+.convertir-especial p {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  max-width: 62ch;
+}
+.convertir-especial .button {
+  flex: none;
+}
+@media (max-width: 520px) {
+  .convertir-especial {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+/* Cómo se leyó la búsqueda: confirma que el buscador entendió como el asistente (alias, medidas). */
+.lectura-busqueda {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.lectura-busqueda strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+/* Modelos en cada madera: primero se elige el modelo, después la medida. */
+.grupos-busqueda {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  max-height: 45vh;
+  overflow-y: auto;
+}
+.grupos-busqueda li + li {
+  border-top: 1px solid var(--line-soft);
+}
+.grupos-busqueda button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 14px 12px;
+  border: 0;
+  background: var(--surface);
+  text-align: left;
+}
+.grupos-busqueda button:hover {
+  background: var(--pale);
+}
+.grupos-busqueda button > span:first-child {
+  display: grid;
+  gap: 5px;
+}
+.grupos-busqueda small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.grupos-busqueda-total {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-variant-numeric: tabular-nums;
+}
+.grupos-consulta {
+  margin: 12px 0;
+}
+.grupos-consulta > summary {
+  cursor: pointer;
+  color: var(--green);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.grupos-consulta .grupos-busqueda {
+  max-height: 320px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+
+/* Aviso en el alta desde un pendiente: lo creado queda para todas las cotizaciones. */
+.aviso-permanente {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: var(--amber-bg);
+  color: var(--amber-text);
+  font-size: var(--fs-md);
+  line-height: 1.55;
+}
+
+.catalog-success-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 9px;
+}
+
+/* Advertencia junto a un campo cuyo cambio tiene efectos fuera de la pantalla (código de madera). */
+.campo-aviso {
+  display: block;
+  margin-top: 6px;
+  color: var(--pending);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+/* «Todas de hoja / todas de vano»: una sola confirmación para un pedido con varias puertas. */
+.measure-choice-todas {
+  flex-basis: 100%;
+  color: var(--amber-text);
+  font-size: var(--fs-sm);
+}
+.measure-choice .measure-choice-todas .link {
+  flex: none;
+  min-height: 32px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--green);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.measure-choice .measure-choice-todas .link:hover:not(:disabled) {
+  background: none;
+  color: var(--green-hover);
+}
+
+/* Modo cliente: lo interno (costo de fábrica, ganancia) no se ve mientras se atiende con la pantalla girada. */
+.modo-cliente .precio-trazabilidad,
+.modo-cliente .margen-linea,
+.modo-cliente .margen-cotizacion,
+.modo-cliente .margen-manual,
+.modo-cliente .costo-interno {
+  display: none !important;
+}
+.modo-cliente-interruptor[aria-pressed='true'] {
+  background: var(--green);
+  border-color: var(--green);
+  color: #fff;
+}
+
+.espera-asistente {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+
+/* Catálogo → Modelos: una ficha por modelo con sus maderas; las medidas sueltas quedan por debajo. */
+.modelos-lista {
+  display: grid;
+  gap: 0;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line);
+}
+.modelo-ficha {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr) auto;
+  gap: 8px 24px;
+  align-items: start;
+  padding: 16px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.modelo-ficha-cabeza h3 {
+  margin: 0;
+  font-family: var(--serif);
+  font-size: var(--serif-3);
+  font-weight: 500;
+  color: var(--ink);
+}
+.modelo-ficha-meta {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.modelo-maderas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.modelo-maderas li {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  font-size: var(--fs-sm);
+}
+.modelo-maderas small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+.modelo-ficha-acciones {
+  display: flex;
+  gap: 8px;
+}
+.duplicar-modelo {
+  display: grid;
+  gap: 16px;
+}
+.duplicar-modelo .alta-campo {
+  display: grid;
+  gap: 6px;
+}
+.duplicar-modelo .alta-campo small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.duplicar-maderas {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.duplicar-maderas legend {
+  padding: 0 4px;
+  font-weight: 600;
+}
+.duplicar-maderas label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+}
+.duplicar-maderas small {
+  color: var(--muted);
+}
+.duplicar-resumen {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--pale);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+@media (max-width: 760px) {
+  .modelo-ficha {
+    grid-template-columns: 1fr;
+  }
+}
+.duplicar-maderas input[type='checkbox'] {
+  accent-color: var(--green);
 }

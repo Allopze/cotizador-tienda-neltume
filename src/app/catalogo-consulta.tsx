@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { pesos } from '@/negocio/precios';
-import type { ProductoConsulta } from './contrato';
+import Link from 'next/link';
+import type { RespuestaConsulta } from './contrato';
+import { GruposBusqueda, LecturaBusqueda } from './lectura-busqueda';
 import { medidaProducto, nombreProducto, sinMedida } from './formato';
 import { guardarSesion, leerSesion } from './memoria-pantalla';
 import { SelectorFamilia } from './selector-familia';
@@ -32,7 +34,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
     guardarSesion('catalogo:q', q);
     guardarSesion('catalogo:familia', familia);
   }, [q, familia]);
-  const [datos, setDatos] = useState<{ total: number; productos: ProductoConsulta[] } | null>(null);
+  const [datos, setDatos] = useState<RespuestaConsulta | null>(null);
   const [error, setError] = useState('');
   /** Vuelve a consultar sin tocar la búsqueda: el aviso de error trae «Reintentar». */
   const [reintento, setReintento] = useState(0);
@@ -43,7 +45,7 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
       const params = new URLSearchParams();
       if (q.trim()) params.set('q', q.trim());
       if (familia) params.set('familia', familia);
-      pedirJSON<{ total: number; productos: ProductoConsulta[] }>(`/api/catalogo?${params}`, {
+      pedirJSON<RespuestaConsulta>(`/api/catalogo?${params}`, {
         signal: control.signal,
         cache: 'no-store',
       })
@@ -63,7 +65,10 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
 
   return (
     <div className="catalogo-consulta">
-      <p className="catalog-modal-intro">Busca por modelo, madera, medida o código.</p>
+      <p className="catalog-modal-intro">
+        Busca como lo dice el cliente: modelo, madera y medida («willow mara 82 210», «ranco 1 metro»). Entiende
+        los mismos nombres que el asistente.
+      </p>
       <div className="catalogo-filtros">
         <label className="sr-only" htmlFor="catalogo-buscar">
           Buscar en el catálogo
@@ -126,6 +131,18 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
         </p>
       ) : (
         <>
+          <LecturaBusqueda datos={datos} consulta={q} />
+          {datos.total > 40 && (datos.grupos?.length ?? 0) > 1 && (
+            <details className="grupos-consulta">
+              <summary>
+                Ver por modelo y madera ({datos.grupos!.length})
+              </summary>
+              <GruposBusqueda
+                grupos={datos.grupos!}
+                elegir={(g) => setQ(`${nombreProducto(g.modelo)} ${nombreProducto(g.madera)}`)}
+              />
+            </details>
+          )}
           <p className="muted" aria-live="polite">
             {datos.total > datos.productos.length
               ? `Mostrando ${datos.productos.length} de ${datos.total} productos: afina la búsqueda para ver el resto.`
@@ -138,8 +155,11 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                   <th scope="col">Producto / código</th>
                   <th scope="col">Medida</th>
                   <th scope="col">
-                    Unitario cotización
+                    Precio de venta
                     <small>costo de fábrica + ganancia, sin IVA</small>
+                  </th>
+                  <th scope="col">
+                    <span className="sr-only">Cotizar</span>
                   </th>
                 </tr>
               </thead>
@@ -161,7 +181,17 @@ export function CatalogoConsulta({ activa = true }: { activa?: boolean }) {
                       </div>
                     </td>
                     <td data-etiqueta="Medida">{medidaProducto(p)}</td>
-                    <td data-etiqueta="Unitario (costo + ganancia, sin IVA)">{pesos(p.unitario)}</td>
+                    <td data-etiqueta="Precio de venta (sin IVA)">{pesos(p.unitario)}</td>
+                    <td className="celda-acciones">
+                      {/* Lo encontrado aquí se cotiza sin volver a buscarlo (auditoría 2026-11, N-42). */}
+                      <Link
+                        className="button secondary small"
+                        href={`/?agregar=${encodeURIComponent(p.codigo)}`}
+                        aria-label={`Cotizar ${nombreProducto(p.descripcion)} (${p.codigo})`}
+                      >
+                        Cotizar
+                      </Link>
+                    </td>
                   </tr>
                 ))}
               </tbody>

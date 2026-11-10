@@ -42,7 +42,7 @@ test('gestionar: el buscador conserva el foco y lo escrito; editar abre un diál
   await fila.getByRole('button', { name: 'Editar MOL-O-1-A' }).click();
   const dialogo = page.getByRole('dialog');
   await expect(dialogo).toContainText('se reemplaza la próxima vez que importes');
-  const tipo = dialogo.getByLabel('Tipo (opcional)');
+  const tipo = dialogo.getByLabel('Estilo (opcional)');
   const original = await tipo.inputValue();
   await tipo.fill('PUERTA DE PRUEBA');
   await dialogo.getByRole('button', { name: 'Guardar cambios' }).click();
@@ -53,16 +53,16 @@ test('gestionar: el buscador conserva el foco y lo escrito; editar abre un diál
 
   // Se deja como estaba: otras pruebas cotizan este producto.
   await fila.getByRole('button', { name: 'Editar MOL-O-1-A' }).click();
-  await dialogo.getByLabel('Tipo (opcional)').fill(original);
+  await dialogo.getByLabel('Estilo (opcional)').fill(original);
   await dialogo.getByRole('button', { name: 'Guardar cambios' }).click();
   await expect(dialogo).toHaveCount(0);
 
   // Validación junto al campo, sin ir al servidor.
   await fila.getByRole('button', { name: 'Editar MOL-O-1-A' }).click();
-  await dialogo.getByLabel('Precio base sin IVA').fill('');
+  await dialogo.getByLabel('Costo de fábrica sin IVA').fill('');
   await dialogo.getByRole('button', { name: 'Guardar cambios' }).click();
-  await expect(dialogo.getByLabel('Precio base sin IVA')).toHaveAttribute('aria-invalid', 'true');
-  await expect(dialogo.getByLabel('Precio base sin IVA')).toBeFocused();
+  await expect(dialogo.getByLabel('Costo de fábrica sin IVA')).toHaveAttribute('aria-invalid', 'true');
+  await expect(dialogo.getByLabel('Costo de fábrica sin IVA')).toBeFocused();
   await dialogo.getByRole('button', { name: 'Cancelar' }).click();
 });
 
@@ -156,9 +156,9 @@ test('agregar: los datos que faltan se marcan en su campo', async ({ page }) => 
   await page.goto('/catalogo?seccion=agregar');
   await page.getByRole('button', { name: 'Revisar propuesta' }).click();
   const datos = page.getByRole('form', { name: 'Datos del producto' });
-  await expect(datos.getByRole('combobox', { name: 'Familia' })).toBeFocused();
+  await expect(datos.getByRole('combobox', { name: 'Tipo de producto' })).toBeFocused();
   await expect(datos.getByLabel('Modelo')).toHaveAttribute('aria-invalid', 'true');
-  await expect(datos.getByLabel('Precio base sin IVA')).toHaveAttribute('aria-invalid', 'true');
+  await expect(datos.getByLabel('Costo de fábrica sin IVA')).toHaveAttribute('aria-invalid', 'true');
 });
 
 test('en móvil la pestaña activa queda a la vista', async ({ browser }) => {

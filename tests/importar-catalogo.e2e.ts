@@ -75,7 +75,7 @@ test('importar: sube una planilla, la compara, la aplica y avisa lo editado a ma
     const fila = page.getByRole('row').filter({ hasText: 'HUIL-EM-085-240 ·' });
     await fila.getByRole('button', { name: 'Editar HUIL-EM-085-240' }).click();
     const editor = page.getByRole('dialog');
-    await editor.getByLabel('Precio base sin IVA').fill('110.000');
+    await editor.getByLabel('Costo de fábrica sin IVA').fill('110.000');
     await editor.getByRole('button', { name: 'Guardar cambios' }).click();
     await expect(page.getByRole('status').filter({ hasText: 'Cambios guardados en HUIL-EM-085-240' })).toBeVisible();
 

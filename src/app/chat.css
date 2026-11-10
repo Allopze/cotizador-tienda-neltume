@@ -283,6 +283,38 @@ p + .pregunta-opciones {
   display: flex;
   gap: 6px;
 }
+/* Cuánto razona el asistente: junto a Enviar, discreto; vale para el próximo mensaje. */
+.composer-razonamiento {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  font-size: var(--fs-xs);
+  color: var(--muted);
+}
+.composer-razonamiento select {
+  min-height: var(--control);
+  border: 1px solid var(--line);
+  background: var(--paper);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-sm);
+  padding: 0 8px;
+}
+.composer-razonamiento select:disabled {
+  color: var(--muted);
+}
+/* En pantallas angostas el selector y Enviar van en la misma fila: la palabra queda solo para el lector de pantalla. */
+@media (max-width: 520px) {
+  .composer-razonamiento span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
 .composer-bottom button,
 .catalog-composer button {
   min-height: var(--control);

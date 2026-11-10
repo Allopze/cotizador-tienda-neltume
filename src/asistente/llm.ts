@@ -3,7 +3,16 @@ import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { interpretarChat } from './commandcode-chat';
 import { ErrorIA, errorProveedor, errorTimeout, MENSAJE_SIN_CONFIGURAR } from './errores';
-import { esperaReintentoIA, plazoTotalIA, timeoutIA } from './configuracion';
+import {
+  esModeloClaude,
+  esperaReintentoIA,
+  plazoTotalIA,
+  razonamientoIA,
+  timeoutIA,
+  type EsfuerzoRazonamiento,
+  type NivelRazonamiento,
+} from './configuracion';
+import { posicionesDichas } from './anclaje';
 import { negociar, type OpcionesPeticion } from './opciones-peticion';
 import {
   aprobarSchema,
@@ -68,6 +77,8 @@ export interface OpcionesInterpretar {
    * primera respuesta ya registró y el reintento no trae.
    */
   revisar?: (salida: unknown) => string | { correccion: string; mensaje: string } | null;
+  /** Nivel elegido junto al chat; sin él, CMD_RAZONAMIENTO o el predeterminado (ver `razonamientoIA`). */
+  razonamiento?: NivelRazonamiento;
 }
 /**
  * Qué hace el servidor con su propia lectura del pedido, frase por frase (`anclarFrases`), y con sus atajos
@@ -107,6 +118,7 @@ Llama exactamente una herramienta.
 Todo cambio en los ítems o en los datos del cliente se registra con modificar_cotizacion, en una cotización nueva y en una anterior. Devuelve solo los cambios:
 - agregar: ítems nuevos, con todos sus campos (null en lo que no se dijo).
 - items: ítems existentes que cambian; cada entrada lleva el indice del ítem en borrador.items y, en cambios, solo los campos que cambian. null borra un dato.
+- duplicar: copias de ítems que ya están en borrador.items. Úsalo cuando el mensaje pida otra línea igual a una existente («otra igual a la primera», «duplica la Ranco», «tres iguales, pero separadas»): cada entrada lleva el indice del original, veces (cuántas copias, 1 si no lo dice) y, en cambios, solo lo que la copia tiene distinto («y que la copia sea vidriada» → cambios.observaciones "vidriada"). La copia conserva todo lo demás del original, también su precio. Nunca uses agregar para copiar un ítem existente.
 - quitar: índices de los ítems que se eliminan.
 - cliente: solo los campos que cambian.
 - flete: la línea de flete, si el mensaje la agrega o la cambia (ver Flete); null la quita.
@@ -364,7 +376,11 @@ export function problemaSalida(salida: unknown, contexto: ContextoLLM): string |
     return null;
   }
   if (res.name !== 'modificar_cotizacion') return null;
-  const indices = [...(res.input.items ?? []).map((i) => i.indice), ...(res.input.quitar ?? [])];
+  const indices = [
+    ...(res.input.items ?? []).map((i) => i.indice),
+    ...(res.input.quitar ?? []),
+    ...(res.input.duplicar ?? []).map((d) => d.indice),
+  ];
   const fuera = indices.filter((i) => i >= total);
   if (fuera.length)
     return `El índice ${fuera[0]} no existe: borrador.items tiene ${total} ítem${total === 1 ? '' : 's'} (índices desde 0). Para un ítem nuevo usa agregar.`;
@@ -381,6 +397,12 @@ export function problemaSalida(salida: unknown, contexto: ContextoLLM): string |
   for (const cambio of res.input.items ?? []) {
     const s = contexto.borrador.items[cambio.indice];
     if (!s?.modelo) continue;
+    // «la puerta 4 igual a la Molco»: la posición dicha manda sobre el modelo que se nombra como referencia.
+    const posiciones = posicionesDichas(cambio.cambios.fuente ?? contexto.mensaje);
+    if (posiciones.length) {
+      if (posiciones[0] === cambio.indice + 1) continue;
+      return `El mensaje habla de la posición ${posiciones[0]} (índice ${posiciones[0] - 1}), no del índice ${cambio.indice}: usa el índice de la posición que nombra el mensaje.`;
+    }
     const nombradosEnElCambio = nombrados(cambio.cambios.fuente ?? contexto.mensaje);
     if (nombradosEnElCambio.length && !nombradosEnElCambio.includes(s.modelo))
       return `El índice ${cambio.indice} es ${s.modelo}, pero el mensaje habla de ${nombradosEnElCambio[0]}: usa el índice del ítem que nombra el mensaje, no el orden en que aparece.`;
@@ -396,6 +418,7 @@ export function problemaSalida(salida: unknown, contexto: ContextoLLM): string |
     !editados.length &&
     !res.input.quitar?.length &&
     !res.input.agregar?.length &&
+    !res.input.duplicar?.length &&
     !Object.keys(res.input.cliente ?? {}).length &&
     res.input.flete === undefined
   )
@@ -435,6 +458,8 @@ const esperar = (ms: number) => new Promise((listo) => setTimeout(listo, ms));
 interface Consulta {
   modelo: string;
   vence: number;
+  /** Nivel elegido junto al chat; sin él, el predeterminado de cada modelo (también el de respaldo). */
+  nivel: NivelRazonamiento | null;
 }
 
 export class CommandCodeLLM implements LLM {
@@ -459,7 +484,7 @@ export class CommandCodeLLM implements LLM {
    * modelo qué corregir. La corrección va al mismo modelo que respondió y solo si queda tiempo.
    */
   async interpretar(contexto: ContextoLLM, opciones: OpcionesInterpretar = {}) {
-    const consulta = this.nuevaConsulta();
+    const consulta = this.nuevaConsulta(opciones.razonamiento);
     const primera = normalizarSalida(
       await this.consultarResiliente(consulta, contexto, SYSTEM, HERRAMIENTAS_COTIZACION),
     );
@@ -476,6 +501,7 @@ export class CommandCodeLLM implements LLM {
           SYSTEM,
           HERRAMIENTAS_COTIZACION,
           Math.min(timeoutIA(), this.restante(consulta)),
+          razonamientoIA(consulta.nivel, consulta.modelo),
         ),
       );
       // La corrección de una respuesta que ya era válida no puede dejarla inutilizable.
@@ -491,9 +517,9 @@ export class CommandCodeLLM implements LLM {
     return this.consultarResiliente(this.nuevaConsulta(), contexto, SYSTEM_ALTA_PRODUCTO, HERRAMIENTAS_PRODUCTO);
   }
 
-  private nuevaConsulta(): Consulta {
+  private nuevaConsulta(razonamiento?: NivelRazonamiento): Consulta {
     const modelo = this.modelo?.trim() || process.env.CMD_MODEL?.trim() || MODELO_COMMANDCODE_PREDETERMINADO;
-    return { modelo, vence: Date.now() + plazoTotalIA() };
+    return { modelo, vence: Date.now() + plazoTotalIA(), nivel: razonamiento ?? null };
   }
 
   private restante(consulta: Consulta) {
@@ -544,6 +570,7 @@ export class CommandCodeLLM implements LLM {
           system,
           definiciones,
           Math.min(timeoutIA(), this.restante(consulta)),
+          razonamientoIA(consulta.nivel, consulta.modelo),
         );
       } catch (error) {
         const momentaneo = error instanceof ErrorIA && MOMENTANEOS.has(error.codigo);
@@ -560,6 +587,7 @@ export class CommandCodeLLM implements LLM {
     system: string,
     definiciones: Definiciones,
     plazoMs: number,
+    esfuerzo: EsfuerzoRazonamiento | null,
   ) {
     const apiKey = this.apiKey ?? process.env.CMD_API_KEY?.trim() ?? '';
     if (!apiKey)
@@ -571,8 +599,8 @@ export class CommandCodeLLM implements LLM {
       );
     const tools = herramientas(definiciones);
     try {
-      if (!/^(anthropic\/)?claude-/.test(model)) {
-        return await interpretarChat(apiKey, model, system, contexto, tools, plazoMs);
+      if (!esModeloClaude(model)) {
+        return await interpretarChat(apiKey, model, system, contexto, tools, plazoMs, esfuerzo);
       }
       // El SDK añade /v1/messages. Proveedor fijo: no toma ANTHROPIC_BASE_URL ni sus credenciales.
       const client = new Anthropic({
@@ -582,11 +610,17 @@ export class CommandCodeLLM implements LLM {
         maxRetries: 0,
         timeout: plazoMs,
       });
-      const pedir = (opciones: OpcionesPeticion) =>
-        client.messages.create({
+      const pedir = (opciones: OpcionesPeticion) => {
+        // Con razonamiento, la temperatura no se fija y la herramienta no se fuerza (forzada, el modelo no piensa).
+        const razona = !!esfuerzo && opciones.razonamiento;
+        return client.messages.create({
           model,
           max_tokens: 8192,
-          ...(opciones.temperatura ? { temperature: 0 } : {}),
+          ...(razona
+            ? { thinking: { type: 'adaptive' as const }, output_config: { effort: esfuerzo } }
+            : opciones.temperatura
+              ? { temperature: 0 }
+              : {}),
           // Las instrucciones y las herramientas son iguales en cada mensaje: se marcan para la caché.
           system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
           tools: tools.map((t, i) => ({
@@ -594,9 +628,13 @@ export class CommandCodeLLM implements LLM {
             input_schema: t.input_schema as Anthropic.Tool.InputSchema,
             ...(i === tools.length - 1 ? { cache_control: { type: 'ephemeral' as const } } : {}),
           })),
-          tool_choice: { type: opciones.herramientaForzada ? 'any' : 'auto', disable_parallel_tool_use: true },
+          tool_choice: {
+            type: opciones.herramientaForzada && !razona ? 'any' : 'auto',
+            disable_parallel_tool_use: true,
+          },
           messages: [{ role: 'user', content: JSON.stringify(contexto) }],
         });
+      };
       // Los modelos Claude recientes rechazan tool_choice «any» (y algunos temperature): se repite sin esa opción.
       const response = await negociar(pedir, async (_, error) =>
         error instanceof Anthropic.APIError && error.status === 400 ? error.message : null,

@@ -315,7 +315,7 @@ export class ServicioAltaCatalogo {
       if (!borrador.medida) faltan.push('la medida o escuadría');
       if (borrador.largo === null) faltan.push('el largo en metros');
     }
-    if (borrador.precioNeto === null) faltan.push('el precio base sin IVA, en pesos');
+    if (borrador.precioNeto === null) faltan.push('el costo de fábrica sin IVA, en pesos');
     return faltan;
   }
 
@@ -340,7 +340,7 @@ export class ServicioAltaCatalogo {
         ? errorMedida('alto', borrador.familia)
         : `El alto o largo debe estar ${textoRangoMedida('alto', 'PUERTA')}.`;
     if (borrador.precioNeto !== null && (borrador.precioNeto <= 0 || borrador.precioNeto > 100_000_000))
-      return 'El precio base sin IVA debe ser mayor que $0 y no superar $100.000.000.';
+      return 'El costo de fábrica sin IVA debe ser mayor que $0 y no superar $100.000.000.';
     return null;
   }
 
@@ -438,7 +438,7 @@ export class ServicioAltaCatalogo {
     let avisos: string[] = [];
     if (!parsed.success) {
       respuesta =
-        'No pude identificar todos los datos. Describe el producto y agrega el precio base sin IVA (por ejemplo «precio $145.000 sin IVA»).';
+        'No pude identificar todos los datos. Describe el producto y agrega el costo de fábrica sin IVA (por ejemplo «precio $145.000 sin IVA»).';
     } else ({ propuesta, respuesta, avisos } = this.evaluar(borrador));
     if (propuesta && borrador.avisoPrecio) avisos.unshift(borrador.avisoPrecio);
     if (avisos.length) respuesta = [...avisos, respuesta].join('\n\n');

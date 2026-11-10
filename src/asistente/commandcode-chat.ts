@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { errorProveedor } from './errores';
-import { timeoutIA } from './configuracion';
+import { timeoutIA, type EsfuerzoRazonamiento } from './configuracion';
 import { negociar, type OpcionesPeticion } from './opciones-peticion';
 const respuestaSchema = z.object({
   choices: z.array(
@@ -26,16 +26,20 @@ export async function interpretarChat(
   contexto: unknown,
   tools: { name: string; description: string; input_schema: Record<string, unknown> }[],
   plazoMs: number = timeoutIA(),
+  esfuerzo: EsfuerzoRazonamiento | null = null,
 ): Promise<unknown> {
-  const pedir = (opciones: OpcionesPeticion) =>
-    fetch('https://api.commandcode.ai/provider/v1/chat/completions', {
+  const pedir = (opciones: OpcionesPeticion) => {
+    // Con razonamiento: reasoning_effort, sin temperatura y con la herramienta en «auto» (forzada, Qwen no razona).
+    // El razonamiento cuenta dentro de max_tokens: se le da más espacio para que la respuesta no quede truncada.
+    const razona = !!esfuerzo && opciones.razonamiento;
+    return fetch('https://api.commandcode.ai/provider/v1/chat/completions', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
       signal: AbortSignal.timeout(plazoMs),
       body: JSON.stringify({
         model,
-        max_tokens: 8192,
-        ...(opciones.temperatura ? { temperature: 0 } : {}),
+        max_tokens: razona ? 16384 : 8192,
+        ...(razona ? { reasoning_effort: esfuerzo } : opciones.temperatura ? { temperature: 0 } : {}),
         messages: [
           { role: 'system', content: system },
           { role: 'user', content: JSON.stringify(contexto) },
@@ -44,11 +48,12 @@ export async function interpretarChat(
           type: 'function',
           function: { name: t.name, description: t.description, parameters: t.input_schema },
         })),
-        tool_choice: opciones.herramientaForzada ? 'required' : 'auto',
+        tool_choice: opciones.herramientaForzada && !razona ? 'required' : 'auto',
         parallel_tool_calls: false,
       }),
     });
-  // Un modelo que no acepta temperature o tool_choice «required» se vuelve a pedir sin esa opción.
+  };
+  // Un modelo que no acepta temperature, tool_choice «required» o reasoning_effort se vuelve a pedir sin esa opción.
   const response = await negociar(pedir, async (r) => (r?.status === 400 ? r.clone().text() : null));
   if (!response.ok) throw errorProveedor(response.status, await cuerpoRechazo(response, apiKey));
   const parsed = respuestaSchema.safeParse(await response.json());

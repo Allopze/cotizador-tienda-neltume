@@ -3,6 +3,7 @@
 import type { Cliente, Familia, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion, Despacho, Fabrica, Mensaje } from '../negocio/estado';
 import type { TarifaStarkenAplicada } from '../negocio/starken';
+import type { NivelRazonamiento } from '../asistente/configuracion';
 import type { OpcionCotizacion } from './referencias';
 
 export type Accion =
@@ -23,9 +24,13 @@ export type Accion =
       nuevoId?: string;
       /** Intercambio previo que no generó borrador (preguntas, aprobaciones); solo contexto para la IA. */
       contexto?: Mensaje[];
+      /** Cuánto razona el modelo en este mensaje (selector junto al chat); sin él, el configurado. */
+      razonamiento?: NivelRazonamiento;
     }
   | { tipo: 'quitar'; id: string; actualizada: string; indice: number }
   | { tipo: 'reordenar'; id: string; actualizada: string; desde: number; hasta: number }
+  /** Copia un ítem con todos sus datos (precio propio, descuento, observaciones, fotos, fábrica) justo debajo. */
+  | { tipo: 'duplicar_item'; id: string; actualizada: string; indice: number }
   | { tipo: 'restaurar_borrador'; id: string; actualizada: string }
   | { tipo: 'desaprobar'; id: string; actualizada: string }
   /** Recupera un PDF perdido; el de una nota se indica con su fábrica (sin ella, la única nota). */
@@ -36,6 +41,8 @@ export type Accion =
       tipo: 'agregar_producto';
       id?: string;
       actualizada?: string;
+      /** Id que la interfaz propone para el borrador nuevo: un reintento no crea un segundo borrador. */
+      nuevoId?: string;
       codigo: string;
       cantidad: number;
       ancho?: number;
@@ -47,6 +54,7 @@ export type Accion =
       tipo: 'agregar_personalizado';
       id?: string;
       actualizada?: string;
+      nuevoId?: string;
       item: ProductoPersonalizado;
     }
   | { tipo: 'emitir'; id: string; actualizada: string; numero?: number }

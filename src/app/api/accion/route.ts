@@ -1,4 +1,5 @@
 import { ErrorIA } from '@/asistente/errores';
+import { NIVELES_RAZONAMIENTO } from '@/asistente/configuracion';
 import { z } from 'zod';
 import { Servicio, type DiagnosticoTurno } from '@/servidor/servicio';
 import { Almacen, DIAS_PAPELERA, type FiltrosListado } from '@/servidor/almacen';
@@ -121,6 +122,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       tipo: z.literal('agregar_producto'),
       id: z.uuid().optional(),
       actualizada: version.optional(),
+      nuevoId: z.uuid().optional(),
       codigo: z.string().trim().min(1).max(80),
       cantidad: z.number().int().min(1).max(10000),
       ancho: anchoMetros.optional(),
@@ -134,6 +136,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       tipo: z.literal('agregar_personalizado'),
       id: z.uuid().optional(),
       actualizada: version.optional(),
+      nuevoId: z.uuid().optional(),
       item: z
         .object({
           nombre: z.string().trim().min(1).max(300),
@@ -158,6 +161,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
     .object({
       tipo: z.literal('chat'),
       id: z.uuid().optional(),
+      razonamiento: z.enum(NIVELES_RAZONAMIENTO).optional(),
       actualizada: version.optional(),
       mensaje: z.string().trim().min(1).max(6000),
       objetivoId: z.uuid().optional(),
@@ -196,6 +200,12 @@ const accionSchema = z.discriminatedUnion('tipo', [
     actualizada: version,
     desde: z.number().int().nonnegative().max(99),
     hasta: z.number().int().nonnegative().max(99),
+  }).strict(),
+  z.object({
+    tipo: z.literal('duplicar_item'),
+    id: z.uuid(),
+    actualizada: version,
+    indice: z.number().int().nonnegative().max(99),
   }).strict(),
   z.object({
     tipo: z.literal('restaurar_items'),
@@ -571,7 +581,8 @@ export async function POST(req: Request) {
     const registrarTurno = (d: DiagnosticoTurno) => {
       const avisos: Record<string, number> = {};
       for (const a of d.avisos) avisos[a.categoria] = (avisos[a.categoria] ?? 0) + 1;
-      console.info('[asistente]', JSON.stringify({ herramienta: d.herramienta, modelo: d.modelo, respaldo: d.respaldo, avisos, ms: Date.now() - inicio }));
+      const razonamiento = parsed.data.tipo === 'chat' ? (parsed.data.razonamiento ?? null) : null;
+      console.info('[asistente]', JSON.stringify({ herramienta: d.herramienta, modelo: d.modelo, respaldo: d.respaldo, razonamiento, avisos, ms: Date.now() - inicio }));
     };
     return Response.json(
       { ...await new Servicio(catalogo, llm, new Almacen(), { nombre, email, admin }, registrarTurno).ejecutar(parsed.data),

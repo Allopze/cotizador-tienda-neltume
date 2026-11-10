@@ -1770,7 +1770,7 @@ export class Almacen {
         db
           .prepare(
             `
-            SELECT cotizacion_id, modelo, madera, cantidad FROM solicitudes
+            SELECT cotizacion_id, modelo, madera, cantidad, ancho, alto, medida FROM solicitudes
             WHERE cotizacion_id IN (SELECT value FROM json_each(?)) ORDER BY cotizacion_id, orden
           `,
           )
@@ -1826,7 +1826,7 @@ export class Almacen {
           total: f.total ?? 0,
           items: f.items,
           pendientes: f.pendientes,
-          productos: resumenProductos(productos.get(f.id) ?? []),
+          productos: resumenProductos(productos.get(f.id) ?? [], { medidas: true }),
           creada: f.creada,
           actualizada: f.actualizada,
           fecha: f.fecha_referencia,
@@ -1926,11 +1926,24 @@ function sumarDiasCalendario(fecha: string, dias: number) {
 }
 
 /** «3 × HUILO HUILO PINO OREGON, MARCO (sin cantidad)»: los productos de una cotización en una línea. */
-function resumenProductos(lista: { modelo: string | null; madera: string | null; cantidad: number | null }[]) {
+function resumenProductos(
+  lista: { modelo: string | null; madera: string | null; cantidad: number | null; ancho?: number | null; alto?: number | null; medida?: string | null }[],
+  { medidas = false }: { medidas?: boolean } = {},
+) {
+  // En el historial, dos líneas del mismo modelo se distinguen por su medida (QA 2026-11): «1 × RANCO PINO OREGON 0,85 × 2,20».
+  const m = (n: number) => n.toLocaleString('es-CL', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+  const medida = (p: (typeof lista)[number]) =>
+    !medidas
+      ? ''
+      : p.ancho != null && p.alto != null
+        ? ` ${m(p.ancho > 10 ? p.ancho / 100 : p.ancho)} × ${m(p.alto > 10 ? p.alto / 100 : p.alto)}`
+        : p.medida
+          ? ` ${p.medida}`
+          : '';
   return lista
     .map(
       (p) =>
-        `${p.cantidad === null ? '' : `${p.cantidad} × `}${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}${p.cantidad === null ? ' (sin cantidad)' : ''}`,
+        `${p.cantidad === null ? '' : `${p.cantidad} × `}${p.modelo ?? 'producto por definir'}${p.madera ? ` ${p.madera}` : ''}${medida(p)}${p.cantidad === null ? ' (sin cantidad)' : ''}`,
     )
     .join(', ');
 }

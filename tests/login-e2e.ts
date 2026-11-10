@@ -23,6 +23,7 @@ export async function iniciarSesion(page: Page, usuario = USUARIO_E2E) {
   await page.getByLabel('Correo electrónico').fill(usuario);
   await page.getByLabel('Contraseña').fill(CLAVE_E2E);
   await page.getByRole('button', { name: 'Ingresar' }).click();
-  await expect(titulo(page)).toBeVisible();
+  // Con `next dev` en frío y la máquina cargada, la primera compilación de «/» supera los 5 s por omisión (QA 2026-11).
+  await expect(titulo(page)).toBeVisible({ timeout: 30_000 });
   await writeFile(SESION, JSON.stringify(await page.context().cookies()));
 }

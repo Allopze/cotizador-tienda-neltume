@@ -4,35 +4,43 @@ import { FAMILIAS } from '@/catalogo/familias';
 import type { Familia, ReferenciaItem } from '@/catalogo/tipos';
 import { leerPesos } from '@/negocio/cifras';
 import { pesos } from '@/negocio/precios';
-import type { ProductoConsulta, ProductoElegido, ProductoPersonalizadoElegido } from './contrato';
+import type { ProductoConsulta, ProductoElegido, ProductoPersonalizadoElegido, RespuestaConsulta } from './contrato';
+import { GruposBusqueda, LecturaBusqueda } from './lectura-busqueda';
 import { Dialogo } from './dialogo';
 import { LARGO_OBSERVACION_ITEM } from '@/negocio/limites';
-import { decimalCampo, errorMedida, leerMedida, nombreProducto } from './formato';
+import { decimalCampo, errorMedida, leerMedida, medidaProducto, nombreProducto } from './formato';
 import { ReferenciasItem } from './referencias-item';
 import { SelectorDesplegable } from './selector-desplegable';
 import { SelectorFamilia } from './selector-familia';
 import { esSilencioso, mensajeDe, pedirJSON } from './solicitud';
+
+/** Con más de 24 resultados de varios modelos o maderas, primero se elige el modelo. */
+const agrupar = (d: RespuestaConsulta) => d.total > 24 && (d.grupos?.length ?? 0) > 1;
 
 export function AgregarProducto({
   alCerrar,
   agregar,
   agregarPersonalizado,
   ocupado,
+  codigoInicial = null,
 }: {
+  /** Producto elegido en Catálogo → Consultar («Cotizar este»): se abre ya seleccionado. */
+  codigoInicial?: string | null;
   alCerrar: () => void;
-  agregar: (producto: ProductoElegido) => Promise<boolean>;
+  agregar: (producto: ProductoElegido, opciones?: { seguir?: boolean }) => Promise<boolean>;
   agregarPersonalizado: (producto: ProductoPersonalizadoElegido) => Promise<boolean>;
   ocupado: boolean;
 }) {
+  /** Productos sumados sin cerrar el diálogo («Agregar y seguir»). */
+  const [agregados, setAgregados] = useState<string[]>([]);
+  /** Hoja o vano elegido la última vez: en un pedido de obra suele repetirse en todas las puertas. */
+  const [ultimoTipoMedida, setUltimoTipoMedida] = useState<NonNullable<ProductoElegido['tipoMedida']>>('no_especificado');
   /** Producto fuera de catálogo; el nombre parte de lo que se buscó. */
   const [personalizado, setPersonalizado] = useState<string | null>(null);
   const entrada = useRef<HTMLInputElement>(null);
-  const [busqueda, setBusqueda] = useState('');
-  const [datos, setDatos] = useState<{
-    consulta: string;
-    total: number;
-    productos: ProductoConsulta[];
-  } | null>(null);
+  const [busqueda, setBusqueda] = useState(codigoInicial ?? '');
+  const [datos, setDatos] = useState<(RespuestaConsulta & { consulta: string }) | null>(null);
+  const pendienteInicial = useRef(codigoInicial);
   const [error, setError] = useState('');
   const [reintento, setReintento] = useState(0);
   const [seleccion, setSeleccion] = useState<ProductoConsulta | null>(null);
@@ -40,7 +48,7 @@ export function AgregarProducto({
   useEffect(() => {
     const control = new AbortController();
     const timer = setTimeout(() => {
-      pedirJSON<{ total: number; productos: ProductoConsulta[] }>(
+      pedirJSON<RespuestaConsulta>(
         `/api/catalogo?${new URLSearchParams({ q: consulta })}`,
         {
           signal: control.signal,
@@ -50,6 +58,12 @@ export function AgregarProducto({
         .then((d) => {
           setDatos({ ...d, consulta });
           setError('');
+          const inicial = pendienteInicial.current;
+          if (inicial) {
+            pendienteInicial.current = null;
+            const elegido = d.productos.find((p) => p.codigo === inicial);
+            if (elegido) setSeleccion(elegido);
+          }
         })
         .catch((e) => {
           if (!esSilencioso(e)) setError(mensajeDe(e));
@@ -64,7 +78,7 @@ export function AgregarProducto({
     <Dialogo
       abierto
       alCerrar={alCerrar}
-      titulo={personalizado === null ? 'Agregar producto' : 'Producto personalizado'}
+      titulo={personalizado === null ? 'Agregar producto' : 'Producto especial'}
       eyebrow={personalizado === null ? 'CATÁLOGO' : 'FUERA DE CATÁLOGO'}
       focoInicial={entrada}
       cerrable={!ocupado}
@@ -81,14 +95,38 @@ export function AgregarProducto({
         <SeleccionProducto
           key={seleccion.codigo}
           producto={seleccion}
-          agregar={agregar}
+          tipoMedidaInicial={ultimoTipoMedida}
+          agregar={async (producto, seguir) => {
+            if (producto.tipoMedida) setUltimoTipoMedida(producto.tipoMedida);
+            const ok = await agregar(producto, { seguir });
+            if (ok && seguir) {
+              setAgregados((a) => [...a, `${nombreProducto(seleccion.descripcion)}${producto.cantidad > 1 ? ` × ${producto.cantidad}` : ''}`]);
+              setSeleccion(null);
+              requestAnimationFrame(() => entrada.current?.focus());
+            }
+            return ok;
+          }}
           ocupado={ocupado}
           volver={() => setSeleccion(null)}
         />
       ) : (
         <>
+          {agregados.length > 0 && (
+            <div className="productos-agregados" role="status">
+              <p>
+                <strong>
+                  {agregados.length === 1 ? '1 producto agregado' : `${agregados.length} productos agregados`}
+                </strong>{' '}
+                · {agregados.slice(-3).join(' · ')}
+                {agregados.length > 3 ? ' …' : ''}
+              </p>
+              <button type="button" className="button primary small" onClick={alCerrar}>
+                Listo, ver cotización
+              </button>
+            </div>
+          )}
           <label className="catalogo-busqueda-label" htmlFor="producto-buscar">
-            Busca por modelo, madera o código
+            Busca por modelo, madera, medida o código
           </label>
           <input
             ref={entrada}
@@ -97,10 +135,17 @@ export function AgregarProducto({
             type="search"
             maxLength={100}
             value={busqueda}
-            placeholder="Ej. Huilo Huilo oregón"
+            placeholder="Ej. Ranco oregón 0,85 2,10"
             onChange={(e) => {
               setBusqueda(e.target.value);
               setError('');
+            }}
+            // El buscador nativo gastaba el primer Escape en borrar el texto: Escape cierra el diálogo a la primera.
+            onKeyDown={(e) => {
+              if (e.key === 'Escape' && !ocupado) {
+                e.preventDefault();
+                alCerrar();
+              }
             }}
           />
           {error ? (
@@ -124,11 +169,23 @@ export function AgregarProducto({
             </p>
           ) : (
             <>
+              <LecturaBusqueda datos={datos} consulta={consulta} />
               <p role="status" className="producto-resultados-ayuda">
-                {datos.total
-                  ? `${datos.total} resultados${datos.total > 24 ? ' · Mostrando los primeros 24; precisa tu búsqueda.' : ''}`
-                  : 'No encontramos productos. Prueba otro modelo, madera o código.'}
+                {!datos.total
+                  ? 'No encontramos productos. Prueba otro modelo, madera o medida, o crea un producto especial.'
+                  : agrupar(datos)
+                    ? `${datos.total} medidas en ${datos.grupos!.length} modelos y maderas. Elige uno, o escribe la medida (por ejemplo «0,85 2,10»).`
+                    : `${datos.total} ${datos.total === 1 ? 'resultado' : 'resultados'}${datos.total > 24 ? ' · Mostrando los primeros 24; escribe la medida para acotar.' : ''}`}
               </p>
+              {agrupar(datos) ? (
+                <GruposBusqueda
+                  grupos={datos.grupos!}
+                  elegir={(g) => {
+                    setBusqueda(`${nombreProducto(g.modelo)} ${nombreProducto(g.madera)}`);
+                    entrada.current?.focus();
+                  }}
+                />
+              ) : (
               <ul className="producto-resultados">
                 {datos.productos.slice(0, 24).map((p) => (
                   <li key={p.codigo}>
@@ -136,7 +193,7 @@ export function AgregarProducto({
                       <span>
                         <strong>{nombreProducto(p.descripcion)}</strong>
                         <small>
-                          {p.codigo} · {nombreProducto(p.madera)}
+                          {medidaProducto(p)} · {p.codigo}
                         </small>
                       </span>
                       <span>
@@ -147,16 +204,20 @@ export function AgregarProducto({
                   </li>
                 ))}
               </ul>
+              )}
             </>
           )}
           <div className="producto-personalizado-entrada">
-            <span>¿El cliente pide un diseño que no está en el catálogo?</span>
+            <span>
+              ¿No está en el catálogo (otra medida, otro espesor, un diseño del cliente) o es otro cargo, como la
+              instalación? Agrégalo solo a esta cotización.
+            </span>
             <button
               type="button"
               className="button secondary small"
               onClick={() => setPersonalizado(datos?.total === 0 ? consulta : '')}
             >
-              Crear producto personalizado
+              Crear producto especial
             </button>
           </div>
         </>
@@ -167,22 +228,26 @@ export function AgregarProducto({
 
 function SeleccionProducto({
   producto: p,
+  tipoMedidaInicial,
   agregar,
   ocupado,
   volver,
 }: {
   producto: ProductoConsulta;
-  agregar: (producto: ProductoElegido) => Promise<boolean>;
+  tipoMedidaInicial: NonNullable<ProductoElegido['tipoMedida']>;
+  agregar: (producto: ProductoElegido, seguir: boolean) => Promise<boolean>;
   ocupado: boolean;
   volver: () => void;
 }) {
+  /** Qué botón envió el formulario: «Agregar al pedido» cierra; «Agregar y seguir» vuelve a los resultados. */
+  const seguir = useRef(false);
   const puerta = p.familia === 'PUERTA';
   const [cantidad, setCantidad] = useState('1');
   const [error, setError] = useState('');
   const inicialAncho = p.anchoMax ?? p.anchoMin ?? null;
   const [ancho, setAncho] = useState(inicialAncho === null ? '' : decimalCampo(inicialAncho));
   const [alto, setAlto] = useState(decimalCampo(p.altoMax ?? p.largo));
-  const [tipoMedida, setTipoMedida] = useState<NonNullable<ProductoElegido['tipoMedida']>>('no_especificado');
+  const [tipoMedida, setTipoMedida] = useState<NonNullable<ProductoElegido['tipoMedida']>>(tipoMedidaInicial);
   /** Lo que admite este producto, en palabras: «entre 0,80 y 0,85 m» o «3,6 m». */
   const tramo = (min: number, max: number) =>
     min === max ? `${decimalCampo(min)} m` : `entre ${decimalCampo(min)} y ${decimalCampo(max)} m`;
@@ -214,12 +279,15 @@ function SeleccionProducto({
       return;
     }
     try {
-      await agregar({
-        codigo: p.codigo,
-        cantidad: n,
-        ...(puerta ? { ancho: anchoM!, tipoMedida } : {}),
-        alto: altoM!,
-      });
+      await agregar(
+        {
+          codigo: p.codigo,
+          cantidad: n,
+          ...(puerta ? { ancho: anchoM!, tipoMedida } : {}),
+          alto: altoM!,
+        },
+        seguir.current,
+      );
     } catch (e) {
       setError(mensajeDe(e));
     }
@@ -296,8 +364,18 @@ function SeleccionProducto({
         </p>
       )}
       <div className="dialogo-acciones">
-        <button type="submit" className="button primary" disabled={ocupado}>
+        {/* El principal va primero en el orden del documento: Enter agrega y cierra, como siempre. */}
+        <button type="submit" className="button primary" disabled={ocupado} onClick={() => (seguir.current = false)}>
           {ocupado ? 'Agregando…' : 'Agregar al pedido'}
+        </button>
+        <button
+          type="submit"
+          className="button secondary antes"
+          disabled={ocupado}
+          onClick={() => (seguir.current = true)}
+          title="Agrega este producto y vuelve a la búsqueda para elegir el siguiente"
+        >
+          Agregar y seguir
         </button>
       </div>
     </form>
@@ -305,7 +383,10 @@ function SeleccionProducto({
 }
 
 /** Tipos de un producto personalizado: las familias del catálogo y el ítem libre, que no va a fábrica. */
-const TIPOS_PERSONALIZADO: [Familia, string][] = [...FAMILIAS, ['OTRO', 'Otro (ítem libre, no va a fábrica)']];
+const TIPOS_PERSONALIZADO: [Familia, string][] = [
+  ...FAMILIAS,
+  ['OTRO', 'Otro cargo (ítem libre: instalación, flete local…; no va a fábrica)'],
+];
 
 const TIPOS_MEDIDA = [
   { value: 'no_especificado', label: 'Por confirmar' },
@@ -433,7 +514,7 @@ function FormPersonalizado({
       <p className="ayuda">
         {libre
           ? 'Se agrega solo a esta cotización, con el precio que indiques. No va a ninguna nota de pedido.'
-          : 'Se agrega solo a esta cotización, con el precio que indiques. No se crea en el catálogo.'}
+          : 'Se agrega solo a esta cotización y va a la nota de pedido de la fábrica. No cambia el catálogo.'}
       </p>
       <div className="producto-medidas">
         {campo('nombre', 'Nombre del producto', {
@@ -472,7 +553,7 @@ function FormPersonalizado({
             />
           </div>
         )}
-        {campo('precio', 'Precio unitario sin IVA ($)', { placeholder: 'Ej.: 245.000', inputMode: 'numeric', maxLength: 15 })}
+        {campo('precio', 'Precio de venta sin IVA ($)', { placeholder: 'Ej.: 245.000', inputMode: 'numeric', maxLength: 15 })}
       </div>
       <div className="producto-medidas producto-textos">
         {campo('descripcion', 'Descripción para el documento · opcional', {

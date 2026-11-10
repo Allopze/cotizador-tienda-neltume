@@ -14,6 +14,9 @@ data/test-e2e-smoke/
 data/test-e2e-*/
 respaldos/
 data/pdf/
+# Fotos y documentos que entregan los clientes (datos personales; auditoría 2026-11, S-04).
+data/referencias/
+data/integracion/
 .estado.lock/
 *.tmp
 data/test-*/

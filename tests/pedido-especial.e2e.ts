@@ -24,7 +24,7 @@ test('un pedido fuera de catálogo queda pendiente y se cotiza como especial con
   await precio.fill('450.000');
   await precio.press('Enter');
 
-  await expect(panel.getByText(/Personalizado · fuera de catálogo/)).toBeVisible();
+  await expect(panel.getByText(/Producto especial · fuera de catálogo/)).toBeVisible();
   await expect(panel.getByText('Incompleto · no suma al total')).toHaveCount(0);
   await expect(panel.locator('tr[id^="producto-"]').first().locator('.celda-total')).toContainText(
     '$450.000',

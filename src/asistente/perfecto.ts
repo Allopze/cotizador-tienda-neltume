@@ -31,6 +31,10 @@ export const INTERMEDIAS: Record<string, (final: Esperado) => Lectura[]> = {
     },
   ],
   'agrega-igual': ({ items: [a] }) => [{ items: [a] }],
+  // Líneas repetidas y copias (auditoría 2026-11): el primer turno es la puerta original.
+  'otra-igual': ({ items: [a] }) => [{ items: [a] }],
+  'duplica-vidriada': ({ items: [a] }) => [{ items: [a] }],
+  'tres-separadas': ({ items: [a] }) => [{ items: [a] }],
   'corrige-uno-de-varios': ({ items: [a, b, c] }) => [{ items: [a, item(b, { ancho: 0.8 }), c] }],
   'cambia-madera-todos': ({ items }) => [{ items: items.map((i) => item(i, { madera: 'PINO OREGON' })) }],
   'agrega-cliente-despues': ({ items }) => [{ items }],

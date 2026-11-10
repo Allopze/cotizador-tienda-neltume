@@ -591,7 +591,14 @@ export function anclarFrases(
   // `ubicarPartes`); la frase los junta con «;».
   const partes = items.map((item) => {
     const f = item.fuente ? plano(item.fuente) : '';
-    return (f && ubicarPartes(texto, f)?.map((tramo) => texto.slice(...tramo))) || null;
+    const ubicar = (frase: string) => (frase && ubicarPartes(texto, frase)?.map((tramo) => texto.slice(...tramo))) || null;
+    // «4 Ranco de 2,20, una por línea: 1,00» de «… una por línea: 0,85; 1,00; …»: la IA pegó al encabezado de la
+    // lista el elemento de su ítem; se ubican por separado, el elemento después del encabezado (auditoría 2026-11).
+    const dos = item.fuente?.lastIndexOf(':') ?? -1;
+    return (
+      ubicar(f) ||
+      (dos > 0 ? ubicar(`${plano(item.fuente!.slice(0, dos))} , ${plano(item.fuente!.slice(dos + 1))}`) : null)
+    );
   });
   const frases = partes.map((p) => p?.join(' ; ') ?? null);
   /** El mensaje sin las frases de los demás ítems (las que no contienen ni están contenidas en la propia). */
@@ -614,7 +621,10 @@ export function anclarFrases(
   // «… una en raulí y otra en lenga, ambas de 73x240»: la parte común del mensaje vale para cada ítem que no dice
   // sus propias medidas, y la cantidad escrita antes («2 Molco, una en raulí…») es el total que se reparte.
   const comunes = [...texto.matchAll(PARTE_COMUN)].map((m) => m[0]);
-  const reparte = comunes.length > 0 || /\bun[oa]\b.*\botr[oa]\b/.test(texto);
+  // «4 Ranco …, una por línea: 0,85; 1,00; …» o «tres iguales, pero separadas»: el 4 es el total que se reparte en
+  // líneas de 1 (auditoría 2026-11, N-03).
+  const separadas = /\b(?:un[oa]|cada un[oa]) (?:por|en (?:su|cada)) linea\b|\bpor separado\b|\bseparad[oa]s\b/.test(texto);
+  const reparte = comunes.length > 0 || separadas || /\bun[oa]\b.*\botr[oa]\b/.test(texto);
   const avisos: string[] = [];
   const anclados = items.map((item, i) => {
     const frase = frases[i];
@@ -775,6 +785,8 @@ export function anclarFrases(
       !conocida('cantidad', cantidad) &&
       !heredada &&
       !otraUna &&
+      // Una línea de 1 de una lista «una por línea»: la persona pidió esa cantidad (ver `separadas`).
+      !(separadas && cantidad === 1) &&
       !cifrasDelTexto(frase).includes(cantidad) &&
       !cifrasDelTexto(sinOtras(i)).includes(cantidad) &&
       !cifrasDelTexto(antes).includes(cantidad);
@@ -993,4 +1005,22 @@ export function avisosDePalabras(
       ? [`No reconocí ${desconocidas.map((p) => `«${p}»`).join(', ')} en ${etiquetaDe(item, i)}: revisa que el producto sea el que se pidió.`]
       : [];
   });
+}
+
+const POSICIONES: Record<string, number> = {
+  primer: 1, primera: 1, primero: 1, segunda: 2, segundo: 2, tercer: 3, tercera: 3, tercero: 3, cuarta: 4,
+  cuarto: 4, quinta: 5, quinto: 5, sexta: 6, sexto: 6, septima: 7, septimo: 7, octava: 8, octavo: 8, novena: 9,
+  noveno: 9, decima: 10, decimo: 10,
+};
+/**
+ * Posiciones que el texto nombra («la puerta 4», «ítem 2», «la segunda»), desde 1. Cuando la persona dice la
+ * posición, esa manda sobre los modelos que nombra como referencia («la puerta 4 igual a la Molco»).
+ */
+export function posicionesDichas(texto: string): number[] {
+  const t = sinTildes(texto);
+  const numeros = [...t.matchAll(/\b(?:puertas?|items?|lineas?|productos?|n[°º])\s*(?:n[°º]?\s*)?(\d{1,2})\b/g)].map((m) => Number(m[1]));
+  const palabras = [...t.matchAll(/\b(primer[oa]?|segund[oa]|tercer[oa]?|cuart[oa]|quint[oa]|sext[oa]|septim[oa]|octav[oa]|noven[oa]|decim[oa])\b/g)].map(
+    (m) => POSICIONES[m[1]],
+  );
+  return [...new Set([...numeros, ...palabras])];
 }

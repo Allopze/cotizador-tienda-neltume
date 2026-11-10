@@ -1912,5 +1912,148 @@
         }
       ]
     }
+  },
+  {
+    "id": "lineas-repetidas",
+    "descripcion": "Cuatro Ranco en líneas separadas, dos pares iguales (auditoría 2026-11, N-03)",
+    "mensajes": [
+      "4 Ranco pino oregón de 2,20 de alto, una por línea: 0,85; 1,00; 0,85; 1,00"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 1,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 1,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "otra-igual",
+    "descripcion": "«Otra igual a la primera» agrega una segunda línea (auditoría 2026-11, N-03/N-05)",
+    "mensajes": [
+      "1 Ranco pino oregón de 85 x 220",
+      "agrega otra igual a la primera"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "duplica-vidriada",
+    "descripcion": "Duplicar una línea y cambiar solo la copia (auditoría 2026-11, N-05)",
+    "mensajes": [
+      "1 Ranco pino oregón de 85 x 220",
+      "duplica la Ranco y que la copia sea vidriada"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        }
+      ]
+    }
+  },
+  {
+    "id": "tres-separadas",
+    "descripcion": "Tres iguales en líneas separadas (auditoría 2026-11, N-03)",
+    "mensajes": [
+      "1 Ranco pino oregón de 85 x 220",
+      "agrega tres iguales a esa, pero separadas"
+    ],
+    "esperado": {
+      "items": [
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        },
+        {
+          "modelo": "RANCO",
+          "madera": "PINO OREGON",
+          "ancho": 0.85,
+          "alto": 2.2,
+          "medida": null,
+          "cantidad": 1
+        }
+      ]
+    }
   }
 ]

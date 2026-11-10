@@ -429,6 +429,8 @@ describe('#38 · diagnóstico del chat (I5)', () => {
         herramienta: 'modificar_cotizacion',
         modelo: 'Qwen/Qwen3.7-Flash',
         respaldo: true,
+        // Sin elegir nivel junto al chat: el configurado.
+        razonamiento: null,
         avisos: { cifras: 1 },
         ms: expect.any(Number),
       });

@@ -429,7 +429,7 @@ describe('ServicioAltaCatalogo.proponerManual', () => {
     const r = await repo();
     const alta = new ServicioAltaCatalogo(db, r, sinAsistente());
     expect(() => alta.proponerManual(undefined, { ...datos, precioNeto: null }, 'u1')).toThrow(
-      /precio base sin IVA/,
+      /costo de fábrica sin IVA/,
     );
     expect(() => alta.proponerManual(undefined, { ...datos, anchoMin: 0.84, anchoMax: 0.9 }, 'u1')).toThrow(
       /superpone/,

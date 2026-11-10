@@ -62,8 +62,8 @@ describe('alta desde las preguntas pendientes', () => {
       { tipo: 'madera_no_disponible', valor: 'LENGA', disponibles: [] },
     ];
     for (const rechazo of rechazos) {
-      expect(renderizar(rechazo, true)).toContain('Agregar al catálogo');
-      expect(renderizar(rechazo, false)).not.toContain('Agregar al catálogo');
+      expect(renderizar(rechazo, true)).toContain('Crear en el catálogo');
+      expect(renderizar(rechazo, false)).not.toContain('Crear en el catálogo');
     }
     for (const rechazo of [
       faltan(['madera']),
@@ -73,10 +73,10 @@ describe('alta desde las preguntas pendientes', () => {
       { tipo: 'cantidad_invalida', valor: 0, disponibles: [] },
       { tipo: 'medida_no_disponible', campo: 'alto', valor: 2.315, disponibles: ['2.2'], familia: 'PUERTA' },
     ] satisfies Rechazo[])
-      expect(renderizar(rechazo, true)).not.toContain('Agregar al catálogo');
+      expect(renderizar(rechazo, true)).not.toContain('Crear en el catálogo');
   });
 
-  it('un modelo posible ofrece «Es un modelo nuevo» y precarga el valor escrito, también sin familia', () => {
+  it('un modelo posible ofrece «Es otro modelo: crearlo en el catálogo» y precarga el valor escrito, también sin familia', () => {
     for (const familia of ['PUERTA', undefined] as const) {
       const preguntas = preguntasPendientes({
         solicitudes: [item({ modelo: 'CUNCU', madera: 'Mara', ancho: 82, alto: 200 })],
@@ -89,9 +89,9 @@ describe('alta desde las preguntas pendientes', () => {
       const renderizar = (editable: boolean) => renderToStaticMarkup(createElement(PreguntasPendientes, {
         preguntas, editable, asistente: false, guardando: null, responder: async () => true,
       }));
-      expect(renderizar(true)).toContain('Es un modelo nuevo');
-      expect(renderizar(true)).not.toContain('Agregar al catálogo');
-      expect(renderizar(false)).not.toContain('Es un modelo nuevo');
+      expect(renderizar(true)).toContain('Es otro modelo: crearlo en el catálogo');
+      expect(renderizar(true)).not.toContain('Crear en el catálogo');
+      expect(renderizar(false)).not.toContain('Es otro modelo: crearlo en el catálogo');
     }
   });
 
@@ -112,7 +112,7 @@ describe('alta desde las preguntas pendientes', () => {
     expect(h).toContain('Ancho mínimo');
     expect(h).not.toContain('Medida o escuadría');
     const vacio = renderToStaticMarkup(createElement(AltaProducto, { asistente: false }));
-    expect(vacio).toContain('Elige una familia');
+    expect(vacio).toContain('Elige el tipo de producto');
     expect(vacio).not.toContain('value="2,27"');
     expect(vacio).not.toContain('value="PINO FINGER ENCHAPADO MARA"');
   });

@@ -63,13 +63,26 @@ import { SelectorDesplegable } from './selector-desplegable';
 import { SeguimientoOperacion } from './seguimiento-operacion';
 import { useCambioNumero } from './dialogos-cotizacion';
 import { esSilencioso, pedirJSON } from './solicitud';
+import { usePreferencia } from './memoria-pantalla';
 
 export type Operacion =
-  'chat' | 'emitir' | 'aprobar' | 'quitar' | 'editar' | 'reordenar' | 'duplicar' | 'eliminar' | 'anular' | 'workflow';
+  | 'chat'
+  | 'emitir'
+  | 'aprobar'
+  | 'quitar'
+  | 'editar'
+  | 'reordenar'
+  | 'duplicar'
+  | 'duplicar_item'
+  | 'eliminar'
+  | 'anular'
+  | 'workflow';
 export interface AccionesPanel {
   emitir: () => void;
   aprobar: () => void;
   quitar: (indice: number) => void;
+  /** Copia el ítem con todos sus datos justo debajo (Duplicar línea). */
+  duplicarLinea: (indice: number) => Promise<boolean>;
   duplicar: () => void;
   eliminar: () => void;
   anular: () => void;
@@ -365,6 +378,11 @@ export function CotizacionPanel({
   }
   // Una emitida solo muestra controles de edición cuando se pide modificarla: editarla crea una revisión.
   const [modificando, setModificando] = useState<string | null>(null);
+  /**
+   * Modo cliente: oculta el costo de fábrica y la ganancia cuando la pantalla se muestra a quien compra
+   * (auditoría 2026-11, N-15). Se recuerda en este navegador.
+   */
+  const [modoCliente, setModoCliente] = usePreferencia('modo-cliente');
   const [arrastrado, setArrastrado] = useState<number | null>(null);
   const [destinoArrastre, setDestinoArrastre] = useState<number | null>(null);
   const indiceArrastrado = useRef<number | null>(null);
@@ -467,6 +485,23 @@ export function CotizacionPanel({
       : medidasPendientes.length
         ? 'Confirma si la medida corresponde a la hoja o al vano antes de emitir.'
       : null; // Lista para emitir: el diálogo de confirmación explica qué pasa.
+  /**
+   * Confirma hoja o vano de una o varias puertas. El grupo de botones desaparece al responder: el foco pasa a la
+   * siguiente puerta pendiente o, si no queda ninguna, al botón principal (antes caía al inicio de la página).
+   */
+  const elegirTipoMedida = async (indices: number[], tipoMedida: 'hoja' | 'vano') => {
+    const ok = await acciones.editar(
+      { items: indices.map((indice) => ({ indice, cambios: { tipoMedida } })) },
+      `item.${indices[0]}.tipoMedida`,
+    );
+    if (!ok) return;
+    requestAnimationFrame(() => {
+      const siguiente = document.querySelector<HTMLButtonElement>('.measure-choice button');
+      (siguiente ?? document.querySelector<HTMLElement>('.quote-toolbar .button.primary, #cotizacion-titulo'))?.focus({
+        preventScroll: !siguiente,
+      });
+    });
+  };
   const irAPendiente = (indice: number) => {
     mostrarCotizacion();
     requestAnimationFrame(() => {
@@ -511,6 +546,15 @@ export function CotizacionPanel({
   const conPrecio = actual.solicitudes.length - new Set(actual.incompletos.map((p) => p.indice)).size;
   const controlesEdicion = () => (
     <>
+      <button
+        type="button"
+        className="button secondary small modo-cliente-interruptor"
+        aria-pressed={modoCliente}
+        title={modoCliente ? 'Mostrar costo de fábrica y ganancia' : 'Ocultar costo de fábrica y ganancia (para mostrar la pantalla al cliente)'}
+        onClick={() => setModoCliente(!modoCliente)}
+      >
+        {modoCliente ? 'Mostrar costos' : 'Ocultar costos'}
+      </button>
       <div className="quote-edit-history" role="group" aria-label="Historial de edición">
         <button
           type="button"
@@ -575,7 +619,11 @@ export function CotizacionPanel({
     { value: OPCION_OTRO, label: transporteLibre ? `Otro · ${transporte}` : 'Otro' },
   ];
   return (
-    <section id="panel-cotizacion" className={`quote-panel estado-${estado}`} aria-label="Cotización en curso">
+    <section
+      id="panel-cotizacion"
+      className={`quote-panel estado-${estado}${modoCliente ? ' modo-cliente' : ''}`}
+      aria-label="Cotización en curso"
+    >
       <div className="panel-heading">
         <div>
           <h2 id="cotizacion-titulo" ref={tituloRef} tabIndex={-1}>
@@ -767,8 +815,8 @@ export function CotizacionPanel({
                           {personalizado ? (
                             <small className="item-personalizado">
                               {libre
-                                ? 'Ítem libre · no va a fábrica'
-                                : `Personalizado · fuera de catálogo${s.madera ? ` · ${s.madera}` : ''}`}
+                                ? 'Otro cargo · no va a fábrica'
+                                : `Producto especial · fuera de catálogo${s.madera ? ` · ${s.madera}` : ''}`}
                             </small>
                           ) : (
                             <small>{linea?.producto.codigo || 'Pendiente de completar'}</small>
@@ -912,14 +960,26 @@ export function CotizacionPanel({
                               </small>
                               {editable ? (
                                 <div>
-                                  <button type="button" disabled={ocupado} onClick={() => void acciones.editar(
-                                    { items: [{ indice: i, cambios: { tipoMedida: 'hoja' } }] },
-                                    `item.${i}.tipoMedida`,
-                                  )}>Medida de hoja</button>
-                                  <button type="button" disabled={ocupado} onClick={() => void acciones.editar(
-                                    { items: [{ indice: i, cambios: { tipoMedida: 'vano' } }] },
-                                    `item.${i}.tipoMedida`,
-                                  )}>Medida de vano</button>
+                                  <button type="button" disabled={ocupado} onClick={() => void elegirTipoMedida([i], 'hoja')}>
+                                    Medida de hoja
+                                  </button>
+                                  <button type="button" disabled={ocupado} onClick={() => void elegirTipoMedida([i], 'vano')}>
+                                    Medida de vano
+                                  </button>
+                                  {/* Un pedido de obra suele traer todas las puertas medidas igual: se confirma una
+                                      vez para todas, no una por puerta (auditoría 2026-11, N-40). */}
+                                  {medidasPendientes.length > 1 && medidasPendientes[0] === i && (
+                                    <span className="measure-choice-todas">
+                                      Las {medidasPendientes.length} puertas pendientes:{' '}
+                                      <button type="button" className="link" disabled={ocupado} onClick={() => void elegirTipoMedida(medidasPendientes, 'hoja')}>
+                                        todas de hoja
+                                      </button>
+                                      {' · '}
+                                      <button type="button" className="link" disabled={ocupado} onClick={() => void elegirTipoMedida(medidasPendientes, 'vano')}>
+                                        todas de vano
+                                      </button>
+                                    </span>
+                                  )}
                                 </div>
                               ) : <span>Tipo de medida no especificado en esta cotización.</span>}
                             </div>
@@ -1073,6 +1133,30 @@ export function CotizacionPanel({
                               </button>
                               <button
                                 type="button"
+                                className="move-item duplicar-item"
+                                onClick={async () => {
+                                  if (!(await acciones.duplicarLinea(i))) return;
+                                  // La copia queda abierta para cambiar lo que la distingue (medida, descripción, precio).
+                                  requestAnimationFrame(() => {
+                                    const resumen = document.querySelector<HTMLElement>(
+                                      `summary[aria-label^="Editar detalles del ítem ${i + 2}:"]`,
+                                    );
+                                    const detalle = resumen?.closest('details');
+                                    if (detalle) detalle.open = true;
+                                    resumen?.focus();
+                                  });
+                                }}
+                                disabled={!editable || actual.solicitudes.length >= 100}
+                                aria-label={`Duplicar ítem ${i + 1}: ${descripcion}`}
+                                title="Duplicar línea: copia debajo con los mismos datos"
+                              >
+                                <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" focusable="false">
+                                  <rect x="5.5" y="5.5" width="8" height="8" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                                  <path d="M10.5 3.5v-.5a1.5 1.5 0 0 0-1.5-1.5H4A1.5 1.5 0 0 0 2.5 3v5A1.5 1.5 0 0 0 4 9.5h.5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+                                </svg>
+                              </button>
+                              <button
+                                type="button"
                                 className="remove"
                                 onClick={() => acciones.quitar(i)}
                                 disabled={!editable}
@@ -1159,6 +1243,42 @@ export function CotizacionPanel({
                                     </small>
                                   )}
                                 </div>
+                                {linea && !personalizado && !libre && editable && (
+                                  // Para cotizar una variante que el catálogo no tiene (vidriada, otro espesor) sin
+                                  // perder el precio de partida ni dejar la línea pendiente (auditoría 2026-11, N-19).
+                                  <div className="convertir-especial">
+                                    <p>
+                                      ¿Esta puerta lleva algo que el catálogo no tiene, como vidrio u otro espesor?
+                                      Conviértela en producto especial: conserva el precio de {pesos(linea.precioUnitario)}{' '}
+                                      y después cambias el nombre, la descripción o el precio sin que quede pendiente.
+                                    </p>
+                                    <button
+                                      type="button"
+                                      className="button secondary small"
+                                      disabled={guardando === `item.${i}.convertir`}
+                                      onClick={() =>
+                                        void acciones.editar(
+                                          {
+                                            items: [
+                                              {
+                                                indice: i,
+                                                cambios: {
+                                                  personalizado: { familia: linea.producto.familia },
+                                                  precioUnitario: linea.precioUnitario,
+                                                  // La planilla trae costos con decimales; el costo de un especial es en pesos enteros.
+                                                  costoFabrica: Math.max(1, Math.round(linea.precioFabrica ?? linea.producto.precioNeto)),
+                                                },
+                                              },
+                                            ],
+                                          },
+                                          `item.${i}.convertir`,
+                                        )
+                                      }
+                                    >
+                                      {guardando === `item.${i}.convertir` ? 'Convirtiendo…' : 'Convertir en producto especial'}
+                                    </button>
+                                  </div>
+                                )}
                                 <div className="item-editables">
                                   <CampoEditable
                                     className="item-campo item-campo-descripcion"
@@ -1342,7 +1462,7 @@ export function CotizacionPanel({
                                   {personalizado && !libre && (
                                     // Lo usa la nota de pedido; sin él, la línea va «Por definir» y fábrica la valoriza.
                                     <CampoEditable
-                                      className="item-campo"
+                                      className="item-campo costo-interno"
                                       etiqueta="Costo de fábrica (nota de pedido)"
                                       valor={s.costoFabrica ? String(s.costoFabrica) : ''}
                                       mostrar={s.costoFabrica ? pesos(s.costoFabrica) : undefined}
@@ -1813,7 +1933,7 @@ export function CotizacionPanel({
         </div>
       </div>
       <div className="conditions">
-        <span>Valores puestos en fábrica.</span>
+        <span>{actual.montos.flete ? 'El despacho va en el detalle.' : 'Valores puestos en fábrica.'}</span>
         <span className={esVencida ? 'vencida-texto' : undefined}>
           {condicionDespacho} · {validez(actual)}
           {esVencida ? ' (vencida)' : ''}

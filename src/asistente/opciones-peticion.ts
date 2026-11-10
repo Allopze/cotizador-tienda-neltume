@@ -7,13 +7,16 @@ export interface OpcionesPeticion {
   temperatura: boolean;
   /** Obliga a llamar una herramienta («required» o «any»); sin ella, «auto» y el prompt la exigen. */
   herramientaForzada: boolean;
+  /** Razonamiento (thinking + effort en Claude, reasoning_effort en Chat Completions): sin él si el modelo lo rechaza. */
+  razonamiento: boolean;
 }
-const OPCIONES_COMPLETAS: OpcionesPeticion = { temperatura: true, herramientaForzada: true };
+const OPCIONES_COMPLETAS: OpcionesPeticion = { temperatura: true, herramientaForzada: true, razonamiento: true };
 
 /** Qué opción quitar según el texto de un rechazo 400; null si el rechazo es por otra causa. */
 function opcionRechazada(texto: string, opciones: OpcionesPeticion): keyof OpcionesPeticion | null {
   if (opciones.herramientaForzada && /tool_choice/i.test(texto)) return 'herramientaForzada';
   if (opciones.temperatura && /temperature/i.test(texto)) return 'temperatura';
+  if (opciones.razonamiento && /thinking|output_config|effort/i.test(texto)) return 'razonamiento';
   return null;
 }
 

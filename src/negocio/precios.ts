@@ -71,6 +71,20 @@ export const MARGENES_INICIALES: MargenesCategoria = {
   // Último recurso: conserva el ajuste histórico para lo que ninguna categoría describe.
   otros: 0.25,
 };
+/** Nombre de cada categoría de ganancia, para mostrarlo a quien cotiza (Ajustes, alta de productos). */
+export const NOMBRES_CATEGORIA_MARGEN: Record<CategoriaMargen, string> = {
+  puertas_solidas_mara_lenga: 'Puertas sólidas Mara / Lenga',
+  puertas_solidas_oregon: 'Puertas sólidas Pino Oregón',
+  puertas_solidas_rauli: 'Puertas sólidas Raulí',
+  puertas_prepintadas: 'Puertas prepintadas',
+  puertas_enchapadas_mara: 'Puertas enchapadas Mara',
+  marcos_finger_sin_enchape: 'Marcos Pino Finger sin enchape',
+  marcos_finger_enchapados: 'Marcos Pino Finger enchapados',
+  marcos_solidos_oregon: 'Marcos sólidos Pino Oregón',
+  marcos_solidos_lenga: 'Marcos sólidos Lenga',
+  accesorios_madera_solida: 'Marcos, molduras y piezas T de madera sólida',
+  otros: 'Otros productos (último recurso)',
+};
 export const REGLAS: ReglasComerciales = {
   ajuste: 0.25,
   iva: 0.19,

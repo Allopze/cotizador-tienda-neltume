@@ -18,6 +18,7 @@ import {
   ESCUADRIAS_HABITUALES,
   fraseDelMensaje,
   nombresDichos,
+  posicionesDichas,
   sinTildes,
   type ResolverNombre,
 } from '../asistente/anclaje';
@@ -25,6 +26,7 @@ import {
   MONTO_BAJO,
   montoEscrito,
   montoTotal,
+  hablaDeDinero,
   montosDelTexto,
   porcentajeEscrito,
   porcentajesDelTexto,
@@ -141,7 +143,7 @@ const AYUDA_ESPECIAL =
 // Montos o términos comerciales en texto libre del modelo; palabras como «total» o «valor» solas no bastan.
 // Se leen igual que el anclaje: «450 mil», «450 lucas», «Precio: 450.000 + IVA» y «20 %» (auditoría BUG-030).
 const textoMonetario = (texto: string) =>
-  montosDelTexto(texto).length > 0 ||
+  hablaDeDinero(texto) ||
   porcentajesDelTexto(texto).length > 0 ||
   /\b(?:CLP|USD|costos?|m[aá]rgen(?:es)?|descuentos?)\b/i.test(texto);
 /** El mensaje habla del descuento de un producto («sin descuento», «descuéntale», «rebaja»), ya sin tildes. */
@@ -230,23 +232,24 @@ function itemsDelReparto(
 function fabricasDichas(
   input: ModificacionCotizacion,
   textos: string[],
-  describir: (indice: number) => string,
 ): { input: ModificacionCotizacion; avisos: string[] } {
   const avisos: string[] = [];
-  const revisar = <T extends { fabrica?: Fabrica | null }>(item: T, nombre: string): T => {
+  const revisar = <T extends { fabrica?: Fabrica | null }>(item: T): T => {
     if (item.fabrica === null) {
       // Quitar la fábrica solo si el mensaje lo pide (auditoría BUG-026).
       const pide = /\b(?:sin|quita(?:r|le|las|los)?|saca(?:r|le|las|los)?|elimina(?:r)?)\b[^.\n]*\bfabric/.test(
         sinTildes(textos.join('\n')),
       );
       if (pide) return item;
-      avisos.push(`No quité la fábrica de ${nombre}: el mensaje no lo pide.`);
+      // Un null que la IA puso de relleno no cambia nada: se ignora en silencio. Avisarlo («No quité la fábrica…»)
+      // confundía a la persona, que nunca pidió quitarla (auditoría 2026-11, N-10).
       const sinFabrica = { ...item };
       delete sinFabrica.fabrica;
       return sinFabrica as T;
     }
     if (!item.fabrica || fabricaEscrita(item.fabrica, textos)) return item;
-    avisos.push(`No asigné fábrica a ${nombre}: el mensaje no dice a cuál va.`);
+    // La fábrica la elige quien cotiza: la que la IA dedujo sin que el mensaje la nombre se descarta sin ruido;
+    // el ítem queda sin fábrica, como cualquier otro, y la pantalla ya pide asignarla al generar la nota.
     const sinAsignar = { ...item };
     delete sinAsignar.fabrica;
     return sinAsignar as T;
@@ -254,11 +257,11 @@ function fabricasDichas(
   return {
     input: {
       ...input,
-      ...(input.agregar ? { agregar: input.agregar.map((a) => revisar(a, a.modelo ?? 'un ítem nuevo')) } : {}),
+      ...(input.agregar ? { agregar: input.agregar.map((a) => revisar(a)) } : {}),
       ...(input.items
         ? {
             items: input.items
-              .map((i) => ({ ...i, cambios: revisar(i.cambios, describir(i.indice)) }))
+              .map((i) => ({ ...i, cambios: revisar(i.cambios) }))
               .filter((i) => Object.keys(i.cambios).length),
           }
         : {}),
@@ -474,14 +477,23 @@ function pedidoSinRegistrar(
  */
 function productoNoPedido(
   mensaje: string,
-  s: { modelo: string | null; libre?: boolean | null },
+  s: { modelo: string | null; libre?: boolean | null; fuente?: string | null },
   resolver: Record<'modelo' | 'madera', ResolverNombre>,
 ) {
-  if (s.libre || !s.modelo) return false;
+  // Un ítem libre cuya frase está en el despacho y no en el pedido («… para 3 pallets»): es la carga, no un cargo.
+  if (s.libre) {
+    const frase = s.fuente ? textoComparable(s.fuente) : '';
+    return !!frase && textoComparable(mensaje).includes(frase) && !textoComparable(parteDelPedido(mensaje)).includes(frase);
+  }
+  if (!s.modelo) return false;
   const nombre = normalizar(resolver.modelo(s.modelo) ?? s.modelo);
   const pedido = nombresDichos(parteDelPedido(mensaje), resolver.modelo, resolver.madera).resueltos;
   return !pedido.has(nombre) && nombresDichos(mensaje, resolver.modelo, resolver.madera).resueltos.has(nombre);
 }
+
+/** Un ítem libre que es el propio despacho («flete», «despacho a Temuco», «envío»), no un producto. */
+const esElFlete = (s: { modelo: string | null; libre?: boolean | null }) =>
+  !!s.libre && /^(?:flete|despacho|envio|transporte)\b/i.test(textoComparable(s.modelo ?? '').trim());
 
 /** Un ítem que la IA marcó libre lo es si tiene nombre y ese nombre no es un modelo del catálogo. */
 function esLibreFuera(ctx: ContextoChat, s: SolicitudItem) {
@@ -864,6 +876,9 @@ function comunaDelDespacho(mensaje: string): string | null {
 function indiceCoherente(items: SolicitudItem[], indice: number, texto: string): boolean {
   const s = items[indice];
   if (!s?.modelo) return true;
+  // La posición dicha manda (auditoría 2026-11, N-24): la primera posición que se nombra es el ítem que cambia.
+  const posiciones = posicionesDichas(texto);
+  if (posiciones.length) return posiciones[0] === indice + 1;
   const plano = normalizar(texto);
   const modelos = [...new Set(items.map((i) => i.modelo).filter((m): m is string => !!m))];
   const mencionados = modelos.filter((m) => plano.includes(normalizar(m)));
@@ -887,7 +902,44 @@ const MARCADOR_PRECIO = /(?:\$|\ba\b|\bpor\b|\bprecio\b|\bvalor\b|\bc\/u\b|\bmil
 const sinFrasesAjenas = (texto: string, frases: string[]) =>
   frases.reduce((t, frase) => (frase ? t.split(frase).join(' ') : t), texto);
 
-function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: ModificacionCotizacion, mensaje: string) {
+/** El mensaje pide líneas repetidas a propósito: «otra igual», «tres iguales», «duplica», «copia», «repite». */
+const PIDE_REPETIR =
+  /\b(?:otr[oa]s?|igual(?:es)?|mism[oa]s?|duplic\w*|copi\w*|repit\w*|repet\w*|separad[oa]s?)\b|\bpor\s+(?:linea|separado)\b|\bcada\s+un[oa]\b/;
+/** Cuántas veces el mensaje escribe un ancho («0,85», «0.85», «85»): dos líneas iguales necesitan dos menciones. */
+function vecesQueSeEscribe(mensaje: string, ancho: number | null | undefined) {
+  if (ancho == null) return 0;
+  const m = ancho > 10 ? ancho / 100 : ancho;
+  const formas = new Set([m.toFixed(2).replace('.', ','), m.toFixed(2), String(Math.round(m * 100))]);
+  return [...sinTildes(mensaje).matchAll(/\d+(?:[.,]\d+)?/g)].filter((x) => formas.has(x[0])).length;
+}
+/** La cantidad de «agrega 1 igual», «una igual pero de 90», «3 más igual»; null en «otra igual» (copia la cantidad). */
+function cantidadDeLaCopia(mensaje: string): number | null {
+  const m = /\b(\d{1,4}|un[oa]?)\s+(?:mas\s+)?(?:igual|identic[oa])\b/.exec(sinTildes(mensaje));
+  if (!m) return null;
+  return /^\d/.test(m[1]) ? Number(m[1]) : 1;
+}
+/** Texto para comparar frases: sin tildes, mayúsculas ni espacios de más. */
+const textoComparable = (t: string) => sinTildes(t).replace(/\s+/g, ' ').trim();
+/** «una por línea», «cada una en su línea», «en líneas separadas», «por separado»: cada unidad va en su línea. */
+const LINEAS_SEPARADAS =
+  /\b(?:un[oa]|cada un[oa]) (?:por|en (?:su|cada)) linea\b|\blineas? separadas?\b|\bpor separado\b|\bseparad[oa]s\b/;
+/**
+ * Si el mensaje pide líneas separadas, lo que la IA agrupó («2 Ranco de 0,85» de «4 Ranco, una por línea: 0,85;
+ * 1,00; 0,85; 1,00») se separa en líneas de 1, como pidió la persona (auditoría 2026-11, N-03).
+ */
+function enLineasSeparadas(cambios: ModificacionCotizacion, mensaje: string): ModificacionCotizacion {
+  if (!cambios.agregar?.length || !LINEAS_SEPARADAS.test(sinTildes(mensaje).toLowerCase())) return cambios;
+  return {
+    ...cambios,
+    agregar: cambios.agregar.flatMap((a) =>
+      a.cantidad && Number.isInteger(a.cantidad) && a.cantidad > 1 && a.cantidad <= 50 && !a.libre
+        ? Array.from({ length: a.cantidad }, () => ({ ...a, cantidad: 1 }))
+        : [a],
+    ),
+  };
+}
+function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambiosIA: ModificacionCotizacion, mensaje: string) {
+  const cambios = enLineasSeparadas(cambiosIA, mensaje);
   const items = structuredClone(base.solicitudes);
   const descartados: [SolicitudItem, Descartes][] = [];
   const actualizar = cambios.items ?? [];
@@ -898,19 +950,38 @@ function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: Modif
     !actualizar.length &&
     !quitar.length &&
     !cambios.agregar?.length &&
+    !cambios.duplicar?.length &&
     !Object.keys(cambios.cliente ?? {}).length &&
     cambios.flete === undefined
   )
     return null;
+  // Lo que se duplica se toma después de los cambios del mismo turno («cambia la primera a 1,00 y duplícala») y
+  // se ubica bajo su original una vez quitados los ítems que se quitan (auditoría 2026-11, N-05).
+  // Lo que no se puede aplicar con seguridad se omite y se explica; el resto del turno sí se aplica (auditoría
+  // 2026-11, N-22). Antes cualquier parte dudosa descartaba el mensaje entero.
+  const omitidos: string[] = [];
+  const omitir = (indice: number, que: string) => {
+    const s = items[indice];
+    omitidos.push(
+      s
+        ? `No ${que} el ítem ${indice + 1} (${ctx.describir(s)}): no estoy seguro de que sea el que nombras. Dime cuál, por ejemplo «la puerta ${indice + 1}».`
+        : `No ${que} un ítem: no encontré cuál era. Dime su posición, por ejemplo «la puerta 2».`,
+    );
+  };
+  let aplicados = 0;
+  const duplicar = (cambios.duplicar ?? []).filter((d) => {
+    if (d.indice < items.length) return true;
+    omitir(d.indice, 'dupliqué');
+    return false;
+  });
   for (const cambio of actualizar) {
-    if (
-      cambio.indice >= items.length ||
-      actualizarIndices.has(cambio.indice) ||
-      !Object.keys(cambio.cambios).length
-    )
-      return null;
+    if (actualizarIndices.has(cambio.indice) || !Object.keys(cambio.cambios).length) continue;
     // La frase del cambio, si la trae, es lo que la persona escribió para ese ítem.
-    if (!indiceCoherente(items, cambio.indice, cambio.cambios.fuente ?? mensaje)) return null;
+    if (cambio.indice >= items.length || !indiceCoherente(items, cambio.indice, cambio.cambios.fuente ?? mensaje)) {
+      omitir(cambio.indice, 'cambié');
+      continue;
+    }
+    aplicados++;
     actualizarIndices.add(cambio.indice);
     const siguiente = { ...items[cambio.indice], ...desdeIA(cambio.cambios) };
     // La frase del cambio se suma a la del pedido original: juntas explican de dónde sale el ítem. Si no
@@ -936,39 +1007,124 @@ function aplicarModificacion(ctx: ContextoChat, base: Cotizacion, cambios: Modif
     items[cambio.indice] = siguiente;
   }
   for (const indice of quitar) {
-    if (indice >= items.length || quitarIndices.has(indice) || actualizarIndices.has(indice)) return null;
-    if (!indiceCoherente(items, indice, mensaje)) return null;
+    if (quitarIndices.has(indice)) continue;
+    if (indice >= items.length || actualizarIndices.has(indice) || !indiceCoherente(items, indice, mensaje)) {
+      omitir(indice, 'quité');
+      continue;
+    }
+    aplicados++;
     quitarIndices.add(indice);
   }
+  const originales = duplicar.map((d) => ({ d, original: items[d.indice] }));
   for (const indice of [...quitarIndices].sort((a, b) => b - a)) items.splice(indice, 1);
-  // Un ítem que la IA repite (en el mismo turno o con la frase de un turno anterior) suma en silencio y duplica el
-  // pedido. Se descarta, con un aviso (auditoría BUG-008).
-  const claveItem = (s: SolicitudItem) =>
-    JSON.stringify([s.modelo?.toLowerCase(), s.madera?.toLowerCase(), s.ancho, s.alto, s.medida?.toLowerCase(), s.cantidad, s.tipoMedida]);
-  const vistos = new Set(items.map(claveItem));
+  for (const { d, original } of originales) {
+    const posicion = items.indexOf(original);
+    if (posicion < 0) continue; // no se duplica lo que el mismo turno quita
+    aplicados++;
+    // «agrega 1 igual pero de 90» a «2 Palena»: la copia lleva la cantidad dicha, no la del original.
+    const dicha = d.cambios?.cantidad === undefined && (d.veces ?? 1) === 1 ? cantidadDeLaCopia(mensaje) : null;
+    const copias = Array.from({ length: d.veces ?? 1 }, () => {
+      const copia: SolicitudItem = {
+        ...structuredClone(original),
+        ...(d.cambios ? desdeIA(d.cambios) : {}),
+        ...(dicha ? { cantidad: dicha } : {}),
+      };
+      delete copia.id;
+      if (d.cambios?.modelo !== undefined) reiniciarOrigenModelo(copia);
+      return copia;
+    });
+    items.splice(posicion + 1, 0, ...copias);
+  }
+  // Líneas iguales a otra (auditoría BUG-008 y 2026-11, N-03/N-23). La IA a veces reenvía un ítem de un turno
+  // anterior o repite uno del mismo turno, y eso duplica el pedido; pero la persona también pide líneas iguales a
+  // propósito («4 Ranco: 0,85, 1,00, 0,85 y 1,00»; «otra igual a la primera»). Se decide por el origen:
+  // - Una frase (`fuente`) que no está en el mensaje actual es un reenvío de un turno anterior: se descarta en
+  //   silencio si ya hay una línea igual.
+  // - En el mismo turno, cada línea igual necesita su propia mención: tantas copias como veces aparece su frase en
+  //   el mensaje, salvo que el mensaje pida repetir («otra», «iguales», «duplica», «copia»…).
+  // - Sin frase, una línea igual a otra que ya estaba se agrega solo si el mensaje pide repetir; si no, se avisa
+  //   cómo pedirla.
+  const repetir = PIDE_REPETIR.test(sinTildes(mensaje));
+  const mensajeNormal = textoComparable(mensaje);
+  const claveItem = (s: SolicitudItem) => {
+    // En metros aunque la IA la haya devuelto en centímetros o milímetros.
+    const medida = (n: number | null | undefined) => (n == null ? null : Math.round((metros(n) ?? n) * 1000) / 1000);
+    return JSON.stringify([
+      textoComparable(s.modelo ?? ''),
+      textoComparable(s.madera ?? ''),
+      medida(s.ancho),
+      medida(s.alto),
+      normalizarMedida(s.medida ?? ''),
+      s.cantidad,
+      s.tipoMedida ?? null,
+      s.personalizado ? textoComparable(s.descripcion ?? '') : null,
+      s.observaciones ? textoComparable(s.observaciones) : null,
+    ]);
+  };
+  const existentes = new Set(items.map(claveItem));
+  const enEsteTurno = new Map<string, number>();
   const duplicados: string[] = [];
   const nuevos: SolicitudItem[] = [];
   for (const s of (cambios.agregar ?? []).map((x) => desdeIA(x))) {
     const clave = claveItem(s);
-    if (vistos.has(clave)) {
+    const frase = s.fuente ? textoComparable(s.fuente) : '';
+    const fraseDelMensaje = !!frase && mensajeNormal.includes(frase);
+    if (frase && !fraseDelMensaje && existentes.has(clave)) continue; // reenvío de un turno anterior
+    const yaEnTurno = enEsteTurno.get(clave) ?? 0;
+    if (yaEnTurno > 0 && !repetir) {
+      const menciones = Math.max(frase ? mensajeNormal.split(frase).length - 1 : 1, vecesQueSeEscribe(mensaje, s.ancho));
+      if (yaEnTurno >= menciones) continue; // la IA repitió en el mismo turno lo que se dijo una vez
+    }
+    if (!yaEnTurno && existentes.has(clave) && !fraseDelMensaje && !repetir) {
       duplicados.push(ctx.describir(s));
       continue;
     }
-    vistos.add(clave);
+    enEsteTurno.set(clave, yaEnTurno + 1);
     nuevos.push(s);
   }
   items.push(...nuevos);
   if (items.length > 100) return null;
+  const hayCambios =
+    aplicados > 0 || nuevos.length > 0 || Object.keys(cambios.cliente ?? {}).length > 0 || cambios.flete !== undefined;
+  // Nada se pudo aplicar: se explica qué faltó en vez de un «No entendí» genérico.
+  const avisoDuplicados = duplicados.length
+    ? [
+        `${duplicados.join(', ')} ya está en la cotización. Si necesitas otra línea igual, escribe «agrega otra igual» o usa «Duplicar línea».`,
+      ]
+    : [];
+  if (!hayCambios) {
+    const motivos = [...omitidos, ...avisoDuplicados];
+    return motivos.length ? { sinCambios: true as const, avisos: motivos } : null;
+  }
   return {
     items,
     cliente: { ...base.cliente, ...(cambios.cliente ?? {}) },
     avisos: [
+      ...omitidos,
       ...descartados.map(([d, descartes]) => avisoProductoCambiado(items.indexOf(d) + 1, descartes)),
-      ...(duplicados.length
-        ? [`No dupliqué ${duplicados.join(', ')}: ya estaba en la cotización con la misma cantidad.`]
-        : []),
+      ...avisoDuplicados,
     ],
   };
+}
+
+/** «Agregué 2 productos, cambié 1 y actualicé los datos del cliente.» */
+function resumenCambios(antes: SolicitudItem[], despues: SolicitudItem[], otros: { cliente: boolean; flete: boolean }) {
+  const previos = new Map(antes.filter((s) => s.id).map((s) => [s.id!, s]));
+  const ids = new Set(despues.map((s) => s.id));
+  const agregados = despues.filter((s) => !s.id || !previos.has(s.id)).length;
+  const quitados = antes.filter((s) => s.id && !ids.has(s.id)).length;
+  const cambiados = despues.filter((s) => s.id && previos.has(s.id) && JSON.stringify(previos.get(s.id)) !== JSON.stringify(s)).length;
+  const n = (k: number, uno: string, varios: string) => (k === 1 ? `1 ${uno}` : `${k} ${varios}`);
+  const partes = [
+    agregados && `agregué ${n(agregados, 'producto', 'productos')}`,
+    cambiados && `cambié ${n(cambiados, 'producto', 'productos')}`,
+    quitados && `quité ${n(quitados, 'producto', 'productos')}`,
+    otros.cliente && 'actualicé los datos del cliente',
+    otros.flete && 'actualicé el flete',
+  ].filter((p): p is string => !!p);
+  if (!partes.length) return 'Revisé la cotización: los productos quedaron igual.';
+  const texto = partes.length > 1 ? `${partes.slice(0, -1).join(', ')} y ${partes.at(-1)}` : partes[0];
+  return `${texto[0].toUpperCase()}${texto.slice(1)}.`;
 }
 
 export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { tipo: 'chat' }>): Promise<Resultado> {
@@ -1062,9 +1218,12 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
               : {}),
           },
         ),
-        ctx.llm.verificarCifras
-          ? { revisar: (s) => revisarSalida(ctx, s, accion.mensaje, base, modo, resolver, corrige) }
-          : {},
+        {
+          ...(ctx.llm.verificarCifras
+            ? { revisar: (s: unknown) => revisarSalida(ctx, s, accion.mensaje, base, modo, resolver, corrige) }
+            : {}),
+          ...(accion.razonamiento ? { razonamiento: accion.razonamiento } : {}),
+        },
       );
     } catch (error) {
       if (error instanceof ErrorIA) throw error;
@@ -1221,14 +1380,16 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       // pallets» → 3 RIÑIHUE): no se agrega lo que el mensaje no pide.
       const noPedidos = (res.input.agregar ?? []).filter((s) => productoNoPedido(accion.mensaje, s, resolver));
       if (noPedidos.length) res.input.agregar = res.input.agregar!.filter((s) => !noPedidos.includes(s));
+      // Algunos modelos (GPT-6 Luna) registran el flete dos veces: como flete y como ítem libre «flete». Con el flete
+      // ya anotado, ese ítem libre sobra y se quita sin avisar.
+      if (res.input.flete && res.input.agregar?.some(esElFlete))
+        res.input.agregar = res.input.agregar.filter((s) => !esElFlete(s));
       const avisosNoPedidos = noPedidos.length
         ? marcar('otros', [
             `No registré ${noPedidos.map((s) => `«${s.modelo}»`).join(', ')} como producto: tu mensaje no lo pide. Dime qué productos quieres cotizar.`,
           ])
         : [];
-      const dichas = fabricasDichas(res.input, textosPersona, (i) =>
-        q.solicitudes[i] ? ctx.describir(q.solicitudes[i]) : `el ítem ${i + 1}`,
-      );
+      const dichas = fabricasDichas(res.input, textosPersona);
       avisosFabrica = [
         ...dichas.avisos,
         // Si ni el reintento la asignó, la fábrica dicha que falta no pasa en silencio.
@@ -1241,6 +1402,7 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       ];
       // En una cotización nueva los índices se refieren al borrador en curso (vacío si aún no existe).
       const aplicado = aplicarModificacion(ctx, q, dichas.input, accion.mensaje);
+      if (aplicado && 'sinCambios' in aplicado) return responder(aplicado.avisos.join('\n\n'));
       if (!aplicado) {
         const texto = avisosFabrica.length
           ? [...avisosFabrica, PREGUNTA_FABRICA].join('\n\n')
@@ -1444,10 +1606,15 @@ export async function procesarChat(ctx: ContextoChat, accion: Extract<Accion, { 
       ...recalculo.avisos,
       ...confirmarDescuentos(destino, conDescuentos.cambiados),
     ];
-    const exito =
-      modo === 'modificacion_anterior'
-        ? `Cotización actualizada${destino.origen ? ` como revisión de la N° ${destino.origen}` : ''}. Revisa el detalle y genera el PDF cuando esté listo.`
-        : 'Cotización actualizada. Revisa el detalle y genera el PDF cuando esté listo.';
+    // La confirmación dice qué cambió («Agregué 4 productos y cambié 1»), no solo «actualizada»: así la persona
+    // sabe si el asistente hizo lo que pidió (auditoría 2026-11, IA H10).
+    const resumen = resumenCambios(antes, destino.solicitudes, {
+      cliente: JSON.stringify(clienteAntes) !== JSON.stringify(destino.cliente),
+      flete: !!flete && cambiaFlete,
+    });
+    const exito = `${resumen}${
+      modo === 'modificacion_anterior' && destino.origen ? ` Quedó como revisión de la N° ${destino.origen}.` : ''
+    } Revisa el detalle y genera el PDF cuando esté listo.`;
     registrar(
       destino,
       accion.mensaje,

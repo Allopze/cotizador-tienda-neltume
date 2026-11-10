@@ -1232,3 +1232,38 @@ describe('un par con una cifra sobre 300 (#18)', () => {
     expect(parMedidaPuerta('0,8 x 2,1')).toEqual({ ancho: 0.8, alto: 2.1 });
   });
 });
+
+describe('lista de líneas separadas (auditoría 2026-11, N-03)', () => {
+  // Salida real de Haiku para «4 Ranco pino oregón de 2,20 de alto, una por línea: 0,85; 1,00; 0,85; 1,00».
+  const mensaje = '4 Ranco pino oregón de 2,20 de alto, una por línea: 0,85; 1,00; 0,85; 1,00';
+  const encabezado = '4 Ranco pino oregón de 2,20 de alto, una por línea: ';
+  const ia = [0.85, 1, 0.85, 1].map((ancho, i) =>
+    item({
+      modelo: 'RANCO',
+      madera: 'PINO OREGON',
+      ancho,
+      alto: 2.2,
+      cantidad: 1,
+      fuente: `${encabezado}${['0,85', '1,00'][i % 2]}`,
+    }),
+  );
+
+  it('ubica el elemento de la lista después del encabezado y reparte el 4 en líneas de 1', () => {
+    const { items, avisos } = anclarFrases(ia, [], mensaje, resolver);
+    expect(avisos).toEqual([]);
+    expect(items.map((i) => [i.ancho, i.cantidad])).toEqual([
+      [0.85, 1],
+      [1, 1],
+      [0.85, 1],
+      [1, 1],
+    ]);
+    expect(avisosDeCampos(ia, items)).toEqual([]);
+  });
+
+  it('un elemento que no está en la lista sigue sin verificarse', () => {
+    const ajeno = [{ ...ia[0], ancho: 0.9, fuente: `${encabezado}0,90` }];
+    expect(anclarFrases(ajeno, [], mensaje, resolver).avisos).toEqual([
+      'No pude verificar el ítem 1 contra tu mensaje; revísalo.',
+    ]);
+  });
+});

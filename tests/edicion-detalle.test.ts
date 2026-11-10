@@ -55,7 +55,7 @@ async function servicio() {
 }
 
 const acciones = (): AccionesPanel => ({
-  emitir: vi.fn(), aprobar: vi.fn(), quitar: vi.fn(), duplicar: vi.fn(), eliminar: vi.fn(), anular: vi.fn(),
+  emitir: vi.fn(), aprobar: vi.fn(), quitar: vi.fn(), duplicarLinea: vi.fn(async () => true), duplicar: vi.fn(), eliminar: vi.fn(), anular: vi.fn(),
   editar: vi.fn(async () => true), reordenar: vi.fn(async () => true), deshacer: vi.fn(async () => true),
   rehacer: vi.fn(async () => true), puedeDeshacer: false, puedeRehacer: false, despacho: vi.fn(async () => true),
   anularPago: vi.fn(async () => true), descargar: vi.fn(), copiar: vi.fn(), flujo: vi.fn(async () => true),

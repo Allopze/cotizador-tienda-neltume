@@ -1,11 +1,13 @@
 import { z } from 'zod';
 import { ajustesIASchema } from '@/asistente/ajustes';
+import { razonamientoPredeterminado } from '@/asistente/configuracion';
 import { exigirSesion, type UsuarioSesion } from '@/servidor/acceso-autenticado';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
 import { leerJson } from '@/servidor/cuerpo';
 import {
   asistenteConfigurado,
   estadoClaveCommandCode,
+  llmFijoDePrueba,
   ErrorProteccionClave,
   guardarAjustesIA,
   guardarClaveCommandCode,
@@ -31,6 +33,12 @@ function estado(usuario: UsuarioSesion) {
     commandcodeClave: apiKey.configurada,
     commandcodeClaveFuente: apiKey.fuente,
     asistenteConfigurado: asistenteConfigurado(),
+    // El selector de razonamiento del chat parte en el nivel predeterminado del modelo configurado; la elección se
+    // recuerda por modelo, para que pasar de Claude a Qwen no arrastre un nivel pensado para otro.
+    razonamiento: {
+      modelo: ajustes.commandcode.modelo,
+      predeterminado: razonamientoPredeterminado(llmFijoDePrueba() ? 'claude-fijo' : ajustes.commandcode.modelo),
+    },
     puedeEditar: usuario.rol === 'admin',
   };
 }

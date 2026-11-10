@@ -90,6 +90,27 @@ export interface ProductoElegido {
   tipoMedida?: 'hoja' | 'vano' | 'no_especificado';
 }
 /** Producto del catálogo tal como lo muestra la consulta: con el precio unitario de la cotización. */
+/** Resumen de un modelo en una madera dentro de los resultados de la búsqueda. */
+export interface GrupoConsulta {
+  modelo: string;
+  madera: string;
+  familia: Producto['familia'];
+  total: number;
+  anchoMin: number | null;
+  anchoMax: number | null;
+  altoMin: number;
+  altoMax: number;
+}
+/** Respuesta de `/api/catalogo`: los productos y cómo se leyó la búsqueda. */
+export interface RespuestaConsulta {
+  total: number;
+  productos: ProductoConsulta[];
+  /** «Ranco · Pino Oregón · 1,00 × 2,20 m»; null sin búsqueda. */
+  interpretacion?: string | null;
+  /** Modelo con que se buscó en lugar de una palabra mal escrita («ranko» → «RANCO»). */
+  sugerencia?: string | null;
+  grupos?: GrupoConsulta[];
+}
 export interface ProductoConsulta {
   codigo: string;
   modelo: string;

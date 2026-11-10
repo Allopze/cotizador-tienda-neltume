@@ -4,6 +4,7 @@ import { AltaProducto } from '../alta-producto';
 import { Avisos, useAvisos } from '../avisos';
 import { CatalogoConsulta } from '../catalogo-consulta';
 import { GestionManuales } from '../gestion-manuales';
+import { ModelosCatalogo } from '../modelos-catalogo';
 import { ConfiguracionCatalogo } from '../configuracion-catalogo';
 import { ImportarCatalogo } from './importar-catalogo';
 import { Encabezado } from '../encabezado';
@@ -136,6 +137,11 @@ export function PantallaCatalogo({
           {montada('agregar') && (
             <div hidden={seccion !== 'agregar'}>
               <AltaProducto asistente={asistente} alCambiarSucio={setAltaSucia} />
+            </div>
+          )}
+          {montada('modelos') && (
+            <div hidden={seccion !== 'modelos'}>
+              <ModelosCatalogo avisar={avisar} />
             </div>
           )}
           {montada('manuales') && (

@@ -14,7 +14,7 @@ export default async function Page({
   validarConfiguracionAutenticacion();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect('/login');
-  const { cotizacion } = await searchParams;
+  const { cotizacion, agregar } = await searchParams;
   // El rol solo decide qué se ofrece (número manual, regenerar un PDF); la API lo vuelve a exigir.
   const rol = (session.user as typeof session.user & { role?: string | null }).role ?? 'user';
   return (
@@ -23,6 +23,7 @@ export default async function Page({
       nombre={session.user.name || session.user.email}
       admin={rol === 'admin'}
       abrirId={typeof cotizacion === 'string' && cotizacion ? cotizacion : null}
+      agregarCodigo={typeof agregar === 'string' && agregar ? agregar.slice(0, 80) : null}
     />
   );
 }
