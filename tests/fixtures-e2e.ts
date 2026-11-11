@@ -18,14 +18,20 @@ export * from '@playwright/test';
  * - «Failed to load chunk /_next/static/chunks/…»: el runtime de Turbopack (`next dev`) lanza esto cuando la navegación
  *   corta la descarga de un trozo de JS de la página que se deja (p. ej. «/» al ir a «/ajustes» justo tras
  *   iniciar sesión). Solo pasa con la máquina cargada (deploy, grupos en paralelo compilando en frío); un trozo que
- *   falte de verdad deja la página sin funcionar y la prueba falla por sus propias verificaciones.
+ *   falte de verdad deja la página sin funcionar y la prueba falla por sus propias verificaciones. Chrome lo anota
+ *   en la consola; WebKit lo informa como excepción de la página con el nombre delante («ChunkLoadError: Failed to
+ *   load chunk …», p. ej. el cliente HMR de Turbopack en «webkit-iphone»).
+ * - «THREE.GLTFLoader: Couldn't load texture blob:…»: la puerta 3D del ingreso (src/app/login/escena-puerta.ts)
+ *   decodifica sus texturas desde blobs; si la prueba inicia sesión y se va de «/login» mientras tanto, WebKit corta
+ *   la carga y three.js lo anota en la consola. La escena ya tiene la foto fija de respaldo; es ruido de la salida.
  */
 const IGNORADOS_SIEMPRE: RegExp[] = [
   /^Failed to load resource: the server responded with a status of [45]\d\d/,
   /net::ERR_ABORTED/,
   /net::ERR_CONNECTION_REFUSED/,
   /due to access control checks\.$/,
-  /^Failed to load chunk \/_next\/static\/chunks\//,
+  /^(?:ChunkLoadError: )?Failed to load chunk \/_next\/static\/chunks\//,
+  /^THREE\.GLTFLoader: Couldn't load texture blob:/,
 ];
 
 interface Opciones {

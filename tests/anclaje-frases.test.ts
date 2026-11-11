@@ -1267,3 +1267,23 @@ describe('lista de líneas separadas (auditoría 2026-11, N-03)', () => {
     ]);
   });
 });
+
+describe('cantidad escrita justo antes de la frase (evaluación 2026-11-11, libre-sin-precio)', () => {
+  const termo = (s: Partial<SolicitudItem>) => item({ modelo: 'termo', libre: true, fuente: 'termo', ...s });
+
+  it('«agrega un termo» con la frase «termo» toma la cantidad 1 del «un» anterior', () => {
+    const { items, avisos } = anclarFrases([termo({})], [], 'agrega un termo', resolver);
+    expect(items[0].cantidad).toBe(1);
+    expect(avisos).toEqual([]);
+  });
+
+  it('sin cantidad antes de la frase, la cantidad sigue pendiente', () => {
+    expect(anclarFrases([termo({})], [], 'agrega termo', resolver).items[0].cantidad).toBeNull();
+  });
+
+  it('una cantidad de la IA que el mensaje no dice se corrige a la vista', () => {
+    const { items, avisos } = anclarFrases([termo({ cantidad: 3 })], [], 'agrega un termo', resolver);
+    expect(items[0].cantidad).toBe(1);
+    expect(avisos).toHaveLength(1);
+  });
+});

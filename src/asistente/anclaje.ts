@@ -793,7 +793,13 @@ export function anclarFrases(
     // Una sola cantidad en la frase gana a la de la IA: «un par de» son 2 aunque la IA leyera «un». La escrita
     // justo antes del modelo manda sobre las demás.
     const antesDelModelo = resultado.modelo ? cantidadAntesDelModelo(frase, resultado.modelo) : null;
-    const dichas = antesDelModelo !== null ? [antesDelModelo] : cantidadesDichas(frase);
+    let dichas = antesDelModelo !== null ? [antesDelModelo] : cantidadesDichas(frase);
+    // La IA puede dejar fuera de la frase la cantidad que la antecede («agrega un termo» con frase «termo»): sin
+    // cantidad propia, vale la escrita justo antes de la frase en el mensaje.
+    if (!dichas.length && partes[i]?.length === 1) {
+      const previa = cantidadAntesDelModelo(texto, partes[i]![0]);
+      if (previa !== null) dichas = [previa];
+    }
     const repartida = reparte && cantidad != null && dichas.length === 1 && dichas[0] === total && total > cantidad;
     if (
       !heredada &&
