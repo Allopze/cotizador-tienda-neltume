@@ -334,7 +334,10 @@ test('operación táctil a 390 px: diálogos de la nota y de producción caben y
     await cabeEnAncho(page, dialogo, aceptar);
     for (const nombre of ['Cancelar', aceptar]) {
       const boton = dialogo.getByRole('button', { name: nombre, exact: true });
-      await expect(boton).toBeInViewport({ ratio: 1 });
+      // WebKit recorta el diálogo con scroll en unidades de 1/64 px: un botón que llega justo al borde del
+      // contenido (x = 352,0) queda recortado a 351,98 y da 0,99991. 0,999 sigue exigiendo que quepa entero
+      // (en un botón de 180 × 44 px, la tolerancia es menos de un píxel).
+      await expect(boton).toBeInViewport({ ratio: 0.999 });
       expect((await boton.boundingBox())!.height, `${nombre}: alto táctil`).toBeGreaterThanOrEqual(40);
     }
     await sinScrollHorizontal(page, aceptar);
