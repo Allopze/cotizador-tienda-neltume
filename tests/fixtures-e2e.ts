@@ -15,12 +15,17 @@ export * from '@playwright/test';
  * - «Fetch API cannot load … due to access control checks.»: así anota WebKit (proyecto «webkit-iphone») una lectura
  *   que la navegación canceló, lo mismo que Chrome llama «net::ERR_ABORTED»; la app ya la descarta (`.catch`), pero
  *   WebKit la informa igual como error de la página. Aparece de vez en cuando, según cuánto tarda la lectura.
+ * - «Failed to load chunk /_next/static/chunks/…»: el runtime de Turbopack (`next dev`) lanza esto cuando la navegación
+ *   corta la descarga de un trozo de JS de la página que se deja (p. ej. «/» al ir a «/ajustes» justo tras
+ *   iniciar sesión). Solo pasa con la máquina cargada (deploy, grupos en paralelo compilando en frío); un trozo que
+ *   falte de verdad deja la página sin funcionar y la prueba falla por sus propias verificaciones.
  */
 const IGNORADOS_SIEMPRE: RegExp[] = [
   /^Failed to load resource: the server responded with a status of [45]\d\d/,
   /net::ERR_ABORTED/,
   /net::ERR_CONNECTION_REFUSED/,
   /due to access control checks\.$/,
+  /^Failed to load chunk \/_next\/static\/chunks\//,
 ];
 
 interface Opciones {
