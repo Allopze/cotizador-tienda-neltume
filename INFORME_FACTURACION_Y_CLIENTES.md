@@ -51,12 +51,12 @@ Ninguno de los archivos grandes existentes creció (todos disminuyeron al extrae
 
 ---
 
-### 4. Preguntas abiertas para confirmar con Neltume antes de cerrar y pasar a Fase 2
+### 4. Preguntas abiertas para confirmar con Neltume antes de desplegar
 
 - [ ] **P1 — Receptor distinto al cliente:** Se asumió que **sí** puede facturarse a nombre de un tercero distinto del cliente de la cotización, en un bloque propio precargado inicialmente desde los datos del cliente.
 - [ ] **P2 — Cuándo elegir boleta o factura:** Se implementó de forma **opcional** en el diálogo de aprobación (por defecto «Aún no sabe») y editable en el seguimiento mientras la facturación siga pendiente. Confirmar si prefieren mantenerlo opcional o hacerlo obligatorio en algún paso.
 - [ ] **P3 — Campos obligatorios vs opcionales:** Con Factura son obligatorios para marcar como facturada **Razón social, RUT válido, Giro y Dirección**; **Comuna** y **Correo para factura** quedaron opcionales. Confirmar si alguno opcional debe ser obligatorio (o viceversa).
-- [ ] **P4 — Carga inicial de clientes frecuentes (Fase 2):** Se acordó **no** migrar automáticamente las cotizaciones antiguas al registro nuevo, sino ofrecer **«Guardar como cliente»** en la ficha y un script con `--simular`. Confirmar antes de iniciar Fase 2.
+- [ ] **P4 — Carga inicial de clientes frecuentes (Fase 2):** Se acordó **no** migrar automáticamente las cotizaciones antiguas al registro nuevo, sino ofrecer **«Guardar como cliente»** en la ficha y un script que solo simula salvo con `--aplicar`. Confirmar si quieren hacer la carga inicial.
 - [ ] **P5 — Permisos de registro y baja de clientes (Fase 2):** Cualquier usuaria con sesión puede crear y editar clientes; la baja lógica queda restringida en el servidor al rol `admin`. Confirmar si está bien así.
 - [ ] **P6 — Formato de «Copiar datos para facturar»:** Actualmente copia texto plano con una línea por campo (`Etiqueta: valor`, omitiendo vacíos). Confirmar si calza con el facturador que usan (SII, Bsale, Defontana u otro) o si requieren otro orden o formato.
 
@@ -86,7 +86,7 @@ Comandos ejecutados tras el último commit de código y tests (`d125c24`):
 | **B3** | `5a28540` | Búsqueda priorizada desde `clientes` sin duplicar cotizaciones previas (`mismoCliente`), directorio unificado incluyendo clientes con `0` cotizaciones, etiquetas **«Cliente frecuente» / «Cotización anterior»**, y precarga automática en `FormAprobacion` y `FacturacionOperacion` **estrictamente por coincidencia de `rut_compacto`** en clientes activos (`Ajuste #2`). | `src/servidor/clientes.ts`, `src/app/clientes/cliente-registro-api.ts`, `src/app/clientes/bloque-cliente-cotizacion.tsx`, `src/app/dialogos-cotizacion.tsx`, `src/app/facturacion-operacion.tsx`, `tests/clientes.test.ts`, `tests/facturacion-ui.test.ts` |
 | **B4** | `023f082` | Pantalla `/clientes` editable: botón **«Nuevo cliente»**, tarjetas desplegables con insignia **Frecuente / Solo en cotizaciones**, botón **«Guardar como cliente»** sobre clientes históricos, edición con manejo de `409 rut_duplicado` (**«Abrir ficha existente»**) y baja lógica visible/autorizada solo para `admin` con confirmación. | `src/app/clientes/page.tsx`, `src/app/clientes/pantalla-clientes.tsx`, `src/app/clientes/dialogo-cliente.tsx`, `src/app/clientes/cliente-fila.tsx`, `src/app/globals.css` |
 | **B5** | `57e4f41` | Selector opcional **«Documento habitual al aprobar»** (`Sin definir / Boleta / Factura`) + receptor por omisión con botón **«Copiar datos de la ficha»** en el modal de cliente, visualización en la tarjeta de `/clientes` y autocompletado opcional desde clientes frecuentes en los campos `Razón social *` y `RUT *` del receptor (`A3` y `A4`). | `src/app/clientes/facturacion-cliente-campos.tsx`, `src/app/clientes/autocompletar-receptor.tsx`, `src/app/clientes/dialogo-cliente.tsx`, `src/app/clientes/cliente-fila.tsx`, `src/app/receptor-facturacion.tsx`, `src/app/cotizacion-interfaz.css`, `tests/facturacion-ui.test.ts` |
-| **B6** | `8901536` | Script CLI `scripts/clientes-desde-historial.ts` (`npm run clientes:importar`) con modo `--simular`, filtros de nombre + RUT módulo 11 válido, idempotencia por `rut_compacto` y auditoría bajo `terminal:clientes-desde-historial`. | `scripts/clientes-desde-historial.ts`, `package.json`, `tests/clientes-desde-historial.test.ts` |
+| **B6** | `8901536` | Script CLI `scripts/clientes-desde-historial.ts` (`npm run clientes:importar`) que **simula por omisión** (solo escribe con `--aplicar`), filtros de nombre + RUT módulo 11 válido, idempotencia por `rut_compacto` y auditoría bajo `terminal:clientes-desde-historial`. | `scripts/clientes-desde-historial.ts`, `package.json`, `tests/clientes-desde-historial.test.ts` |
 | **B7** | `1a41676` | Atajo **«Guardar como cliente frecuente»** en el bloque desplegable del cliente dentro de cada cotización (1 toque vía `POST /api/clientes`, indicador de ya registrado y enlace a `/clientes`). | `src/app/clientes/bloque-cliente-cotizacion.tsx`, `src/app/cotizacion-interfaz.css`, `tests/facturacion-ui.test.ts` |
 | **E2E** | `cc839d5` | Suite Playwright dedicada de clientes frecuentes en escritorio y móvil (`390 px`), cubriendo alta con `0` cotizaciones, edición, RUT duplicado, autocompletar, precarga por RUT al aprobar, inmutabilidad de cotizaciones emitidas, atajos `B7`/`B4` y baja lógica exclusiva `admin`. | `tests/clientes.e2e.ts` |
 
@@ -114,8 +114,9 @@ Los tres archivos grandes heredados no crecieron en Fase 2; los componentes y se
 4. **Permisos y auditoría:** Cualquier usuario autenticado puede crear y editar fichas (`POST`/`PATCH /api/clientes`); `DELETE /api/clientes` exige `rol === 'admin'` en el servidor (`403` en caso contrario) además de ocultar el botón en la interfaz para cuentas estándar. Toda alta, edición y baja lógica queda registrada en `auditoria_clientes` con `fecha`, `actor`, `accion`, `detalle` (`antes → después`) y snapshots JSON.
 5. **Respaldo y restauración:** `scripts/respaldar.ts` respalda la base SQLite completa (incluyendo `clientes` y `auditoria_clientes`), e informa la cantidad de clientes activos junto al respaldo y al restaurar (`scripts/lib/restauracion.ts`).
 6. **Carga inicial opcional de clientes históricos (`B6`):** Los clientes antiguos no se importan automáticamente. Cuando Neltume quiera revisar candidatos históricos con nombre y RUT módulo 11 válido, puede previsualizar sin modificar datos con:
-   `npm run clientes:importar -- --simular`
-   y ejecutar la importación real tras respaldar con `npm run respaldar`.
+   `npm run clientes:importar`
+   (sin argumentos solo simula; `--simular` se acepta y no cambia nada) y, tras respaldar con `npm run respaldar`, ejecutar la importación real con:
+   `npm run clientes:importar -- --aplicar`
 7. **Entorno y datos reales:** No se modificó `.env.local`, no se ejecutaron scripts contra la base de producción ni se realizó despliegue alguno.
 
 ---
@@ -131,3 +132,18 @@ Comandos ejecutados después del último cambio de código y tests (`cc839d5`):
 | `npm run build` (`next build`) | **OK** · compilación y generación de rutas Next.js sin errores. |
 | `npx vitest run` | **OK** · `109` archivos de test pasados, `1.667` pruebas pasadas, 0 fallidas, 0 omitidas. |
 | `npm run test:e2e:paralelo` | **OK** · Todos los grupos pasaron: `flujos-1` (22 pasadas), `flujos-2` (73 pasadas, incluida `tests/clientes.e2e.ts` con 2 pruebas en 390 px y escritorio), `aceptacion` (14 pasadas y 1 omitida en `webkit-iphone` para `tests/movil.e2e.ts:81` «scroll anidado del chat», cubierta en Chromium). |
+
+---
+
+## Correcciones posteriores a la revisión (14-11-2026)
+
+| # | Hallazgo | Corrección | Archivos |
+| --- | --- | --- | --- |
+| 1 | El script de importación escribía en la base si se ejecutaba sin `--simular`. | Ahora simula siempre salvo con `--aplicar`; el mensaje final pide respaldar antes. Test: el CLI sin argumentos no escribe. | `scripts/clientes-desde-historial.ts`, `tests/clientes-desde-historial.test.ts` |
+| 2 | `actualizado` era opcional en `PATCH` y `DELETE /api/clientes`: sin él no se detectaban ediciones simultáneas. | Obligatorio en ambos esquemas (`400` si falta). La interfaz ya lo enviaba. | `src/servidor/clientes-esquemas.ts`, `tests/repositorio-clientes.test.ts` |
+| 3 | Guardar una ficha sin cambios escribía una edición vacía en la auditoría y cambiaba su versión. | `actualizarCliente` devuelve la ficha sin escribir si los datos son idénticos. | `src/servidor/repositorio-clientes.ts`, `tests/repositorio-clientes.test.ts` |
+| 4 | `auditoria_clientes` tenía `ON DELETE CASCADE`: borrar un cliente de verdad borraba su auditoría. | `ON DELETE RESTRICT` en la migración v31 (aún no desplegada). Las bases locales que ya están en v31 conservan el `CASCADE`: recrearlas o dejarlas así (solo hay baja lógica). | `src/servidor/base-datos.ts` |
+| 5 | La precarga por RUT del bloque de facturación consultaba de nuevo con cada guardado (dependía de objetos). | Depende solo del RUT, del documento guardado, del estado y de si hay receptor guardado. | `src/app/facturacion-operacion.tsx` |
+
+Verificado en este entorno: `eslint` sin errores en los archivos tocados y `tsc --noEmit` sin errores nuevos. **Pendiente en el Mac:** `npm test` completo (unitarias + E2E).
+

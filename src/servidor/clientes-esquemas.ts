@@ -21,7 +21,7 @@ export const crearClienteSchema = z.object(camposCliente).strict();
 export const editarClienteSchema = z
   .object({
     id: z.uuid(),
-    actualizado: z.iso.datetime().optional(),
+    actualizado: z.iso.datetime(),
     ...camposCliente,
   })
   .strict();
@@ -29,6 +29,6 @@ export const editarClienteSchema = z
 export const eliminarClienteSchema = z
   .object({
     id: z.uuid(),
-    actualizado: z.iso.datetime().optional(),
+    actualizado: z.iso.datetime(),
   })
   .strict();

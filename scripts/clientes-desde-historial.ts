@@ -90,7 +90,8 @@ export function importarClientesDesdeHistorial(
 }
 
 function main() {
-  const simular = process.argv.includes('--simular');
+  // Sin `--aplicar` solo simula: nunca escribe por omisión (`--simular` se acepta y no cambia nada).
+  const simular = !process.argv.includes('--aplicar');
   const db = abrirBaseDatos();
   try {
     const r = importarClientesDesdeHistorial(db, { simular });
@@ -112,7 +113,7 @@ function main() {
         `${r.omitidosSinRutOInvalido} sin RUT válido, ${r.omitidosSinNombre} sin nombre.`,
     );
     if (simular && r.creados.length > 0) {
-      console.log('Ejecuta sin --simular para guardarlos en el registro.');
+      console.log('Respalda la base (npm run respaldar) y ejecuta con --aplicar para guardarlos en el registro.');
     }
   } finally {
     cerrarBaseDatos();

@@ -79,7 +79,7 @@ async function prepararConHistorial() {
 }
 
 describe('B6 · script clientes-desde-historial', () => {
-  it('con --simular lista candidatos sin escribir; sin simular importa, audita y es idempotente', async () => {
+  it('sin --aplicar (o con --simular) lista candidatos sin escribir; con --aplicar importa, audita y es idempotente', async () => {
     const { dir, db } = await prepararConHistorial();
     const env = { ...process.env, NELTUME_DATA_DIR: dir, NELTUME_DB_PATH: join(dir, 'cotizador.sqlite') };
 
@@ -88,6 +88,12 @@ describe('B6 · script clientes-desde-historial', () => {
     expect(cliSim.status).toBe(0);
     expect(cliSim.stdout).toContain('Simulación: se importarían 1 cliente(s)');
     expect(cliSim.stdout).toContain('Constructora Lingue');
+    expect(listarClientesActivos(db)).toHaveLength(0);
+
+    // Sin flag también simula: el script nunca escribe por omisión.
+    const cliSinFlag = spawnSync(tsx, ['scripts/clientes-desde-historial.ts'], { cwd: raiz, env, encoding: 'utf8' });
+    expect(cliSinFlag.status).toBe(0);
+    expect(cliSinFlag.stdout).toContain('Simulación: se importarían 1 cliente(s)');
     expect(listarClientesActivos(db)).toHaveLength(0);
 
     // Simulación por función.

@@ -83,9 +83,12 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
   const tocoTipoFactura = useRef(false);
 
   // Ajuste obligatorio #2: si aún no hay preferencia guardada, precarga solo si coincide el RUT compacto.
+  // Depende de valores simples: con `actual.cliente` o el receptor (objetos nuevos en cada guardado) consultaba de nuevo.
+  const rut = actual.cliente?.rut ?? null;
+  const estadoFacturacion = fact?.estado ?? 'pendiente';
+  const hayReceptorGuardado = receptorTieneContenido(receptorGuardado);
   useEffect(() => {
-    const rut = actual.cliente?.rut;
-    if (fact?.estado === 'facturada' || docGuardado !== 'sin_definir' || receptorTieneContenido(receptorGuardado) || !rut) {
+    if (estadoFacturacion === 'facturada' || docGuardado !== 'sin_definir' || hayReceptorGuardado || !rut) {
       return;
     }
     const control = new AbortController();
@@ -102,7 +105,9 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
       })
       .catch(() => {});
     return () => control.abort();
-  }, [actual.cliente, docGuardado, fact?.estado, receptorGuardado]);
+    // `actual.cliente` se lee al responder; la consulta solo se repite si cambia el RUT o lo guardado.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rut, docGuardado, estadoFacturacion, hayReceptorGuardado]);
 
   useEffect(() => {
     if (!estadoCopia) return;

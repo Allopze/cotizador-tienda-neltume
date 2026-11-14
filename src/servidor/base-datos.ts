@@ -591,7 +591,7 @@ function crearEsquema(db: Database.Database) {
           WHERE rut_compacto IS NOT NULL AND eliminado IS NULL;
         CREATE TABLE IF NOT EXISTS auditoria_clientes (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          cliente_id TEXT NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+          cliente_id TEXT NOT NULL REFERENCES clientes(id) ON DELETE RESTRICT,
           fecha TEXT NOT NULL,
           actor TEXT,
           accion TEXT NOT NULL CHECK (accion IN ('crear', 'editar', 'eliminar')),

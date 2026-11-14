@@ -268,4 +268,35 @@ describe('repositorio y API /api/clientes (CRUD, roles, RUT único y auditoría)
     );
     expect(recreadoRes.status).toBe(201);
   });
+
+  it('guardar sin cambios no escribe ni audita, y editar o dar de baja exige la versión de la ficha', async () => {
+    const { vendedora, admin, ruta, peticion, db } = await montar();
+    const datos = { nombre: 'Maderas Ranco', rut: rut('77111222'), giro: 'Comercio', comuna: 'Futrono' };
+    const { cliente } = await (
+      await ruta.POST(peticion('/api/clientes', { cookie: vendedora.cookie, json: datos }))
+    ).json();
+
+    // Mismos datos: responde la ficha tal cual, sin nueva versión ni fila de auditoría.
+    const igual = await ruta.PATCH(
+      peticion('/api/clientes', {
+        cookie: vendedora.cookie,
+        metodo: 'PATCH',
+        json: { id: cliente.id, actualizado: cliente.actualizado, ...datos },
+      }),
+    );
+    expect(igual.status).toBe(200);
+    expect((await igual.json()).cliente.actualizado).toBe(cliente.actualizado);
+    expect(auditoriaDeCliente(db, cliente.id)).toHaveLength(1);
+
+    // Sin `actualizado` no se edita ni se da de baja: evita pisar cambios de otra persona.
+    const sinVersion = await ruta.PATCH(
+      peticion('/api/clientes', { cookie: vendedora.cookie, metodo: 'PATCH', json: { id: cliente.id, ...datos } }),
+    );
+    expect(sinVersion.status).toBe(400);
+    const bajaSinVersion = await ruta.DELETE(
+      peticion('/api/clientes', { cookie: admin.cookie, metodo: 'DELETE', json: { id: cliente.id } }),
+    );
+    expect(bajaSinVersion.status).toBe(400);
+    expect(obtenerCliente(db, cliente.id)).not.toBeNull();
+  });
 });

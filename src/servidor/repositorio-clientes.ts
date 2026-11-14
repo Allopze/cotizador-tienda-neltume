@@ -6,6 +6,7 @@ import { rutCompacto } from '@/negocio/cliente';
 import {
   sanearClienteRegistrado,
   type ClienteRegistrado,
+  type DatosClienteSaneados,
   type EntradaClienteRegistrado,
 } from '@/negocio/cliente-registro';
 import {
@@ -135,6 +136,17 @@ function resumirCambiosCliente(antes: ClienteRegistrado, despues: ClienteRegistr
   return cambios.length ? cambios.join('; ').slice(0, 600) : `Sin cambios de campos (${despues.nombre})`;
 }
 
+const CAMPOS_RECEPTOR: (keyof ReceptorFacturacion)[] = ['razonSocial', 'rut', 'giro', 'direccion', 'comuna', 'correo'];
+
+/** La ficha ya tiene exactamente estos datos: guardar no escribe ni deja una edición vacía en la auditoría. */
+function sinCambios(antes: ClienteRegistrado, datos: DatosClienteSaneados): boolean {
+  const campos = ['nombre', 'rut', 'giro', 'telefono', 'direccion', 'comuna', 'correo', 'notas', 'documentoHabitual'] as const;
+  if (campos.some((c) => (antes[c] ?? null) !== (datos[c] ?? null))) return false;
+  const a = antes.receptorFacturacion, d = datos.receptorFacturacion;
+  if (!a || !d) return !a && !d;
+  return CAMPOS_RECEPTOR.every((c) => (a[c] ?? null) === (d[c] ?? null));
+}
+
 export function obtenerCliente(
   db: Database.Database,
   id: string,
@@ -259,6 +271,7 @@ export function actualizarCliente(
         'version_obsoleta',
       );
     }
+    if (sinCambios(antes, datos)) return antes;
     verificarRutDisponible(db, datos.rutCompacto, id);
     const ahora = ahoraUnico(antes.actualizado);
     const r = datos.receptorFacturacion;
