@@ -217,7 +217,7 @@ describe('repositorio y API /api/clientes (CRUD, roles, RUT único y auditoría)
     );
     const { cliente } = await cRes.json();
 
-    await ruta.PATCH(
+    const editado = await ruta.PATCH(
       peticion('/api/clientes', {
         cookie: admin.cookie,
         metodo: 'PATCH',
@@ -236,7 +236,7 @@ describe('repositorio y API /api/clientes (CRUD, roles, RUT único y auditoría)
       peticion('/api/clientes', {
         cookie: admin.cookie,
         metodo: 'DELETE',
-        json: { id: cliente.id },
+        json: { id: cliente.id, actualizado: (await editado.json()).cliente.actualizado },
       }),
     );
     expect(borrado.status).toBe(200);

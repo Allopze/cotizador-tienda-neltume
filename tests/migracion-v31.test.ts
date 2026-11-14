@@ -192,8 +192,10 @@ describe('B1 · Migración v30 → v31, tabla clientes y respaldos', () => {
     expect(r.stdout).toContain('1 clientes');
     const carpeta = r.stdout.match(/^Respaldo en ([^:]+):/m)![1];
 
-    // Borramos el cliente después del respaldo y restauramos.
+    // Borramos el cliente después del respaldo y restauramos. La auditoría es RESTRICT:
+    // primero se borran sus eventos para simular la pérdida completa.
     const db2 = abrirBaseDatos();
+    db2.prepare('DELETE FROM auditoria_clientes WHERE cliente_id = ?').run('cli-1');
     db2.prepare('DELETE FROM clientes WHERE id = ?').run('cli-1');
     cerrarBaseDatos();
 
