@@ -1,7 +1,7 @@
 # Informe de implementación: Facturación (Boleta / Factura) y Registro de Clientes
 
 Rama de trabajo: `feat/facturacion-y-clientes`  
-Estado general: **Fase 1 completada y verificada** · **Fase 2 pendiente de confirmación**
+Estado general: **Fase 1 y Fase 2 completadas y verificadas**
 
 > **Nota de alcance:** El cotizador **no emite boletas ni facturas electrónicas (DTE)** ni se conecta con el SII ni con un facturador externo. Guarda la preferencia del cliente y los datos del receptor para tenerlos listos al facturar fuera de la aplicación.
 
@@ -75,9 +75,59 @@ Comandos ejecutados tras el último commit de código y tests (`d125c24`):
 
 ---
 
-## Fase 2 — Registro de clientes frecuentes (`B1–B7`) *(Pendiente de aprobación)*
+## Fase 2 — Registro de clientes frecuentes (`B1–B7`)
 
-No iniciada a la espera de su confirmación sobre Fase 1:
-- **B1–B2:** Migración `v31` con tabla `clientes`, índice único parcial sobre `rut_compacto`, auditoría de clientes (`auditoria_clientes`) y endpoints `POST`/`PATCH`/`DELETE` (baja lógica solo para `rol === 'admin'`).
-- **B3:** Autocompletar priorizado desde registro + precarga de documento habitual/receptor/correo **solo cuando el `rut_compacto` de la cotización coincida con un cliente activo**.
-- **B4–B7:** Pantalla Clientes editable, vínculo cliente ↔ datos de facturación por omisión, atajo en la cotización («Guardar como cliente frecuente»), script con `--simular`, pruebas unitarias + E2E y sección «Fase 2» de este informe.
+### 1. Resumen por tarea (un commit por tarea)
+
+| Tarea | Commit | Qué se implementó | Archivos principales |
+| --- | --- | --- | --- |
+| **B1** | `92e9981` | Entidad `ClienteRegistrado`, saneamiento módulo 11 y correo (`sanearClienteRegistrado`), migración SQLite `user_version = 31` con tablas `clientes` y `auditoria_clientes`, índice único parcial `idx_clientes_rut_unico` sobre `rut_compacto WHERE eliminado IS NULL`, y conteo de clientes en `respaldar`/`restaurar`. | `src/negocio/cliente-registro.ts`, `src/servidor/base-datos.ts`, `scripts/respaldar.ts`, `scripts/lib/restauracion.ts`, `scripts/restaurar.ts`, `tests/migracion-v31.test.ts` |
+| **B2** | `08c9ae0` | Repositorio CRUD transaccional (`crearCliente`, `actualizarCliente`, `eliminarCliente`, `buscarClienteActivoPorRut`, `auditoriaDeCliente`) con registro `antes → después`, conflicto `409 rut_duplicado` con `clienteExistente`, bloqueo optimista (`actualizado`) y endpoints `GET` (`?rut=`, `?id=`), `POST`, `PATCH` y `DELETE` (este último restringido en backend a `rol === 'admin'`). | `src/servidor/repositorio-clientes.ts`, `src/servidor/clientes-esquemas.ts`, `src/servidor/errores.ts`, `src/app/api/clientes/route.ts`, `tests/repositorio-clientes.test.ts` |
+| **B3** | `5a28540` | Búsqueda priorizada desde `clientes` sin duplicar cotizaciones previas (`mismoCliente`), directorio unificado incluyendo clientes con `0` cotizaciones, etiquetas **«Cliente frecuente» / «Cotización anterior»**, y precarga automática en `FormAprobacion` y `FacturacionOperacion` **estrictamente por coincidencia de `rut_compacto`** en clientes activos (`Ajuste #2`). | `src/servidor/clientes.ts`, `src/app/clientes/cliente-registro-api.ts`, `src/app/clientes/bloque-cliente-cotizacion.tsx`, `src/app/dialogos-cotizacion.tsx`, `src/app/facturacion-operacion.tsx`, `tests/clientes.test.ts`, `tests/facturacion-ui.test.ts` |
+| **B4** | `023f082` | Pantalla `/clientes` editable: botón **«Nuevo cliente»**, tarjetas desplegables con insignia **Frecuente / Solo en cotizaciones**, botón **«Guardar como cliente»** sobre clientes históricos, edición con manejo de `409 rut_duplicado` (**«Abrir ficha existente»**) y baja lógica visible/autorizada solo para `admin` con confirmación. | `src/app/clientes/page.tsx`, `src/app/clientes/pantalla-clientes.tsx`, `src/app/clientes/dialogo-cliente.tsx`, `src/app/clientes/cliente-fila.tsx`, `src/app/globals.css` |
+| **B5** | `57e4f41` | Selector opcional **«Documento habitual al aprobar»** (`Sin definir / Boleta / Factura`) + receptor por omisión con botón **«Copiar datos de la ficha»** en el modal de cliente, visualización en la tarjeta de `/clientes` y autocompletado opcional desde clientes frecuentes en los campos `Razón social *` y `RUT *` del receptor (`A3` y `A4`). | `src/app/clientes/facturacion-cliente-campos.tsx`, `src/app/clientes/autocompletar-receptor.tsx`, `src/app/clientes/dialogo-cliente.tsx`, `src/app/clientes/cliente-fila.tsx`, `src/app/receptor-facturacion.tsx`, `src/app/cotizacion-interfaz.css`, `tests/facturacion-ui.test.ts` |
+| **B6** | `8901536` | Script CLI `scripts/clientes-desde-historial.ts` (`npm run clientes:importar`) con modo `--simular`, filtros de nombre + RUT módulo 11 válido, idempotencia por `rut_compacto` y auditoría bajo `terminal:clientes-desde-historial`. | `scripts/clientes-desde-historial.ts`, `package.json`, `tests/clientes-desde-historial.test.ts` |
+| **B7** | `1a41676` | Atajo **«Guardar como cliente frecuente»** en el bloque desplegable del cliente dentro de cada cotización (1 toque vía `POST /api/clientes`, indicador de ya registrado y enlace a `/clientes`). | `src/app/clientes/bloque-cliente-cotizacion.tsx`, `src/app/cotizacion-interfaz.css`, `tests/facturacion-ui.test.ts` |
+| **E2E** | `cc839d5` | Suite Playwright dedicada de clientes frecuentes en escritorio y móvil (`390 px`), cubriendo alta con `0` cotizaciones, edición, RUT duplicado, autocompletar, precarga por RUT al aprobar, inmutabilidad de cotizaciones emitidas, atajos `B7`/`B4` y baja lógica exclusiva `admin`. | `tests/clientes.e2e.ts` |
+
+---
+
+### 2. Reglas de arquitectura y tamaño de archivos cumplidas
+
+Los tres archivos grandes heredados no crecieron en Fase 2; los componentes y servicios nuevos se modularizaron por responsabilidad y quedaron bajo el máximo de 500 líneas (la mayoría ≤ 300 líneas):
+
+| Archivo | Líneas verificadas después de Fase 2 |
+| --- | --- |
+| `src/app/cotizacion-panel.tsx` | 1.902 (sin cambios respecto a Fase 1) |
+| `src/servidor/servicio.ts` | 2.443 (sin cambios respecto a Fase 1) |
+| `src/app/seguimiento-operacion.tsx` | 522 (sin cambios respecto a Fase 1) |
+| Módulos ≤ 300 líneas | `cliente-registro.ts` (152), `clientes-esquemas.ts` (34), `api/clientes/route.ts` (144), `servidor/clientes.ts` (277), `cliente-registro-api.ts` (57), `cliente-fila.tsx` (106), `facturacion-cliente-campos.tsx` (79), `autocompletar-receptor.tsx` (184), `pantalla-clientes.tsx` (250), `bloque-cliente-cotizacion.tsx` (195), `receptor-facturacion.tsx` (210), `scripts/clientes-desde-historial.ts` (124) |
+| Módulos entre 301 y 500 líneas | `dialogo-cliente.tsx` (323), `facturacion-operacion.tsx` (329), `repositorio-clientes.ts` (365) |
+
+---
+
+### 3. Reglas clave, auditoría y comportamiento verificado
+
+1. **Precarga estricta por RUT (`Ajuste #2`):** Ni en `FormAprobacion`, ni en `FacturacionOperacion`, ni en `BloqueClienteCotizacion` se consulta ni precarga automáticamente desde el registro maestro si la cotización no tiene un `rut_compacto` coincidente con un cliente activo. La prioridad al aprobar sigue siendo: `facturacion` ya guardada en la cotización (incluyendo tras `desaprobar`) → cliente frecuente activo coincidente por `rut_compacto` → datos propios de `cotizacion.cliente`.
+2. **Inmutabilidad de cotizaciones emitidas y PDF:** Toda cotización conserva su propia copia de `cliente` y `facturacion.receptor`. Editar o dar de baja un cliente en `/clientes` nunca altera cotizaciones ya guardadas ni PDF ya generados; en `/clientes`, si un cliente dado de baja aún tiene cotizaciones previas, su tarjeta pasa de `Frecuente` a `Solo en cotizaciones` y deja de activar precargas por RUT.
+3. **Índice único parcial y reutilización tras baja lógica:** `idx_clientes_rut_unico` impone unicidad de `rut_compacto` solo cuando `rut_compacto IS NOT NULL AND eliminado IS NULL`. Varios clientes sin RUT pueden coexistir y el RUT de un cliente dado de baja lógicamente queda disponible para un alta posterior sin borrar el registro de auditoría previo.
+4. **Permisos y auditoría:** Cualquier usuario autenticado puede crear y editar fichas (`POST`/`PATCH /api/clientes`); `DELETE /api/clientes` exige `rol === 'admin'` en el servidor (`403` en caso contrario) además de ocultar el botón en la interfaz para cuentas estándar. Toda alta, edición y baja lógica queda registrada en `auditoria_clientes` con `fecha`, `actor`, `accion`, `detalle` (`antes → después`) y snapshots JSON.
+5. **Respaldo y restauración:** `scripts/respaldar.ts` respalda la base SQLite completa (incluyendo `clientes` y `auditoria_clientes`), e informa la cantidad de clientes activos junto al respaldo y al restaurar (`scripts/lib/restauracion.ts`).
+6. **Carga inicial opcional de clientes históricos (`B6`):** Los clientes antiguos no se importan automáticamente. Cuando Neltume quiera revisar candidatos históricos con nombre y RUT módulo 11 válido, puede previsualizar sin modificar datos con:
+   `npm run clientes:importar -- --simular`
+   y ejecutar la importación real tras respaldar con `npm run respaldar`.
+7. **Entorno y datos reales:** No se modificó `.env.local`, no se ejecutaron scripts contra la base de producción ni se realizó despliegue alguno.
+
+---
+
+### 4. Verificación completa ejecutada tras Fase 2
+
+Comandos ejecutados después del último cambio de código y tests (`cc839d5`):
+
+| Verificación | Resultado observado |
+| --- | --- |
+| `npm run typecheck` (`tsc --noEmit`) | **OK** · 0 errores. |
+| `npm run lint` (`eslint .`) | **OK** · 0 errores (2 advertencias preexistentes sin relación en `src/app/dialogo.tsx` y `tests/notas-por-fabrica.test.ts`). |
+| `npm run build` (`next build`) | **OK** · compilación y generación de rutas Next.js sin errores. |
+| `npx vitest run` | **OK** · `109` archivos de test pasados, `1.667` pruebas pasadas, 0 fallidas, 0 omitidas. |
+| `npm run test:e2e:paralelo` | **OK** · Todos los grupos pasaron: `flujos-1` (22 pasadas), `flujos-2` (73 pasadas, incluida `tests/clientes.e2e.ts` con 2 pruebas en 390 px y escritorio), `aceptacion` (14 pasadas y 1 omitida en `webkit-iphone` para `tests/movil.e2e.ts:81` «scroll anidado del chat», cubierta en Chromium). |
