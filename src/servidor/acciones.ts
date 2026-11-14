@@ -2,6 +2,7 @@
 // arman una acción (chat.ts, edicion.ts) los usen sin importar el servicio completo.
 import type { Cliente, Familia, ReferenciaItem, SolicitudItem } from '../catalogo/tipos';
 import type { Cotizacion, Despacho, Fabrica, Mensaje } from '../negocio/estado';
+import type { ReceptorFacturacion, TipoDocumentoTributario } from '../negocio/facturacion';
 import type { TarifaStarkenAplicada } from '../negocio/starken';
 import type { NivelRazonamiento } from '../asistente/configuracion';
 import type { OpcionCotizacion } from './referencias';
@@ -64,6 +65,10 @@ export type Accion =
       actualizada: string;
       confirmarVencida?: boolean;
       despacho?: Partial<Despacho>;
+      facturacion?: {
+        documento: TipoDocumentoTributario | null;
+        receptor?: Partial<ReceptorFacturacion> | null;
+      };
     }
   /**
    * Copia la cotización en un borrador nuevo. `nuevoId` lo propone la interfaz: si la persona reintenta tras un
@@ -133,7 +138,14 @@ export type Accion =
   | { tipo: 'cambiar_numero'; id: string; actualizada: string; documento: 'cotizacion' | 'nota'; fabrica?: Fabrica; numero: number }
   /** Los pasos de producción se registran por fábrica (`fabrica`); sin ella, en todas las notas que corresponda. */
   | { tipo: 'operacion'; id: string; actualizada: string; paso: 'iniciar_produccion' | 'produccion_terminada' | 'lista_despacho' | 'despachada' | 'completada'; fabrica?: Fabrica; despacho?: Partial<Despacho> }
-  | { tipo: 'facturacion'; id: string; actualizada: string; estado: 'pendiente' | 'facturada'; tipoDocumento?: 'factura' | 'boleta' | null; identificadorExterno?: string | null; fecha?: string | null };
+  | { tipo: 'facturacion'; id: string; actualizada: string; estado: 'pendiente' | 'facturada'; tipoDocumento?: 'factura' | 'boleta' | null; identificadorExterno?: string | null; fecha?: string | null }
+  | {
+      tipo: 'datos_facturacion';
+      id: string;
+      actualizada: string;
+      documento: TipoDocumentoTributario | null;
+      receptor?: Partial<ReceptorFacturacion> | null;
+    };
 
 /** Fábrica de un ítem (por su índice en la cotización); null la quita. */
 export interface AsignacionFabrica {

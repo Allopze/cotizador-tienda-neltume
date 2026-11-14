@@ -13,6 +13,11 @@ import { leerJson } from '@/servidor/cuerpo';
 import type { LLM } from '@/asistente/llm';
 import { asistenteConfigurado, crearLLM, llmFijoDePrueba } from '@/servidor/ajustes-ia';
 import { ErrorMigracionRequerida } from '@/servidor/base-datos';
+import {
+  documentoTributarioSchema,
+  facturacionAprobacionSchema,
+  receptorFacturacionEntradaSchema,
+} from '@/servidor/facturacion-esquemas';
 import { descuentoItemSchema } from '@/servidor/persistencia-esquemas';
 import { ErrorPdf, ErrorUsuario, registrarError } from '@/servidor/errores';
 import { ErrorPrecio } from '@/negocio/precios';
@@ -228,6 +233,7 @@ const accionSchema = z.discriminatedUnion('tipo', [
       actualizada: version,
       confirmarVencida: z.boolean().optional(),
       despacho: despachoSchema.optional(),
+      facturacion: facturacionAprobacionSchema.optional(),
     })
     .strict(),
   z.object({ tipo: z.literal('duplicar'), id: z.uuid(), nuevoId: z.uuid().optional() }).strict(),
@@ -369,6 +375,13 @@ const accionSchema = z.discriminatedUnion('tipo', [
     estado: z.enum(['pendiente', 'facturada']), tipoDocumento: z.enum(['factura', 'boleta']).nullable().optional(),
     identificadorExterno: z.string().max(120).nullable().optional(),
     fecha: z.union([z.iso.date(), z.iso.datetime()]).nullable().optional(),
+  }).strict(),
+  z.object({
+    tipo: z.literal('datos_facturacion'),
+    id: z.uuid(),
+    actualizada: version,
+    documento: documentoTributarioSchema.nullable(),
+    receptor: receptorFacturacionEntradaSchema.nullable().optional(),
   }).strict(),
 ]);
 const fecha = z.iso.date();

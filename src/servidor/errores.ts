@@ -17,6 +17,8 @@ export type CodigoError =
   | 'numero_invalido'
   | 'numero_usado'
   | 'fabrica_sin_asignar'
+  | 'rut_invalido'
+  | 'datos_facturacion_incompletos'
   | 'sin_permiso'
   | 'archivo_invalido';
 

@@ -138,12 +138,34 @@ describe('CSV del listado: pagos, operación y facturación', () => {
     const t = await setup();
     await t.ir({ tipo: 'emitir' });
     await t.ir({ tipo: 'aprobar' });
+    await t.ir({
+      tipo: 'datos_facturacion',
+      documento: 'factura',
+      receptor: {
+        razonSocial: 'Constructora Sur SpA',
+        rut: '76.543.210-3',
+        giro: 'Construcción',
+        direccion: 'Av. Principal 100',
+      },
+    });
     const anticipo = Math.ceil(t.actual().montos.total / 2);
     await t.ir({ tipo: 'pago', monto: anticipo });
     await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     const q = await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: '1234' });
     const [fila] = t.almacen.listar().cotizaciones;
-    expect(fila.facturacion).toMatchObject({ estado: 'facturada', tipo: 'factura', documento: null, receptor: null });
+    expect(fila.facturacion).toMatchObject({
+      estado: 'facturada',
+      tipo: 'factura',
+      documento: 'factura',
+      receptor: {
+        razonSocial: 'Constructora Sur SpA',
+        rut: '76.543.210-3',
+        giro: 'Construcción',
+        direccion: 'Av. Principal 100',
+        comuna: null,
+        correo: null,
+      },
+    });
     expect(valores(csvCotizaciones([fila]))).toMatchObject({
       Pagado: String(anticipo),
       Saldo: String(q.montos.total - anticipo),
