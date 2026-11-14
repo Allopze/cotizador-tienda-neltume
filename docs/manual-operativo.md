@@ -254,6 +254,13 @@ funciona) explica el recorrido completo de una cotización; aquí van las reglas
 
 ### Pagos y facturas
 
+- **Boleta o factura y receptor:** al registrar la aprobación (opcional) o en el bloque **Facturación** del
+  seguimiento se puede anotar si el cliente pide **Boleta** o **Factura**. Si pide **Factura**, se registran razón
+  social, RUT (validado), giro y dirección —obligatorios para marcar como facturada—, además de comuna y correo
+  opcionales, con el botón **Copiar datos para facturar** para pegarlos afuera.
+- **Sin conexión con el SII:** el cotizador **no emite boletas ni facturas electrónicas**; la emisión ocurre fuera
+  de la app y aquí solo se deja constancia del documento emitido (tipo, número externo y fecha). Mientras esté
+  marcada como facturada no se editan el documento pedido ni el receptor: usa **Volver a pendiente** primero.
 - La fecha de un pago o de una factura va **desde el día de la aprobación hasta hoy** (hora de Chile). El
   calendario no deja elegir otra. Si no eliges fecha, queda la de hoy.
 
