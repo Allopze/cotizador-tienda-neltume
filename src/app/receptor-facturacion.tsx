@@ -175,3 +175,27 @@ export function ReceptorFacturacionCampos({
     </div>
   );
 }
+
+/** Resumen de solo lectura del receptor guardado cuando la venta ya figura facturada. */
+export function ResumenReceptor({ receptor }: { receptor: ReceptorFacturacion }) {
+  const filas: [string, string | null][] = [
+    ['Razón social', receptor.razonSocial],
+    ['RUT', receptor.rut],
+    ['Giro', receptor.giro],
+    ['Dirección', receptor.direccion],
+    ['Comuna', receptor.comuna],
+    ['Correo', receptor.correo],
+  ];
+  return (
+    <dl className="receptor-resumen">
+      {filas
+        .filter(([, v]) => !!v)
+        .map(([etiqueta, valor]) => (
+          <div key={etiqueta}>
+            <dt>{etiqueta}</dt>
+            <dd>{valor}</dd>
+          </div>
+        ))}
+    </dl>
+  );
+}

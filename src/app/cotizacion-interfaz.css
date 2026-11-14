@@ -572,3 +572,104 @@
     grid-column: auto;
   }
 }
+
+/* Tarjeta de facturación dentro del seguimiento de operación. */
+.facturacion-card {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.facturacion-preferencia {
+  display: grid;
+  gap: 8px;
+}
+.facturacion-opciones-fila {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.facturacion-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-md);
+  cursor: pointer;
+}
+.facturacion-pill:hover,
+.facturacion-pill:has(input:checked) {
+  background: var(--pale);
+}
+.facturacion-pill:has(input:checked) {
+  border-color: var(--green);
+  font-weight: 600;
+}
+.facturacion-pill input {
+  flex: none;
+  accent-color: var(--green);
+}
+.facturacion-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.facturacion-aviso {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--pending);
+  background: var(--amber-bg);
+  color: var(--amber-text, var(--ink));
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.facturacion-copiado {
+  color: var(--green);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+}
+.receptor-resumen {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.receptor-resumen > div {
+  min-width: 0;
+}
+.receptor-resumen dt {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.receptor-resumen dd {
+  margin: 2px 0 0;
+  font-size: var(--fs-md);
+  overflow-wrap: anywhere;
+}
+@media (max-width: 520px) {
+  .facturacion-card {
+    padding: 14px;
+  }
+  .facturacion-opciones-fila,
+  .receptor-resumen {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
