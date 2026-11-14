@@ -142,6 +142,13 @@
 .quote-client-section .campo-etiqueta {
   margin-bottom: 7px;
 }
+.campo-ayuda {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
+}
 .quote-client-section .campo-valor-boton {
   width: 100%;
   min-height: 44px;

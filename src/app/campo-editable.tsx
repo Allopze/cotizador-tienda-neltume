@@ -71,6 +71,8 @@ interface Props {
    * eligen con el mouse, el dedo o las flechas y Enter.
    */
   sugerir?: (texto: string, senal: AbortSignal) => Promise<SugerenciaCampo[]>;
+  /** Texto breve de ayuda debajo del campo mientras es editable (p. ej. cómo activar el autocompletado). */
+  ayuda?: string;
   /** Aparece ya en edición y con el foco (p. ej. al elegir «Otro» transportista, hasta escribir el nombre). */
   abrirAlMontar?: boolean;
   /** Se cancela la edición sin guardar (Escape o «Cancelar»). */
@@ -98,6 +100,7 @@ export function CampoEditable({
   area = false,
   cursorAlFinal = false,
   sugerir,
+  ayuda,
   abrirAlMontar = false,
   alCancelar,
 }: Props) {
@@ -265,6 +268,7 @@ export function CampoEditable({
             ✎
           </span>
         </button>
+        {ayuda && <small className="campo-ayuda">{ayuda}</small>}
       </div>
     );
   if (!editando)
@@ -294,7 +298,9 @@ export function CampoEditable({
       </div>
     );
   const idLista = `${id}-sugerencias`;
+  const idAyuda = `${id}-ayuda`;
   const conLista = sugerencias.length > 0;
+  const descripcionId = [error && `${id}-error`, ayuda && idAyuda].filter(Boolean).join(' ') || undefined;
   // Mientras se guarda, el campo queda de solo lectura y no deshabilitado: así conserva el foco (y el teclado del
   // teléfono) si el servidor rechaza el valor y hay que corregirlo.
   const comunes = {
@@ -303,7 +309,7 @@ export function CampoEditable({
     readOnly: guardando,
     'aria-busy': guardando || undefined,
     'aria-invalid': error ? true : undefined,
-    'aria-describedby': error ? `${id}-error` : undefined,
+    'aria-describedby': descripcionId,
     onKeyDown: teclado,
   } as const;
   // `noValidate`: el rango (min/max) lo explica `validar` con su mensaje en español junto al campo; sin esto el
@@ -369,6 +375,11 @@ export function CampoEditable({
         <span className="campo-error" id={`${id}-error`} role="alert">
           {error}
         </span>
+      )}
+      {ayuda && (
+        <small className="campo-ayuda" id={idAyuda}>
+          {ayuda}
+        </small>
       )}
       {conLista && (
         <div id={idLista} className="selector-lista" role="listbox" aria-label={`Sugerencias para ${etiqueta.toLowerCase()}`}>
