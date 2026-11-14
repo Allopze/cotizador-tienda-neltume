@@ -10,6 +10,9 @@
 //   npm run evaluar:ia -- --anclaje corregir,avisar  compara los modos del anclaje por frase (ver ModoAnclaje)
 //   npm run evaluar:ia -- --max-silenciosos 0    sale con error si algún error de lectura no tuvo aviso
 //   npm run evaluar:ia -- --max-falsas 0.05      sale con error si más del 5 % de las corridas perfectas avisó algo
+//   Por omisión muestra cada conversación (mensaje del cliente y respuesta de la IA, turno a turno) y su
+//   resultado apenas termina cada caso.
+//   npm run evaluar:ia -- --sin-ver              solo el resumen final (así la corre la verificación del deploy)
 //   npm run evaluar:ia -- --ia-perfecta          sin IA ni gasto: una IA simulada que responde la lectura esperada
 //                                                de cada caso (src/asistente/perfecto.ts); lo que no sea 100 % sin
 //                                                falsas alarmas lo pone el servidor (anclaje, avisos, pendientes)
@@ -36,7 +39,7 @@ import {
 } from '../src/asistente/informe-evaluacion';
 import { leerAjustesIA, leerClaveCommandCode } from '../src/servidor/ajustes-ia';
 import { cargarCatalogo } from '../src/servidor/catalogo';
-import { correrCaso, type ResultadoEjecucion } from '../src/servidor/evaluar-caso';
+import { correrCaso, type ResultadoEjecucion, type TurnoEvaluado } from '../src/servidor/evaluar-caso';
 import { obtenerCatalogoCommandCode } from '../src/servidor/modelos-commandcode';
 
 const { values } = parseArgs({
@@ -54,6 +57,7 @@ const { values } = parseArgs({
     'max-falsas': { type: 'string' },
     salida: { type: 'string', default: 'data/test-evaluar-ia' },
     'ia-perfecta': { type: 'boolean' },
+    'sin-ver': { type: 'boolean' },
   },
 });
 const umbrales = {
@@ -79,19 +83,91 @@ const modelos = perfecta
       ?.split(',')
       .map((m) => m.trim())
       .filter(Boolean) ?? [configurado || leerAjustesIA().commandcode.modelo]);
-if (!perfecta) console.log(`Modelo${modelos.length > 1 ? 's' : ''} de ${origenModelo}: ${modelos.join(', ')}`);
+if (!perfecta)
+  console.log(`Modelo${modelos.length > 1 ? 's' : ''} de ${origenModelo}: ${modelos.join(', ')}`);
 const modos = (values.anclaje ?? new CommandCodeLLM().anclaje).split(',').map((m) => m.trim());
 for (const m of modos)
   if (m !== 'corregir' && m !== 'avisar') throw new Error(`--anclaje: «${m}» no es corregir ni avisar.`);
 const catalogo = await cargarCatalogo();
 const repeticiones = Math.max(1, Math.floor(Number(values.repeticiones)) || 1);
 
-const correr = (caso: CasoEvaluacion, modelo: string, anclaje: ModoAnclaje) =>
-  correrCaso(
+const ver = values['sin-ver'] !== true;
+// Colores solo en una terminal (y sin NO_COLOR): redirigida a un archivo, la salida queda en texto plano.
+const conColor = process.stdout.isTTY && !process.env.NO_COLOR;
+const pintar = (codigo: string) => (t: string) => (conColor ? `\x1b[${codigo}m${t}\x1b[0m` : t);
+const tenue = pintar('2'),
+  negrita = pintar('1'),
+  verde = pintar('32'),
+  rojo = pintar('31'),
+  amarillo = pintar('33'),
+  cian = pintar('36');
+const segundos = (ms: number) => `${(ms / 1000).toFixed(1)} s`;
+
+/** Ajusta el texto al ancho de la terminal con sangría colgante, para que se lea como una columna. */
+function columna(texto: string, sangria: number) {
+  const ancho = Math.max(40, (process.stdout.columns || 100) - sangria);
+  const lineas: string[] = [];
+  for (const parrafo of (texto.trim() || '(sin respuesta)').split('\n')) {
+    let linea = '';
+    for (const palabra of parrafo.split(/\s+/)) {
+      if (linea && linea.length + 1 + palabra.length > ancho) {
+        lineas.push(linea);
+        linea = palabra;
+      } else linea = linea ? `${linea} ${palabra}` : palabra;
+    }
+    lineas.push(linea);
+  }
+  return lineas.join(`\n${' '.repeat(sangria)}`);
+}
+
+/** Avance de la corrida en curso: cuántos casos van terminados de cuántos. */
+const avance = { hechos: 0, total: 0 };
+
+/**
+ * Sin --sin-ver, cada corrida se muestra completa en un solo bloque al terminar: la conversación turno a turno y
+ * el resultado. Con casos en paralelo, así no se mezclan los mensajes de uno con los de otro.
+ */
+function bloqueCaso(caso: CasoEvaluacion, etiqueta: string, turnos: TurnoEvaluado[], r: ResultadoEjecucion) {
+  const salida = [
+    '',
+    `${tenue(`[${avance.hechos}/${avance.total}]`)} ${negrita(etiqueta)}  ${tenue(caso.descripcion)}`,
+  ];
+  const sangria = 15;
+  for (const t of turnos) {
+    salida.push(`  ${tenue(`${t.numero}.`)} ${cian('Cliente')}   ${columna(t.mensaje, sangria)}`);
+    // «IA» y el tiempo de respuesta ocupan la misma columna que «Cliente» (10 caracteres).
+    const tiempo = segundos(t.ms).padEnd(7);
+    salida.push(`     ${amarillo('IA')} ${tenue(tiempo)}${columna(t.respuesta, sangria)}`);
+  }
+  if (r.error) salida.push(`  ${rojo(`✗ La IA no respondió: ${r.error.mensaje}`)}`);
+  else {
+    const campos = `${r.aciertos}/${r.total} campos · ${segundos(r.ms)}`;
+    salida.push(
+      r.diferencias.length
+        ? `  ${rojo('✗ Con diferencias')} ${tenue(`· ${campos}`)}`
+        : `  ${verde('✓ Perfecto')} ${tenue(`· ${campos}`)}`,
+    );
+    for (const d of r.diferencias)
+      salida.push(
+        `      ${d.item === null ? '' : `ítem ${d.item} · `}${d.campo}: se esperaba ${verde(mostrar(d.esperado))}, salió ${rojo(mostrar(d.obtenido))}`,
+      );
+  }
+  for (const a of revision(r)) salida.push(`      ${amarillo(`aviso ${a.categoria}`)}: ${a.texto}`);
+  console.log(salida.join('\n'));
+}
+
+const correr = async (caso: CasoEvaluacion, modelo: string, anclaje: ModoAnclaje, etiqueta: string) => {
+  const turnos: TurnoEvaluado[] = [];
+  const r = await correrCaso(
     caso,
     perfecta ? new LLMPerfecto(caso, anclaje) : new CommandCodeLLM(modelo, clave, { anclaje }),
     catalogo,
+    { alTurno: ver ? (t) => turnos.push(t) : undefined },
   );
+  avance.hechos++;
+  if (ver) bloqueCaso(caso, etiqueta, turnos, r);
+  return r;
+};
 
 // Consumo de cada corrida, leído del `usage` de cada respuesta del proveedor sin tocar la aplicación.
 const consumo = { llamadas: 0, entrada: 0, salida: 0 };
@@ -146,10 +222,17 @@ for (const modelo of modelos)
     );
     const inicio = Date.now();
     Object.assign(consumo, { llamadas: 0, entrada: 0, salida: 0 });
-    const corridas = casos.flatMap((c) => Array.from({ length: repeticiones }, () => c));
-    const resultados = await enParalelo(corridas, Number(values.paralelo) || 1, (c) =>
-      correr(c, modelo, anclaje),
+    const corridas = casos.flatMap((caso) =>
+      Array.from({ length: repeticiones }, (_, n) => ({
+        caso,
+        etiqueta: repeticiones > 1 ? `${caso.id} #${n + 1}` : caso.id,
+      })),
     );
+    Object.assign(avance, { hechos: 0, total: corridas.length });
+    const resultados = await enParalelo(corridas, Number(values.paralelo) || 1, (c) =>
+      correr(c.caso, modelo, anclaje, c.etiqueta),
+    );
+    if (ver) console.log(`\n${negrita('Resumen')}`);
     let perfectos = 0;
     for (const [i, caso] of casos.entries()) {
       const delCaso = resultados.slice(i * repeticiones, (i + 1) * repeticiones);

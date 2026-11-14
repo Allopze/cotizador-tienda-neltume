@@ -181,7 +181,17 @@ function pasos({ sinIa }) {
     { nombre: 'Unitarios', comando: 'npm', argumentos: ['run', 'test:unit'], grupo: 1 },
     // El runner paralelo aísla base, puerto y distDir por grupo; su salida viene prefijada.
     { nombre: 'E2E', comando: 'npm', argumentos: ['run', 'test:e2e:paralelo'], grupo: 2 },
-    ...(sinIa ? [] : [{ nombre: 'IA', comando: 'npm', argumentos: ['run', 'evaluar:regresion'], grupo: 2 }]),
+    // Sin las conversaciones: corre junto a las E2E y aquí solo importa el resumen y si pasa.
+    ...(sinIa
+      ? []
+      : [
+          {
+            nombre: 'IA',
+            comando: 'npm',
+            argumentos: ['run', 'evaluar:regresion', '--', '--sin-ver'],
+            grupo: 2,
+          },
+        ]),
   ];
 }
 
