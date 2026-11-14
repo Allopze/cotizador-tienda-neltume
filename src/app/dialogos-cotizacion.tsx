@@ -2,35 +2,103 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type RefObject } from 'react';
 import { Dialogo } from './dialogo';
 import type { Despacho } from './contrato';
+import type { Cliente } from '@/catalogo/tipos';
+import {
+  editableAReceptor,
+  receptorAEditable,
+  ReceptorFacturacionCampos,
+  receptorEditableVacio,
+  validarReceptorEditable,
+  type ReceptorEditable,
+} from './receptor-facturacion';
 import { fechaLarga, numeroCotizacion } from './formato';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
-import { FABRICAS, nombreFabrica, productosFabrica, type Fabrica } from '@/negocio/estado';
+import { FABRICAS, nombreFabrica, productosFabrica, type Fabrica, type Facturacion } from '@/negocio/estado';
+import {
+  receptorDesdeCliente,
+  receptorTieneContenido,
+  type ReceptorFacturacion,
+  type TipoDocumentoTributario,
+} from '@/negocio/facturacion';
 import { pesos } from '@/negocio/precios';
 import { pedirJSON } from './solicitud';
 
 // Diálogos con formulario que devuelven una promesa, como useConfirmacion.
 
-interface DatosAprobacion {
+export type SeleccionDocumentoAprobacion = 'sin_definir' | 'boleta' | 'factura';
+
+export interface FacturacionAprobacion {
+  documento: TipoDocumentoTributario | null;
+  receptor: ReceptorFacturacion | null;
+}
+
+export interface DatosAprobacion {
   numero: number | null;
   despacho: Despacho | null;
   vence: string | null;
   vencida: boolean;
+  cliente?: Cliente | null;
+  facturacion?: Facturacion | null;
 }
+
+export interface ResultadoAprobacion {
+  despacho: Despacho;
+  confirmarVencida: boolean;
+  facturacion?: FacturacionAprobacion;
+}
+
+/**
+ * Precarga del selector y del receptor al aprobar: si la cotización vuelve tras `desaprobar`,
+ * conserva lo ya ingresado en `facturacion` con prioridad sobre los datos del cliente.
+ */
+export function estadoInicialAprobacion(datos: {
+  cliente?: Cliente | null;
+  facturacion?: Facturacion | null;
+}): {
+  documento: SeleccionDocumentoAprobacion;
+  receptor: ReceptorEditable;
+  teniaPrevio: boolean;
+} {
+  const prevDoc = datos.facturacion?.documento ?? null;
+  const prevRec = datos.facturacion?.receptor ?? null;
+  const teniaPrevio = prevDoc !== null || receptorTieneContenido(prevRec);
+  const respaldoCliente = datos.cliente ? receptorDesdeCliente(datos.cliente) : null;
+  if (teniaPrevio) {
+    const documento: SeleccionDocumentoAprobacion =
+      prevDoc === 'factura' || receptorTieneContenido(prevRec)
+        ? 'factura'
+        : prevDoc === 'boleta'
+          ? 'boleta'
+          : 'sin_definir';
+    const baseReceptor = receptorTieneContenido(prevRec) ? prevRec : respaldoCliente;
+    return {
+      documento,
+      receptor: baseReceptor ? receptorAEditable(baseReceptor) : receptorEditableVacio(),
+      teniaPrevio: true,
+    };
+  }
+  return {
+    documento: 'sin_definir',
+    receptor: respaldoCliente ? receptorAEditable(respaldoCliente) : receptorEditableVacio(),
+    teniaPrevio: false,
+  };
+}
+
 /** Aprobación: registra la aceptación del cliente y deja la nota para después del anticipo. */
 export function useAprobacion() {
   const [pendiente, setPendiente] = useState<
-    | (DatosAprobacion & { resolver: (r: { despacho: Despacho; confirmarVencida: boolean } | null) => void })
+    | (DatosAprobacion & { resolver: (r: ResultadoAprobacion | null) => void })
     | null
   >(null);
   const pedir = useCallback(
     (datos: DatosAprobacion) =>
-      new Promise<{ despacho: Despacho; confirmarVencida: boolean } | null>((resolver) =>
+      new Promise<ResultadoAprobacion | null>((resolver) =>
         setPendiente({ ...datos, resolver }),
       ),
     [],
   );
   const cancelar = useRef<HTMLButtonElement>(null);
-  const cerrar = (r: { despacho: Despacho; confirmarVencida: boolean } | null) => {
+  const cerrar = (r: ResultadoAprobacion | null) => {
     pendiente?.resolver(r);
     setPendiente(null);
   };
@@ -39,8 +107,7 @@ export function useAprobacion() {
       abierto={!!pendiente}
       alCerrar={() => cerrar(null)}
       titulo={`¿Aprobar la cotización ${numeroCotizacion(pendiente?.numero)}?`}
-      eyebrow="APROBAR"
-      className="dialogo-confirmacion"
+      className="dialogo-confirmacion dialogo-aprobacion"
       focoInicial={cancelar}
       alerta
     >
@@ -49,28 +116,59 @@ export function useAprobacion() {
   );
   return [pedir, elemento] as const;
 }
-function FormAprobacion({
+export function FormAprobacion({
   datos,
   responder,
   cancelar,
 }: {
   datos: DatosAprobacion;
   cancelar: RefObject<HTMLButtonElement | null>;
-  responder: (r: { despacho: Despacho; confirmarVencida: boolean } | null) => void;
+  responder: (r: ResultadoAprobacion | null) => void;
 }) {
   const [direccion, setDireccion] = useState(datos.despacho?.direccion ?? '');
   const [transporte, setTransporte] = useState(datos.despacho?.transporte ?? '');
   const [entregaComprometida, setEntregaComprometida] = useState(datos.despacho?.entregaComprometida ?? '');
+  const [inicial] = useState(() => estadoInicialAprobacion(datos));
+  const [documento, setDocumento] = useState<SeleccionDocumentoAprobacion>(inicial.documento);
+  const [receptor, setReceptor] = useState<ReceptorEditable>(inicial.receptor);
+  const [erroresReceptor, setErroresReceptor] = useState<{ rut?: string | null; correo?: string | null }>({});
+
+  function cambiarReceptor(siguiente: ReceptorEditable) {
+    setReceptor(siguiente);
+    if (erroresReceptor.rut || erroresReceptor.correo) {
+      const val = validarReceptorEditable(siguiente);
+      setErroresReceptor({ rut: val.errorRut, correo: val.errorCorreo });
+    }
+  }
+
   function enviar(e: FormEvent) {
     e.preventDefault();
+    let facturacion: FacturacionAprobacion | undefined;
+    if (documento === 'factura') {
+      const val = validarReceptorEditable(receptor);
+      if (val.errorRut || val.errorCorreo) {
+        setErroresReceptor({ rut: val.errorRut, correo: val.errorCorreo });
+        return;
+      }
+      facturacion = { documento: 'factura', receptor: editableAReceptor(receptor) };
+    } else if (documento === 'boleta') {
+      facturacion = { documento: 'boleta', receptor: null };
+    } else if (inicial.teniaPrevio) {
+      facturacion = { documento: null, receptor: null };
+    }
+
     const despacho: Despacho = {};
     if (direccion.trim()) despacho.direccion = direccion.trim();
     if (transporte.trim()) despacho.transporte = transporte.trim();
     if (entregaComprometida.trim()) despacho.entregaComprometida = entregaComprometida.trim();
-    responder({ despacho, confirmarVencida: datos.vencida });
+    responder({
+      despacho,
+      confirmarVencida: datos.vencida,
+      ...(facturacion !== undefined ? { facturacion } : {}),
+    });
   }
   return (
-    <form onSubmit={enviar}>
+    <form onSubmit={enviar} noValidate>
       <div className="dialogo-mensaje">
         <p>Se registrará la aprobación del cliente y la cotización quedará bloqueada para edición.</p>
         <p>La nota de pedido se habilitará cuando registres al menos {ANTICIPO_TEXTO} de pago.</p>
@@ -111,6 +209,65 @@ function FormAprobacion({
             autoComplete="off"
           />
         </label>
+        <div className="facturacion-bloque-dialogo">
+          <p className="facturacion-bloque-titulo">Documento para el cliente (opcional)</p>
+          <fieldset className="facturacion-radios" aria-label="Documento para el cliente">
+            <label className="facturacion-opcion">
+              <input
+                type="radio"
+                name="aprobacion-documento"
+                value="sin_definir"
+                checked={documento === 'sin_definir'}
+                onChange={() => {
+                  setDocumento('sin_definir');
+                  setErroresReceptor({});
+                }}
+              />
+              <span>
+                <strong>Aún no sabe</strong>
+                <small>Lo puedes definir después al registrar pagos o facturar.</small>
+              </span>
+            </label>
+            <label className="facturacion-opcion">
+              <input
+                type="radio"
+                name="aprobacion-documento"
+                value="boleta"
+                checked={documento === 'boleta'}
+                onChange={() => {
+                  setDocumento('boleta');
+                  setErroresReceptor({});
+                }}
+              />
+              <span>
+                <strong>Boleta</strong>
+                <small>No necesita datos de receptor.</small>
+              </span>
+            </label>
+            <label className="facturacion-opcion">
+              <input
+                type="radio"
+                name="aprobacion-documento"
+                value="factura"
+                checked={documento === 'factura'}
+                onChange={() => setDocumento('factura')}
+              />
+              <span>
+                <strong>Factura</strong>
+                <small>Anota a quién se factura para tener los datos a mano.</small>
+              </span>
+            </label>
+          </fieldset>
+          {documento === 'factura' && (
+            <ReceptorFacturacionCampos
+              valor={receptor}
+              alCambiar={cambiarReceptor}
+              prefijoId="aprobacion"
+              errores={erroresReceptor}
+              nota="Comuna y correo son opcionales. Si aún falta algún dato obligatorio (*), podrás completarlo antes de marcarla como facturada."
+            />
+          )}
+        </div>
       </div>
       <div className="dialogo-acciones">
         <button ref={cancelar} type="button" className="button secondary" onClick={() => responder(null)}>

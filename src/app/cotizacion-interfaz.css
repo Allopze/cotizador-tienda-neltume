@@ -473,3 +473,102 @@
 .quote-details > .campo .campo-valor-boton {
   margin: 0;
 }
+
+/* Facturación y receptor tributario: campos amplios pensados para móvil y lectura clara. */
+.dialogo-aprobacion {
+  width: min(calc(100% - 32px), 560px);
+}
+.facturacion-bloque-dialogo {
+  display: grid;
+  gap: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+.facturacion-bloque-titulo {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--ink);
+}
+.facturacion-radios {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.facturacion-opcion {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  cursor: pointer;
+}
+.facturacion-opcion:hover,
+.facturacion-opcion:has(input:checked) {
+  background: var(--pale);
+}
+.facturacion-opcion:has(input:checked) {
+  border-color: var(--green);
+}
+.facturacion-opcion input {
+  flex: none;
+  margin-top: 3px;
+  accent-color: var(--green);
+}
+.facturacion-opcion > span {
+  display: grid;
+  gap: 2px;
+}
+.facturacion-opcion small {
+  color: var(--subtle);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+.receptor-bloque {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.receptor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+  min-width: 0;
+}
+.receptor-grid .ia-field {
+  min-width: 0;
+  gap: 6px;
+}
+.receptor-grid input {
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.receptor-campo-ancho {
+  grid-column: 1 / -1;
+}
+.receptor-ayuda {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  line-height: 1.45;
+}
+@media (max-width: 520px) {
+  .receptor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .receptor-campo-ancho {
+    grid-column: auto;
+  }
+}

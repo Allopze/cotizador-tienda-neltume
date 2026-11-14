@@ -13,9 +13,10 @@ import {
   sumarCharla,
   type Cotizacion,
   type Despacho,
+  type Facturacion,
   type Mensaje,
 } from '@/negocio/estado';
-import type { SolicitudItem } from '@/catalogo/tipos';
+import type { Cliente, SolicitudItem } from '@/catalogo/tipos';
 import { pesos } from '@/negocio/precios';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import type { OpcionCotizacion } from '@/servidor/referencias';
@@ -947,12 +948,16 @@ export function Cotizador({
     vence: string | null;
     vencida: boolean;
     despacho: Despacho | null;
+    cliente?: Cliente | null;
+    facturacion?: Facturacion | null;
   }) {
     const datos = await pedirAprobacion({
       numero: q.numero,
       despacho: q.despacho,
       vence: q.vence,
       vencida: q.vencida,
+      cliente: q.cliente ?? null,
+      facturacion: q.facturacion ?? null,
     });
     if (!datos) return false;
     setEnCurso('aprobar');
@@ -963,6 +968,7 @@ export function Cotizador({
       actualizada: q.actualizada,
       ...(Object.keys(datos.despacho).length ? { despacho: datos.despacho } : {}),
       ...(datos.confirmarVencida ? { confirmarVencida: true } : {}),
+      ...(datos.facturacion !== undefined ? { facturacion: datos.facturacion } : {}),
     };
     try {
       try {
@@ -1161,6 +1167,8 @@ export function Cotizador({
       await aprobar({
         ...q,
         vencida: vencida(q),
+        cliente: q.cliente,
+        facturacion: q.facturacion ?? null,
         despacho: q.despacho ?? {
           direccion: q.cliente.direccion,
           transporte: null,
@@ -1414,6 +1422,8 @@ export function Cotizador({
       actualizada: c.actualizada,
       vence: c.vence,
       vencida: c.vencida,
+      cliente: c.id === conversacion.id ? conversacion.cliente : null,
+      facturacion: c.id === conversacion.id ? conversacion.facturacion ?? null : null,
       despacho:
         c.id === conversacion.id
           ? (conversacion.despacho ?? {
