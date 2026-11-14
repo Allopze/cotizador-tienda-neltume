@@ -1,10 +1,15 @@
 'use client';
+import Link from 'next/link';
+import { useEffect, useState } from 'react';
+import { normalizarRut, rutCompacto } from '@/negocio/cliente';
+import type { ClienteRegistrado } from '@/negocio/cliente-registro';
+import type { Cotizacion } from '@/negocio/estado';
+import type { ClienteAnterior } from '@/servidor/clientes';
 import { CampoEditable, type SugerenciaCampo } from '../campo-editable';
 import type { CambiosEdicion } from '../contrato';
 import { ETIQUETA_CAMPO, SIN_CLIENTE } from '../formato';
-import type { Cotizacion } from '@/negocio/estado';
-import type { ClienteAnterior } from '@/servidor/clientes';
-import { pedirJSON } from '../solicitud';
+import { ErrorSolicitud, codigoDe, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { buscarRegistroPorRut } from './cliente-registro-api';
 
 const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'direccion', 'telefono', 'proyecto'] as const;
 /** Datos que completa un cliente de otra cotización; el proyecto es de cada cotización y no se copia. */
@@ -29,6 +34,30 @@ interface Props {
 
 /** Sección desplegable «Cliente y facturación» dentro del panel derecho de la cotización. */
 export function BloqueClienteCotizacion({ actual, editable, admiteCambios, guardando, editar }: Props) {
+  const rutCot = actual.cliente.rut;
+  const rutComp = rutCompacto(rutCot);
+  const claveCliente = `${actual.id}|${rutComp}|${actual.cliente.nombre ?? ''}`;
+  const [registroEstado, setRegistroEstado] = useState<{
+    clave: string;
+    cliente: ClienteRegistrado | null;
+  }>({ clave: '', cliente: null });
+  const [guardandoRegistro, setGuardandoRegistro] = useState(false);
+  const [errorRegistro, setErrorRegistro] = useState('');
+  const [avisoRegistro, setAvisoRegistro] = useState('');
+
+  useEffect(() => {
+    if (!rutComp) return;
+    const control = new AbortController();
+    buscarRegistroPorRut(rutCot, control.signal)
+      .then((cliente) => {
+        if (!control.signal.aborted) setRegistroEstado({ clave: claveCliente, cliente });
+      })
+      .catch(() => {});
+    return () => control.abort();
+  }, [claveCliente, rutComp, rutCot]);
+
+  const clienteRegistrado = registroEstado.clave === claveCliente ? registroEstado.cliente : null;
+
   /** Clientes anteriores (o registrados en el directorio) para lo escrito en el nombre o el RUT. */
   const sugerirCliente =
     (campo: 'nombre' | 'rut') =>
@@ -48,6 +77,54 @@ export function BloqueClienteCotizacion({ actual, editable, admiteCambios, guard
         };
       });
     };
+
+  async function guardarComoClienteFrecuente() {
+    if (guardandoRegistro) return;
+    setErrorRegistro('');
+    setAvisoRegistro('');
+    const nombreLimpio = actual.cliente.nombre?.trim();
+    if (!nombreLimpio) {
+      setErrorRegistro('Agrega al menos el nombre del cliente para guardarlo en el registro.');
+      return;
+    }
+    const rutBruto = actual.cliente.rut?.trim() || null;
+    const rutNorm = rutBruto ? normalizarRut(rutBruto) : null;
+    if (rutBruto && !rutNorm) {
+      setErrorRegistro('Corrige el RUT del cliente antes de guardarlo en el registro.');
+      return;
+    }
+
+    setGuardandoRegistro(true);
+    try {
+      const { cliente } = await pedirJSON<{ cliente: ClienteRegistrado }>('/api/clientes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nombre: nombreLimpio,
+          rut: rutNorm,
+          giro: actual.cliente.giro?.trim() || null,
+          telefono: actual.cliente.telefono?.trim() || null,
+          direccion: actual.cliente.direccion?.trim() || null,
+          comuna: actual.cliente.comuna?.trim() || null,
+        }),
+      });
+      setRegistroEstado({ clave: claveCliente, cliente });
+      setAvisoRegistro('Guardado como cliente frecuente.');
+    } catch (err) {
+      if (esSilencioso(err)) return;
+      if (codigoDe(err) === 'rut_duplicado' && err instanceof ErrorSolicitud) {
+        const existente = err.detalle?.clienteExistente as ClienteRegistrado | undefined;
+        if (existente) {
+          setRegistroEstado({ clave: claveCliente, cliente: existente });
+          setAvisoRegistro(`Ya estaba registrado: ${existente.nombre}.`);
+          return;
+        }
+      }
+      setErrorRegistro(mensajeDe(err));
+    } finally {
+      setGuardandoRegistro(false);
+    }
+  }
 
   return (
     <details key={`cliente-${actual.id}`} className="quote-client-section quote-details">
@@ -82,6 +159,37 @@ export function BloqueClienteCotizacion({ actual, editable, admiteCambios, guard
           );
         })}
       </div>
+      {actual.cliente.nombre?.trim() && (
+        <div className="cliente-frecuente-barra">
+          {clienteRegistrado ? (
+            <>
+              <span className="cliente-origen registrado">Cliente frecuente registrado</span>
+              <Link href="/clientes" scroll={false} className="link">
+                Ver en Clientes
+              </Link>
+              {avisoRegistro && (
+                <span className="facturacion-copiado" role="status">
+                  {avisoRegistro}
+                </span>
+              )}
+            </>
+          ) : (
+            <button
+              type="button"
+              className="button secondary small"
+              disabled={guardandoRegistro}
+              onClick={() => void guardarComoClienteFrecuente()}
+            >
+              {guardandoRegistro ? 'Guardando…' : 'Guardar como cliente frecuente'}
+            </button>
+          )}
+          {errorRegistro && (
+            <p className="campo-error" role="alert">
+              {errorRegistro}
+            </p>
+          )}
+        </div>
+      )}
     </details>
   );
 }

@@ -7,6 +7,7 @@ import { facturacionPendiente, type Cotizacion } from '../src/negocio/estado';
 import { montosVacios, REGLAS } from '../src/negocio/precios';
 import { buscarRegistroPorRut, combinarReceptorConRegistro } from '../src/app/clientes/cliente-registro-api';
 import { receptorDesdeSugerencia } from '../src/app/clientes/autocompletar-receptor';
+import { BloqueClienteCotizacion } from '../src/app/clientes/bloque-cliente-cotizacion';
 import { FormAprobacion, estadoInicialAprobacion } from '../src/app/dialogos-cotizacion';
 import { FacturacionOperacion } from '../src/app/facturacion-operacion';
 import { SeguimientoOperacion } from '../src/app/seguimiento-operacion';
@@ -388,5 +389,21 @@ describe('B5 · autocompletar del receptor desde clientes frecuentes', () => {
       comuna: 'Providencia',
       correo: 'dte@lingue.cl',
     });
+  });
+});
+
+describe('B7 · acceso directo «Guardar como cliente frecuente» en cotización', () => {
+  it('muestra el botón para guardar en el registro cuando la cotización tiene cliente sin ficha confirmada', () => {
+    const q = cotizacionAprobada({ cliente });
+    const html = renderToStaticMarkup(
+      createElement(BloqueClienteCotizacion, {
+        actual: q,
+        editable: true,
+        admiteCambios: true,
+        guardando: null,
+        editar: async () => true,
+      }),
+    );
+    expect(html).toContain('Guardar como cliente frecuente');
   });
 });

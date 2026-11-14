@@ -704,3 +704,16 @@
   color: var(--ink);
   font-weight: 500;
 }
+.cliente-frecuente-barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line-soft);
+}
+.cliente-frecuente-barra .campo-error {
+  flex-basis: 100%;
+  margin: 0;
+}
