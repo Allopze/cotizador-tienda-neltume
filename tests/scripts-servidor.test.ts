@@ -478,8 +478,9 @@ describe('compose.yaml y .dockerignore', () => {
     };
     recorrer('src');
     recorrer('scripts');
-    // Solo pruebas, desarrollo o comandos que no corren en el contenedor del servidor. NEXT_RUNTIME la pone Next.
-    for (const fuera of ['NELTUME_TEST_MODE', 'NELTUME_E2E_WORKERS', 'NELTUME_E2E_PORT_BASE', 'NELTUME_LLM', 'NELTUME_STARKEN', 'TEST', 'NELTUME_PLANILLA', 'NELTUME_CATALOGO', 'NEXT_RUNTIME'])
+    // Solo pruebas, desarrollo o comandos que no corren en el contenedor del servidor. NEXT_RUNTIME la pone Next;
+    // NO_COLOR es la convención de la terminal que respeta npm run evaluar:ia.
+    for (const fuera of ['NELTUME_TEST_MODE', 'NELTUME_E2E_WORKERS', 'NELTUME_E2E_PORT_BASE', 'NELTUME_LLM', 'NELTUME_STARKEN', 'TEST', 'NELTUME_PLANILLA', 'NELTUME_CATALOGO', 'NEXT_RUNTIME', 'NO_COLOR'])
       encontradas.delete(fuera);
     return [...encontradas].sort();
   }
