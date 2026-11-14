@@ -85,6 +85,7 @@ export interface CandidataReferencia {
 export interface FiltrosListado {
   vencenPronto?: boolean;
   saldoPendiente?: boolean;
+  porFacturar?: boolean;
   q?: string;
   estados?: EstadoCotizacion[];
   /** YYYY-MM-DD inclusive, sobre la fecha de emisión o, si no hay, la de creación (hora de Chile). */
@@ -1783,6 +1784,7 @@ export class Almacen {
       const hoy = fechaLocal(new Date()); params.push(hoy, sumarDiasCalendario(hoy, 7));
     }
     if (filtros.saldoPendiente) condiciones.push("c.estado = 'aprobada' AND (SELECT total FROM cotizacion_montos WHERE cotizacion_id = c.id) > COALESCE((SELECT SUM(monto) FROM pagos WHERE cotizacion_id = c.id), 0)");
+    if (filtros.porFacturar) condiciones.push("c.estado = 'aprobada' AND COALESCE(c.facturacion_estado, 'pendiente') = 'pendiente'");
     const donde = condiciones.length ? `WHERE ${condiciones.join(' AND ')}` : '';
     return db.transaction(() => {
       const total = (

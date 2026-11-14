@@ -103,6 +103,11 @@
   background: var(--amber-bg);
   color: var(--pending);
 }
+.status.facturacion-doc {
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  color: var(--ink);
+}
 .estado-badges {
   display: flex;
   flex-wrap: wrap;

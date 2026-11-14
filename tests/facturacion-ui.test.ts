@@ -6,6 +6,8 @@ import { facturacionPendiente, type Cotizacion } from '../src/negocio/estado';
 import { montosVacios, REGLAS } from '../src/negocio/precios';
 import { FormAprobacion, estadoInicialAprobacion } from '../src/app/dialogos-cotizacion';
 import { FacturacionOperacion } from '../src/app/facturacion-operacion';
+import { SeguimientoOperacion } from '../src/app/seguimiento-operacion';
+import { parametros } from '../src/app/historial';
 
 const cliente = {
   ...clienteVacio(),
@@ -225,5 +227,48 @@ describe('A4 · bloque de facturación en seguimiento de operación', () => {
     expect(htmlLegada).toContain('Facturada · Factura N° 123');
     expect(htmlLegada).toContain('Volver a pendiente');
     expect(htmlLegada).not.toContain('Copiar datos para facturar');
+  });
+});
+
+describe('A5 · resumen de estado y filtro Por facturar en historial', () => {
+  it('SeguimientoOperacion muestra el documento y receptor elegidos y parametros() arma porFacturar=true', () => {
+    const q = cotizacionAprobada({
+      facturacion: {
+        estado: 'pendiente',
+        documento: 'factura',
+        receptor: {
+          razonSocial: 'Constructora Lingue SpA',
+          rut: '76.543.210-3',
+          giro: 'Construcción de obras',
+          direccion: 'Camino Real 120',
+          comuna: null,
+          correo: null,
+        },
+        tipo: null,
+        identificadorExterno: null,
+        fecha: null,
+      },
+    });
+    const html = renderToStaticMarkup(
+      createElement(SeguimientoOperacion, {
+        actual: q,
+        ocupado: false,
+        flujo: async () => true,
+        anularPago: async () => true,
+      }),
+    );
+    expect(html).toContain('Documento:');
+    expect(html).toContain('Factura a Constructora Lingue SpA (76.543.210-3)');
+
+    const qs = parametros({
+      q: '',
+      estado: 'por_facturar',
+      desde: '',
+      hasta: '',
+      comercial: '',
+      operativo: '',
+      vendedora: '',
+    });
+    expect(qs.get('porFacturar')).toBe('true');
   });
 });

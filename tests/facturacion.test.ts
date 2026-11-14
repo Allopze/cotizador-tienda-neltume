@@ -331,6 +331,52 @@ describe('A2 · datos_facturacion y aprobar.facturacion', () => {
     expect(textoCopiarFactura(fila.facturacion?.receptor)).toBe('');
   });
 
+  it('el filtro porFacturar devuelve solo aprobadas pendientes y el CSV incluye los datos del receptor', async () => {
+    const t = await setup();
+    // 1. Pendiente con factura y receptor.
+    const pendiente = await t.aprobar({
+      facturacion: { documento: 'factura', receptor: receptorLingue },
+    });
+
+    // 2. Ya facturada con boleta: no entra en porFacturar.
+    const facturada = await (async () => {
+      const n = (await t.servicio.ejecutar({ tipo: 'nueva' })).cotizacion;
+      const conItem = (
+        await t.servicio.ejecutar({
+          tipo: 'agregar_producto',
+          id: n.id,
+          actualizada: n.actualizada,
+          codigo: 'MOL-O-3-A',
+          cantidad: 1,
+          ancho: 0.82,
+          alto: 2,
+          tipoMedida: 'hoja',
+        })
+      ).cotizacion;
+      const emit = (await t.servicio.ejecutar({ tipo: 'emitir', id: conItem.id, actualizada: conItem.actualizada }))
+        .cotizacion;
+      const aprob = (await t.servicio.ejecutar({ tipo: 'aprobar', id: emit.id, actualizada: emit.actualizada }))
+        .cotizacion;
+      return (
+        await t.servicio.ejecutar({
+          tipo: 'facturacion',
+          id: aprob.id,
+          actualizada: aprob.actualizada,
+          estado: 'facturada',
+          tipoDocumento: 'boleta',
+        })
+      ).cotizacion;
+    })();
+
+    const soloPendientes = t.almacen.listar({ porFacturar: true }).cotizaciones;
+    expect(soloPendientes.map((c) => c.id)).toEqual([pendiente.id]);
+    expect(soloPendientes.map((c) => c.id)).not.toContain(facturada.id);
+
+    const [cabecera, linea] = csvCotizaciones(soloPendientes).split('\r\n');
+    expect(cabecera).toContain('Documento;Razón social;RUT receptor;Giro receptor;Dirección receptor');
+    expect(linea).toContain('Factura;Constructora Lingue SpA;76.543.210-3;Obras menores y edificación;Camino Internacional Km 5');
+  });
+
   it('el esquema de aprobación rechaza campos desconocidos y textos sobre 300 caracteres', () => {
     expect(
       facturacionAprobacionSchema.safeParse({

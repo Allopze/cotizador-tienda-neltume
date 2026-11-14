@@ -20,6 +20,7 @@ import {
   type NotaPedido,
 } from '@/negocio/estado';
 import { leerPesos } from '@/negocio/cifras';
+import { etiquetaDocumentoFacturacion } from '@/negocio/facturacion';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import { esLibre } from '@/negocio/personalizados';
 import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
@@ -432,6 +433,9 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           <span>Comercial: <strong>{etiquetaComercial[estadoComercial]}</strong></span>
           <span>Operación: <strong>{etiquetaOperativo[operacionActual]}</strong></span>
           {aprobada && <span>Facturación: <strong>{etiquetaFacturacion(actual.facturacion)}</strong></span>}
+          {aprobada && etiquetaDocumentoFacturacion(actual.facturacion) && (
+            <span>Documento: <strong>{etiquetaDocumentoFacturacion(actual.facturacion)}</strong></span>
+          )}
         </div>
         {puedeDesaprobar && (
           <div className="workflow-actions">

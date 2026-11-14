@@ -84,6 +84,7 @@ export function textoCopiarFactura(receptor: Partial<ReceptorFacturacion> | null
 
 /** Etiqueta breve de intención de documento y receptor para mostrar en estados y listados. */
 export function etiquetaDocumentoFacturacion(facturacion?: {
+  estado?: 'pendiente' | 'facturada';
   documento?: TipoDocumentoTributario | null;
   tipo?: TipoDocumentoTributario | null;
   receptor?: Pick<ReceptorFacturacion, 'razonSocial' | 'rut'> | null;
@@ -93,5 +94,5 @@ export function etiquetaDocumentoFacturacion(facturacion?: {
   if (doc === 'boleta') return 'Boleta';
   const r = facturacion?.receptor;
   if (r?.razonSocial) return `Factura a ${r.razonSocial}${r.rut ? ` (${r.rut})` : ''}`;
-  return 'Factura (faltan datos del receptor)';
+  return facturacion?.estado === 'facturada' ? 'Factura' : 'Factura (faltan datos del receptor)';
 }

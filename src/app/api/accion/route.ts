@@ -388,6 +388,7 @@ const fecha = z.iso.date();
 const listadoSchema = z.object({
   vencenPronto: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   saldoPendiente: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
+  porFacturar: z.enum(['true', 'false']).transform((v) => v === 'true').optional(),
   q: z.string().max(200).optional(),
   estado: z
     .string()
