@@ -23,6 +23,7 @@ export interface ResultadoRestauracion {
   carpeta: string;
   aparte: string;
   cotizaciones: number;
+  clientes: number | null;
   cuentas: number | null;
   pdf: number;
   referencias: number;
@@ -63,8 +64,11 @@ function verificarCopia(ruta: string) {
     );
     if (!tablas.has('cotizaciones')) throw new ErrorRestauracion('La copia no es una base del cotizador (no tiene cotizaciones).');
     const cotizaciones = (db.prepare('SELECT COUNT(*) AS n FROM cotizaciones').get() as { n: number }).n;
+    const clientes = tablas.has('clientes')
+      ? (db.prepare('SELECT COUNT(*) AS n FROM clientes WHERE eliminado IS NULL').get() as { n: number }).n
+      : null;
     const cuentas = tablas.has('user') ? (db.prepare('SELECT COUNT(*) AS n FROM "user"').get() as { n: number }).n : null;
-    return { cotizaciones, cuentas, version };
+    return { cotizaciones, clientes, cuentas, version };
   } catch (error) {
     if (error instanceof ErrorRestauracion) throw error;
     throw new ErrorRestauracion(
@@ -241,7 +245,7 @@ export async function restaurarRespaldo(carpetaRespaldo: string, opciones: Opcio
     throw new ErrorRestauracion(
       'La copia de la base tiene un archivo -wal o -journal: no la dejó así npm run respaldar. Usa otra carpeta de respaldo.',
     );
-  const { cotizaciones, cuentas } = verificarCopia(copiaDb);
+  const { cotizaciones, clientes, cuentas } = verificarCopia(copiaDb);
   await exigirServidorDetenido(datos, rutaDb, ahora);
   // Antes de tocar nada: lo que la fábrica ya recibió no puede desaparecer con el respaldo.
   const integracionAntes = capturarIntegracion(rutaDb);
@@ -329,6 +333,7 @@ export async function restaurarRespaldo(carpetaRespaldo: string, opciones: Opcio
     carpeta,
     aparte,
     cotizaciones,
+    clientes,
     cuentas,
     pdf: await archivosDe(pdfActual),
     referencias: await archivosDe(referenciasActual),

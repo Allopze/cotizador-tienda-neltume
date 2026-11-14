@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 30;
+export const VERSION_ESQUEMA = 31;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -552,6 +552,59 @@ function crearEsquema(db: Database.Database) {
       ])
         if (!cols.includes(col)) db.exec(`ALTER TABLE cotizaciones ADD COLUMN ${col} TEXT;`);
       db.exec('PRAGMA user_version = 30;');
+    }).immediate();
+  if (version < 31)
+    db.transaction(() => {
+      // v31: registro de clientes frecuentes (RUT único entre activos) y su tabla de auditoría.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS clientes (
+          id TEXT PRIMARY KEY,
+          nombre TEXT NOT NULL,
+          nombre_normalizado TEXT NOT NULL,
+          rut TEXT,
+          rut_compacto TEXT,
+          giro TEXT,
+          telefono TEXT,
+          direccion TEXT,
+          comuna TEXT,
+          correo TEXT,
+          notas TEXT,
+          documento_habitual TEXT CHECK (documento_habitual IN ('boleta', 'factura')),
+          factura_razon_social TEXT,
+          factura_rut TEXT,
+          factura_giro TEXT,
+          factura_direccion TEXT,
+          factura_comuna TEXT,
+          factura_correo TEXT,
+          creado TEXT NOT NULL,
+          actualizado TEXT NOT NULL,
+          creado_por TEXT,
+          actualizado_por TEXT,
+          eliminado TEXT,
+          eliminado_por TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_clientes_nombre
+          ON clientes(nombre_normalizado)
+          WHERE eliminado IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_rut_unico
+          ON clientes(rut_compacto)
+          WHERE rut_compacto IS NOT NULL AND eliminado IS NULL;
+        CREATE TABLE IF NOT EXISTS auditoria_clientes (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          cliente_id TEXT NOT NULL REFERENCES clientes(id) ON DELETE CASCADE,
+          fecha TEXT NOT NULL,
+          actor TEXT,
+          accion TEXT NOT NULL CHECK (accion IN ('crear', 'editar', 'eliminar')),
+          detalle TEXT NOT NULL,
+          antes_json TEXT,
+          despues_json TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_auditoria_clientes_cliente
+          ON auditoria_clientes(cliente_id, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_auditoria_clientes_fecha
+          ON auditoria_clientes(id DESC);
+        PRAGMA user_version = 31;
+      `);
     }).immediate();
 }
 
