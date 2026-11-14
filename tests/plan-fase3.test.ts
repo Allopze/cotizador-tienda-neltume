@@ -202,6 +202,16 @@ describe('3.3 · anular después del despacho o de facturar', () => {
     const t = await setup();
     let q = await t.aprobada();
     q = await t.ir(q, {
+      tipo: 'datos_facturacion',
+      documento: 'factura',
+      receptor: {
+        razonSocial: 'Constructora Prueba SpA',
+        rut: '76.543.210-3',
+        giro: 'Construcción',
+        direccion: 'Camino Real 45',
+      },
+    });
+    q = await t.ir(q, {
       tipo: 'facturacion',
       estado: 'facturada',
       tipoDocumento: 'factura',

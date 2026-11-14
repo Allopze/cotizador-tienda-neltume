@@ -242,7 +242,16 @@ describe('#4 y #16 · anular', () => {
     for (const cambios of [
       { estadoOperativo: 'despachada' },
       { estadoOperativo: 'completada' },
-      { facturacion: { estado: 'facturada', tipo: 'boleta', identificadorExterno: null, fecha: null } },
+      {
+        facturacion: {
+          estado: 'facturada',
+          documento: null,
+          receptor: null,
+          tipo: 'boleta',
+          identificadorExterno: null,
+          fecha: null,
+        },
+      },
     ] as Partial<Cotizacion>[])
       expect(puedeAnular(q(cambios))).toEqual({ ok: false, motivo: 'No se puede anular una cotización despachada, completada o facturada.' });
     expect(puedeAnular(q({ estado: 'borrador', numero: null }))).toEqual({ ok: false, motivo: 'Un borrador no se anula: elimínalo.' });
@@ -295,6 +304,16 @@ describe('#12 y #42 · fechas de pagos y facturas en hora de Chile', () => {
       'La fecha del pago no puede ser anterior a la aprobación (12-10-2026).',
     );
     await t.ir({ tipo: 'pago', monto: 1000, fecha: '2026-10-12' });
+    await t.ir({
+      tipo: 'datos_facturacion',
+      documento: 'factura',
+      receptor: {
+        razonSocial: 'Constructora Sur SpA',
+        rut: '76.543.210-3',
+        giro: 'Construcción',
+        direccion: 'Av. Los Robles 120',
+      },
+    });
 
     await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: '77' });
     expect(t.recargada().facturacion!.fecha).toBe('2026-10-12T12:00:00.000Z');

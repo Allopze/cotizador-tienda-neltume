@@ -176,7 +176,17 @@ test('operación: pagos tras la aprobación, anular un pago, despacho con transp
   await expect(flujo.getByLabel('Fecha de emisión')).toHaveAttribute('max', hoy);
   await expect(panel.getByRole('button', { name: /^Editar destino/ })).toHaveCount(0);
 
-  // Facturación: pendiente → facturada con tipo y número → vuelve a pendiente.
+  // Facturación: si falta receptor para Factura se avisa y bloquea el marcado; al completar y guardar, se habilita.
+  await expect(flujo.getByText('Faltan datos para facturar')).toBeVisible();
+  await expect(flujo.getByRole('button', { name: 'Marcar como facturada' })).toBeDisabled();
+  await flujo.getByRole('button', { name: 'Completar datos' }).click();
+  await flujo.getByLabel('RUT *').fill('76.543.210-3');
+  await flujo.getByLabel('Giro *').fill('Carpintería');
+  await flujo.getByLabel('Dirección *').fill('Av. Alemania 450');
+  await flujo.getByRole('button', { name: 'Guardar datos de facturación' }).click();
+  await expect(flujo.getByText('Faltan datos para facturar')).toHaveCount(0);
+  await expect(flujo.getByRole('button', { name: 'Marcar como facturada' })).toBeEnabled();
+
   await flujo.getByRole('combobox', { name: 'Documento' }).click();
   await flujo.getByRole('option', { name: 'Factura', exact: true }).click();
   await flujo.getByLabel('N° o identificador externo').fill('4321');

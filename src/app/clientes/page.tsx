@@ -12,5 +12,12 @@ export default async function ClientesPage() {
   validarConfiguracionAutenticacion();
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) redirect('/login');
-  return <PantallaClientes email={session.user.email} nombre={session.user.name || session.user.email} />;
+  const rol = (session.user as typeof session.user & { role?: string | null }).role ?? 'user';
+  return (
+    <PantallaClientes
+      email={session.user.email}
+      nombre={session.user.name || session.user.email}
+      esAdmin={rol === 'admin'}
+    />
+  );
 }

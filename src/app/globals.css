@@ -1153,3 +1153,69 @@ button[type='submit'].button.peligro:not(:disabled) {
     grid-row: 2;
   }
 }
+.cliente-cabecera {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.cliente-origen {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  border: 1px solid var(--line);
+  color: var(--subtle);
+  background: var(--panel);
+}
+.cliente-origen.registrado {
+  border-color: var(--green);
+  color: var(--green);
+  background: var(--pale);
+}
+.cliente-acciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.cliente-notas {
+  padding: 8px 10px;
+  background: var(--panel);
+  border-left: 2px solid var(--line-strong);
+  white-space: pre-wrap;
+}
+.cliente-aviso {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--green);
+  background: var(--pale);
+  color: var(--ink);
+  font-size: var(--fs-sm);
+}
+.cliente-duplicado {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.cliente-duplicado .campo-error {
+  margin: 0;
+}
+.dialogo-cliente-form {
+  display: grid;
+  gap: 14px;
+}
+.dialogo-cliente-form textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  resize: vertical;
+}

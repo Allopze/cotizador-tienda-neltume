@@ -668,13 +668,33 @@ describe('etiquetas legibles', () => {
 });
 
 describe('facturación', () => {
+  const receptorPrueba = {
+    razonSocial: 'Constructora Lingue SpA',
+    rut: '765432103',
+    giro: 'Construcción de obras',
+    direccion: 'Camino Villarrica Km 4',
+    comuna: 'Pucón',
+    correo: 'facturas@lingue.cl',
+  };
+
   it('se marca facturada con tipo, número y fecha, y vuelve a pendiente', async () => {
     const t = await setup();
     await t.aprobada();
     expect(etiquetaFacturacion(t.actual().facturacion)).toBe('Pendiente de facturación');
+    await t.ir({ tipo: 'datos_facturacion', documento: 'factura', receptor: receptorPrueba });
+    const receptorGuardado = {
+      razonSocial: 'Constructora Lingue SpA',
+      rut: '76.543.210-3',
+      giro: 'Construcción de obras',
+      direccion: 'Camino Villarrica Km 4',
+      comuna: 'Pucón',
+      correo: 'facturas@lingue.cl',
+    };
     await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: ' 1234 ', fecha: '2026-09-29' });
     expect(t.recargada().facturacion).toEqual({
       estado: 'facturada',
+      documento: 'factura',
+      receptor: receptorGuardado,
       tipo: 'factura',
       identificadorExterno: '1234',
       fecha: '2026-09-29T12:00:00.000Z',
@@ -684,7 +704,14 @@ describe('facturación', () => {
     await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'boleta' });
     expect(etiquetaFacturacion(t.actual().facturacion)).toBe('Facturada · Boleta');
     await t.ir({ tipo: 'facturacion', estado: 'pendiente' });
-    expect(t.recargada().facturacion).toEqual({ estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null });
+    expect(t.recargada().facturacion).toEqual({
+      estado: 'pendiente',
+      documento: 'factura',
+      receptor: receptorGuardado,
+      tipo: null,
+      identificadorExterno: null,
+      fecha: null,
+    });
     expect(t.ultimo('facturada')!.detalle).toBe('Vuelve a pendiente de facturación');
     // Repetir el mismo estado no agrega actividad.
     const n = t.eventos().length;

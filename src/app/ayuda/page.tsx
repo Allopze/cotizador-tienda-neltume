@@ -78,7 +78,9 @@ export default async function AyudaPage() {
             </li>
             <li>
               <strong>Registra la aprobación cuando el cliente acepta.</strong> Pulsa «Registrar aprobación del
-              cliente». Desde ahí la cotización ya no se edita y aparece el «Seguimiento del pedido».
+              cliente». Desde ahí la cotización ya no se edita y aparece el «Seguimiento del pedido». Si el cliente ya
+              sabe si quiere <strong>Boleta</strong> o <strong>Factura</strong>, puedes elegirlo ahí (con los datos a
+              quien facturar) o dejarlo en «Aún no sabe» para completarlo después.
             </li>
             <li>
               <strong>Registra el anticipo.</strong> En el seguimiento, escribe lo que pagó el cliente en «Monto
@@ -102,8 +104,11 @@ export default async function AyudaPage() {
               operación».
             </li>
             <li>
-              <strong>Facturación.</strong> Anota la factura o boleta (número y fecha) y pulsa «Marcar como
-              facturada».
+              <strong>Facturación.</strong> En «Facturación» indica si pide boleta o factura; si pide{' '}
+              <strong>Factura</strong>, guarda los datos del receptor (razón social, RUT, giro, dirección y opcionales
+              comuna y correo) y usa «Copiar datos para facturar» para llevarlos con un clic a tu facturador externo.{' '}
+              <strong>El cotizador no emite documentos tributarios ni se conecta con el SII:</strong> una vez emitida
+              afuera, anota el documento, su número y fecha, y pulsa «Marcar como facturada».
             </li>
           </ol>
           <p className="ayuda-nota">
@@ -309,7 +314,8 @@ export default async function AyudaPage() {
               despacho.
             </li>
             <li>
-              <strong>Una factura marcada por error:</strong> «Volver a pendiente».
+              <strong>Una factura marcada por error:</strong> «Volver a pendiente» (también permite corregir boleta,
+              factura o los datos del receptor mientras sigue pendiente).
             </li>
             <li>
               <strong>Una cotización que ya no va:</strong> «Más acciones» → «Anular». Esto no se deshace.

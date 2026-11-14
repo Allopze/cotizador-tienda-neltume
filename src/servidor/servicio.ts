@@ -34,12 +34,12 @@ import {
   cantidadFlete,
   despachoEditable,
   etiquetaComercial,
-  etiquetaFacturacion,
   etiquetaEtapa,
   etiquetaOperativo,
   etapaProduccion,
   FABRICAS,
   fabricaDeNota,
+  facturacionPendiente,
   nombreFabrica,
   numeroNota,
   numerosNotas,
@@ -55,7 +55,6 @@ import {
   type Cotizacion,
   type Despacho,
   type Fabrica,
-  type Facturacion,
   type NotaPedido,
 } from '../negocio/estado';
 import {
@@ -99,6 +98,12 @@ import {
   textoCambios,
 } from './edicion';
 import { ErrorConflicto, ErrorNoEncontrado, ErrorUsuario, registrarError, VERSION_OBSOLETA } from './errores';
+import {
+  actualizarFacturacionCotizacion,
+  ejecutarDatosFacturacion,
+  prepararFacturacionEnAprobacion,
+  type ContextoFacturacion,
+} from './facturacion';
 import { prepararFeriados } from './feriados-sync';
 import { generarPdf, plantilla, prepararPdf, type DocumentoPdf } from './pdf';
 import { documentoCotizacion, documentoNota, renumerarHtml, snapshotDe } from './documentos';
@@ -218,7 +223,7 @@ export class Servicio {
       estadoOperativo: 'sin_pedido',
       pagos: [],
       comentariosInternos: [],
-      facturacion: { estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null },
+      facturacion: facturacionPendiente(),
     };
   }
 
@@ -784,7 +789,9 @@ export class Servicio {
       case 'operacion':
         return this.cambiarEstadoOperativo(accion);
       case 'facturacion':
-        return this.actualizarFacturacion(accion);
+        return actualizarFacturacionCotizacion(this.contextoFacturacion(), accion);
+      case 'datos_facturacion':
+        return ejecutarDatosFacturacion(this.contextoFacturacion(), accion);
       case 'nueva':
         return this.almacen.transaccion((u) => {
           if (accion.nuevoId) {
@@ -1512,6 +1519,7 @@ export class Servicio {
           { vence: q.vence },
         );
       q.despacho = this.despachoEditado(q, accion.despacho ?? {}).despacho;
+      const detalleFacturacion = prepararFacturacionEnAprobacion(q, accion.facturacion);
       q.estado = 'aprobada';
       q.estadoComercial = 'aprobada';
       q.aprobadaPor = this.autor;
@@ -1519,6 +1527,7 @@ export class Servicio {
       q.actualizada = marca(q.actualizada);
       u.guardar(q);
       u.registrarEvento(q.id, 'aprobada', this.autor, `Aprobada por cliente · N° ${q.numero}`);
+      if (detalleFacturacion) u.registrarEvento(q.id, 'facturacion_actualizada', this.autor, detalleFacturacion);
       const revision = u.revisionAbierta(q);
       if (revision) {
         revision.origen = null; revision.origenId = null; revision.actualizada = marca(revision.actualizada); u.guardar(revision);
@@ -1788,38 +1797,15 @@ export class Servicio {
     });
   }
 
-  private async actualizarFacturacion(accion: Extract<Accion, { tipo: 'facturacion' }>): Promise<Resultado> {
-    return this.almacen.transaccion((u): Resultado => {
-      const q = this.obtener(u, accion.id);
-      this.exigirAprobada(q);
-      this.verificarVersion(q, accion.actualizada);
-      let facturacion: Facturacion = { estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null };
-      if (accion.estado === 'facturada') {
-        if (accion.tipoDocumento !== 'factura' && accion.tipoDocumento !== 'boleta')
-          throw new ErrorUsuario('Indica si se emitió una factura o una boleta.');
-        const fecha = this.fechaOperacion(q, u, accion.fecha, 'de la factura');
-        facturacion = {
-          estado: 'facturada',
-          tipo: accion.tipoDocumento,
-          identificadorExterno: limpiarTexto(accion.identificadorExterno, 120),
-          fecha,
-        };
-      }
-      const actual = q.facturacion;
-      if (actual && JSON.stringify(actual) === JSON.stringify(facturacion)) return { cotizacion: q };
-      q.facturacion = facturacion;
-      q.actualizada = marca(q.actualizada);
-      u.guardar(q);
-      u.registrarEvento(
-        q.id,
-        'facturada',
-        this.autor,
-        facturacion.estado === 'facturada'
-          ? `${etiquetaFacturacion(facturacion)} · ${facturacion.fecha!.slice(0, 10)}`
-          : 'Vuelve a pendiente de facturación',
-      );
-      return { cotizacion: q };
-    });
+  private contextoFacturacion(): ContextoFacturacion {
+    return {
+      almacen: this.almacen,
+      autor: this.autor,
+      obtener: (u, id, mensaje) => this.obtener(u, id, mensaje),
+      exigirAprobada: (q, sinAprobar) => this.exigirAprobada(q, sinAprobar),
+      verificarVersion: (q, actualizada) => this.verificarVersion(q, actualizada),
+      fechaOperacion: (q, u, elegida, de) => this.fechaOperacion(q, u, elegida, de),
+    };
   }
 
   /**

@@ -20,3 +20,31 @@ export function falloCompartir(error: unknown, listo: boolean): FalloCompartir {
   if (nombre === 'NotAllowedError' && !listo) return { tipo: 'otro_toque', texto: 'El PDF está listo para compartir.' };
   return { tipo: 'error', texto: 'No se pudo compartir el PDF. Descárgalo y envíalo desde tus archivos.' };
 }
+
+/** Copia texto plano al portapapeles usando Clipboard API o un respaldo seguro en el DOM. */
+export async function copiarTexto(texto: string): Promise<boolean> {
+  if (!texto) return false;
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(texto);
+      return true;
+    }
+  } catch {
+    // Reintentar con selección temporal si el navegador restringe Clipboard API fuera de HTTPS.
+  }
+  if (typeof document === 'undefined') return false;
+  const area = document.createElement('textarea');
+  area.value = texto;
+  area.setAttribute('readonly', '');
+  area.style.position = 'fixed';
+  area.style.opacity = '0';
+  document.body.appendChild(area);
+  area.select();
+  try {
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    area.remove();
+  }
+}

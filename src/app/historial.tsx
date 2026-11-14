@@ -30,8 +30,8 @@ import {
 import { Actividad } from './actividad';
 import { PasosMini } from './linea-pasos';
 
-/** Un estado, o una vista: las que vencen pronto, las que tienen saldo por cobrar o la papelera de borradores. */
-type Filtro = 'todas' | EstadoCotizacion | 'vencen' | 'saldo' | 'papelera';
+/** Un estado, o una vista: las que vencen pronto, con saldo, por facturar o la papelera de borradores. */
+type Filtro = 'todas' | EstadoCotizacion | 'vencen' | 'saldo' | 'por_facturar' | 'papelera';
 const FILTROS: [Filtro, string, string?][] = [
   ['todas', 'Todas'],
   ['borrador', 'Borradores'],
@@ -41,6 +41,7 @@ const FILTROS: [Filtro, string, string?][] = [
   ['anulada', 'Anuladas', 'Sin efecto (por ejemplo, rechazadas por el cliente): su número no se reutiliza'],
   ['vencen', 'Vencen pronto', 'Emitidas que vencen en los próximos 7 días'],
   ['saldo', 'Con saldo pendiente', 'Aprobadas con pagos por completar'],
+  ['por_facturar', 'Por facturar', 'Aprobadas pendientes de facturación'],
   ['papelera', 'Papelera', 'Borradores eliminados: se pueden restaurar'],
 ];
 const POR_PAGINA = 30;
@@ -68,6 +69,7 @@ export function parametros(f: Filtros) {
   if (q) params.set('q', q);
   if (f.estado === 'vencen') params.set('vencenPronto', 'true');
   else if (f.estado === 'saldo') params.set('saldoPendiente', 'true');
+  else if (f.estado === 'por_facturar') params.set('porFacturar', 'true');
   else if (f.estado !== 'todas' && f.estado !== 'papelera') params.set('estado', f.estado);
   if (f.desde) params.set('desde', f.desde);
   if (f.hasta) params.set('hasta', f.hasta);
@@ -716,6 +718,11 @@ function Fila({
         <span className="history-estado">
           <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
           {vencida && <span className="status vencida">Vencida</span>}
+          {q.estado === 'aprobada' && (q.facturacion?.documento ?? q.facturacion?.tipo) && (
+            <span className="status facturacion-doc">
+              {(q.facturacion?.documento ?? q.facturacion?.tipo) === 'factura' ? 'Factura' : 'Boleta'}
+            </span>
+          )}
           {(q.estado === 'borrador' || q.estado === 'emitida' || q.estado === 'aprobada') && (
             <PasosMini
               datos={{

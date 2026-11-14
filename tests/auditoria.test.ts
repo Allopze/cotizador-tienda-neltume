@@ -337,11 +337,42 @@ describe('textos y exportación', () => {
     };
     // Un borrador, una emitida, una reemplazada o una anulada no es una venta: nadie debe su total.
     for (const estado of ['borrador', 'emitida', 'reemplazada', 'anulada'])
-      expect(celdas(estado, { pagado: 0 }), estado).toMatchObject({ Total: '119000', Saldo: '', Facturación: '' });
+      expect(celdas(estado, { pagado: 0 }), estado).toMatchObject({
+        Total: '119000',
+        Saldo: '',
+        Facturación: '',
+        Documento: '',
+        'Razón social': '',
+        'RUT receptor': '',
+      });
     expect(celdas('aprobada', { pagado: 59500 })).toMatchObject({ Saldo: '59500', Facturación: 'Pendiente' });
     expect(
-      celdas('aprobada', { pagado: 119000, saldoPendiente: 0, facturacion: { estado: 'facturada' } }),
-    ).toMatchObject({ Saldo: '0', Facturación: 'Facturada' });
+      celdas('aprobada', {
+        pagado: 119000,
+        saldoPendiente: 0,
+        facturacion: {
+          estado: 'facturada',
+          documento: 'factura',
+          tipo: 'factura',
+          receptor: {
+            razonSocial: 'Lingue SpA',
+            rut: '76.543.210-3',
+            giro: 'Construcción',
+            direccion: 'Camino Sur 10',
+            comuna: null,
+            correo: null,
+          },
+        },
+      }),
+    ).toMatchObject({
+      Saldo: '0',
+      Facturación: 'Facturada',
+      Documento: 'Factura',
+      'Razón social': 'Lingue SpA',
+      'RUT receptor': '76.543.210-3',
+      'Giro receptor': 'Construcción',
+      'Dirección receptor': 'Camino Sur 10',
+    });
   });
 });
 

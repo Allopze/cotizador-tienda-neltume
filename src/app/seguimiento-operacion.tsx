@@ -20,15 +20,16 @@ import {
   type NotaPedido,
 } from '@/negocio/estado';
 import { leerPesos } from '@/negocio/cifras';
+import { etiquetaDocumentoFacturacion } from '@/negocio/facturacion';
 import { ANTICIPO_TEXTO } from '@/negocio/limites';
 import { esLibre } from '@/negocio/personalizados';
 import { descripcionLinea, pesos, porcentaje } from '@/negocio/precios';
 import { fechaChilena, fechaLocal } from '@/negocio/vigencia';
 import { useConfirmacion } from './dialogo';
 import { useRepartoFabricas, useRetroceso, type LineaReparto } from './dialogos-cotizacion';
+import { FacturacionOperacion } from './facturacion-operacion';
 import { fechaCorta, fechaLarga, nombreProducto, numeroCotizacion } from './formato';
 import { LineaPasos } from './linea-pasos';
-import { SelectorDesplegable } from './selector-desplegable';
 import { pedirJSON } from './solicitud';
 
 /** Envío de una nota a la fábrica; solo lo necesario para mostrar si llegó (auditoría BUG-004). */
@@ -65,9 +66,6 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
   const [montoPago, setMontoPago] = useState('');
   const [fechaPago, setFechaPago] = useState(() => fechaLocal(new Date()));
   const [observacionPago, setObservacionPago] = useState('');
-  const [tipoFactura, setTipoFactura] = useState<'factura' | 'boleta'>('factura');
-  const [numeroFactura, setNumeroFactura] = useState('');
-  const [fechaFactura, setFechaFactura] = useState(() => fechaLocal(new Date()));
   const [comentario, setComentario] = useState('');
   const [confirmar, confirmacion] = useConfirmacion();
   const [pedirRetroceso, dialogoRetroceso] = useRetroceso();
@@ -130,20 +128,6 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
       setMontoPago('');
       setObservacionPago('');
     }
-  }
-  async function marcarFacturada(evento: React.FormEvent<HTMLFormElement>) {
-    evento.preventDefault();
-    if (ocupado) return;
-    if (
-      await flujo({
-        tipo: 'facturacion',
-        estado: 'facturada',
-        tipoDocumento: tipoFactura,
-        identificadorExterno: numeroFactura.trim() || null,
-        fecha: fechaFactura || null,
-      })
-    )
-      setNumeroFactura('');
   }
   async function guardarComentario(evento: React.FormEvent<HTMLFormElement>) {
     evento.preventDefault();
@@ -449,6 +433,9 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
           <span>Comercial: <strong>{etiquetaComercial[estadoComercial]}</strong></span>
           <span>Operación: <strong>{etiquetaOperativo[operacionActual]}</strong></span>
           {aprobada && <span>Facturación: <strong>{etiquetaFacturacion(actual.facturacion)}</strong></span>}
+          {aprobada && etiquetaDocumentoFacturacion(actual.facturacion) && (
+            <span>Documento: <strong>{etiquetaDocumentoFacturacion(actual.facturacion)}</strong></span>
+          )}
         </div>
         {puedeDesaprobar && (
           <div className="workflow-actions">
@@ -505,36 +492,15 @@ export function SeguimientoOperacion({ actual, ocupado, flujo, anularPago }: Pro
             ))}
           </ul>
         )}
-        {aprobada && <h4 className="workflow-grupo">Facturación</h4>}
         {aprobada && (
-          actual.facturacion?.estado === 'facturada' ? (
-            <div className="workflow-actions">
-              <p>
-                <strong>{etiquetaFacturacion(actual.facturacion)}</strong>
-                {actual.facturacion.fecha ? ` · ${fechaLarga(actual.facturacion.fecha)}` : ''}
-              </p>
-              <button type="button" className="button secondary small" disabled={ocupado} onClick={() => void flujo({ tipo: 'facturacion', estado: 'pendiente' })}>Volver a pendiente</button>
-            </div>
-          ) : (
-            <form className="workflow-payment" onSubmit={marcarFacturada}>
-              <div className="ia-field">
-                <span>Documento</span>
-                <SelectorDesplegable
-                  ariaLabel="Documento"
-                  value={tipoFactura}
-                  opciones={[
-                    { value: 'factura', label: 'Factura' },
-                    { value: 'boleta', label: 'Boleta' },
-                  ]}
-                  onChange={(valor) => setTipoFactura(valor as 'factura' | 'boleta')}
-                  disabled={ocupado}
-                />
-              </div>
-              <label className="ia-field"><span>N° o identificador externo</span><input id="facturacion-identificador" value={numeroFactura} onChange={(e) => setNumeroFactura(e.target.value)} maxLength={120} placeholder="Ej. 1234" disabled={ocupado} /></label>
-              <label className="ia-field"><span>Fecha de emisión</span><input type="date" value={fechaFactura} min={rangoFecha.min ?? undefined} max={rangoFecha.max} onInvalid={(e) => explicarFecha(e.currentTarget, 'de la factura')} onChange={(e) => { e.currentTarget.setCustomValidity(''); setFechaFactura(e.target.value); }} disabled={ocupado} /></label>
-              <button type="submit" className="button secondary" disabled={ocupado}>Marcar como facturada</button>
-            </form>
-          )
+          <FacturacionOperacion
+            actual={actual}
+            ocupado={ocupado}
+            rangoFecha={rangoFecha}
+            explicarFecha={explicarFecha}
+            flujo={flujo}
+            confirmar={confirmar}
+          />
         )}
         <h4 className="workflow-grupo">Notas internas</h4>
         <form className="workflow-comment" onSubmit={guardarComentario}>

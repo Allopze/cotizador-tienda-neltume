@@ -18,7 +18,7 @@ async function main() {
   const r = await restaurarRespaldo(carpeta);
   console.log(`Restauración lista desde ${r.carpeta}:`);
   console.log(
-    `  ${r.cotizaciones} cotizaciones, ${r.cuentas ?? 'sin'} cuentas, ${r.pdf} PDF y ${r.referencias} referencias del cliente` +
+    `  ${r.cotizaciones} cotizaciones, ${r.clientes ?? 0} clientes, ${r.cuentas ?? 'sin'} cuentas, ${r.pdf} PDF y ${r.referencias} referencias del cliente` +
       (r.config ? '; también la configuración del catálogo.' : '.'),
   );
   console.log(`Lo que había antes quedó en ${r.aparte}.`);

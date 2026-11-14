@@ -1,13 +1,15 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
-import { etiquetaEstado } from '@/negocio/estado';
-import { pesos } from '@/negocio/precios';
+import type { ClienteRegistrado } from '@/negocio/cliente-registro';
 import type { ClienteDirectorio } from '@/servidor/clientes';
+import { useConfirmacion } from '../dialogo';
 import { Encabezado } from '../encabezado';
 import { EncabezadoPagina } from '../encabezado-pagina';
-import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, plural } from '../formato';
+import { SIN_CLIENTE, plural } from '../formato';
 import { esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { ClienteFila } from './cliente-fila';
+import { DialogoCliente, type ModoClienteDialogo } from './dialogo-cliente';
 
 interface PaginaClientes {
   clientes: ClienteDirectorio[];
@@ -17,15 +19,48 @@ interface PaginaClientes {
 }
 const ESPERA_BUSQUEDA = 300;
 
-/** Directorio de clientes: los de las cotizaciones anteriores, con búsqueda por nombre o RUT y sus cotizaciones. */
-export function PantallaClientes({ email, nombre }: { email: string; nombre: string }) {
+function directorARegistrado(c: ClienteDirectorio): ClienteRegistrado {
+  return {
+    id: c.id ?? '',
+    nombre: c.nombre ?? '',
+    rut: c.rut,
+    giro: c.giro,
+    telefono: c.telefono,
+    direccion: c.direccion,
+    comuna: c.comuna,
+    correo: c.correo ?? null,
+    notas: c.notas ?? null,
+    documentoHabitual: c.documentoHabitual ?? null,
+    receptorFacturacion: c.receptorFacturacion ?? null,
+    creado: c.actualizado ?? '',
+    actualizado: c.actualizado ?? '',
+    creadoPor: null,
+    actualizadoPor: null,
+  };
+}
+
+/** Directorio editable de clientes frecuentes y clientes de cotizaciones anteriores. */
+export function PantallaClientes({
+  email,
+  nombre,
+  esAdmin = false,
+}: {
+  email: string;
+  nombre: string;
+  esAdmin?: boolean;
+}) {
   const [q, setQ] = useState('');
   const [datos, setDatos] = useState<PaginaClientes | null>(null);
   const [error, setError] = useState('');
+  const [aviso, setAviso] = useState('');
   const [buscando, setBuscando] = useState(false);
+  const [eliminandoId, setEliminandoId] = useState<string | null>(null);
+  const [modo, setModo] = useState<ModoClienteDialogo | null>(null);
   const [releer, setReleer] = useState(0);
+  const [confirmar, dialogConfirmacion] = useConfirmacion();
   const primera = useRef(true);
   const termino = q.trim();
+
   const consulta = (pagina: number) => {
     const params = new URLSearchParams({ directorio: '1', pagina: String(pagina) });
     if (termino) params.set('q', termino);
@@ -73,6 +108,38 @@ export function PantallaClientes({ email, nombre }: { email: string; nombre: str
     }
   }
 
+  async function darDeBaja(c: ClienteDirectorio) {
+    if (!esAdmin || !c.registrado || !c.id || eliminandoId) return;
+    const titulo = c.nombre || SIN_CLIENTE;
+    const ok = await confirmar({
+      titulo: `¿Eliminar a «${titulo}»?`,
+      mensaje: (
+        <p>
+          Dejará de aparecer en el registro de clientes frecuentes. Las cotizaciones existentes y sus PDF no se borran ni
+          cambian.
+        </p>
+      ),
+      aceptar: 'Eliminar cliente',
+      eyebrow: 'CLIENTES',
+    });
+    if (!ok) return;
+    setEliminandoId(c.id);
+    setError('');
+    try {
+      await pedirJSON('/api/clientes', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: c.id, ...(c.actualizado ? { actualizado: c.actualizado } : {}) }),
+      });
+      setAviso(`Cliente «${titulo}» eliminado del registro.`);
+      setReleer((n) => n + 1);
+    } catch (e) {
+      if (!esSilencioso(e)) setError(mensajeDe(e));
+    } finally {
+      setEliminandoId(null);
+    }
+  }
+
   const clientes = datos?.clientes ?? [];
   return (
     <div className="app-shell">
@@ -82,6 +149,9 @@ export function PantallaClientes({ email, nombre }: { email: string; nombre: str
           <span className="heading-meta" aria-live="polite">
             {datos ? plural(datos.total, 'cliente') : ''}
           </span>
+          <button type="button" className="button primary" onClick={() => setModo({ tipo: 'nuevo' })}>
+            Nuevo cliente
+          </button>
           <Link href="/historial" scroll={false} className="button secondary">
             Volver al historial
           </Link>
@@ -100,6 +170,11 @@ export function PantallaClientes({ email, nombre }: { email: string; nombre: str
               />
             </label>
           </div>
+          {aviso && (
+            <p className="cliente-aviso" role="status">
+              {aviso}
+            </p>
+          )}
           {error && (
             <p className="history-empty catalog-error" role="alert">
               {error}{' '}
@@ -114,13 +189,33 @@ export function PantallaClientes({ email, nombre }: { email: string; nombre: str
             <p className="muted history-empty">
               {termino
                 ? 'Ningún cliente coincide con la búsqueda.'
-                : 'Aquí aparecerán los clientes de las cotizaciones que vayas preparando.'}
+                : 'Agrega clientes frecuentes con «Nuevo cliente» o prepara cotizaciones para verlos aquí.'}
             </p>
           ) : (
             <>
               <ul className="clientes-lista">
                 {clientes.map((c, i) => (
-                  <Cliente key={`${c.rut ?? ''}|${c.nombre ?? ''}|${i}`} cliente={c} />
+                  <ClienteFila
+                    key={c.id ?? `${c.rut ?? ''}|${c.nombre ?? ''}|${i}`}
+                    cliente={c}
+                    esAdmin={esAdmin}
+                    ocupado={eliminandoId === c.id}
+                    alEditar={() => setModo({ tipo: 'editar', cliente: directorARegistrado(c) })}
+                    alGuardarDesdeHistorial={() =>
+                      setModo({
+                        tipo: 'nuevo',
+                        inicial: {
+                          nombre: c.nombre ?? '',
+                          rut: c.rut,
+                          giro: c.giro,
+                          telefono: c.telefono,
+                          direccion: c.direccion,
+                          comuna: c.comuna,
+                        },
+                      })
+                    }
+                    alEliminar={() => void darDeBaja(c)}
+                  />
                 ))}
               </ul>
               {clientes.length < datos.total && (
@@ -134,55 +229,22 @@ export function PantallaClientes({ email, nombre }: { email: string; nombre: str
           )}
         </section>
       </main>
+      <DialogoCliente
+        modo={modo}
+        alCerrar={() => setModo(null)}
+        alGuardado={(guardado, accion) => {
+          setModo(null);
+          setError('');
+          setAviso(
+            accion === 'editar'
+              ? `Cambios guardados en «${guardado.nombre}».`
+              : `Cliente frecuente «${guardado.nombre}» guardado.`,
+          );
+          setReleer((n) => n + 1);
+        }}
+        alAbrirExistente={(existente) => setModo({ tipo: 'editar', cliente: existente })}
+      />
+      {dialogConfirmacion}
     </div>
-  );
-}
-
-function Cliente({ cliente: c }: { cliente: ClienteDirectorio }) {
-  const ultima = c.cotizaciones[0];
-  const nombre = c.nombre || SIN_CLIENTE;
-  return (
-    <li>
-      <details className="cliente-ficha">
-        <summary aria-label={`${nombre}: ${plural(c.cantidad, 'cotización', 'cotizaciones')}`}>
-          <span className="cliente-nombre">
-            {nombre}
-            <small>{[c.rut, c.comuna, c.telefono].filter(Boolean).join(' · ') || 'Sin RUT ni comuna'}</small>
-          </span>
-          <span className="cliente-resumen">
-            {plural(c.cantidad, 'cotización', 'cotizaciones')}
-            {ultima && <small>Última: {fechaCorta(ultima.actualizada)}</small>}
-          </span>
-        </summary>
-        <div className="cliente-detalle">
-          {(c.giro || c.direccion) && (
-            <p className="muted">{[c.giro, c.direccion].filter(Boolean).join(' · ')}</p>
-          )}
-          <ul className="cliente-cotizaciones" aria-label={`Cotizaciones de ${nombre}`}>
-            {c.cotizaciones.map((q) => (
-              <li key={q.id}>
-                <Link href={`/?cotizacion=${encodeURIComponent(q.id)}`} scroll={false}>
-                  <span>{q.numero ? `N° ${q.numero}` : SIN_NUMERO}</span>
-                  <span className={`status ${q.estado}`}>{etiquetaEstado[q.estado]}</span>
-                  <span className="cliente-cotizacion-proyecto">
-                    {q.proyecto || fechaCorta(q.actualizada)}
-                  </span>
-                  <strong>{pesos(q.total)}</strong>
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {c.cantidad > c.cotizaciones.length && (
-            <p className="muted">
-              Se muestran las {c.cotizaciones.length} más recientes. Las demás se buscan en el{' '}
-              <Link href="/historial" scroll={false}>
-                Historial
-              </Link>
-              .
-            </p>
-          )}
-        </div>
-      </details>
-    </li>
   );
 }

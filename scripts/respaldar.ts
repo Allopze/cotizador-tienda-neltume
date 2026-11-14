@@ -32,12 +32,21 @@ async function main() {
   await abrirBaseDatos(rutaDb).backup(copiaDb);
   const verificacion = new Database(copiaDb);
   let cotizaciones: number;
+  let clientes = 0;
   try {
     // La copia hereda WAL: se deja como un único archivo autocontenido, fácil de restaurar.
     verificacion.pragma('journal_mode = DELETE');
     const integridad = verificacion.pragma('integrity_check', { simple: true });
     if (integridad !== 'ok') throw new Error(`La copia de la base no pasó integrity_check: ${integridad}`);
     cotizaciones = (verificacion.prepare('SELECT COUNT(*) AS n FROM cotizaciones').get() as { n: number }).n;
+    const conClientes = verificacion
+      .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'clientes'")
+      .get();
+    if (conClientes) {
+      clientes = (
+        verificacion.prepare('SELECT COUNT(*) AS n FROM clientes WHERE eliminado IS NULL').get() as { n: number }
+      ).n;
+    }
   } finally {
     verificacion.close();
   }
@@ -97,8 +106,15 @@ async function main() {
 
   console.log(
     json
-      ? JSON.stringify({ carpeta, cotizaciones, pdf: documentos, referencias: archivosReferencia, integracion: integracionArchivos })
-      : `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${documentos} PDF, ${archivosReferencia} referencias del cliente, ${integracionArchivos} archivos de integración.`,
+      ? JSON.stringify({
+          carpeta,
+          cotizaciones,
+          clientes,
+          pdf: documentos,
+          referencias: archivosReferencia,
+          integracion: integracionArchivos,
+        })
+      : `Respaldo en ${carpeta}: ${cotizaciones} cotizaciones, ${clientes} clientes, ${documentos} PDF, ${archivosReferencia} referencias del cliente, ${integracionArchivos} archivos de integración.`,
   );
 }
 

@@ -20,7 +20,8 @@ import { metros } from '@/catalogo/resolver';
 import { leerPesos } from '@/negocio/cifras';
 import { LARGO_OBSERVACION_ITEM } from '@/negocio/limites';
 import { esStarken } from '@/negocio/starken';
-import { CampoEditable, type SugerenciaCampo } from './campo-editable';
+import { CampoEditable } from './campo-editable';
+import { BloqueClienteCotizacion } from './clientes/bloque-cliente-cotizacion';
 import { CotizarStarken } from './cotizar-starken';
 import { PreguntasPendientes, RESUMEN_FUERA_DE_REGLA, sinExplicacionRepetida } from './preguntas-pendientes';
 import {
@@ -35,9 +36,7 @@ import { metrosTexto } from '@/catalogo/escalones';
 import { dimensionesEnMilimetros, indicesMedidaSinTipo } from '@/negocio/medidas';
 import type { CambiosEdicion, Despacho } from './contrato';
 import type { Familia } from '@/catalogo/tipos';
-import type { ClienteAnterior } from '@/servidor/clientes';
 import {
-  ETIQUETA_CAMPO,
   SIN_CLIENTE,
   autoria,
   decimalCampo,
@@ -302,15 +301,7 @@ function FilaFlete({
   );
 }
 
-const CAMPOS_CLIENTE = ['nombre', 'rut', 'giro', 'comuna', 'direccion', 'telefono', 'proyecto'] as const;
-/** Datos que completa un cliente de otra cotización; el proyecto es de cada cotización y no se copia. */
-const CAMPOS_CLIENTE_ANTERIOR = ['nombre', 'rut', 'giro', 'telefono', 'direccion', 'comuna'] as const;
-/** Lo que trae el cliente elegido; un dato que no tiene no borra el ya escrito en esta cotización. */
-export function datosClienteAnterior(c: ClienteAnterior): CambiosEdicion['cliente'] {
-  const datos: NonNullable<CambiosEdicion['cliente']> = {};
-  for (const campo of CAMPOS_CLIENTE_ANTERIOR) if (c[campo]) datos[campo] = c[campo];
-  return datos;
-}
+export { datosClienteAnterior } from './clientes/bloque-cliente-cotizacion';
 
 /** «Otro» de la lista de transportistas no es un nombre (`sinTransportista`): pide escribirlo y no se guarda solo. */
 export const esOtroTransportista = (t: string | null | undefined) => !!t?.trim() && sinTransportista(t);
@@ -515,22 +506,6 @@ export function CotizacionPanel({
   const editaDespacho = editable || (despachoEditable(actual) && !ocupado);
   const guardarDespacho = (cambios: Despacho, campo: string) =>
     editable ? acciones.editar({ despacho: cambios }, campo) : acciones.despacho(cambios, campo);
-  /** Clientes de cotizaciones anteriores para lo escrito en el nombre o el RUT; elegir uno completa sus datos. */
-  const sugerirCliente =
-    (campo: 'nombre' | 'rut') =>
-    async (texto: string, senal: AbortSignal): Promise<SugerenciaCampo[]> => {
-      const { clientes } = await pedirJSON<{ clientes: ClienteAnterior[] }>(
-        `/api/clientes?${new URLSearchParams({ q: texto, excluir: actual.id })}`,
-        { signal: senal, cache: 'no-store' },
-      );
-      return clientes.map((c) => ({
-        clave: `${c.rut ?? ''}|${c.nombre ?? ''}`,
-        etiqueta: (campo === 'rut' ? c.rut : c.nombre) ?? c.nombre ?? c.rut ?? SIN_CLIENTE,
-        detalle:
-          [campo === 'rut' ? c.nombre : c.rut, c.giro, c.comuna].filter(Boolean).join(' · ') || undefined,
-        aplicar: () => acciones.editar({ cliente: datosClienteAnterior(c) }, `cliente.${campo}`),
-      }));
-    };
   const quien = [
     autoria(actual),
     actual.fechaEmision && estado !== 'borrador' && fechaLarga(actual.fechaEmision),
@@ -1539,42 +1514,13 @@ export function CotizacionPanel({
           </div>
         )}
       </div>
-      <details key={`cliente-${actual.id}`} className="quote-client-section quote-details">
-        <summary>
-          <span>Cliente y facturación</span>
-          <small>
-            {[actual.cliente.nombre, actual.cliente.rut, actual.cliente.comuna].filter(Boolean).join(' · ') ||
-              'Agregar datos del cliente'}
-          </small>
-        </summary>
-        <div className="client">
-          {CAMPOS_CLIENTE.map((campo) => {
-            const valor = actual?.cliente[campo] ?? '';
-            if (
-              actual &&
-              !admiteCambios &&
-              !valor &&
-              (campo === 'giro' || campo === 'rut' || campo === 'direccion')
-            )
-              return null;
-            return (
-              <CampoEditable
-                key={campo}
-                className={`cliente-campo cliente-${campo}`}
-                etiqueta={ETIQUETA_CAMPO[campo]}
-                valor={valor}
-                mostrar={campo === 'nombre' ? valor || SIN_CLIENTE : undefined}
-                editable={editable}
-                discreto
-                guardando={guardando === `cliente.${campo}`}
-                maxLength={300}
-                guardar={(v) => acciones.editar({ cliente: { [campo]: v || null } }, `cliente.${campo}`)}
-                sugerir={campo === 'nombre' || campo === 'rut' ? sugerirCliente(campo) : undefined}
-              />
-            );
-          })}
-        </div>
-      </details>
+      <BloqueClienteCotizacion
+        actual={actual}
+        editable={editable}
+        admiteCambios={admiteCambios}
+        guardando={guardando}
+        editar={acciones.editar}
+      />
       {(admiteCambios || actual.observaciones || despachoEditable(actual) || actual.despacho) && (
         <div className="quote-custom-fields">
           {(admiteCambios || actual.observaciones) && (

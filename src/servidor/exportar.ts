@@ -46,6 +46,18 @@ const COLUMNAS: [string, (q: ResumenCotizacion) => string | number | null][] = [
   ['Saldo', (q) => deVenta(q, () => q.saldoPendiente ?? Math.max(0, q.total - (q.pagado ?? 0)))],
   ['Operación', (q) => etiquetaOperativo[q.estadoOperativo ?? 'sin_pedido']],
   ['Facturación', (q) => deVenta(q, () => (q.facturacion?.estado === 'facturada' ? 'Facturada' : 'Pendiente'))],
+  [
+    'Documento',
+    (q) =>
+      deVenta(q, () => {
+        const d = q.facturacion?.documento ?? q.facturacion?.tipo;
+        return d === 'factura' ? 'Factura' : d === 'boleta' ? 'Boleta' : null;
+      }),
+  ],
+  ['Razón social', (q) => deVenta(q, () => q.facturacion?.receptor?.razonSocial ?? null)],
+  ['RUT receptor', (q) => deVenta(q, () => q.facturacion?.receptor?.rut ?? null)],
+  ['Giro receptor', (q) => deVenta(q, () => q.facturacion?.receptor?.giro ?? null)],
+  ['Dirección receptor', (q) => deVenta(q, () => q.facturacion?.receptor?.direccion ?? null)],
   ['Revisión de', (q) => q.origen],
   ['Reemplazada por', (q) => q.reemplazadaPor],
   // Una cotización con notas para las dos fábricas las lista juntas, en el mismo orden en ambas columnas.

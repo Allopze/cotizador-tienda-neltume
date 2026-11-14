@@ -4,6 +4,7 @@ import { calcularVence } from '../negocio/vigencia';
 import { REGLAS } from '../negocio/precios';
 import { LARGO_OBSERVACION_ITEM, MARGEN_MAX, MARGEN_MIN } from '../negocio/limites';
 import { FABRICAS, leerEstadoOperativo } from '../negocio/estado';
+import { documentoTributarioSchema, receptorFacturacionPersistidoSchema } from './facturacion-esquemas';
 
 const MENSAJE_DESDE = `«Desde» debe ser un número entero de puertas, de 2 a ${MAX_DESDE_PUERTAS}.`;
 /**
@@ -309,8 +310,12 @@ const cotizacionBaseSchema = z.looseObject({
     id: z.string(), fecha: z.string(), texto: z.string().min(1).max(2000), usuario: z.string().nullable(),
   })).optional(),
   facturacion: z.object({
-    estado: z.enum(['pendiente', 'facturada']), tipo: z.enum(['factura', 'boleta']).nullable(),
-    identificadorExterno: z.string().nullable(), fecha: z.string().nullable(),
+    estado: z.enum(['pendiente', 'facturada']),
+    documento: documentoTributarioSchema.nullable().default(null),
+    receptor: receptorFacturacionPersistidoSchema.nullable().default(null),
+    tipo: documentoTributarioSchema.nullable(),
+    identificadorExterno: z.string().nullable(),
+    fecha: z.string().nullable(),
   }).optional(),
 });
 
@@ -408,8 +413,8 @@ export function completarEstadoLegado(entrada: unknown): unknown {
         pagos: Array.isArray(q.pagos) ? q.pagos : [],
         comentariosInternos: Array.isArray(q.comentariosInternos) ? q.comentariosInternos : [],
         facturacion: esRegistro(q.facturacion)
-          ? q.facturacion
-          : { estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null },
+          ? { documento: null, receptor: null, ...q.facturacion }
+          : { estado: 'pendiente', documento: null, receptor: null, tipo: null, identificadorExterno: null, fecha: null },
         cliente: esRegistro(q.cliente) ? { giro: null, ...q.cliente } : q.cliente,
         solicitudes: Array.isArray(q.solicitudes)
           ? q.solicitudes.map((s) => esRegistro(s) ? {
