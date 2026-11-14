@@ -169,10 +169,8 @@ export function CampoReceptorSugerido({
                 className="selector-opcion receptor-opcion"
                 aria-selected={activa === idx}
                 data-activo={activa === idx ? 'true' : undefined}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  elegir(s);
-                }}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => elegir(s)}
               >
                 <span>{titulo}</span>
                 {detalle && <small className="selector-opcion-detalle">{detalle}</small>}
