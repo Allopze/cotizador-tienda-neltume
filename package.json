@@ -17,6 +17,7 @@
     "notas": "tsx scripts/notas.ts",
     "integracion": "tsx --env-file-if-exists=.env.local scripts/integracion.ts",
     "limpiar-borradores": "tsx scripts/limpiar-borradores.ts",
+    "clientes:importar": "tsx scripts/clientes-desde-historial.ts",
     "respaldar": "tsx scripts/respaldar.ts",
     "restaurar": "tsx scripts/restaurar.ts",
     "primer-arranque": "tsx scripts/primer-arranque.ts",
