@@ -40,6 +40,7 @@ import {
   etapaProduccion,
   FABRICAS,
   fabricaDeNota,
+  facturacionPendiente,
   nombreFabrica,
   numeroNota,
   numerosNotas,
@@ -218,7 +219,7 @@ export class Servicio {
       estadoOperativo: 'sin_pedido',
       pagos: [],
       comentariosInternos: [],
-      facturacion: { estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null },
+      facturacion: facturacionPendiente(),
     };
   }
 
@@ -1793,13 +1794,22 @@ export class Servicio {
       const q = this.obtener(u, accion.id);
       this.exigirAprobada(q);
       this.verificarVersion(q, accion.actualizada);
-      let facturacion: Facturacion = { estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null };
+      let facturacion: Facturacion = {
+        estado: 'pendiente',
+        documento: q.facturacion?.documento ?? null,
+        receptor: q.facturacion?.receptor ?? null,
+        tipo: null,
+        identificadorExterno: null,
+        fecha: null,
+      };
       if (accion.estado === 'facturada') {
         if (accion.tipoDocumento !== 'factura' && accion.tipoDocumento !== 'boleta')
           throw new ErrorUsuario('Indica si se emitió una factura o una boleta.');
         const fecha = this.fechaOperacion(q, u, accion.fecha, 'de la factura');
         facturacion = {
           estado: 'facturada',
+          documento: q.facturacion?.documento ?? null,
+          receptor: q.facturacion?.receptor ?? null,
           tipo: accion.tipoDocumento,
           identificadorExterno: limpiarTexto(accion.identificadorExterno, 120),
           fecha,

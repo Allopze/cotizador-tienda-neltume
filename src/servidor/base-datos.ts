@@ -7,7 +7,7 @@ import { registrarFeriadosExternos } from '../negocio/feriados';
 import { textoBusqueda } from './busqueda';
 
 /** Versión del esquema que deja `crearEsquema`; las pruebas de migración la comparan con `user_version`. */
-export const VERSION_ESQUEMA = 29;
+export const VERSION_ESQUEMA = 30;
 const SQLITE_GLOBAL = '__neltumeSqliteConnections';
 const SQLITE_CLEANUP = '__neltumeSqliteCleanup';
 type GlobalWithConnections = typeof globalThis & {
@@ -536,6 +536,22 @@ function crearEsquema(db: Database.Database) {
       if (!columnasDe(db, 'cotizaciones').includes('despacho_huella'))
         db.exec('ALTER TABLE cotizaciones ADD COLUMN despacho_huella TEXT;');
       db.exec('PRAGMA user_version = 29;');
+    }).immediate();
+  if (version < 30)
+    db.transaction(() => {
+      // v30: documento pedido (boleta/factura) y datos del receptor de facturación (independientes del cliente).
+      const cols = columnasDe(db, 'cotizaciones');
+      for (const col of [
+        'facturacion_documento',
+        'facturacion_razon_social',
+        'facturacion_rut',
+        'facturacion_giro',
+        'facturacion_direccion',
+        'facturacion_comuna',
+        'facturacion_correo',
+      ])
+        if (!cols.includes(col)) db.exec(`ALTER TABLE cotizaciones ADD COLUMN ${col} TEXT;`);
+      db.exec('PRAGMA user_version = 30;');
     }).immediate();
 }
 

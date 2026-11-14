@@ -29,6 +29,8 @@ import {
   ordenarNotas,
   type EstadoOperativo,
   type Fabrica,
+  type ReceptorFacturacion,
+  type TipoDocumentoTributario,
 } from '../negocio/estado';
 import type { Linea, Montos } from '../negocio/precios';
 import { descuentoEsManual } from '../negocio/descuento-cantidad';
@@ -145,11 +147,45 @@ type FilaCotizacion = {
   /** Texto guardado: puede traer el antiguo «produccion_terminada» (ver `leerEstadoOperativo`). */
   estado_operativo: string | null;
   facturacion_estado: 'pendiente' | 'facturada';
-  facturacion_tipo: 'factura' | 'boleta' | null;
+  facturacion_documento: TipoDocumentoTributario | null;
+  facturacion_razon_social: string | null;
+  facturacion_rut: string | null;
+  facturacion_giro: string | null;
+  facturacion_direccion: string | null;
+  facturacion_comuna: string | null;
+  facturacion_correo: string | null;
+  facturacion_tipo: TipoDocumentoTributario | null;
   facturacion_id_externo: string | null;
   facturacion_fecha: string | null;
   reglas_json: string | null;
 };
+
+const receptorDesdeFila = (
+  f: Pick<
+    FilaCotizacion,
+    | 'facturacion_razon_social'
+    | 'facturacion_rut'
+    | 'facturacion_giro'
+    | 'facturacion_direccion'
+    | 'facturacion_comuna'
+    | 'facturacion_correo'
+  >,
+): ReceptorFacturacion | null =>
+  f.facturacion_razon_social ||
+  f.facturacion_rut ||
+  f.facturacion_giro ||
+  f.facturacion_direccion ||
+  f.facturacion_comuna ||
+  f.facturacion_correo
+    ? {
+        razonSocial: f.facturacion_razon_social,
+        rut: f.facturacion_rut,
+        giro: f.facturacion_giro,
+        direccion: f.facturacion_direccion,
+        comuna: f.facturacion_comuna,
+        correo: f.facturacion_correo,
+      }
+    : null;
 
 type FilaLinea = {
   cotizacion_id: string;
@@ -469,6 +505,8 @@ function cargar(db: Database.Database, ids: string[] | null): Cotizacion[] {
           comentariosInternos: comentarios.get(f.id) ?? [],
           facturacion: {
             estado: f.facturacion_estado,
+            documento: f.facturacion_documento,
+            receptor: receptorDesdeFila(f),
             tipo: f.facturacion_tipo,
             identificadorExterno: f.facturacion_id_externo,
             fecha: f.facturacion_fecha,
@@ -640,7 +678,9 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       aprobada_por, anulada_por, fecha_anulacion, motivo_anulacion, reemplazada_por, version_catalogo, busqueda,
       observaciones, despacho_direccion, despacho_transporte, despacho_entrega, reglas_json,
       estado_comercial, estado_operativo, despacho_destino, despacho_valor, despacho_huella,
-      facturacion_estado, facturacion_tipo, facturacion_id_externo, facturacion_fecha, fecha_aprobacion
+      facturacion_estado, facturacion_documento, facturacion_razon_social, facturacion_rut, facturacion_giro,
+      facturacion_direccion, facturacion_comuna, facturacion_correo, facturacion_tipo, facturacion_id_externo,
+      facturacion_fecha, fecha_aprobacion
     ) VALUES (
       @id, @orden, @numero, @estado, @cliente_nombre, @cliente_nombre_normalizado, @cliente_rut, @cliente_giro,
       @cliente_telefono, @cliente_direccion, @cliente_comuna, @cliente_comuna_normalizada,
@@ -649,7 +689,9 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       @aprobada_por, @anulada_por, @fecha_anulacion, @motivo_anulacion, @reemplazada_por, @version_catalogo, @busqueda,
       @observaciones, @despacho_direccion, @despacho_transporte, @despacho_entrega, @reglas_json,
       @estado_comercial, @estado_operativo, @despacho_destino, @despacho_valor, @despacho_huella,
-      @facturacion_estado, @facturacion_tipo, @facturacion_id_externo, @facturacion_fecha, @fecha_aprobacion
+      @facturacion_estado, @facturacion_documento, @facturacion_razon_social, @facturacion_rut, @facturacion_giro,
+      @facturacion_direccion, @facturacion_comuna, @facturacion_correo, @facturacion_tipo, @facturacion_id_externo,
+      @facturacion_fecha, @fecha_aprobacion
     ) ON CONFLICT(id) DO UPDATE SET
       numero = excluded.numero,
       estado = excluded.estado,
@@ -697,6 +739,13 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
       despacho_valor = excluded.despacho_valor,
       despacho_huella = excluded.despacho_huella,
       facturacion_estado = excluded.facturacion_estado,
+      facturacion_documento = excluded.facturacion_documento,
+      facturacion_razon_social = excluded.facturacion_razon_social,
+      facturacion_rut = excluded.facturacion_rut,
+      facturacion_giro = excluded.facturacion_giro,
+      facturacion_direccion = excluded.facturacion_direccion,
+      facturacion_comuna = excluded.facturacion_comuna,
+      facturacion_correo = excluded.facturacion_correo,
       facturacion_tipo = excluded.facturacion_tipo,
       facturacion_id_externo = excluded.facturacion_id_externo,
       facturacion_fecha = excluded.facturacion_fecha,
@@ -750,6 +799,13 @@ function persistirCotizacion(db: Database.Database, q: Cotizacion) {
     despacho_valor: q.despacho ? q.despacho.valor ?? q.flete : null,
     despacho_huella: q.despacho?.huella ?? null,
     facturacion_estado: q.facturacion?.estado ?? 'pendiente',
+    facturacion_documento: q.facturacion?.documento ?? null,
+    facturacion_razon_social: q.facturacion?.receptor?.razonSocial ?? null,
+    facturacion_rut: q.facturacion?.receptor?.rut ?? null,
+    facturacion_giro: q.facturacion?.receptor?.giro ?? null,
+    facturacion_direccion: q.facturacion?.receptor?.direccion ?? null,
+    facturacion_comuna: q.facturacion?.receptor?.comuna ?? null,
+    facturacion_correo: q.facturacion?.receptor?.correo ?? null,
     facturacion_tipo: q.facturacion?.tipo ?? null,
     facturacion_id_externo: q.facturacion?.identificadorExterno ?? null,
     facturacion_fecha: q.facturacion?.fecha ?? null,
@@ -1856,7 +1912,12 @@ export class Almacen {
           saldoPendiente: Math.max(0, (f.total ?? 0) - f.pagado),
           porcentajePagado: f.total ? Math.min(100, (100 * f.pagado) / f.total) : 0,
           pagos: f.cantidad_pagos,
-          facturacion: { estado: f.facturacion_estado },
+          facturacion: {
+            estado: f.facturacion_estado,
+            documento: f.facturacion_documento,
+            tipo: f.facturacion_tipo,
+            receptor: receptorDesdeFila(f),
+          },
         };
       });
       return { cotizaciones, total, pagina, porPagina };

@@ -143,7 +143,7 @@ describe('CSV del listado: pagos, operación y facturación', () => {
     await t.ir({ tipo: 'generar_nota', fabrica: 'panguipulli' });
     const q = await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: '1234' });
     const [fila] = t.almacen.listar().cotizaciones;
-    expect(fila.facturacion).toEqual({ estado: 'facturada' });
+    expect(fila.facturacion).toMatchObject({ estado: 'facturada', tipo: 'factura', documento: null, receptor: null });
     expect(valores(csvCotizaciones([fila]))).toMatchObject({
       Pagado: String(anticipo),
       Saldo: String(q.montos.total - anticipo),

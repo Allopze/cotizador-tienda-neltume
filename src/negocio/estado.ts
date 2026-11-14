@@ -1,6 +1,7 @@
 import type { Cliente, SolicitudItem } from '../catalogo/tipos';
 import type { Rechazo } from '../catalogo/resolver';
 import type { Montos, ReglasComerciales } from './precios';
+import type { ReceptorFacturacion, TipoDocumentoTributario } from './facturacion';
 import { ANTICIPO_MINIMO, ANTICIPO_TEXTO } from './limites';
 import { fechaLocal } from './vigencia';
 import { esLibre } from './personalizados';
@@ -103,12 +104,26 @@ export interface ComentarioInterno {
   texto: string;
   usuario: string | null;
 }
+export type { ReceptorFacturacion, TipoDocumentoTributario } from './facturacion';
 export interface Facturacion {
   estado: 'pendiente' | 'facturada';
-  tipo: 'factura' | 'boleta' | null;
+  /** Lo que pidió el cliente («boleta» o «factura»), editable mientras siga pendiente. */
+  documento: TipoDocumentoTributario | null;
+  /** Datos tributarios del receptor cuando el documento es «factura» (null en boleta o sin definir). */
+  receptor: ReceptorFacturacion | null;
+  /** Documento efectivamente emitido al marcar como facturada. */
+  tipo: TipoDocumentoTributario | null;
   identificadorExterno: string | null;
   fecha: string | null;
 }
+export const facturacionPendiente = (): Facturacion => ({
+  estado: 'pendiente',
+  documento: null,
+  receptor: null,
+  tipo: null,
+  identificadorExterno: null,
+  fecha: null,
+});
 /** «Pendiente de facturación» o «Facturada · Factura N° 123». */
 export function etiquetaFacturacion(f: Facturacion | undefined) {
   if (f?.estado !== 'facturada') return 'Pendiente de facturación';
@@ -395,7 +410,7 @@ export interface ResumenCotizacion {
   saldoPendiente?: number;
   porcentajePagado?: number;
   pagos?: number;
-  facturacion?: Pick<Facturacion, 'estado'>;
+  facturacion?: Pick<Facturacion, 'estado'> & Partial<Pick<Facturacion, 'documento' | 'tipo' | 'receptor'>>;
 }
 /** Entrada del registro de actividad de una cotización. */
 export interface EventoCotizacion {
@@ -427,6 +442,7 @@ export type TipoEvento =
   | 'despachada'
   | 'lista_despacho'
   | 'completada'
+  | 'facturacion_actualizada'
   | 'facturada';
 export const etiquetaEvento: Record<TipoEvento, string> = {
   creada: 'Creada',
@@ -451,6 +467,7 @@ export const etiquetaEvento: Record<TipoEvento, string> = {
   despachada: 'Despachada',
   lista_despacho: 'Lista para despacho',
   completada: 'Completada',
+  facturacion_actualizada: 'Datos de facturación actualizados',
   facturada: 'Facturación actualizada',
 };
 export interface Estado {

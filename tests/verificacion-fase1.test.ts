@@ -242,7 +242,16 @@ describe('#4 y #16 · anular', () => {
     for (const cambios of [
       { estadoOperativo: 'despachada' },
       { estadoOperativo: 'completada' },
-      { facturacion: { estado: 'facturada', tipo: 'boleta', identificadorExterno: null, fecha: null } },
+      {
+        facturacion: {
+          estado: 'facturada',
+          documento: null,
+          receptor: null,
+          tipo: 'boleta',
+          identificadorExterno: null,
+          fecha: null,
+        },
+      },
     ] as Partial<Cotizacion>[])
       expect(puedeAnular(q(cambios))).toEqual({ ok: false, motivo: 'No se puede anular una cotización despachada, completada o facturada.' });
     expect(puedeAnular(q({ estado: 'borrador', numero: null }))).toEqual({ ok: false, motivo: 'Un borrador no se anula: elimínalo.' });

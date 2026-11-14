@@ -675,6 +675,8 @@ describe('facturación', () => {
     await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'factura', identificadorExterno: ' 1234 ', fecha: '2026-09-29' });
     expect(t.recargada().facturacion).toEqual({
       estado: 'facturada',
+      documento: null,
+      receptor: null,
       tipo: 'factura',
       identificadorExterno: '1234',
       fecha: '2026-09-29T12:00:00.000Z',
@@ -684,7 +686,14 @@ describe('facturación', () => {
     await t.ir({ tipo: 'facturacion', estado: 'facturada', tipoDocumento: 'boleta' });
     expect(etiquetaFacturacion(t.actual().facturacion)).toBe('Facturada · Boleta');
     await t.ir({ tipo: 'facturacion', estado: 'pendiente' });
-    expect(t.recargada().facturacion).toEqual({ estado: 'pendiente', tipo: null, identificadorExterno: null, fecha: null });
+    expect(t.recargada().facturacion).toEqual({
+      estado: 'pendiente',
+      documento: null,
+      receptor: null,
+      tipo: null,
+      identificadorExterno: null,
+      fecha: null,
+    });
     expect(t.ultimo('facturada')!.detalle).toBe('Vuelve a pendiente de facturación');
     // Repetir el mismo estado no agrega actividad.
     const n = t.eventos().length;
