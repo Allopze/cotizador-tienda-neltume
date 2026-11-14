@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { etiquetaEstado } from '@/negocio/estado';
+import { etiquetaDocumentoFacturacion } from '@/negocio/facturacion';
 import { pesos } from '@/negocio/precios';
 import type { ClienteDirectorio } from '@/servidor/clientes';
 import { SIN_CLIENTE, SIN_NUMERO, fechaCorta, plural } from '../formato';
@@ -25,6 +26,12 @@ export function ClienteFila({
 }: Props) {
   const ultima = c.cotizaciones[0];
   const nombre = c.nombre || SIN_CLIENTE;
+  const docHabitual = c.registrado
+    ? etiquetaDocumentoFacturacion({
+        documento: c.documentoHabitual ?? null,
+        receptor: c.receptorFacturacion ?? null,
+      })
+    : null;
   return (
     <li>
       <details className="cliente-ficha">
@@ -47,6 +54,7 @@ export function ClienteFila({
           {(c.giro || c.direccion || c.correo) && (
             <p className="muted">{[c.giro, c.direccion, c.correo].filter(Boolean).join(' · ')}</p>
           )}
+          {docHabitual && <p className="cliente-facturacion-resumen">Documento habitual: {docHabitual}</p>}
           {c.notas && <p className="cliente-notas">{c.notas}</p>}
           <div className="cliente-acciones">
             {c.registrado ? (

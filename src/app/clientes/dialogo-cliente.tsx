@@ -2,9 +2,16 @@
 import { useState, type FormEvent } from 'react';
 import { normalizarRut } from '@/negocio/cliente';
 import type { ClienteRegistrado } from '@/negocio/cliente-registro';
-import { correoElectronicoValido } from '@/negocio/facturacion';
+import { correoElectronicoValido, receptorTieneContenido } from '@/negocio/facturacion';
 import { Dialogo } from '../dialogo';
+import {
+  editableAReceptor,
+  receptorAEditable,
+  validarReceptorEditable,
+  type ReceptorEditable,
+} from '../receptor-facturacion';
 import { ErrorSolicitud, codigoDe, esSilencioso, mensajeDe, pedirJSON } from '../solicitud';
+import { FacturacionClienteCampos, type OpcionDocumentoCliente } from './facturacion-cliente-campos';
 
 export type ModoClienteDialogo =
   | { tipo: 'nuevo'; inicial?: Partial<ClienteRegistrado> }
@@ -78,12 +85,37 @@ function FormularioCliente({
   const [comuna, setComuna] = useState(base.comuna ?? '');
   const [correo, setCorreo] = useState(base.correo ?? '');
   const [notas, setNotas] = useState(base.notas ?? '');
+  const [documentoHabitual, setDocumentoHabitual] = useState<OpcionDocumentoCliente>(
+    base.documentoHabitual ?? 'sin_definir',
+  );
+  const [receptor, setReceptor] = useState<ReceptorEditable>(() => receptorAEditable(base.receptorFacturacion));
+  const [erroresReceptor, setErroresReceptor] = useState<{ rut?: string | null; correo?: string | null }>({});
   const [error, setError] = useState('');
   const [duplicado, setDuplicado] = useState<ClienteRegistrado | null>(null);
 
   function formatearRut() {
     const normalizado = normalizarRut(rut);
     if (normalizado && normalizado !== rut) setRut(normalizado);
+  }
+
+  function cambiarReceptor(siguiente: ReceptorEditable) {
+    setReceptor(siguiente);
+    if (erroresReceptor.rut || erroresReceptor.correo) {
+      const val = validarReceptorEditable(siguiente);
+      setErroresReceptor({ rut: val.errorRut, correo: val.errorCorreo });
+    }
+  }
+
+  function copiarDesdeCliente() {
+    setReceptor({
+      razonSocial: nombre.trim(),
+      rut: (normalizarRut(rut) ?? rut).trim(),
+      giro: giro.trim(),
+      direccion: direccion.trim(),
+      comuna: comuna.trim(),
+      correo: correo.trim(),
+    });
+    setErroresReceptor({});
   }
 
   async function enviar(e: FormEvent) {
@@ -109,6 +141,19 @@ function FormularioCliente({
       return;
     }
 
+    const docFinal = documentoHabitual === 'sin_definir' ? null : documentoHabitual;
+    let receptorFinal = null;
+    if (docFinal === 'factura') {
+      const val = validarReceptorEditable(receptor);
+      if (val.errorRut || val.errorCorreo) {
+        setErroresReceptor({ rut: val.errorRut, correo: val.errorCorreo });
+        setError('Revisa el RUT o correo de facturación antes de guardar.');
+        return;
+      }
+      const rec = editableAReceptor(receptor);
+      receptorFinal = receptorTieneContenido(rec) ? rec : null;
+    }
+
     const carga = {
       nombre: nombreLimpio,
       rut: rutNorm,
@@ -118,12 +163,8 @@ function FormularioCliente({
       comuna: comuna.trim() || null,
       correo: correoLimpio || null,
       notas: notas.trim() || null,
-      ...(modo.tipo === 'editar'
-        ? {
-            documentoHabitual: modo.cliente.documentoHabitual,
-            receptorFacturacion: modo.cliente.receptorFacturacion,
-          }
-        : {}),
+      documentoHabitual: docFinal,
+      receptorFacturacion: receptorFinal,
     };
 
     setGuardando(true);
@@ -239,6 +280,18 @@ function FormularioCliente({
           />
         </label>
       </div>
+      <FacturacionClienteCampos
+        documento={documentoHabitual}
+        alCambiarDocumento={(doc) => {
+          setDocumentoHabitual(doc);
+          if (doc !== 'factura') setErroresReceptor({});
+        }}
+        receptor={receptor}
+        alCambiarReceptor={cambiarReceptor}
+        erroresReceptor={erroresReceptor}
+        disabled={guardando}
+        alCopiarDesdeCliente={copiarDesdeCliente}
+      />
       <p className="receptor-ayuda">
         Esta ficha sirve para autocompletar nuevas cotizaciones. Nunca cambia cotizaciones ya emitidas ni sus PDF.
       </p>

@@ -2,6 +2,7 @@
 import { useId } from 'react';
 import { normalizarRut } from '@/negocio/cliente';
 import { correoElectronicoValido, type ReceptorFacturacion } from '@/negocio/facturacion';
+import { CampoReceptorSugerido, receptorDesdeSugerencia } from './clientes/autocompletar-receptor';
 
 export interface ReceptorEditable {
   razonSocial: string;
@@ -56,6 +57,7 @@ interface Props {
   prefijoId?: string;
   errores?: { rut?: string | null; correo?: string | null };
   nota?: string;
+  permitirAutocompletar?: boolean;
 }
 
 /** Campos reutilizables del receptor tributario para factura (al aprobar y en el seguimiento). */
@@ -66,8 +68,10 @@ export function ReceptorFacturacionCampos({
   prefijoId = 'receptor',
   errores,
   nota = 'Comuna y correo son opcionales. La factura se emite fuera de esta app.',
+  permitirAutocompletar = true,
 }: Props) {
   const idBase = useId();
+  const razonId = `${prefijoId}-${idBase}-razon`;
   const rutId = `${prefijoId}-${idBase}-rut`;
   const rutErrId = `${rutId}-error`;
   const correoId = `${prefijoId}-${idBase}-correo`;
@@ -86,30 +90,35 @@ export function ReceptorFacturacionCampos({
   return (
     <div className="receptor-bloque">
       <div className="receptor-grid">
-        <label className="ia-field receptor-campo-ancho">
-          <span>Razón social *</span>
-          <input
-            value={valor.razonSocial}
-            onChange={(e) => actualizar('razonSocial', e.target.value)}
-            maxLength={300}
+        <div className="ia-field receptor-campo-ancho">
+          <label htmlFor={razonId}>Razón social *</label>
+          <CampoReceptorSugerido
+            id={razonId}
+            campo="razonSocial"
+            valor={valor.razonSocial}
             placeholder="Ej. Constructora Lingue SpA"
             autoComplete="organization"
             disabled={disabled}
+            permitirAutocompletar={permitirAutocompletar}
+            alEscribir={(texto) => actualizar('razonSocial', texto)}
+            alElegirCliente={(c) => alCambiar(receptorDesdeSugerencia(c))}
           />
-        </label>
+        </div>
         <div className="ia-field">
           <label htmlFor={rutId}>RUT *</label>
-          <input
+          <CampoReceptorSugerido
             id={rutId}
-            value={valor.rut}
-            onChange={(e) => actualizar('rut', e.target.value)}
-            onBlur={formatearRutAlSalir}
-            maxLength={300}
+            campo="rut"
+            valor={valor.rut}
             placeholder="76.543.210-3"
             autoComplete="off"
             disabled={disabled}
-            aria-invalid={errores?.rut ? true : undefined}
-            aria-describedby={errores?.rut ? rutErrId : undefined}
+            permitirAutocompletar={permitirAutocompletar}
+            ariaInvalid={errores?.rut ? true : undefined}
+            ariaDescribedBy={errores?.rut ? rutErrId : undefined}
+            alEscribir={(texto) => actualizar('rut', texto)}
+            alSalir={formatearRutAlSalir}
+            alElegirCliente={(c) => alCambiar(receptorDesdeSugerencia(c))}
           />
           {errores?.rut && (
             <small id={rutErrId} className="campo-error" role="alert">

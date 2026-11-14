@@ -6,6 +6,7 @@ import type { ClienteRegistrado } from '../src/negocio/cliente-registro';
 import { facturacionPendiente, type Cotizacion } from '../src/negocio/estado';
 import { montosVacios, REGLAS } from '../src/negocio/precios';
 import { buscarRegistroPorRut, combinarReceptorConRegistro } from '../src/app/clientes/cliente-registro-api';
+import { receptorDesdeSugerencia } from '../src/app/clientes/autocompletar-receptor';
 import { FormAprobacion, estadoInicialAprobacion } from '../src/app/dialogos-cotizacion';
 import { FacturacionOperacion } from '../src/app/facturacion-operacion';
 import { SeguimientoOperacion } from '../src/app/seguimiento-operacion';
@@ -334,6 +335,58 @@ describe('B3 · precarga automática estricta por RUT (Ajuste #2)', () => {
       direccion: 'Providencia 100',
       comuna: null,
       correo: 'contacto@lingue.cl',
+    });
+  });
+});
+
+describe('B5 · autocompletar del receptor desde clientes frecuentes', () => {
+  it('toma el receptor configurado o arma uno desde la ficha y correo del cliente', () => {
+    expect(
+      receptorDesdeSugerencia({
+        nombre: 'Constructora Lingue',
+        rut: '76.543.210-3',
+        giro: 'Construcción',
+        telefono: null,
+        direccion: 'Av. Alemania 450',
+        comuna: 'Temuco',
+        correo: 'general@lingue.cl',
+        registrado: true,
+      }),
+    ).toEqual({
+      razonSocial: 'Constructora Lingue',
+      rut: '76.543.210-3',
+      giro: 'Construcción',
+      direccion: 'Av. Alemania 450',
+      comuna: 'Temuco',
+      correo: 'general@lingue.cl',
+    });
+
+    expect(
+      receptorDesdeSugerencia({
+        nombre: 'Constructora Lingue',
+        rut: '76.543.210-3',
+        giro: 'Construcción',
+        telefono: null,
+        direccion: 'Av. Alemania 450',
+        comuna: 'Temuco',
+        correo: 'general@lingue.cl',
+        registrado: true,
+        receptorFacturacion: {
+          razonSocial: 'Inversiones Lingue SpA',
+          rut: '99.111.222-3',
+          giro: 'Inversiones',
+          direccion: 'Providencia 100',
+          comuna: 'Providencia',
+          correo: 'dte@lingue.cl',
+        },
+      }),
+    ).toEqual({
+      razonSocial: 'Inversiones Lingue SpA',
+      rut: '99.111.222-3',
+      giro: 'Inversiones',
+      direccion: 'Providencia 100',
+      comuna: 'Providencia',
+      correo: 'dte@lingue.cl',
     });
   });
 });

@@ -673,3 +673,34 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.receptor-autocompletar {
+  position: relative;
+  display: grid;
+}
+.receptor-opcion {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font: inherit;
+}
+.selector-opcion-detalle {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.cliente-facturacion-fila {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cliente-facturacion-resumen {
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+  color: var(--ink);
+  font-weight: 500;
+}
