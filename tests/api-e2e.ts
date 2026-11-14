@@ -49,16 +49,22 @@ interface OpcionesBorrador {
   proyecto?: string;
   cantidad?: number;
   rutCuerpo?: string;
+  giro?: string;
+  telefono?: string;
+  direccion?: string;
+  codigo?: string;
+  ancho?: number;
+  alto?: number;
 }
 
 /** Borrador con una Huilo Huilo de 0,80 × 2,10 (hoja) y un cliente completo. */
 export async function crearBorrador(request: APIRequestContext, o: OpcionesBorrador = {}) {
   const creada = await accion(request, {
     tipo: 'agregar_producto',
-    codigo: 'HUIL-O-3-B',
+    codigo: o.codigo ?? 'HUIL-O-3-B',
     cantidad: o.cantidad ?? 1,
-    ancho: 0.8,
-    alto: 2.1,
+    ancho: o.ancho ?? 0.8,
+    alto: o.alto ?? 2.1,
     tipoMedida: 'hoja',
   });
   return accion(request, {
@@ -68,9 +74,9 @@ export async function crearBorrador(request: APIRequestContext, o: OpcionesBorra
     cliente: {
       nombre: o.cliente ?? 'Cliente de prueba',
       rut: rut(o.rutCuerpo ?? '76543210'),
-      giro: 'Construcción',
-      telefono: '+56 9 1234 5678',
-      direccion: 'Los Robles 123',
+      giro: o.giro ?? 'Construcción',
+      telefono: o.telefono ?? '+56 9 1234 5678',
+      direccion: o.direccion ?? 'Los Robles 123',
       comuna: o.comuna ?? 'Temuco',
       proyecto: o.proyecto ?? 'Casa de prueba',
     },

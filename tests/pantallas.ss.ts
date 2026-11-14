@@ -5,6 +5,7 @@ import { SECCIONES } from '../src/app/catalogo/secciones';
 import { seccionesVisibles } from '../src/app/ajustes/secciones';
 import { accion, completarOperacion, crearBorrador, crearEmitida, totalDe } from './api-e2e';
 import { ADMIN_E2E, DIR_E2E, iniciarSesion } from './login-e2e';
+import { clienteParaCaptura, sembrarCapturas } from './siembra-capturas';
 
 // `npm run ss` (playwright.capturas.config.ts): una captura por pantalla y por estado de la cotización, en
 // capturas/<escritorio|telefono>/. No revisa nada: si una pantalla cambia de forma, su captura falla sola y las
@@ -16,17 +17,37 @@ type Escenarios = Record<'borrador' | 'emitida' | 'aprobada' | 'conAnticipo' | '
 async function escenarios(page: Page): Promise<Escenarios> {
   if (existsSync(ESCENARIOS)) return JSON.parse(readFileSync(ESCENARIOS, 'utf8'));
   const r = page.request;
+  // Historial y directorio con volumen realista; los estados que se capturan se crean después y quedan arriba.
+  await sembrarCapturas(r);
   const pagar = async (q: Awaited<ReturnType<typeof crearEmitida>>, parte: number) =>
     accion(r, { tipo: 'pago', id: q.id, actualizada: q.actualizada, monto: Math.ceil((await totalDe(r, q.id)) * parte) });
 
-  const borrador = await crearBorrador(r, { cliente: 'Constructora Los Alerces', cantidad: 3, proyecto: 'Edificio Alerces' });
-  const emitida = await crearEmitida(r, { cliente: 'María González', cantidad: 2, comuna: 'Valdivia' });
-  const aprobada = await crearEmitida(r, { cliente: 'Pedro Soto', aprobar: true, comuna: 'Osorno' });
-  const conAnticipo = await pagar(await crearEmitida(r, { cliente: 'Ana Muñoz', aprobar: true, cantidad: 4 }), 0.5);
-  let conNota = await pagar(await crearEmitida(r, { cliente: 'Inmobiliaria Sur', aprobar: true, cantidad: 6 }), 0.5);
+  // Los escenarios usan el mismo RUT y proyecto que su cliente sembrado: así no se fusionan entre ellos.
+  const datos = clienteParaCaptura;
+  const borrador = await crearBorrador(r, { ...datos('Constructora Los Alerces'), cantidad: 3 });
+  const emitida = await crearEmitida(r, {
+    ...datos('María González'), cantidad: 2, codigo: 'MOL-O-3-B', ancho: 0.8, alto: 2.1,
+  });
+  const aprobada = await crearEmitida(r, {
+    ...datos('Pedro Soto'), aprobar: true, codigo: 'PAN-L-3-B', ancho: 0.85, alto: 2.1,
+  });
+  const conAnticipo = await pagar(
+    await crearEmitida(r, {
+      ...datos('Ana Muñoz'), aprobar: true, cantidad: 4, codigo: 'RAN-O-3-C', ancho: 0.8, alto: 2.2,
+    }),
+    0.5,
+  );
+  let conNota = await pagar(
+    await crearEmitida(r, {
+      ...datos('Inmobiliaria Sur'), aprobar: true, cantidad: 6, codigo: 'COZ-R-3-B', ancho: 0.85, alto: 2.1,
+    }),
+    0.5,
+  );
   conNota = await accion(r, { tipo: 'generar_nota', id: conNota.id, actualizada: conNota.actualizada, fabrica: 'santiago' });
-  const completada = await completarOperacion(r, await crearEmitida(r, { cliente: 'Hotel Puerto Fuy', aprobar: true }));
-  const porAnular = await crearEmitida(r, { cliente: 'Luis Rojas', comuna: 'Panguipulli' });
+  const completada = await completarOperacion(r, await crearEmitida(r, { ...datos('Hotel Puerto Fuy'), aprobar: true }));
+  const porAnular = await crearEmitida(r, {
+    ...datos('Luis Rojas'), codigo: 'ANC-L-3-A', ancho: 0.8, alto: 2,
+  });
   const anulada = await accion(r, { tipo: 'anular', id: porAnular.id, actualizada: porAnular.actualizada, motivo: 'El cliente desistió' });
 
   const ids: Escenarios = {
