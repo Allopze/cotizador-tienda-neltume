@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { createElement, createRef } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { clienteVacio } from '../src/catalogo/tipos';
+import type { ClienteRegistrado } from '../src/negocio/cliente-registro';
 import { facturacionPendiente, type Cotizacion } from '../src/negocio/estado';
 import { montosVacios, REGLAS } from '../src/negocio/precios';
+import { buscarRegistroPorRut, combinarReceptorConRegistro } from '../src/app/clientes/cliente-registro-api';
 import { FormAprobacion, estadoInicialAprobacion } from '../src/app/dialogos-cotizacion';
 import { FacturacionOperacion } from '../src/app/facturacion-operacion';
 import { SeguimientoOperacion } from '../src/app/seguimiento-operacion';
@@ -270,5 +272,68 @@ describe('A5 · resumen de estado y filtro Por facturar en historial', () => {
       vendedora: '',
     });
     expect(qs.get('porFacturar')).toBe('true');
+  });
+});
+
+describe('B3 · precarga automática estricta por RUT (Ajuste #2)', () => {
+  it('no consulta ni precarga desde el registro cuando la cotización no tiene RUT', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    expect(await buscarRegistroPorRut(null)).toBeNull();
+    expect(await buscarRegistroPorRut('')).toBeNull();
+    expect(await buscarRegistroPorRut('   ')).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it('combina receptor y correo desde la ficha registrada encontrada por RUT', () => {
+    const registroBase: ClienteRegistrado = {
+      id: '11111111-1111-4111-8111-111111111111',
+      nombre: 'Constructora Lingue',
+      rut: '76.543.210-3',
+      giro: 'Construcción de obras',
+      telefono: '+56 9 5555 1111',
+      direccion: 'Av. Alemania 450',
+      comuna: 'Temuco',
+      correo: 'contacto@lingue.cl',
+      notas: null,
+      documentoHabitual: 'factura',
+      receptorFacturacion: null,
+      creado: '2026-11-13T10:00:00.000Z',
+      actualizado: '2026-11-13T10:00:00.000Z',
+      creadoPor: 'ana@neltume.test',
+      actualizadoPor: 'ana@neltume.test',
+    };
+
+    // Sin receptor específico: usa los datos del cliente y hereda el correo de la ficha.
+    expect(combinarReceptorConRegistro(cliente, registroBase)).toEqual({
+      razonSocial: 'Constructora Lingue',
+      rut: '76.543.210-3',
+      giro: 'Construcción de obras',
+      direccion: 'Camino Real 120',
+      comuna: 'Pucón',
+      correo: 'contacto@lingue.cl',
+    });
+
+    // Con receptor configurado en la ficha: prioriza el receptor y hereda correo general si falta.
+    expect(
+      combinarReceptorConRegistro(cliente, {
+        ...registroBase,
+        receptorFacturacion: {
+          razonSocial: 'Holding Sur SpA',
+          rut: '99.111.222-3',
+          giro: 'Inversiones',
+          direccion: 'Providencia 100',
+          comuna: null,
+          correo: null,
+        },
+      }),
+    ).toEqual({
+      razonSocial: 'Holding Sur SpA',
+      rut: '99.111.222-3',
+      giro: 'Inversiones',
+      direccion: 'Providencia 100',
+      comuna: null,
+      correo: 'contacto@lingue.cl',
+    });
   });
 });

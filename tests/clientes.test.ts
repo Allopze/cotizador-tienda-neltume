@@ -6,6 +6,7 @@ import type { Catalogo, Cliente } from '../src/catalogo/tipos';
 import { digitoVerificador } from '../src/negocio/cliente';
 import { Almacen, cerrarAlmacen } from '../src/servidor/almacen';
 import { buscarClientes, directorioClientes, MAX_CLIENTES, MAX_COTIZACIONES_CLIENTE } from '../src/servidor/clientes';
+import { crearCliente, eliminarCliente } from '../src/servidor/repositorio-clientes';
 import { Servicio } from '../src/servidor/servicio';
 
 vi.mock('../src/servidor/pdf', () => ({
@@ -202,5 +203,71 @@ describe('directorio de clientes (pantalla Clientes)', () => {
     expect(cuerpo).toMatchObject({ total: 1, pagina: 1, clientes: [{ nombre: 'Marta Gómez', cantidad: 1 }] });
     expect((await pedir('directorio=si')).status).toBe(400);
     expect((await pedir('directorio=1&pagina=0')).status).toBe(400);
+  });
+
+  it('prioriza clientes registrados activos en autocompletar y directorio, y consulta por RUT exacto', async () => {
+    const { dir, db, crear } = await base();
+    const rutLingue = rut('76543210');
+    const rutOtro = rut('11222333');
+    // Cotización histórica con datos antiguos de Lingue y otra de un cliente sin ficha.
+    await crear({ nombre: 'Constructora Lingue Antigua', rut: rutLingue, comuna: 'Pucón' });
+    await crear({ nombre: 'Lingue Obras Menores', rut: rutOtro, comuna: 'Temuco' });
+
+    const registrado = crearCliente(
+      db,
+      {
+        nombre: 'Constructora Lingue SpA',
+        rut: rutLingue,
+        giro: 'Construcción de obras',
+        comuna: 'Villarrica',
+        correo: 'facturas@lingue.cl',
+        documentoHabitual: 'factura',
+        receptorFacturacion: {
+          razonSocial: 'Constructora Lingue SpA',
+          rut: rutLingue,
+          giro: 'Construcción de obras',
+          direccion: 'Camino Real 100',
+          comuna: 'Villarrica',
+          correo: 'dte@lingue.cl',
+        },
+      },
+      'ana@neltume.test',
+    );
+    const soloRegistro = crearCliente(
+      db,
+      { nombre: 'Inmobiliaria Lingue Sur', rut: rut('88999000'), correo: 'contacto@sur.cl' },
+      'ana@neltume.test',
+    );
+
+    const sugerencias = buscarClientes(db, 'lingue');
+    // Los registrados aparecen primero (alfabético) y no se duplica la cotización con el mismo RUT.
+    expect(sugerencias.map((s) => [s.nombre, !!s.registrado])).toEqual([
+      ['Constructora Lingue SpA', true],
+      ['Inmobiliaria Lingue Sur', true],
+      ['Lingue Obras Menores', false],
+    ]);
+    expect(sugerencias[0].documentoHabitual).toBe('factura');
+    expect(sugerencias[0].receptorFacturacion?.correo).toBe('dte@lingue.cl');
+
+    // Directorio incluye clientes sin cotizaciones y vincula las cotizaciones del mismo RUT bajo la ficha maestra.
+    const dirRes = directorioClientes(db, { q: 'lingue' });
+    expect(dirRes.total).toBe(3);
+    const lingueDir = dirRes.clientes.find((c) => c.id === registrado.id)!;
+    expect(lingueDir).toMatchObject({ nombre: 'Constructora Lingue SpA', registrado: true, cantidad: 1 });
+    expect(dirRes.clientes.find((c) => c.id === soloRegistro.id)).toMatchObject({ registrado: true, cantidad: 0 });
+    expect(dirRes.clientes.find((c) => c.rut === rutOtro)).toMatchObject({ registrado: false, cantidad: 1 });
+
+    // GET /api/clientes?rut= devuelve solo clientes registrados activos.
+    vi.stubEnv('NELTUME_DATA_DIR', dir);
+    vi.stubEnv('NELTUME_DB_PATH', join(dir, 'cotizador.sqlite'));
+    const { GET } = await import('../src/app/api/clientes/route');
+    exigirSesion.mockResolvedValue({ ok: true, usuario: { id: 'u1', email: 'a@b.cl', nombre: 'Ana', rol: 'user' } });
+
+    const rHit = await GET(new Request(`http://127.0.0.1:3000/api/clientes?rut=${encodeURIComponent(rutLingue.replace(/[.-]/g, ''))}`));
+    expect((await rHit.json()).cliente.id).toBe(registrado.id);
+
+    eliminarCliente(db, registrado.id, 'ana@neltume.test');
+    const rElim = await GET(new Request(`http://127.0.0.1:3000/api/clientes?rut=${encodeURIComponent(rutLingue)}`));
+    expect((await rElim.json()).cliente).toBeNull();
   });
 });

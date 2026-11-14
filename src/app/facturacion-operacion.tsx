@@ -1,6 +1,7 @@
 'use client';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { etiquetaFacturacion, type Cotizacion } from '@/negocio/estado';
+import { buscarRegistroPorRut, combinarReceptorConRegistro } from './clientes/cliente-registro-api';
 import {
   faltanDatosFactura,
   receptorDesdeCliente,
@@ -77,6 +78,31 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
   const [numeroFactura, setNumeroFactura] = useState('');
   const [fechaFactura, setFechaFactura] = useState(() => fechaLocal(new Date()));
   const [estadoCopia, setEstadoCopia] = useState<'ok' | 'error' | null>(null);
+  const tocoDocumento = useRef(false);
+  const tocoReceptor = useRef(false);
+  const tocoTipoFactura = useRef(false);
+
+  // Ajuste obligatorio #2: si aún no hay preferencia guardada, precarga solo si coincide el RUT compacto.
+  useEffect(() => {
+    const rut = actual.cliente?.rut;
+    if (fact?.estado === 'facturada' || docGuardado !== 'sin_definir' || receptorTieneContenido(receptorGuardado) || !rut) {
+      return;
+    }
+    const control = new AbortController();
+    buscarRegistroPorRut(rut, control.signal)
+      .then((registro) => {
+        if (!registro || control.signal.aborted) return;
+        if (!tocoDocumento.current && registro.documentoHabitual) {
+          setDocumento(registro.documentoHabitual);
+          if (!tocoTipoFactura.current) setTipoFactura(registro.documentoHabitual);
+        }
+        if (!tocoReceptor.current) {
+          setReceptor(receptorAEditable(combinarReceptorConRegistro(actual.cliente, registro)));
+        }
+      })
+      .catch(() => {});
+    return () => control.abort();
+  }, [actual.cliente, docGuardado, fact?.estado, receptorGuardado]);
 
   useEffect(() => {
     if (!estadoCopia) return;
@@ -139,6 +165,7 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
   const hayAlgoParaCopiar = documento === 'factura' && receptorTieneContenido(receptorBorrador);
 
   function cambiarReceptor(siguiente: ReceptorEditable) {
+    tocoReceptor.current = true;
     setReceptor(siguiente);
     if (erroresReceptor.rut || erroresReceptor.correo) {
       const val = validarReceptorEditable(siguiente);
@@ -202,9 +229,13 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
                 checked={documento === valor}
                 disabled={ocupado}
                 onChange={() => {
+                  tocoDocumento.current = true;
                   setDocumento(valor);
                   setErroresReceptor({});
-                  if (valor === 'boleta' || valor === 'factura') setTipoFactura(valor);
+                  if (valor === 'boleta' || valor === 'factura') {
+                    tocoTipoFactura.current = true;
+                    setTipoFactura(valor);
+                  }
                 }}
               />
               <span>{etiqueta}</span>
@@ -226,7 +257,15 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
               : <span>: guarda los datos del receptor para poder emitir factura.</span>}
           </div>
           {documento !== 'factura' && (
-            <button type="button" className="button secondary small" disabled={ocupado} onClick={() => setDocumento('factura')}>
+            <button
+              type="button"
+              className="button secondary small"
+              disabled={ocupado}
+              onClick={() => {
+                tocoDocumento.current = true;
+                setDocumento('factura');
+              }}
+            >
               Completar datos
             </button>
           )}
@@ -261,7 +300,10 @@ function FacturacionOperacionCuerpo({ actual, ocupado, rangoFecha, explicarFecha
             ariaLabel="Documento"
             value={tipoFactura}
             opciones={[{ value: 'factura', label: 'Factura' }, { value: 'boleta', label: 'Boleta' }]}
-            onChange={(valor) => setTipoFactura(valor as TipoDocumentoTributario)}
+            onChange={(valor) => {
+              tocoTipoFactura.current = true;
+              setTipoFactura(valor as TipoDocumentoTributario);
+            }}
             disabled={ocupado}
           />
         </div>

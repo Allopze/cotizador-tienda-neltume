@@ -21,6 +21,7 @@ import {
   type TipoDocumentoTributario,
 } from '@/negocio/facturacion';
 import { pesos } from '@/negocio/precios';
+import { buscarRegistroPorRut, combinarReceptorConRegistro } from './clientes/cliente-registro-api';
 import { pedirJSON } from './solicitud';
 
 // Diálogos con formulario que devuelven una promesa, como useConfirmacion.
@@ -132,8 +133,36 @@ export function FormAprobacion({
   const [documento, setDocumento] = useState<SeleccionDocumentoAprobacion>(inicial.documento);
   const [receptor, setReceptor] = useState<ReceptorEditable>(inicial.receptor);
   const [erroresReceptor, setErroresReceptor] = useState<{ rut?: string | null; correo?: string | null }>({});
+  const tocoDocumento = useRef(false);
+  const tocoReceptor = useRef(false);
+
+  // Ajuste obligatorio #2: precarga automática desde el registro frecuente SOLO si el RUT compacto coincide.
+  useEffect(() => {
+    const rut = datos.cliente?.rut;
+    if (inicial.teniaPrevio || !rut) return;
+    const control = new AbortController();
+    buscarRegistroPorRut(rut, control.signal)
+      .then((registro) => {
+        if (!registro || control.signal.aborted) return;
+        if (!tocoDocumento.current && registro.documentoHabitual) {
+          setDocumento(registro.documentoHabitual);
+        }
+        if (!tocoReceptor.current) {
+          setReceptor(receptorAEditable(combinarReceptorConRegistro(datos.cliente, registro)));
+        }
+      })
+      .catch(() => {});
+    return () => control.abort();
+  }, [datos.cliente, inicial.teniaPrevio]);
+
+  function cambiarDocumento(siguiente: SeleccionDocumentoAprobacion) {
+    tocoDocumento.current = true;
+    setDocumento(siguiente);
+    if (siguiente !== 'factura') setErroresReceptor({});
+  }
 
   function cambiarReceptor(siguiente: ReceptorEditable) {
+    tocoReceptor.current = true;
     setReceptor(siguiente);
     if (erroresReceptor.rut || erroresReceptor.correo) {
       const val = validarReceptorEditable(siguiente);
@@ -218,10 +247,7 @@ export function FormAprobacion({
                 name="aprobacion-documento"
                 value="sin_definir"
                 checked={documento === 'sin_definir'}
-                onChange={() => {
-                  setDocumento('sin_definir');
-                  setErroresReceptor({});
-                }}
+                onChange={() => cambiarDocumento('sin_definir')}
               />
               <span>
                 <strong>Aún no sabe</strong>
@@ -234,10 +260,7 @@ export function FormAprobacion({
                 name="aprobacion-documento"
                 value="boleta"
                 checked={documento === 'boleta'}
-                onChange={() => {
-                  setDocumento('boleta');
-                  setErroresReceptor({});
-                }}
+                onChange={() => cambiarDocumento('boleta')}
               />
               <span>
                 <strong>Boleta</strong>
@@ -250,7 +273,7 @@ export function FormAprobacion({
                 name="aprobacion-documento"
                 value="factura"
                 checked={documento === 'factura'}
-                onChange={() => setDocumento('factura')}
+                onChange={() => cambiarDocumento('factura')}
               />
               <span>
                 <strong>Factura</strong>

@@ -37,13 +37,16 @@ export function BloqueClienteCotizacion({ actual, editable, admiteCambios, guard
         `/api/clientes?${new URLSearchParams({ q: texto, excluir: actual.id })}`,
         { signal: senal, cache: 'no-store' },
       );
-      return clientes.map((c) => ({
-        clave: `${c.rut ?? ''}|${c.nombre ?? ''}`,
-        etiqueta: (campo === 'rut' ? c.rut : c.nombre) ?? c.nombre ?? c.rut ?? SIN_CLIENTE,
-        detalle:
-          [campo === 'rut' ? c.nombre : c.rut, c.giro, c.comuna].filter(Boolean).join(' · ') || undefined,
-        aplicar: () => editar({ cliente: datosClienteAnterior(c) }, `cliente.${campo}`),
-      }));
+      return clientes.map((c, idx) => {
+        const origen = c.registrado ? 'Cliente frecuente' : 'Cotización anterior';
+        return {
+          clave: c.id ?? `${c.rut ?? ''}|${c.nombre ?? ''}|${idx}`,
+          etiqueta: (campo === 'rut' ? c.rut : c.nombre) ?? c.nombre ?? c.rut ?? SIN_CLIENTE,
+          detalle:
+            [origen, campo === 'rut' ? c.nombre : c.rut, c.giro, c.comuna].filter(Boolean).join(' · ') || undefined,
+          aplicar: () => editar({ cliente: datosClienteAnterior(c) }, `cliente.${campo}`),
+        };
+      });
     };
 
   return (
