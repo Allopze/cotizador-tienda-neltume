@@ -4,6 +4,7 @@ import { useRef, useState, type FormEvent } from 'react';
 import Image from 'next/image';
 import { correoValido, useErrorCampo } from '../error-campo';
 import { ErrorSolicitud, esPantallaLogin, MENSAJES, PANTALLAS_LOGIN, pedirJSON } from '../solicitud';
+import { useConservarEscrito } from './conservar-escrito';
 import { avisoSesionExpirada } from './mensajes';
 import { PuertaLogin } from './puerta-login';
 
@@ -17,6 +18,7 @@ export function LoginForm({
 }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  useConservarEscrito({ correo: setEmail, clave: setPassword });
   const [ocupado, setOcupado] = useState(false);
   const [verClave, setVerClave] = useState(false);
   // Al ingresar, la puerta se abre y la cámara entra (solo con la escena 3D en marcha); luego se cambia de pantalla.

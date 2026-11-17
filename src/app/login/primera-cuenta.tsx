@@ -10,6 +10,7 @@ import {
   type CampoPrimeraCuenta as Campo,
 } from './mensajes';
 import { ErrorSolicitud, MENSAJES, pedirJSON } from '../solicitud';
+import { useConservarEscrito } from './conservar-escrito';
 
 const { minimo: MINIMO, maximo: MAXIMO } = CLAVE_PRIMERA_CUENTA;
 
@@ -23,6 +24,13 @@ export function PrimeraCuenta() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [repetida, setRepetida] = useState('');
+  useConservarEscrito({
+    codigo: setCodigo,
+    nombre: setNombre,
+    correo: setEmail,
+    clave: setPassword,
+    'clave-repetida': setRepetida,
+  });
   const [ocupado, setOcupado] = useState(false);
   const errores = useErrorCampo<Campo>('primera-cuenta');
 

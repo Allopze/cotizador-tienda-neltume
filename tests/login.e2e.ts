@@ -33,6 +33,31 @@ test('redirige a login y protege las APIs y los documentos hasta autenticar', as
   await expect(page).toHaveURL(/\/login$/);
 });
 
+test('lo escrito antes de que la página termine de cargar no se pierde (teléfono lento)', async ({ page }) => {
+  // Se retiene el JavaScript: el formulario ya se ve y admite texto, pero React todavía no lo controla. Así pasa en
+  // un teléfono lento (la puerta 3D demora la carga) y le pasó a la E2E en WebKit el 17 nov: el correo escrito se
+  // borraba al volver a dibujar el formulario y el ingreso fallaba con «Escribe tu correo electrónico».
+  let soltar!: () => void;
+  const retenido = new Promise<void>((resolver) => (soltar = resolver));
+  await page.route('**/_next/static/**/*.js', async (ruta) => {
+    await retenido;
+    await ruta.continue();
+  });
+  await page.goto('/login', { waitUntil: 'commit' });
+  await page.getByLabel('Correo electrónico').fill(USUARIO_E2E);
+  await page.getByLabel('Contraseña').fill(CLAVE_E2E);
+  soltar();
+  // «Mostrar contraseña» responde recién cuando React tomó el formulario, y el clic lo vuelve a dibujar. No se envía
+  // el formulario: el ingreso tiene un límite de intentos y aquí basta con ver que lo escrito sigue ahí.
+  const ver = page.locator('.login-ver-clave');
+  await expect(async () => {
+    if ((await ver.getAttribute('aria-pressed')) !== 'true') await ver.click();
+    await expect(ver).toHaveAttribute('aria-pressed', 'true', { timeout: 500 });
+  }).toPass({ timeout: 30_000 });
+  await expect(page.getByLabel('Correo electrónico')).toHaveValue(USUARIO_E2E);
+  await expect(page.getByLabel('Contraseña')).toHaveValue(CLAVE_E2E);
+});
+
 test('una sesión vencida devuelve al login', async ({ page }) => {
   await iniciarSesion(page);
 
