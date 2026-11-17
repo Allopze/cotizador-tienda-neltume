@@ -1,0 +1,67 @@
+{
+ "cotizaciones": [
+  {
+   "id": "26bfb750-42c0-4978-afba-4560a16f462c",
+   "numero": 323,
+   "estado": "aprobada",
+   "cliente": {
+    "nombre": "Juan Pérez",
+    "rut": null,
+    "giro": null,
+    "telefono": null,
+    "direccion": null,
+    "comuna": "Temuco",
+    "proyecto": null
+   },
+   "subtotal": 943583,
+   "descuento": 0,
+   "descuentoMonto": 0,
+   "flete": 25000,
+   "neto": 968583,
+   "iva": 184031,
+   "total": 1152614,
+   "items": 2,
+   "pendientes": 0,
+   "productos": "3 × Huilo Huilo PINO OREGON 0,80 × 2,10, 1 × Instalación",
+   "creada": "2026-11-17T20:09:52.799Z",
+   "actualizada": "2026-11-17T20:09:53.741Z",
+   "fecha": "2026-11-17T20:09:53.515Z",
+   "fechaEmision": "2026-11-17T20:09:53.084Z",
+   "vence": "2026-12-01",
+   "vencida": false,
+   "origen": null,
+   "reemplazadaPor": null,
+   "pdf": "cotizacion-323.pdf",
+   "creadaPor": "Administrador de prueba",
+   "emitidaPor": "Administrador de prueba",
+   "aprobadaPor": "Administrador de prueba",
+   "anuladaPor": null,
+   "fechaAnulacion": null,
+   "notas": [
+    {
+     "numero": 577,
+     "fabrica": "panguipulli",
+     "pdf": "nota-pedido-panguipulli-577.pdf",
+     "fecha": "2026-11-17T20:09:53.515Z",
+     "anulada": false
+    }
+   ],
+   "estadoComercial": "vendida",
+   "estadoOperativo": "en_produccion",
+   "pagado": 576307,
+   "saldoPendiente": 576307,
+   "porcentajePagado": 50,
+   "pagos": 1,
+   "facturacion": {
+    "estado": "pendiente",
+    "documento": "boleta",
+    "tipo": null,
+    "receptor": null
+   }
+  }
+ ],
+ "total": 1,
+ "pagina": 1,
+ "porPagina": 30,
+ "asistenteConfigurado": true
+}

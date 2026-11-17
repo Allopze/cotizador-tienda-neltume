@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Colores que usa el sistema antes de Compose (ícono, splash, barras). El resto vive en diseno/Tokens.kt. -->
+<resources>
+    <color name="tinta">#FF1D2B24</color>
+    <color name="papel">#FFFAFAF6</color>
+    <color name="bosque">#FF17241C</color>
+    <color name="bosque_tinta">#FFE4E8DE</color>
+</resources>

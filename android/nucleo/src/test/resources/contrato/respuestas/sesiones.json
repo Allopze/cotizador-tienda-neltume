@@ -1,0 +1,12 @@
+{
+ "sesiones": [
+  {
+   "id": "qU77H4SbQPQ8GcHht0pWsRHgFNI7DAtH",
+   "creada": "2026-11-17T20:09:52.651Z",
+   "vence": "2026-11-18T08:09:52.651Z",
+   "dispositivo": "App Android en Pruebas",
+   "ip": "127.0.0.1",
+   "actual": true
+  }
+ ]
+}

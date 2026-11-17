@@ -1,0 +1,5680 @@
+{
+ "pesos": [
+  {
+   "entrada": [
+    0
+   ],
+   "salida": "$0"
+  },
+  {
+   "entrada": [
+    5
+   ],
+   "salida": "$5"
+  },
+  {
+   "entrada": [
+    999
+   ],
+   "salida": "$999"
+  },
+  {
+   "entrada": [
+    1000
+   ],
+   "salida": "$1.000"
+  },
+  {
+   "entrada": [
+    1500
+   ],
+   "salida": "$1.500"
+  },
+  {
+   "entrada": [
+    9999
+   ],
+   "salida": "$9.999"
+  },
+  {
+   "entrada": [
+    10000
+   ],
+   "salida": "$10.000"
+  },
+  {
+   "entrada": [
+    1547768
+   ],
+   "salida": "$1.547.768"
+  },
+  {
+   "entrada": [
+    -1500
+   ],
+   "salida": "$-1.500"
+  },
+  {
+   "entrada": [
+    100000000
+   ],
+   "salida": "$100.000.000"
+  }
+ ],
+ "porcentaje": [
+  {
+   "entrada": [
+    0
+   ],
+   "salida": "0 %"
+  },
+  {
+   "entrada": [
+    19
+   ],
+   "salida": "19 %"
+  },
+  {
+   "entrada": [
+    2.5
+   ],
+   "salida": "2,5 %"
+  },
+  {
+   "entrada": [
+    12.345
+   ],
+   "salida": "12,35 %"
+  },
+  {
+   "entrada": [
+    0.005
+   ],
+   "salida": "0,01 %"
+  },
+  {
+   "entrada": [
+    50
+   ],
+   "salida": "50 %"
+  },
+  {
+   "entrada": [
+    33.333
+   ],
+   "salida": "33,33 %"
+  },
+  {
+   "entrada": [
+    1000.5
+   ],
+   "salida": "1.000,5 %"
+  }
+ ],
+ "porcentajeIva": [
+  {
+   "entrada": [
+    0.19
+   ],
+   "salida": "19 %"
+  },
+  {
+   "entrada": [
+    0.1
+   ],
+   "salida": "10 %"
+  },
+  {
+   "entrada": [
+    0.195
+   ],
+   "salida": "19,5 %"
+  }
+ ],
+ "pct": [
+  {
+   "entrada": [
+    19
+   ],
+   "salida": "19%"
+  },
+  {
+   "entrada": [
+    2.5
+   ],
+   "salida": "2,5%"
+  },
+  {
+   "entrada": [
+    0
+   ],
+   "salida": "0%"
+  }
+ ],
+ "metrosTexto": [
+  {
+   "entrada": [
+    0.8
+   ],
+   "salida": "0,80"
+  },
+  {
+   "entrada": [
+    0.835
+   ],
+   "salida": "0,835"
+  },
+  {
+   "entrada": [
+    2.1
+   ],
+   "salida": "2,10"
+  },
+  {
+   "entrada": [
+    2.4
+   ],
+   "salida": "2,40"
+  },
+  {
+   "entrada": [
+    0.8355
+   ],
+   "salida": "0,836"
+  },
+  {
+   "entrada": [
+    3
+   ],
+   "salida": "3,00"
+  },
+  {
+   "entrada": [
+    0.80049
+   ],
+   "salida": "0,80"
+  },
+  {
+   "entrada": [
+    1234.5
+   ],
+   "salida": "1.234,50"
+  }
+ ],
+ "decimalCampo": [
+  {
+   "entrada": [
+    0.8
+   ],
+   "salida": "0,8"
+  },
+  {
+   "entrada": [
+    2.1
+   ],
+   "salida": "2,1"
+  },
+  {
+   "entrada": [
+    1234.5
+   ],
+   "salida": "1234,5"
+  },
+  {
+   "entrada": [
+    0.12345
+   ],
+   "salida": "0,1235"
+  },
+  {
+   "entrada": [
+    3
+   ],
+   "salida": "3"
+  }
+ ],
+ "fechaCorta": [
+  {
+   "entrada": [
+    "2026-01-12"
+   ],
+   "salida": "12 ene 2026"
+  },
+  {
+   "entrada": [
+    "2026-09-12T03:00:00.000Z"
+   ],
+   "salida": "12 sept 2026"
+  },
+  {
+   "entrada": [
+    "2026-12-31T23:30:00.000Z"
+   ],
+   "salida": "31 dic 2026"
+  },
+  {
+   "entrada": [
+    "2026-06-01T04:30:00Z"
+   ],
+   "salida": "1 jun 2026"
+  },
+  {
+   "entrada": [
+    "2026-04-05T02:59:00.000Z"
+   ],
+   "salida": "4 abr 2026"
+  },
+  {
+   "entrada": [
+    "2026-11-17T15:45:12.345Z"
+   ],
+   "salida": "17 nov 2026"
+  }
+ ],
+ "fechaLarga": [
+  {
+   "entrada": [
+    "2026-01-12"
+   ],
+   "salida": "12 de enero de 2026"
+  },
+  {
+   "entrada": [
+    "2026-09-12T03:00:00.000Z"
+   ],
+   "salida": "12 de septiembre de 2026"
+  },
+  {
+   "entrada": [
+    "2026-12-31T23:30:00.000Z"
+   ],
+   "salida": "31 de diciembre de 2026"
+  },
+  {
+   "entrada": [
+    "2026-06-01T04:30:00Z"
+   ],
+   "salida": "1 de junio de 2026"
+  },
+  {
+   "entrada": [
+    "2026-04-05T02:59:00.000Z"
+   ],
+   "salida": "4 de abril de 2026"
+  },
+  {
+   "entrada": [
+    "2026-11-17T15:45:12.345Z"
+   ],
+   "salida": "17 de noviembre de 2026"
+  }
+ ],
+ "mesAnio": [
+  {
+   "entrada": [
+    "2026-01-12"
+   ],
+   "salida": "Enero de 2026"
+  },
+  {
+   "entrada": [
+    "2026-09-12T03:00:00.000Z"
+   ],
+   "salida": "Septiembre de 2026"
+  },
+  {
+   "entrada": [
+    "2026-12-31T23:30:00.000Z"
+   ],
+   "salida": "Diciembre de 2026"
+  },
+  {
+   "entrada": [
+    "2026-06-01T04:30:00Z"
+   ],
+   "salida": "Junio de 2026"
+  },
+  {
+   "entrada": [
+    "2026-04-05T02:59:00.000Z"
+   ],
+   "salida": "Abril de 2026"
+  },
+  {
+   "entrada": [
+    "2026-11-17T15:45:12.345Z"
+   ],
+   "salida": "Noviembre de 2026"
+  }
+ ],
+ "fechaLocal": [
+  {
+   "entrada": [
+    "2026-01-12"
+   ],
+   "salida": "2026-01-11"
+  },
+  {
+   "entrada": [
+    "2026-09-12T03:00:00.000Z"
+   ],
+   "salida": "2026-09-12"
+  },
+  {
+   "entrada": [
+    "2026-12-31T23:30:00.000Z"
+   ],
+   "salida": "2026-12-31"
+  },
+  {
+   "entrada": [
+    "2026-06-01T04:30:00Z"
+   ],
+   "salida": "2026-06-01"
+  },
+  {
+   "entrada": [
+    "2026-04-05T02:59:00.000Z"
+   ],
+   "salida": "2026-04-04"
+  },
+  {
+   "entrada": [
+    "2026-11-17T15:45:12.345Z"
+   ],
+   "salida": "2026-11-17"
+  }
+ ],
+ "interpretarCifra": [
+  {
+   "entrada": [
+    "45,990"
+   ],
+   "salida": 45990
+  },
+  {
+   "entrada": [
+    "45,99"
+   ],
+   "salida": 45.99
+  },
+  {
+   "entrada": [
+    "1.5"
+   ],
+   "salida": 1.5
+  },
+  {
+   "entrada": [
+    "350.00"
+   ],
+   "salida": 350000
+  },
+  {
+   "entrada": [
+    "1490.00"
+   ],
+   "salida": 1490
+  },
+  {
+   "entrada": [
+    "1.234.567"
+   ],
+   "salida": 1234567
+  },
+  {
+   "entrada": [
+    "1.234,5"
+   ],
+   "salida": 1234.5
+  },
+  {
+   "entrada": [
+    "1,234.5"
+   ],
+   "salida": 1234.5
+  },
+  {
+   "entrada": [
+    "abc"
+   ],
+   "salida": "NaN"
+  },
+  {
+   "entrada": [
+    ""
+   ],
+   "salida": 0
+  },
+  {
+   "entrada": [
+    "12 345"
+   ],
+   "salida": 12345
+  },
+  {
+   "entrada": [
+    "1,2,3"
+   ],
+   "salida": "NaN"
+  },
+  {
+   "entrada": [
+    "15000"
+   ],
+   "salida": 15000
+  },
+  {
+   "entrada": [
+    "0,5"
+   ],
+   "salida": 0.5
+  }
+ ],
+ "leerPesos": [
+  {
+   "entrada": [
+    "$15.000"
+   ],
+   "salida": 15000
+  },
+  {
+   "entrada": [
+    "15.000"
+   ],
+   "salida": 15000
+  },
+  {
+   "entrada": [
+    ""
+   ],
+   "salida": 0
+  },
+  {
+   "entrada": [
+    "$ 1.234.567"
+   ],
+   "salida": 1234567
+  },
+  {
+   "entrada": [
+    "45,990"
+   ],
+   "salida": 45990
+  },
+  {
+   "entrada": [
+    "12,5"
+   ],
+   "salida": 12.5
+  },
+  {
+   "entrada": [
+    "abc"
+   ],
+   "salida": "NaN"
+  }
+ ],
+ "leerPorcentaje": [
+  {
+   "entrada": [
+    "2,5"
+   ],
+   "salida": 2.5
+  },
+  {
+   "entrada": [
+    "2.5"
+   ],
+   "salida": 2.5
+  },
+  {
+   "entrada": [
+    "2,5 %"
+   ],
+   "salida": 2.5
+  },
+  {
+   "entrada": [
+    ""
+   ],
+   "salida": 0
+  },
+  {
+   "entrada": [
+    "10"
+   ],
+   "salida": 10
+  },
+  {
+   "entrada": [
+    "1.000"
+   ],
+   "salida": 1
+  },
+  {
+   "entrada": [
+    "x"
+   ],
+   "salida": "NaN"
+  }
+ ],
+ "leerPorcentajeConSigno": [
+  {
+   "entrada": [
+    "-10"
+   ],
+   "salida": -10
+  },
+  {
+   "entrada": [
+    "−10,5 %"
+   ],
+   "salida": -10.5
+  },
+  {
+   "entrada": [
+    "-"
+   ],
+   "salida": "NaN"
+  },
+  {
+   "entrada": [
+    "%"
+   ],
+   "salida": "NaN"
+  },
+  {
+   "entrada": [
+    "15"
+   ],
+   "salida": 15
+  }
+ ],
+ "errorMargenTexto": [
+  {
+   "entrada": [
+    "42"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "-60"
+   ],
+   "salida": "La ganancia debe estar entre -50 y 500 %."
+  },
+  {
+   "entrada": [
+    "501"
+   ],
+   "salida": "La ganancia debe estar entre -50 y 500 %."
+  },
+  {
+   "entrada": [
+    "2,345"
+   ],
+   "salida": "Usa como máximo dos decimales."
+  },
+  {
+   "entrada": [
+    "abc"
+   ],
+   "salida": "Escribe un número."
+  },
+  {
+   "entrada": [
+    "-50"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "500"
+   ],
+   "salida": null
+  }
+ ],
+ "leerMedida": [
+  {
+   "entrada": [
+    "80",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": 0.8
+  },
+  {
+   "entrada": [
+    "0,80",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": 0.8
+  },
+  {
+   "entrada": [
+    "0.80",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": 0.8
+  },
+  {
+   "entrada": [
+    "80 cm",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": 0.8
+  },
+  {
+   "entrada": [
+    "800 mm",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": 0.8
+  },
+  {
+   "entrada": [
+    "2100 mm",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": 2.1
+  },
+  {
+   "entrada": [
+    "2.100 mm",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": 2.1
+  },
+  {
+   "entrada": [
+    "2,1",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": 2.1
+  },
+  {
+   "entrada": [
+    "210 cms",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": 2.1
+  },
+  {
+   "entrada": [
+    "3,6 m",
+    "MARCO",
+    "alto"
+   ],
+   "salida": 3.6
+  },
+  {
+   "entrada": [
+    "360",
+    "MARCO",
+    "alto"
+   ],
+   "salida": 3.6
+  },
+  {
+   "entrada": [
+    "3600 mm",
+    "MOLDURA",
+    "alto"
+   ],
+   "salida": 3.6
+  },
+  {
+   "entrada": [
+    "4",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "4",
+    "MARCO",
+    "alto"
+   ],
+   "salida": 4
+  },
+  {
+   "entrada": [
+    "abc",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "1 metro",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": 1
+  },
+  {
+   "entrada": [
+    "2,10 mts.",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": 2.1
+  },
+  {
+   "entrada": [
+    "0,2",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "2 pulgadas",
+    "PUERTA",
+    "alto"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "500",
+    "PUERTA",
+    "ancho"
+   ],
+   "salida": 0.5
+  }
+ ],
+ "normalizarRut": [
+  {
+   "entrada": [
+    "12345678-5"
+   ],
+   "salida": "12.345.678-5"
+  },
+  {
+   "entrada": [
+    "12.345.678-5"
+   ],
+   "salida": "12.345.678-5"
+  },
+  {
+   "entrada": [
+    "123456785"
+   ],
+   "salida": "12.345.678-5"
+  },
+  {
+   "entrada": [
+    "1-9"
+   ],
+   "salida": "1-9"
+  },
+  {
+   "entrada": [
+    "11.111.111-1"
+   ],
+   "salida": "11.111.111-1"
+  },
+  {
+   "entrada": [
+    "12345678-K"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "7.123.456-k"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "0012345678-5"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "abc"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    "76.086.428-5"
+   ],
+   "salida": "76.086.428-5"
+  },
+  {
+   "entrada": [
+    "9.999.999-3"
+   ],
+   "salida": "9.999.999-3"
+  }
+ ],
+ "nombreProducto": [
+  {
+   "entrada": [
+    "HUILO HUILO PINO OREGON 0,80 A 0,85 MT X 2,1 MT"
+   ],
+   "salida": "Huilo Huilo Pino Oregón 0,80 a 0,85 m × 2,1 m"
+  },
+  {
+   "entrada": [
+    "MARCO RAULI 2X4 PULG KIT"
+   ],
+   "salida": "Marco Raulí 2X4 Pulg Kit"
+  },
+  {
+   "entrada": [
+    "3 × HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT, MARCO PINO OREGON 2X4 PULG KIT (sin cantidad)"
+   ],
+   "salida": "3 × Huilo Huilo Pino Oregón 0,8 a 0,85 m × 2,1 m, Marco Pino Oregón 2X4 Pulg Kit (sin cantidad)"
+  },
+  {
+   "entrada": [
+    "Puerta especial a mano"
+   ],
+   "salida": "Puerta especial a mano"
+  },
+  {
+   "entrada": [
+    "MOLDURA DE PINO EN 3 MT"
+   ],
+   "salida": "Moldura de Pino en 3 m"
+  },
+  {
+   "entrada": [
+    "RANCO RAULI 0,90 A 0,95 MT X 2 A 2,4 MT"
+   ],
+   "salida": "Ranco Raulí 0,90 a 0,95 m × 2 a 2,4 m"
+  },
+  {
+   "entrada": [
+    "PIEZA T DEL SUR CON LENGA"
+   ],
+   "salida": "Pieza T del Sur con Lenga"
+  }
+ ],
+ "sinMedida": [
+  {
+   "entrada": [
+    "Huilo Huilo Pino Oregón 0,80 a 0,85 m × 2,1 m"
+   ],
+   "salida": "Huilo Huilo Pino Oregón"
+  },
+  {
+   "entrada": [
+    "Marco Raulí 2X4 Pulg Kit"
+   ],
+   "salida": "Marco Raulí"
+  },
+  {
+   "entrada": [
+    "3 × Huilo Huilo Pino Oregón 0,8 a 0,85 m × 2,1 m, Marco Pino Oregón 2X4 Pulg Kit (sin cantidad)"
+   ],
+   "salida": "3 × Huilo Huilo Pino Oregón"
+  },
+  {
+   "entrada": [
+    "Puerta especial a mano"
+   ],
+   "salida": "Puerta especial a mano"
+  },
+  {
+   "entrada": [
+    "Moldura de Pino en 3 m"
+   ],
+   "salida": "Moldura de Pino en"
+  },
+  {
+   "entrada": [
+    "Ranco Raulí 0,90 a 0,95 m × 2 a 2,4 m"
+   ],
+   "salida": "Ranco Raulí"
+  },
+  {
+   "entrada": [
+    "Pieza T del Sur con Lenga"
+   ],
+   "salida": "Pieza T del Sur con Lenga"
+  }
+ ],
+ "medidaProducto": [
+  {
+   "entrada": [
+    {
+     "codigo": "HUIL-O-3",
+     "modelo": "HUILO HUILO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "0,8 A 0,85",
+     "anchoMin": 0.8,
+     "anchoMax": 0.85,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "0,8 m–0,85 m × 2,1 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "RANC-1",
+     "modelo": "RANCO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "RAULI",
+     "medida": "90 A 95",
+     "anchoMin": 0.9,
+     "anchoMax": 0.95,
+     "altoMin": 2,
+     "altoMax": 2.4,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "0,9 m–0,95 m × 2 m–2,4 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "2X4 × 2,1 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4-3",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "LENGA",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.6,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "2X4 × 3,6 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "SET-30X70",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": "SET DE MARCO",
+     "madera": "PINO FINGER",
+     "medida": "30X70",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "30X70 × 2,1 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MOL-1",
+     "modelo": "GUARDAPOLVO",
+     "familia": "MOLDURA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "1X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.2,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "1X4 × 3,2 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "PT-1",
+     "modelo": "PIEZA T",
+     "familia": "PIEZAS_T",
+     "tipo": null,
+     "madera": "MARA",
+     "medida": "1X2",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "1X2 × 2,4 m"
+  }
+ ],
+ "describirProducto": [
+  {
+   "entrada": [
+    {
+     "codigo": "HUIL-O-3",
+     "modelo": "HUILO HUILO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "0,8 A 0,85",
+     "anchoMin": 0.8,
+     "anchoMax": 0.85,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "RANC-1",
+     "modelo": "RANCO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "RAULI",
+     "medida": "90 A 95",
+     "anchoMin": 0.9,
+     "anchoMax": 0.95,
+     "altoMin": 2,
+     "altoMax": 2.4,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "RANCO RAULÍ 0,9 A 0,95 MT X 2 A 2,4 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "MARCO PINO OREGON 2X4 PULG KIT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4-3",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "LENGA",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.6,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "MARCO LENGA 2X4 PULG X 3,6 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "SET-30X70",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": "SET DE MARCO",
+     "madera": "PINO FINGER",
+     "medida": "30X70",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "MARCO PINO FINGER 30X70 MM SET X 2,1 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MOL-1",
+     "modelo": "GUARDAPOLVO",
+     "familia": "MOLDURA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "1X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.2,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "GUARDAPOLVO PINO OREGON 1X4 CM X 3,2 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "PT-1",
+     "modelo": "PIEZA T",
+     "familia": "PIEZAS_T",
+     "tipo": null,
+     "madera": "MARA",
+     "medida": "1X2",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "PIEZA T MARA 1X2 PULG KIT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "HUIL-O-3",
+     "modelo": "HUILO HUILO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "0,8 A 0,85",
+     "anchoMin": 0.8,
+     "anchoMax": 0.85,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "HUILO HUILO PINO OREGON 0,80 MT X 2,15 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "RANC-1",
+     "modelo": "RANCO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "RAULI",
+     "medida": "90 A 95",
+     "anchoMin": 0.9,
+     "anchoMax": 0.95,
+     "altoMin": 2,
+     "altoMax": 2.4,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "RANCO RAULÍ 0,80 MT X 2,15 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "MARCO PINO OREGON 2X4 PULG KIT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4-3",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "LENGA",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.6,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "MARCO LENGA 2X4 PULG X 2,15 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "SET-30X70",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": "SET DE MARCO",
+     "madera": "PINO FINGER",
+     "medida": "30X70",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "MARCO PINO FINGER 30X70 MM SET X 2,15 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MOL-1",
+     "modelo": "GUARDAPOLVO",
+     "familia": "MOLDURA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "1X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.2,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "GUARDAPOLVO PINO OREGON 1X4 CM X 2,15 MT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "PT-1",
+     "modelo": "PIEZA T",
+     "familia": "PIEZAS_T",
+     "tipo": null,
+     "madera": "MARA",
+     "medida": "1X2",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "ancho": 0.8,
+     "alto": 2.15
+    }
+   ],
+   "salida": "PIEZA T MARA 1X2 PULG KIT"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    },
+    {
+     "alto": 3.6
+    }
+   ],
+   "salida": "MARCO PINO OREGON 2X4 PULG KIT"
+  }
+ ],
+ "medidaReferencia": [
+  {
+   "entrada": [
+    {
+     "codigo": "HUIL-O-3",
+     "modelo": "HUILO HUILO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "0,8 A 0,85",
+     "anchoMin": 0.8,
+     "anchoMax": 0.85,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "0,80–0,85 × 2,10 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "RANC-1",
+     "modelo": "RANCO",
+     "familia": "PUERTA",
+     "tipo": null,
+     "madera": "RAULI",
+     "medida": "90 A 95",
+     "anchoMin": 0.9,
+     "anchoMax": 0.95,
+     "altoMin": 2,
+     "altoMax": 2.4,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "0,90–0,95 × 2,00–2,40 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "2,10 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MAR-2X4-3",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": null,
+     "madera": "LENGA",
+     "medida": "2X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.6,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "3,60 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "SET-30X70",
+     "modelo": "MARCO",
+     "familia": "MARCO",
+     "tipo": "SET DE MARCO",
+     "madera": "PINO FINGER",
+     "medida": "30X70",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.1,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "2,10 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "MOL-1",
+     "modelo": "GUARDAPOLVO",
+     "familia": "MOLDURA",
+     "tipo": null,
+     "madera": "PINO OREGON",
+     "medida": "1X4",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 3.2,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "3,20 m"
+  },
+  {
+   "entrada": [
+    {
+     "codigo": "PT-1",
+     "modelo": "PIEZA T",
+     "familia": "PIEZAS_T",
+     "tipo": null,
+     "madera": "MARA",
+     "medida": "1X2",
+     "anchoMin": null,
+     "anchoMax": null,
+     "altoMin": null,
+     "altoMax": null,
+     "largo": 2.4,
+     "precioNeto": 120000,
+     "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+     "filaOrigen": 10
+    }
+   ],
+   "salida": "2,40 m"
+  }
+ ],
+ "dimensionesEnMilimetros": [
+  {
+   "entrada": [
+    0.8,
+    2.1,
+    "hoja"
+   ],
+   "salida": "800 × 2100 mm (Hoja)"
+  },
+  {
+   "entrada": [
+    0.8,
+    2.1,
+    "vano"
+   ],
+   "salida": "800 × 2100 mm (Vano)"
+  },
+  {
+   "entrada": [
+    0.8,
+    null,
+    null
+   ],
+   "salida": "800 mm"
+  },
+  {
+   "entrada": [
+    null,
+    3.6,
+    null
+   ],
+   "salida": "3600 mm"
+  },
+  {
+   "entrada": [
+    null,
+    null,
+    "hoja"
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    0.8355,
+    2.0999,
+    "no_especificado"
+   ],
+   "salida": "836 × 2100 mm"
+  }
+ ],
+ "plural": [
+  {
+   "entrada": [
+    1,
+    "ítem"
+   ],
+   "salida": "1 ítem"
+  },
+  {
+   "entrada": [
+    2,
+    "ítem"
+   ],
+   "salida": "2 ítems"
+  },
+  {
+   "entrada": [
+    0,
+    "registro"
+   ],
+   "salida": "0 registros"
+  },
+  {
+   "entrada": [
+    3,
+    "ítem pendiente",
+    "ítems pendientes"
+   ],
+   "salida": "3 ítems pendientes"
+  }
+ ],
+ "numeroCotizacion": [
+  {
+   "entrada": [
+    323
+   ],
+   "salida": "N° 323"
+  },
+  {
+   "entrada": [
+    null
+   ],
+   "salida": "Sin número"
+  },
+  {
+   "entrada": [
+    0
+   ],
+   "salida": "Sin número"
+  }
+ ],
+ "estadoPago": [
+  {
+   "entrada": [
+    {
+     "estado": "emitida",
+     "pagado": 0,
+     "total": 1000,
+     "porcentajePagado": 0
+    }
+   ],
+   "salida": "Sin pagos"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "pagado": 500,
+     "total": 1000,
+     "porcentajePagado": 50
+    }
+   ],
+   "salida": "Pago 50 %"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "pagado": 1000,
+     "total": 1000,
+     "porcentajePagado": 100
+    }
+   ],
+   "salida": "Pagada"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "pagado": 999,
+     "total": 1000,
+     "porcentajePagado": 99.9
+    }
+   ],
+   "salida": "Pago 99 %"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "pagado": 1,
+     "total": 1000,
+     "porcentajePagado": 0.1
+    }
+   ],
+   "salida": "Pago 1 %"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "borrador",
+     "pagado": 0,
+     "total": 1000,
+     "porcentajePagado": 0
+    }
+   ],
+   "salida": null
+  }
+ ],
+ "autoria": [
+  {
+   "entrada": [
+    {
+     "creadaPor": "Ana",
+     "emitidaPor": "Ana",
+     "aprobadaPor": "Luis",
+     "anuladaPor": null
+    }
+   ],
+   "salida": "Creada y emitida por Ana · aprobada por Luis"
+  },
+  {
+   "entrada": [
+    {
+     "creadaPor": "Ana",
+     "emitidaPor": "Luis",
+     "aprobadaPor": "Ana",
+     "anuladaPor": "Ana"
+    }
+   ],
+   "salida": "Creada por Ana · emitida por Luis · aprobada y anulada por Ana"
+  },
+  {
+   "entrada": [
+    {
+     "creadaPor": null,
+     "emitidaPor": null,
+     "aprobadaPor": null,
+     "anuladaPor": null
+    }
+   ],
+   "salida": ""
+  },
+  {
+   "entrada": [
+    {
+     "creadaPor": "Ana",
+     "emitidaPor": "Ana",
+     "aprobadaPor": "Ana",
+     "anuladaPor": null
+    }
+   ],
+   "salida": "Creada, emitida y aprobada por Ana"
+  }
+ ],
+ "resumenCambios": [
+  {
+   "entrada": [
+    {
+     "agregados": [
+      {
+       "indice": 0,
+       "descripcion": "HUILO HUILO PINO OREGON 0,80 MT X 2,10 MT"
+      }
+     ],
+     "quitados": [
+      {
+       "indice": 1,
+       "descripcion": "MARCO LENGA 2X4 PULG KIT"
+      }
+     ],
+     "modificados": [
+      {
+       "antes": {
+        "indice": 2,
+        "descripcion": "A"
+       },
+       "despues": {
+        "indice": 2,
+        "descripcion": "RANCO RAULÍ 0,90 MT X 2,40 MT"
+       }
+      }
+     ],
+     "cliente": [
+      "nombre",
+      "rut",
+      "comuna"
+     ]
+    }
+   ],
+   "salida": "Se agregó Huilo Huilo Pino Oregón 0,80 m × 2,10 m · Se quitó Marco Lenga 2X4 Pulg Kit · Se actualizó Ranco Raulí 0,90 m × 2,40 m · Se actualizó el cliente (nombre, RUT y comuna)"
+  },
+  {
+   "entrada": [
+    {
+     "agregados": [],
+     "quitados": [],
+     "modificados": [],
+     "cliente": [
+      "telefono"
+     ]
+    }
+   ],
+   "salida": "Se actualizó el cliente (teléfono)"
+  },
+  {
+   "entrada": [
+    null
+   ],
+   "salida": ""
+  }
+ ],
+ "avancePedido": [
+  {
+   "entrada": [
+    {
+     "estado": "borrador",
+     "operacion": "sin_pedido",
+     "notas": 0,
+     "pagado": 0,
+     "total": 0,
+     "facturada": false
+    }
+   ],
+   "salida": {
+    "hechos": [
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "actual": 0
+   }
+  },
+  {
+   "entrada": [
+    {
+     "estado": "emitida",
+     "operacion": "sin_pedido",
+     "notas": 0,
+     "pagado": 0,
+     "total": 1000,
+     "facturada": false
+    }
+   ],
+   "salida": {
+    "hechos": [
+     true,
+     true,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "actual": 2
+   }
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "operacion": "sin_pedido",
+     "notas": 0,
+     "pagado": 500,
+     "total": 1000,
+     "facturada": false
+    }
+   ],
+   "salida": {
+    "hechos": [
+     true,
+     true,
+     true,
+     true,
+     false,
+     false,
+     false,
+     false
+    ],
+    "actual": 4
+   }
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "operacion": "pagada",
+     "notas": 2,
+     "pagado": 1000,
+     "total": 1000,
+     "facturada": false
+    }
+   ],
+   "salida": {
+    "hechos": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     false,
+     false
+    ],
+    "actual": 6
+   }
+  },
+  {
+   "entrada": [
+    {
+     "estado": "aprobada",
+     "operacion": "completada",
+     "notas": 1,
+     "pagado": 1000,
+     "total": 1000,
+     "facturada": true
+    }
+   ],
+   "salida": {
+    "hechos": [
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true,
+     true
+    ],
+    "actual": 8
+   }
+  },
+  {
+   "entrada": [
+    {
+     "estado": "anulada",
+     "operacion": "sin_pedido",
+     "notas": 0,
+     "pagado": 0,
+     "total": 1000,
+     "facturada": false
+    }
+   ],
+   "salida": {
+    "hechos": [
+     true,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false,
+     false
+    ],
+    "actual": 1
+   }
+  }
+ ],
+ "puedeAnular": [
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": null,
+     "estado": "borrador",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [],
+      "subtotal": 0,
+      "descuentoPorcentaje": 0,
+      "descuento": 0,
+      "flete": 0,
+      "neto": 0,
+      "iva": 0,
+      "total": 0
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": []
+    }
+   ],
+   "salida": {
+    "ok": false,
+    "motivo": "Un borrador no se anula: elimínalo."
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "anulada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [],
+      "subtotal": 0,
+      "descuentoPorcentaje": 0,
+      "descuento": 0,
+      "flete": 0,
+      "neto": 0,
+      "iva": 0,
+      "total": 0
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": []
+    }
+   ],
+   "salida": {
+    "ok": false,
+    "motivo": "La cotización N° 323 ya está anulada."
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "reemplazada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [],
+      "subtotal": 0,
+      "descuentoPorcentaje": 0,
+      "descuento": 0,
+      "flete": 0,
+      "neto": 0,
+      "iva": 0,
+      "total": 0
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": []
+    }
+   ],
+   "salida": {
+    "ok": false,
+    "motivo": "La cotización N° 323 fue reemplazada y ya no está vigente."
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [],
+      "subtotal": 0,
+      "descuentoPorcentaje": 0,
+      "descuento": 0,
+      "flete": 0,
+      "neto": 0,
+      "iva": 0,
+      "total": 0
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "estadoOperativo": "despachada"
+    }
+   ],
+   "salida": {
+    "ok": false,
+    "motivo": "No se puede anular una cotización despachada, completada o facturada."
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [],
+      "subtotal": 0,
+      "descuentoPorcentaje": 0,
+      "descuento": 0,
+      "flete": 0,
+      "neto": 0,
+      "iva": 0,
+      "total": 0
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "facturacion": {
+      "estado": "facturada",
+      "documento": null,
+      "receptor": null,
+      "tipo": "boleta",
+      "identificadorExterno": "1",
+      "fecha": null
+     }
+    }
+   ],
+   "salida": {
+    "ok": false,
+    "motivo": "No se puede anular una cotización despachada, completada o facturada."
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [
+      {
+       "numero": 577,
+       "fabrica": "panguipulli",
+       "pdf": "nota-pedido-panguipulli-577.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-04T12:00:00.000Z"
+      },
+      {
+       "numero": 59,
+       "fabrica": "santiago",
+       "pdf": "nota-pedido-santiago-59.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-05T12:00:00.000Z",
+       "terminoProduccion": "2026-10-06T12:00:00.000Z"
+      }
+     ],
+     "estadoOperativo": "en_produccion",
+     "pagos": [
+      {
+       "id": "p1",
+       "fecha": "2026-10-02",
+       "monto": 500000,
+       "observacion": null,
+       "usuario": "Paula"
+      }
+     ]
+    }
+   ],
+   "salida": {
+    "ok": true,
+    "pagado": 500000
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": {
+    "ok": true,
+    "pagado": 0
+   }
+  }
+ ],
+ "retrocesoOperativo": [
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [
+      {
+       "numero": 577,
+       "fabrica": "panguipulli",
+       "pdf": "nota-pedido-panguipulli-577.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-04T12:00:00.000Z"
+      },
+      {
+       "numero": 59,
+       "fabrica": "santiago",
+       "pdf": "nota-pedido-santiago-59.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-05T12:00:00.000Z",
+       "terminoProduccion": "2026-10-06T12:00:00.000Z"
+      }
+     ],
+     "estadoOperativo": "en_produccion",
+     "pagos": [
+      {
+       "id": "p1",
+       "fecha": "2026-10-02",
+       "monto": 500000,
+       "observacion": null,
+       "usuario": "Paula"
+      }
+     ]
+    }
+   ],
+   "salida": {
+    "desde": "Producción terminada en Santiago",
+    "hasta": "En producción en Santiago",
+    "destino": "en_produccion",
+    "nota": {
+     "fabrica": "santiago",
+     "campo": "terminoProduccion"
+    }
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [
+      {
+       "numero": 577,
+       "fabrica": "panguipulli",
+       "pdf": "nota-pedido-panguipulli-577.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-04T12:00:00.000Z"
+      },
+      {
+       "numero": 59,
+       "fabrica": "santiago",
+       "pdf": "nota-pedido-santiago-59.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-05T12:00:00.000Z",
+       "terminoProduccion": "2026-10-06T12:00:00.000Z"
+      }
+     ],
+     "estadoOperativo": "lista_despacho",
+     "pagos": [
+      {
+       "id": "p1",
+       "fecha": "2026-10-02",
+       "monto": 500000,
+       "observacion": null,
+       "usuario": "Paula"
+      }
+     ]
+    }
+   ],
+   "salida": {
+    "desde": "Lista para despacho",
+    "hasta": "100 % pagado",
+    "destino": "pagada",
+    "nota": null
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "estadoOperativo": "pedido_generado",
+     "pagos": [
+      {
+       "id": "p1",
+       "fecha": "2026-10-02",
+       "monto": 500000,
+       "observacion": null,
+       "usuario": "Paula"
+      }
+     ]
+    }
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "aprobada",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [
+      {
+       "numero": 577,
+       "fabrica": "panguipulli",
+       "pdf": "nota-pedido-panguipulli-577.pdf",
+       "montos": {
+        "lineas": [
+         {
+          "producto": {
+           "codigo": "HUIL-O-3",
+           "modelo": "HUILO HUILO",
+           "familia": "PUERTA",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "0,8 A 0,85",
+           "anchoMin": 0.8,
+           "anchoMax": 0.85,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 3,
+          "precioUnitario": 222000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 666000,
+          "indice": 0,
+          "anchoSolicitado": 0.8,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": null,
+          "tipoMedida": "hoja"
+         },
+         {
+          "producto": {
+           "codigo": "MAR-2X4",
+           "modelo": "MARCO",
+           "familia": "MARCO",
+           "tipo": null,
+           "madera": "PINO OREGON",
+           "medida": "2X4",
+           "anchoMin": null,
+           "anchoMax": null,
+           "altoMin": null,
+           "altoMax": null,
+           "largo": 2.1,
+           "precioNeto": 120000,
+           "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+           "filaOrigen": 10
+          },
+          "cantidad": 2,
+          "precioUnitario": 45000,
+          "precioFabrica": 120000,
+          "margen": 0.85,
+          "total": 81000,
+          "indice": 1,
+          "anchoSolicitado": null,
+          "altoSolicitado": 2.1,
+          "medidaSolicitada": "2X4",
+          "tipoMedida": "hoja",
+          "descuentoItem": {
+           "tipo": "porcentaje",
+           "valor": 10
+          },
+          "descuentoUnitario": 4500
+         }
+        ],
+        "subtotal": 747000,
+        "descuentoPorcentaje": 5,
+        "descuento": 37350,
+        "flete": 30000,
+        "neto": 739650,
+        "iva": 140534,
+        "total": 880184
+       },
+       "fecha": "2026-10-03T12:00:00.000Z",
+       "despacho": {
+        "direccion": null,
+        "transporte": null
+       },
+       "anulada": false,
+       "inicioProduccion": "2026-10-04T12:00:00.000Z"
+      }
+     ],
+     "estadoOperativo": "en_produccion",
+     "pagos": [
+      {
+       "id": "p1",
+       "fecha": "2026-10-02",
+       "monto": 500000,
+       "observacion": null,
+       "usuario": "Paula"
+      }
+     ]
+    }
+   ],
+   "salida": {
+    "desde": "En producción",
+    "hasta": "Nota de pedido generada",
+    "destino": "pedido_generado",
+    "nota": {
+     "fabrica": "panguipulli",
+     "campo": "inicioProduccion"
+    }
+   }
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": null
+  }
+ ],
+ "descripcionFlete": [
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": "Flete / despacho a Temuco · Starken"
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": null,
+      "transporte": "Otro"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": "Flete / despacho"
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     },
+     "fleteDescripcion": "Flete especial"
+    }
+   ],
+   "salida": "Flete especial"
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": null,
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": "Flete / despacho"
+  }
+ ],
+ "etiquetaFacturacion": [
+  {
+   "entrada": [
+    null
+   ],
+   "salida": "Pendiente de facturación"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "facturada",
+     "documento": null,
+     "receptor": null,
+     "tipo": "boleta",
+     "identificadorExterno": "45",
+     "fecha": null
+    }
+   ],
+   "salida": "Facturada · Boleta N° 45"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "facturada",
+     "documento": null,
+     "receptor": null,
+     "tipo": "factura",
+     "identificadorExterno": null,
+     "fecha": null
+    }
+   ],
+   "salida": "Facturada · Factura"
+  }
+ ],
+ "etiquetaEvento": [
+  {
+   "entrada": [
+    "creada"
+   ],
+   "salida": "Creada"
+  },
+  {
+   "entrada": [
+    "revision"
+   ],
+   "salida": "Revisión creada"
+  },
+  {
+   "entrada": [
+    "duplicada"
+   ],
+   "salida": "Duplicada"
+  },
+  {
+   "entrada": [
+    "modificada"
+   ],
+   "salida": "Modificada"
+  },
+  {
+   "entrada": [
+    "emitida"
+   ],
+   "salida": "Emitida"
+  },
+  {
+   "entrada": [
+    "aprobada"
+   ],
+   "salida": "Aprobada"
+  },
+  {
+   "entrada": [
+    "anulada"
+   ],
+   "salida": "Anulada"
+  },
+  {
+   "entrada": [
+    "reemplazada"
+   ],
+   "salida": "Reemplazada"
+  },
+  {
+   "entrada": [
+    "desvinculada"
+   ],
+   "salida": "Queda como cotización nueva"
+  },
+  {
+   "entrada": [
+    "pago_registrado"
+   ],
+   "salida": "Pago registrado"
+  },
+  {
+   "entrada": [
+    "pago_anulado"
+   ],
+   "salida": "Pago anulado"
+  },
+  {
+   "entrada": [
+    "despacho_actualizado"
+   ],
+   "salida": "Despacho actualizado"
+  },
+  {
+   "entrada": [
+    "comentario"
+   ],
+   "salida": "Comentario interno"
+  },
+  {
+   "entrada": [
+    "seguimiento"
+   ],
+   "salida": "Seguimiento actualizado"
+  },
+  {
+   "entrada": [
+    "produccion"
+   ],
+   "salida": "Producción iniciada"
+  },
+  {
+   "entrada": [
+    "produccion_terminada"
+   ],
+   "salida": "Producción terminada"
+  },
+  {
+   "entrada": [
+    "nota_generada"
+   ],
+   "salida": "Nota de pedido generada"
+  },
+  {
+   "entrada": [
+    "fabricas"
+   ],
+   "salida": "Fábricas asignadas"
+  },
+  {
+   "entrada": [
+    "numero_cambiado"
+   ],
+   "salida": "Número cambiado"
+  },
+  {
+   "entrada": [
+    "despachada"
+   ],
+   "salida": "Despachada"
+  },
+  {
+   "entrada": [
+    "lista_despacho"
+   ],
+   "salida": "Lista para despacho"
+  },
+  {
+   "entrada": [
+    "completada"
+   ],
+   "salida": "Completada"
+  },
+  {
+   "entrada": [
+    "facturacion_actualizada"
+   ],
+   "salida": "Datos de facturación actualizados"
+  },
+  {
+   "entrada": [
+    "facturada"
+   ],
+   "salida": "Facturación actualizada"
+  }
+ ],
+ "textoCopiarFactura": [
+  {
+   "entrada": [
+    {
+     "razonSocial": "Constructora Sur SpA",
+     "rut": "76086428-5",
+     "giro": "Construcción",
+     "direccion": "Av. 1",
+     "comuna": "Temuco",
+     "correo": "a@b.cl"
+    }
+   ],
+   "salida": "Razón social: Constructora Sur SpA\nRUT: 76.086.428-5\nGiro: Construcción\nDirección: Av. 1\nComuna: Temuco\nCorreo: a@b.cl"
+  },
+  {
+   "entrada": [
+    {
+     "razonSocial": " ",
+     "rut": "1-2",
+     "giro": null,
+     "direccion": "x",
+     "comuna": null,
+     "correo": null
+    }
+   ],
+   "salida": "RUT: 1-2\nDirección: x"
+  },
+  {
+   "entrada": [
+    null
+   ],
+   "salida": ""
+  }
+ ],
+ "faltanDatosFactura": [
+  {
+   "entrada": [
+    {
+     "razonSocial": "Constructora Sur SpA",
+     "rut": "76086428-5",
+     "giro": "Construcción",
+     "direccion": "Av. 1",
+     "comuna": "Temuco",
+     "correo": "a@b.cl"
+    }
+   ],
+   "salida": []
+  },
+  {
+   "entrada": [
+    {
+     "razonSocial": " ",
+     "rut": "1-2",
+     "giro": null,
+     "direccion": "x",
+     "comuna": null,
+     "correo": null
+    }
+   ],
+   "salida": [
+    "razón social",
+    "RUT válido",
+    "giro"
+   ]
+  },
+  {
+   "entrada": [
+    null
+   ],
+   "salida": [
+    "razón social",
+    "RUT válido",
+    "giro",
+    "dirección"
+   ]
+  }
+ ],
+ "etiquetaDocumentoFacturacion": [
+  {
+   "entrada": [
+    {
+     "estado": "pendiente",
+     "documento": "boleta"
+    }
+   ],
+   "salida": "Boleta"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "pendiente",
+     "documento": "factura",
+     "receptor": {
+      "razonSocial": "Constructora Sur SpA",
+      "rut": "76086428-5",
+      "giro": "Construcción",
+      "direccion": "Av. 1",
+      "comuna": "Temuco",
+      "correo": "a@b.cl"
+     }
+    }
+   ],
+   "salida": "Factura a Constructora Sur SpA (76086428-5)"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "pendiente",
+     "documento": "factura",
+     "receptor": null
+    }
+   ],
+   "salida": "Factura (faltan datos del receptor)"
+  },
+  {
+   "entrada": [
+    {
+     "estado": "facturada",
+     "tipo": "factura",
+     "receptor": null
+    }
+   ],
+   "salida": "Factura"
+  },
+  {
+   "entrada": [
+    {}
+   ],
+   "salida": null
+  }
+ ],
+ "textoTramo": [
+  {
+   "entrada": [
+    {
+     "desdePuertas": 10,
+     "porcentaje": 5
+    }
+   ],
+   "salida": "desde 10 puertas −5 %"
+  },
+  {
+   "entrada": [
+    {
+     "desdePuertas": 20,
+     "porcentaje": 7.5
+    }
+   ],
+   "salida": "desde 20 puertas −7,5 %"
+  }
+ ],
+ "errorTramos": [
+  {
+   "entrada": [
+    [
+     {
+      "desdePuertas": 10,
+      "porcentaje": 5
+     }
+    ],
+    50
+   ],
+   "salida": null
+  },
+  {
+   "entrada": [
+    [
+     {
+      "desdePuertas": 1,
+      "porcentaje": 5
+     }
+    ],
+    50
+   ],
+   "salida": "«Desde» debe ser un número entero de puertas, de 2 a 100000."
+  },
+  {
+   "entrada": [
+    [
+     {
+      "desdePuertas": 10,
+      "porcentaje": 0
+     }
+    ],
+    50
+   ],
+   "salida": "El porcentaje del tramo «desde 10 puertas» debe ser mayor que 0."
+  },
+  {
+   "entrada": [
+    [
+     {
+      "desdePuertas": 10,
+      "porcentaje": 60
+     }
+    ],
+    50
+   ],
+   "salida": "El porcentaje del tramo «desde 10 puertas» no puede superar el descuento máximo (50 %)."
+  },
+  {
+   "entrada": [
+    [
+     {
+      "desdePuertas": 10,
+      "porcentaje": 2.345
+     }
+    ],
+    50
+   ],
+   "salida": "El porcentaje del tramo «desde 10 puertas» admite hasta dos decimales."
+  },
+  {
+   "entrada": [
+    [
+     {
+      "desdePuertas": 10,
+      "porcentaje": 5
+     },
+     {
+      "desdePuertas": 10,
+      "porcentaje": 6
+     }
+    ],
+    50
+   ],
+   "salida": "Hay más de un tramo «desde 10 puertas»: cada umbral debe ser distinto."
+  }
+ ],
+ "tamanoReferencia": [
+  {
+   "entrada": [
+    100
+   ],
+   "salida": "1 KB"
+  },
+  {
+   "entrada": [
+    1024
+   ],
+   "salida": "1 KB"
+  },
+  {
+   "entrada": [
+    350000
+   ],
+   "salida": "342 KB"
+  },
+  {
+   "entrada": [
+    1048576
+   ],
+   "salida": "1 MB"
+  },
+  {
+   "entrada": [
+    2500000
+   ],
+   "salida": "2,4 MB"
+  },
+  {
+   "entrada": [
+    10485760
+   ],
+   "salida": "10 MB"
+  }
+ ],
+ "validez": [
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": "Válida hasta el 15 de octubre de 2026"
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": null,
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": "Validez: 10 días hábiles"
+  },
+  {
+   "entrada": [
+    null
+   ],
+   "salida": "Validez: 10 días hábiles"
+  }
+ ],
+ "preguntasPendientes": [
+  {
+   "entrada": [
+    {
+     "solicitudes": [
+      {
+       "modelo": "HUILO HUILO",
+       "madera": "PINO OREGON",
+       "ancho": 0.8,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "HUILO HUILO",
+       "madera": null,
+       "ancho": 0.8,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "MARCO",
+       "madera": "PINO OREGON",
+       "ancho": null,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "HUILO HUILO",
+       "madera": null,
+       "ancho": 0.8,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "RANKO",
+       "madera": "RAULI",
+       "ancho": null,
+       "alto": null,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "MOLCO",
+       "madera": "PINO OREGON",
+       "ancho": 1.6,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "MARCO",
+       "madera": "LENGA",
+       "ancho": null,
+       "alto": 7,
+       "medida": "2X4",
+       "cantidad": 1
+      },
+      {
+       "modelo": "HUILO HUILO",
+       "madera": "PINO OREGON",
+       "ancho": 2.1,
+       "alto": 0.8,
+       "medida": null,
+       "cantidad": 1
+      },
+      {
+       "modelo": "HUILO HUILO",
+       "madera": "PINO OREGON",
+       "ancho": 0.8,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1,
+       "precioUnitario": 1000,
+       "descuento": {
+        "tipo": "porcentaje",
+        "valor": 90
+       }
+      },
+      {
+       "modelo": "XYZ",
+       "madera": "PINO OREGON",
+       "ancho": null,
+       "alto": null,
+       "medida": null,
+       "cantidad": 0
+      },
+      {
+       "modelo": "MARCO",
+       "madera": "PINO OREGON",
+       "ancho": null,
+       "alto": 2.25,
+       "medida": "2X4",
+       "cantidad": 1
+      },
+      {
+       "modelo": "CALAFQUEN",
+       "madera": "PINO OREGON",
+       "ancho": null,
+       "alto": 2.1,
+       "medida": null,
+       "cantidad": 1
+      }
+     ],
+     "incompletos": [
+      {
+       "indice": 1,
+       "pregunta": "¿Qué madera necesitas para Huilo Huilo? Opciones: Pino Oregon, Lenga, Rauli.",
+       "rechazo": {
+        "tipo": "faltan_datos",
+        "campos": [
+         "madera"
+        ],
+        "disponibles": {
+         "madera": [
+          "PINO OREGON",
+          "LENGA",
+          "RAULI"
+         ]
+        }
+       }
+      },
+      {
+       "indice": 3,
+       "pregunta": "¿Qué madera necesitas para Huilo Huilo? Opciones: Pino Oregon, Lenga, Rauli.",
+       "rechazo": {
+        "tipo": "faltan_datos",
+        "campos": [
+         "madera"
+        ],
+        "disponibles": {
+         "madera": [
+          "PINO OREGON",
+          "LENGA",
+          "RAULI"
+         ]
+        }
+       }
+      },
+      {
+       "indice": 2,
+       "pregunta": "¿Qué sección o escuadría necesitas para Marco? Opciones: 2X4, 2X5.",
+       "rechazo": {
+        "tipo": "faltan_datos",
+        "campos": [
+         "medida",
+         "cantidad"
+        ],
+        "disponibles": {
+         "medida": [
+          "2X4",
+          "2X5"
+         ]
+        }
+       }
+      },
+      {
+       "indice": 4,
+       "pregunta": "¿Te refieres a Ranco? Confírmalo para cotizar.",
+       "rechazo": {
+        "tipo": "modelo_posible",
+        "valor": "RANKO",
+        "sugerido": "RANCO",
+        "disponibles": [],
+        "familia": "PUERTA"
+       }
+      },
+      {
+       "indice": 5,
+       "pregunta": "Molco no viene en 1,60 m de ancho. Se cotizan anchos entre 0,60 y 1,00 m.",
+       "rechazo": {
+        "tipo": "medida_no_disponible",
+        "familia": "PUERTA",
+        "campo": "ancho",
+        "valor": 1.6,
+        "disponibles": [
+         "0,6 A 0,65",
+         "0,9 A 1"
+        ],
+        "rango": {
+         "min": 0.6,
+         "max": 1
+        }
+       }
+      },
+      {
+       "indice": 6,
+       "pregunta": "No entendí la medida 7 de alto o largo para Marco.",
+       "rechazo": {
+        "tipo": "medida_implausible",
+        "campo": "alto",
+        "valor": 7,
+        "disponibles": [
+         "0,3 a 6 m"
+        ],
+        "familia": "MARCO"
+       }
+      },
+      {
+       "indice": 7,
+       "pregunta": "Huilo Huilo quedó con 2,10 m de ancho…",
+       "rechazo": {
+        "tipo": "medidas_invertidas",
+        "ancho": 2.1,
+        "alto": 0.8,
+        "disponibles": [],
+        "familia": "PUERTA"
+       }
+      },
+      {
+       "indice": 8,
+       "pregunta": "El precio $1.000 queda fuera del rango.",
+       "rechazo": {
+        "tipo": "faltan_datos",
+        "campos": [
+         "precio"
+        ],
+        "disponibles": {}
+       }
+      },
+      {
+       "indice": 9,
+       "pregunta": "No encontré el modelo “XYZ” en puertas sólidas. Modelos disponibles: Huilo Huilo, Ranco.",
+       "rechazo": {
+        "tipo": "modelo_desconocido",
+        "valor": "XYZ",
+        "disponibles": [
+         "HUILO HUILO",
+         "RANCO"
+        ]
+       }
+      },
+      {
+       "indice": 10,
+       "pregunta": "Marco no viene en 2,25 m de alto o largo. Opciones disponibles: 2,1, 2,4.",
+       "rechazo": {
+        "tipo": "medida_no_disponible",
+        "familia": "MARCO",
+        "campo": "alto",
+        "valor": 2.25,
+        "disponibles": [
+         "2.1",
+         "2.4"
+        ]
+       }
+      },
+      {
+       "indice": 11,
+       "pregunta": "¿Qué ancho necesitas para Calafquen? Opciones: 0,8 A 0,85, 0,9 A 0,95.",
+       "rechazo": {
+        "tipo": "faltan_datos",
+        "campos": [
+         "ancho"
+        ],
+        "disponibles": {
+         "ancho": [
+          "0,8 A 0,85",
+          "0,9 A 0,95"
+         ]
+        }
+       }
+      }
+     ]
+    }
+   ],
+   "salida": [
+    {
+     "clave": "madera:1,3",
+     "indices": [
+      1,
+      3
+     ],
+     "campo": "madera",
+     "etiqueta": "Madera",
+     "texto": "Madera para los ítems 2 y 4",
+     "detalle": null,
+     "opciones": [
+      {
+       "etiqueta": "Pino Oregón",
+       "valor": "PINO OREGON",
+       "sugerencia": "Como el ítem 1"
+      },
+      {
+       "etiqueta": "Lenga",
+       "valor": "LENGA"
+      },
+      {
+       "etiqueta": "Raulí",
+       "valor": "RAULI"
+      }
+     ],
+     "entrada": null,
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "medida:2",
+     "indices": [
+      2
+     ],
+     "campo": "medida",
+     "etiqueta": "Sección o escuadría",
+     "texto": "Sección o escuadría para el ítem 3 (Marco)",
+     "detalle": "Escuadría: grosor por ancho de la pieza.",
+     "opciones": [
+      {
+       "etiqueta": "2X4",
+       "valor": "2X4",
+       "sugerencia": "Como el ítem 7"
+      },
+      {
+       "etiqueta": "2X5",
+       "valor": "2X5"
+      }
+     ],
+     "entrada": null,
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "cantidad:2",
+     "indices": [
+      2
+     ],
+     "campo": "cantidad",
+     "etiqueta": "Cantidad",
+     "texto": "Cantidad para el ítem 3 (Marco)",
+     "detalle": null,
+     "opciones": [],
+     "entrada": {
+      "min": 1,
+      "max": 10000,
+      "paso": 1,
+      "unidad": null
+     },
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "modelo:4",
+     "indices": [
+      4
+     ],
+     "campo": "modelo",
+     "etiqueta": "Modelo",
+     "texto": "Modelo para el ítem 5 (Ranko)",
+     "detalle": "¿Te refieres a Ranco? Confírmalo para cotizar.",
+     "opciones": [
+      {
+       "etiqueta": "Confirmar Ranco",
+       "valor": "RANCO"
+      }
+     ],
+     "entrada": null,
+     "modeloNuevo": true,
+     "alta": {
+      "familia": "PUERTA",
+      "modelo": "RANKO",
+      "madera": "RAULI",
+      "medida": null,
+      "anchoMin": null,
+      "anchoMax": null,
+      "largo": null
+     }
+    },
+    {
+     "clave": "texto:5",
+     "indices": [
+      5
+     ],
+     "campo": null,
+     "etiqueta": null,
+     "texto": "Medida fuera de lista para el ítem 6 (Molco)",
+     "detalle": "Molco no viene en 1,60 m de ancho. Se cotizan anchos entre 0,60 y 1,00 m. No es un dato faltante: esa combinación no está en la lista de precios de fábrica. Puedes cotizarla como pedido especial.",
+     "opciones": [],
+     "entrada": null,
+     "motivo": "fuera_de_lista",
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "alto:6",
+     "indices": [
+      6
+     ],
+     "campo": "alto",
+     "etiqueta": "Largo",
+     "texto": "Largo para el ítem 7 (Marco)",
+     "detalle": "No entendí la medida 7 de alto o largo para Marco.",
+     "opciones": [
+      {
+       "etiqueta": "2,10 m",
+       "valor": 2.1,
+       "sugerencia": "Como el ítem 6"
+      }
+     ],
+     "entrada": {
+      "min": 0.3,
+      "max": 6,
+      "paso": 0.005,
+      "unidad": "m",
+      "familia": "MARCO"
+     },
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "texto:7",
+     "indices": [
+      7
+     ],
+     "campo": null,
+     "etiqueta": null,
+     "texto": "Revisa el ítem 8 (Huilo Huilo)",
+     "detalle": "Huilo Huilo quedó con 2,10 m de ancho…",
+     "opciones": [
+      {
+       "etiqueta": "Intercambiar: 0,80 m de ancho × 2,10 m de alto",
+       "valor": "intercambiar"
+      }
+     ],
+     "entrada": null,
+     "intercambio": {
+      "ancho": 0.8,
+      "alto": 2.1
+     },
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "texto:8",
+     "indices": [
+      8
+     ],
+     "campo": null,
+     "etiqueta": null,
+     "texto": "Revisa el ítem 9 (Huilo Huilo)",
+     "detalle": "El precio $1.000 queda fuera del rango.",
+     "opciones": [
+      {
+       "etiqueta": "Quitar el precio fijado a mano",
+       "valor": "precioUnitario"
+      },
+      {
+       "etiqueta": "Quitar el descuento del ítem",
+       "valor": "descuento"
+      }
+     ],
+     "entrada": null,
+     "modeloNuevo": false,
+     "alta": null
+    },
+    {
+     "clave": "modelo:9",
+     "indices": [
+      9
+     ],
+     "campo": "modelo",
+     "etiqueta": "Modelo",
+     "texto": "Modelo para el ítem 10 (Xyz)",
+     "detalle": "No encontré el modelo “XYZ” en puertas sólidas.",
+     "opciones": [
+      {
+       "etiqueta": "Huilo Huilo",
+       "valor": "HUILO HUILO"
+      },
+      {
+       "etiqueta": "Ranco",
+       "valor": "RANCO"
+      }
+     ],
+     "entrada": null,
+     "modeloNuevo": false,
+     "alta": {
+      "familia": null,
+      "modelo": "XYZ",
+      "madera": "PINO OREGON",
+      "medida": null,
+      "anchoMin": null,
+      "anchoMax": null,
+      "largo": null
+     }
+    },
+    {
+     "clave": "alto:10",
+     "indices": [
+      10
+     ],
+     "campo": "alto",
+     "etiqueta": "Largo",
+     "texto": "Largo para el ítem 11 (Marco)",
+     "detalle": "Marco no viene en 2,25 m de alto o largo.",
+     "opciones": [
+      {
+       "etiqueta": "2,10 m",
+       "valor": 2.1,
+       "sugerencia": "Como el ítem 9"
+      },
+      {
+       "etiqueta": "2,40 m",
+       "valor": 2.4
+      }
+     ],
+     "entrada": null,
+     "modeloNuevo": false,
+     "alta": {
+      "familia": "MARCO",
+      "modelo": "MARCO",
+      "madera": "PINO OREGON",
+      "medida": "2X4",
+      "anchoMin": null,
+      "anchoMax": null,
+      "largo": 2.25
+     }
+    },
+    {
+     "clave": "ancho:11",
+     "indices": [
+      11
+     ],
+     "campo": "ancho",
+     "etiqueta": "Ancho",
+     "texto": "Ancho para el ítem 12 (Calafquen)",
+     "detalle": null,
+     "opciones": [
+      {
+       "etiqueta": "0,80 m",
+       "valor": 0.8,
+       "sugerencia": "Como el ítem 9"
+      }
+     ],
+     "entrada": {
+      "min": 0.8,
+      "max": 0.95,
+      "paso": 0.005,
+      "unidad": "m",
+      "familia": "PUERTA"
+     },
+     "modeloNuevo": false,
+     "alta": null
+    }
+   ]
+  }
+ ],
+ "resumenTexto": [
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": 323,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": "Juan Pérez",
+      "rut": "12.345.678-5",
+      "giro": null,
+      "telefono": "+56 9 1234 5678",
+      "direccion": null,
+      "comuna": "Temuco",
+      "proyecto": "Casa Lago"
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [
+       {
+        "producto": {
+         "codigo": "HUIL-O-3",
+         "modelo": "HUILO HUILO",
+         "familia": "PUERTA",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "0,8 A 0,85",
+         "anchoMin": 0.8,
+         "anchoMax": 0.85,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 3,
+        "precioUnitario": 222000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 666000,
+        "indice": 0,
+        "anchoSolicitado": 0.8,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": null,
+        "tipoMedida": "hoja"
+       },
+       {
+        "producto": {
+         "codigo": "MAR-2X4",
+         "modelo": "MARCO",
+         "familia": "MARCO",
+         "tipo": null,
+         "madera": "PINO OREGON",
+         "medida": "2X4",
+         "anchoMin": null,
+         "anchoMax": null,
+         "altoMin": null,
+         "altoMax": null,
+         "largo": 2.1,
+         "precioNeto": 120000,
+         "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+         "filaOrigen": 10
+        },
+        "cantidad": 2,
+        "precioUnitario": 45000,
+        "precioFabrica": 120000,
+        "margen": 0.85,
+        "total": 81000,
+        "indice": 1,
+        "anchoSolicitado": null,
+        "altoSolicitado": 2.1,
+        "medidaSolicitada": "2X4",
+        "tipoMedida": "hoja",
+        "descuentoItem": {
+         "tipo": "porcentaje",
+         "valor": 10
+        },
+        "descuentoUnitario": 4500
+       }
+      ],
+      "subtotal": 747000,
+      "descuentoPorcentaje": 5,
+      "descuento": 37350,
+      "flete": 30000,
+      "neto": 739650,
+      "iva": 140534,
+      "total": 880184
+     },
+     "incompletos": [],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 5,
+     "flete": 30000,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": [],
+     "descuentoManual": true,
+     "fleteCantidad": 2,
+     "despacho": {
+      "direccion": "Calle 1",
+      "transporte": "Starken",
+      "destino": "Temuco"
+     },
+     "observaciones": "Entregar en obra",
+     "reglas": {
+      "ajuste": 0.25,
+      "iva": 0.19,
+      "vigenciaDiasHabiles": 10,
+      "descuentoMaximo": 50
+     }
+    }
+   ],
+   "salida": "Cotización N° 323\nCliente: Juan Pérez\nRUT: 12.345.678-5\nComuna: Temuco\nProyecto: Casa Lago\nTeléfono: +56 9 1234 5678\n\n• 3 × Huilo Huilo Pino Oregón 0,80 m × 2,10 m (HUIL-O-3): $222.000 c/u = $666.000\n• 2 × Marco Pino Oregón 2X4 Pulg Kit (MAR-2X4): $45.000 c/u, descuento especial 10 % → $40.500 c/u = $81.000 (ahorro $9.000)\n• 2 × Flete / despacho a Temuco · Starken: $15.000 c/u = $30.000\n\nSubtotal original: $786.000\nAhorro por descuentos especiales: −$9.000\nSubtotal: $777.000\nDescuento 5% sobre productos: −$37.350\nNeto: $739.650\nIVA 19%: $140.534\nTotal: $880.184\nValores puestos en fábrica. Válida hasta el 15 de octubre de 2026.\n\nObservaciones: Entregar en obra"
+  },
+  {
+   "entrada": [
+    {
+     "id": "00000000-0000-4000-8000-000000000001",
+     "numero": null,
+     "estado": "emitida",
+     "cliente": {
+      "nombre": null,
+      "rut": null,
+      "giro": null,
+      "telefono": null,
+      "direccion": null,
+      "comuna": null,
+      "proyecto": null
+     },
+     "solicitudes": [],
+     "montos": {
+      "lineas": [],
+      "subtotal": 0,
+      "descuentoPorcentaje": 0,
+      "descuento": 0,
+      "flete": 0,
+      "neto": 0,
+      "iva": 0,
+      "total": 0
+     },
+     "incompletos": [
+      {
+       "indice": 0,
+       "rechazo": {
+        "tipo": "cantidad_invalida",
+        "valor": null,
+        "disponibles": []
+       },
+       "pregunta": ""
+      }
+     ],
+     "historial": [],
+     "creada": "2026-10-01T12:00:00.000Z",
+     "actualizada": "2026-10-01T12:00:00.000Z",
+     "pdf": "cotizacion-323.pdf",
+     "vence": "2026-10-15",
+     "descuento": 0,
+     "flete": 0,
+     "creadaPor": "Paula",
+     "emitidaPor": "Paula",
+     "aprobadaPor": null,
+     "anuladaPor": null,
+     "fechaAnulacion": null,
+     "motivoAnulacion": null,
+     "reemplazadaPor": null,
+     "versionCatalogo": null,
+     "notas": []
+    }
+   ],
+   "salida": "Cotización Sin número\nCliente: Cliente sin nombre\n\n(1 ítem pendiente sin valorizar)\n\nNeto: $0\nIVA 19%: $0\nTotal: $0\nValores puestos en fábrica. Válida hasta el 15 de octubre de 2026."
+  }
+ ]
+}

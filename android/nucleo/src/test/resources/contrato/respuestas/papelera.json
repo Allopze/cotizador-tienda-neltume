@@ -1,0 +1,24 @@
+{
+ "borradores": [
+  {
+   "id": "7b2d0055-c27a-45cf-8e55-c6362c454d12",
+   "actualizada": "2026-11-17T20:09:53.907Z",
+   "eliminada": "2026-11-17T20:09:53.917Z",
+   "creada": "2026-11-17T20:09:53.857Z",
+   "creadaPor": "Administrador de prueba",
+   "cliente": {
+    "nombre": "Juan Pérez",
+    "comuna": "Temuco",
+    "proyecto": null
+   },
+   "items": 1,
+   "productos": "3 × Huilo Huilo PINO OREGON",
+   "origen": null,
+   "total": 1027664
+  }
+ ],
+ "total": 1,
+ "pagina": 1,
+ "porPagina": 30,
+ "plazoDias": 30
+}

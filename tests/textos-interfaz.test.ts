@@ -46,6 +46,19 @@ function archivosInterfaz(dir = 'src/app'): [string, string][] {
     return /\.tsx?$/.test(e.name) ? [[ruta, readFileSync(ruta, 'utf8')] as [string, string]] : [];
   });
 }
+/**
+ * Textos de la app de Android: los literales de cadena del código Kotlin (los comentarios no cuentan). La app dice lo
+ * mismo que la web, así que vale la misma lista.
+ */
+function textosApp(dir = 'android/app/src/main/kotlin'): [string, string][] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+    const ruta = join(dir, e.name);
+    if (e.isDirectory()) return textosApp(ruta);
+    if (!e.name.endsWith('.kt')) return [];
+    const literales = readFileSync(ruta, 'utf8').match(/"""[\s\S]*?"""|"(?:[^"\\\n]|\\.)*"/g) ?? [];
+    return [[ruta, literales.join('\n')] as [string, string]];
+  });
+}
 const coincidencias = (archivos: [string, string][], prohibido: RegExp) =>
   archivos.filter(([, texto]) => prohibido.test(texto)).map(([ruta]) => ruta);
 
@@ -75,6 +88,11 @@ describe('jerga técnica en pantalla', () => {
   ];
   it.each(PROHIBIDOS_INTERFAZ.map((r) => [String(r), r] as const))('src/app no muestra %s', (_, prohibido) => {
     expect(coincidencias(interfaz, prohibido)).toEqual([]);
+  });
+  const app = textosApp();
+  it('la app de Android tiene textos que revisar', () => expect(app.length).toBeGreaterThan(10));
+  it.each(PROHIBIDOS_INTERFAZ.map((r) => [String(r), r] as const))('la app de Android no muestra %s', (_, prohibido) => {
+    expect(coincidencias(app, prohibido)).toEqual([]);
   });
 
   // Mensajes del servidor y del chat que la vendedora lee tal cual.

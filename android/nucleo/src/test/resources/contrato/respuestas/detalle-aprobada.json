@@ -1,0 +1,341 @@
+{
+ "cotizacion": {
+  "id": "26bfb750-42c0-4978-afba-4560a16f462c",
+  "numero": 323,
+  "estado": "aprobada",
+  "cliente": {
+   "nombre": "Juan Pérez",
+   "rut": null,
+   "giro": null,
+   "telefono": null,
+   "direccion": null,
+   "comuna": "Temuco",
+   "proyecto": null
+  },
+  "solicitudes": [
+   {
+    "id": "3728a943-b9db-4c5f-89ef-78abf816d680",
+    "modelo": "Huilo Huilo",
+    "madera": "PINO OREGON",
+    "ancho": 0.8,
+    "alto": 2.1,
+    "medida": null,
+    "cantidad": 3,
+    "tipoMedida": "hoja",
+    "descripcion": null,
+    "observaciones": "Con bisagras de acero",
+    "margen": null,
+    "modeloOriginal": null,
+    "coincidenciaModelo": "canonico",
+    "fuente": null,
+    "fabrica": "panguipulli"
+   },
+   {
+    "id": "576a4cb1-a45a-4def-b0fc-56087b447cd9",
+    "modelo": "Instalación",
+    "madera": null,
+    "ancho": null,
+    "alto": null,
+    "medida": null,
+    "cantidad": 1,
+    "tipoMedida": null,
+    "descripcion": null,
+    "observaciones": null,
+    "margen": null,
+    "modeloOriginal": null,
+    "coincidenciaModelo": null,
+    "fuente": null,
+    "personalizado": {
+     "familia": "OTRO"
+    },
+    "precioUnitario": 80000
+   }
+  ],
+  "montos": {
+   "lineas": [
+    {
+     "producto": {
+      "codigo": "HUIL-O-3-B",
+      "modelo": "Huilo Huilo",
+      "familia": "PUERTA",
+      "tipo": "PUERTA PANEL",
+      "madera": "PINO OREGON",
+      "medida": "0,80 A 0,85",
+      "anchoMin": 0.8,
+      "anchoMax": 0.85,
+      "largo": 2.1,
+      "precioNeto": 155600.575,
+      "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+      "filaOrigen": 933
+     },
+     "cantidad": 3,
+     "precioUnitario": 287861,
+     "precioFabrica": 155600.575,
+     "margen": 0.85,
+     "precioCliente": 287861,
+     "tipoMedida": "hoja",
+     "observaciones": "Con bisagras de acero",
+     "descripcionDocumento": null,
+     "total": 863583,
+     "indice": 0,
+     "anchoSolicitado": 0.8,
+     "altoSolicitado": 2.1,
+     "medidaSolicitada": null,
+     "margenPersonalizado": false
+    },
+    {
+     "producto": {
+      "codigo": "OTRO",
+      "modelo": "Instalación",
+      "familia": "OTRO",
+      "tipo": null,
+      "madera": "",
+      "medida": "",
+      "anchoMin": null,
+      "anchoMax": null,
+      "largo": 0,
+      "precioNeto": 80000,
+      "descripcion": "Instalación",
+      "filaOrigen": 0
+     },
+     "cantidad": 1,
+     "precioUnitario": 80000,
+     "precioFabrica": 80000,
+     "margen": 0,
+     "precioCliente": 80000,
+     "tipoMedida": "no_especificado",
+     "observaciones": null,
+     "descripcionDocumento": "Instalación",
+     "total": 80000,
+     "indice": 1,
+     "anchoSolicitado": null,
+     "altoSolicitado": null,
+     "medidaSolicitada": null,
+     "precioUnitarioPersonalizado": 80000,
+     "margenPersonalizado": false
+    }
+   ],
+   "subtotal": 943583,
+   "descuentoPorcentaje": 0,
+   "descuento": 0,
+   "flete": 25000,
+   "neto": 968583,
+   "iva": 184031,
+   "total": 1152614
+  },
+  "incompletos": [],
+  "historial": [
+   {
+    "rol": "usuario",
+    "texto": "Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco"
+   },
+   {
+    "rol": "asistente",
+    "texto": "Agregué 1 producto y actualicé los datos del cliente. Revisa el detalle y genera el PDF cuando esté listo."
+   },
+   {
+    "rol": "asistente",
+    "texto": "Nota de pedido N° 577 · Panguipulli generada después de registrar el anticipo."
+   }
+  ],
+  "creada": "2026-11-17T20:09:52.799Z",
+  "actualizada": "2026-11-17T20:09:53.741Z",
+  "pdf": "cotizacion-323.pdf",
+  "vence": "2026-12-01",
+  "descuento": 0,
+  "descuentoManual": false,
+  "flete": 25000,
+  "fleteDescripcion": null,
+  "fleteCantidad": 1,
+  "margenCotizacion": null,
+  "observaciones": null,
+  "despacho": {
+   "direccion": "Calle 1",
+   "transporte": "Starken",
+   "entregaComprometida": null,
+   "destino": null,
+   "valor": 25000
+  },
+  "reglas": {
+   "ajuste": 0.25,
+   "iva": 0.19,
+   "vigenciaDiasHabiles": 10,
+   "descuentoMaximo": 50,
+   "descuentosPorCantidad": [],
+   "margenes": {
+    "puertas_solidas_mara_lenga": 0.55,
+    "puertas_solidas_oregon": 0.85,
+    "puertas_solidas_rauli": 0.55,
+    "puertas_prepintadas": 1.4,
+    "puertas_enchapadas_mara": 0.75,
+    "marcos_finger_sin_enchape": 1,
+    "marcos_finger_enchapados": 0.75,
+    "marcos_solidos_oregon": 0.85,
+    "marcos_solidos_lenga": 0.55,
+    "accesorios_madera_solida": 0.25,
+    "otros": 0.25
+   }
+  },
+  "creadaPor": "Administrador de prueba",
+  "emitidaPor": "Administrador de prueba",
+  "aprobadaPor": "Administrador de prueba",
+  "anuladaPor": null,
+  "fechaAnulacion": null,
+  "motivoAnulacion": null,
+  "reemplazadaPor": null,
+  "versionCatalogo": "7e1f4dc81db845037fddcb2e514b74cabfcf960fd9ca28c4822a0739f8413bae:2026-11-17T20:09:46.488Z",
+  "notas": [
+   {
+    "numero": 577,
+    "fabrica": "panguipulli",
+    "pdf": "nota-pedido-panguipulli-577.pdf",
+    "fecha": "2026-11-17T20:09:53.515Z",
+    "montos": {
+     "lineas": [
+      {
+       "producto": {
+        "codigo": "HUIL-O-3-B",
+        "modelo": "Huilo Huilo",
+        "familia": "PUERTA",
+        "tipo": "PUERTA PANEL",
+        "madera": "PINO OREGON",
+        "medida": "0,80 A 0,85",
+        "anchoMin": 0.8,
+        "anchoMax": 0.85,
+        "largo": 2.1,
+        "precioNeto": 155600.575,
+        "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+        "filaOrigen": 933
+       },
+       "cantidad": 3,
+       "precioUnitario": 155601,
+       "precioFabrica": 155600.575,
+       "margen": 0,
+       "precioCliente": 155601,
+       "tipoMedida": "hoja",
+       "observaciones": "Con bisagras de acero",
+       "descripcionDocumento": null,
+       "total": 466803,
+       "indice": 0,
+       "anchoSolicitado": 0.8,
+       "altoSolicitado": 2.1,
+       "medidaSolicitada": null,
+       "margenPersonalizado": false
+      }
+     ],
+     "subtotal": 466803,
+     "descuentoPorcentaje": 0,
+     "descuento": 0,
+     "flete": 0,
+     "neto": 466803,
+     "iva": 88693,
+     "total": 555496
+    },
+    "despacho": {
+     "direccion": "Calle 1",
+     "transporte": "Starken",
+     "entregaComprometida": null,
+     "valor": 25000
+    },
+    "observaciones": null,
+    "anulada": false,
+    "inicioProduccion": "2026-11-17T20:09:53.731Z",
+    "terminoProduccion": null
+   }
+  ],
+  "estadoComercial": "vendida",
+  "estadoOperativo": "en_produccion",
+  "pagos": [
+   {
+    "cotizacion_id": "26bfb750-42c0-4978-afba-4560a16f462c",
+    "id": "7d9917b9-4239-497b-b576-f21a244b1722",
+    "fecha": "2026-11-17T12:00:00.000Z",
+    "monto": 576307,
+    "observacion": "Anticipo",
+    "usuario": "Administrador de prueba"
+   }
+  ],
+  "comentariosInternos": [
+   {
+    "cotizacion_id": "26bfb750-42c0-4978-afba-4560a16f462c",
+    "id": "dec7b0a1-8c66-4118-a838-06fc0eec9900",
+    "fecha": "2026-11-17T20:09:53.741Z",
+    "texto": "Llamar el lunes",
+    "usuario": "Administrador de prueba"
+   }
+  ],
+  "facturacion": {
+   "estado": "pendiente",
+   "documento": "boleta",
+   "receptor": null,
+   "tipo": null,
+   "identificadorExterno": null,
+   "fecha": null
+  },
+  "fechaEmision": "2026-11-17T20:09:53.084Z",
+  "fechaAprobacion": "2026-11-17T20:09:53.386Z"
+ },
+ "eventos": [
+  {
+   "fecha": "2026-11-17T20:09:52.863Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "creada",
+   "detalle": "Agregado: 3 × Huilo Huilo PINO OREGON 0,80 × 2,10 · Datos del cliente: nombre, comuna"
+  },
+  {
+   "fecha": "2026-11-17T20:09:52.906Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "modificada",
+   "detalle": "Modificado: 3 × Huilo Huilo PINO OREGON 0,80 × 2,10 · Flete $0 → $25.000"
+  },
+  {
+   "fecha": "2026-11-17T20:09:52.928Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "modificada",
+   "detalle": "Agregado: 1 × Instalación"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.364Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "emitida",
+   "detalle": "N° 323"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.386Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "aprobada",
+   "detalle": "Aprobada por cliente · N° 323"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.386Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "facturacion_actualizada",
+   "detalle": "Datos de facturación: Sin definir → Boleta"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.396Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "pago_registrado",
+   "detalle": "$576.307 · 2026-11-17 · Anticipo"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.718Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "nota_generada",
+   "detalle": "Nota de pedido N° 577 · Panguipulli · precio fábrica"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.731Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "produccion",
+   "detalle": "Nota de pedido generada → En producción"
+  },
+  {
+   "fecha": "2026-11-17T20:09:53.741Z",
+   "usuario": "Administrador de prueba",
+   "tipo": "comentario",
+   "detalle": "Llamar el lunes"
+  }
+ ],
+ "asistenteConfigurado": true
+}

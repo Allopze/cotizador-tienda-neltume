@@ -1,0 +1,15 @@
+{
+ "ajustes": {
+  "commandcode": {
+   "modelo": "claude-haiku-5-5"
+  }
+ },
+ "commandcodeClave": false,
+ "commandcodeClaveFuente": "ninguna",
+ "asistenteConfigurado": true,
+ "razonamiento": {
+  "modelo": "claude-haiku-5-5",
+  "predeterminado": "high"
+ },
+ "puedeEditar": true
+}

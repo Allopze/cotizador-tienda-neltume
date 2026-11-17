@@ -1,0 +1,26 @@
+{
+ "session": {
+  "expiresAt": "2026-11-18T08:09:52.651Z",
+  "token": "token-de-prueba",
+  "createdAt": "2026-11-17T20:09:52.651Z",
+  "updatedAt": "2026-11-17T20:09:52.651Z",
+  "ipAddress": "127.0.0.1",
+  "userAgent": "NeltumeCotizador/contrato (Android 16; Pruebas)",
+  "userId": "VVHd4K2w8LKDU6Z0JZ3U1AWltir9q7Om",
+  "impersonatedBy": null,
+  "id": "qU77H4SbQPQ8GcHht0pWsRHgFNI7DAtH"
+ },
+ "user": {
+  "name": "Administrador de prueba",
+  "email": "admin@neltume.test",
+  "emailVerified": true,
+  "image": null,
+  "createdAt": "2026-11-17T20:09:46.754Z",
+  "updatedAt": "2026-11-17T20:09:46.754Z",
+  "role": "admin",
+  "banned": false,
+  "banReason": null,
+  "banExpires": null,
+  "id": "VVHd4K2w8LKDU6Z0JZ3U1AWltir9q7Om"
+ }
+}

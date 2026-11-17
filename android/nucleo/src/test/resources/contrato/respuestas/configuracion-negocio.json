@@ -1,0 +1,44 @@
+{
+ "configuracion": {
+  "transportistas": [
+   "Starken",
+   "Transportes Paredes",
+   "Ignacio",
+   "Otro"
+  ],
+  "empresa": {
+   "nombre": "Empresa de ejemplo",
+   "rut": "11.111.111-1",
+   "direccion": "Calle de ejemplo 123",
+   "telefono": "+56 9 0000 0000",
+   "correo": "contacto@example.cl",
+   "web": "www.example.cl",
+   "condicionesPago": "Consultar condiciones de pago",
+   "plazoEntrega": "A convenir",
+   "datosBancarios": null,
+   "logoSvg": null
+  },
+  "reglas": {
+   "ajuste": 0.25,
+   "iva": 0.19,
+   "vigenciaDiasHabiles": 10,
+   "descuentoMaximo": 50,
+   "descuentosPorCantidad": [],
+   "margenes": {
+    "puertas_solidas_mara_lenga": 0.55,
+    "puertas_solidas_oregon": 0.85,
+    "puertas_solidas_rauli": 0.55,
+    "puertas_prepintadas": 1.4,
+    "puertas_enchapadas_mara": 0.75,
+    "marcos_finger_sin_enchape": 1,
+    "marcos_finger_enchapados": 0.75,
+    "marcos_solidos_oregon": 0.85,
+    "marcos_solidos_lenga": 0.55,
+    "accesorios_madera_solida": 0.25,
+    "otros": 0.25
+   }
+  }
+ },
+ "actualizada": null,
+ "puedeEditar": true
+}

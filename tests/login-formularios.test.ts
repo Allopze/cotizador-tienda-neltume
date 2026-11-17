@@ -108,6 +108,8 @@ describe('Descripción del dispositivo', () => {
     expect(describirDispositivo('Mozilla/5.0 (Macintosh; Intel Mac OS X 14.0; rv:131.0) Gecko/20100101 Firefox/131.0')).toBe(
       'Firefox en macOS',
     );
+    expect(describirDispositivo('NeltumeCotizador/1.0.0 (Android 16; Google Pixel 8)')).toBe('App Android en Google Pixel 8');
+    expect(describirDispositivo('NeltumeCotizador/1.0.0')).toBe('App Android');
     expect(describirDispositivo('curl/8.0')).toBeNull();
     expect(describirDispositivo(null)).toBeNull();
   });
