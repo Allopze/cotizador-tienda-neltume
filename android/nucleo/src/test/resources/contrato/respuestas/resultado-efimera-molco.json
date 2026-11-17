@@ -1,0 +1,98 @@
+{
+ "cotizacion": {
+  "id": "05b83ac6-2f78-44db-9b45-5081654a2775",
+  "numero": null,
+  "estado": "borrador",
+  "cliente": {
+   "nombre": null,
+   "rut": null,
+   "giro": null,
+   "telefono": null,
+   "direccion": null,
+   "comuna": null,
+   "proyecto": null
+  },
+  "solicitudes": [],
+  "montos": {
+   "lineas": [],
+   "subtotal": 0,
+   "descuentoPorcentaje": 0,
+   "descuento": 0,
+   "flete": 0,
+   "neto": 0,
+   "iva": 0,
+   "total": 0
+  },
+  "incompletos": [],
+  "historial": [
+   {
+    "rol": "usuario",
+    "texto": "Una Molco de 1,60 de ancho"
+   },
+   {
+    "rol": "asistente",
+    "texto": "No entendí, ¿puedes reformularlo?"
+   }
+  ],
+  "creada": "2026-11-17T20:09:53.802Z",
+  "actualizada": "2026-11-17T20:09:53.839Z",
+  "pdf": null,
+  "fechaEmision": null,
+  "vence": null,
+  "descuento": 0,
+  "descuentoManual": false,
+  "flete": 0,
+  "fleteDescripcion": null,
+  "fleteCantidad": 1,
+  "margenCotizacion": null,
+  "observaciones": null,
+  "despacho": null,
+  "reglas": {
+   "ajuste": 0.25,
+   "iva": 0.19,
+   "vigenciaDiasHabiles": 10,
+   "descuentoMaximo": 50,
+   "descuentosPorCantidad": [],
+   "margenes": {
+    "puertas_solidas_mara_lenga": 0.55,
+    "puertas_solidas_oregon": 0.85,
+    "puertas_solidas_rauli": 0.55,
+    "puertas_prepintadas": 1.4,
+    "puertas_enchapadas_mara": 0.75,
+    "marcos_finger_sin_enchape": 1,
+    "marcos_finger_enchapados": 0.75,
+    "marcos_solidos_oregon": 0.85,
+    "marcos_solidos_lenga": 0.55,
+    "accesorios_madera_solida": 0.25,
+    "otros": 0.25
+   }
+  },
+  "creadaPor": "Administrador de prueba",
+  "emitidaPor": null,
+  "aprobadaPor": null,
+  "anuladaPor": null,
+  "fechaAnulacion": null,
+  "motivoAnulacion": null,
+  "reemplazadaPor": null,
+  "versionCatalogo": null,
+  "notas": [],
+  "estadoComercial": "pendiente",
+  "estadoOperativo": "sin_pedido",
+  "pagos": [],
+  "comentariosInternos": [],
+  "facturacion": {
+   "estado": "pendiente",
+   "documento": null,
+   "receptor": null,
+   "tipo": null,
+   "identificadorExterno": null,
+   "fecha": null
+  }
+ },
+ "efimera": true,
+ "diagnostico": {
+  "modelo": null,
+  "respaldo": false,
+  "ms": 38
+ }
+}

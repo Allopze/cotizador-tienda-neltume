@@ -1,0 +1,26 @@
+{
+ "disponible": true,
+ "mensaje": null,
+ "configuracion": {
+  "origen": null,
+  "paquete": {
+   "PUERTA": {
+    "kg": null,
+    "espesorCm": null
+   },
+   "MARCO": {
+    "kg": null,
+    "espesorCm": null
+   },
+   "MOLDURA": {
+    "kg": null,
+    "espesorCm": null
+   },
+   "PIEZAS_T": {
+    "kg": null,
+    "espesorCm": null
+   }
+  }
+ },
+ "puedeEditar": true
+}

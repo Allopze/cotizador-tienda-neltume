@@ -1,0 +1,12 @@
+{
+ "clientes": [
+  {
+   "nombre": "Juan Pérez",
+   "rut": null,
+   "giro": null,
+   "telefono": null,
+   "direccion": null,
+   "comuna": "Temuco"
+  }
+ ]
+}

@@ -14,5 +14,7 @@ export default defineConfig([
     'playwright-report/**',
     // Copias de trabajo de los agentes de Claude Code.
     '.claude/**',
+    // App de Android (Kotlin, con su propio Gradle).
+    'android/**',
   ]),
 ]);

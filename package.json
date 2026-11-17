@@ -37,6 +37,8 @@
     "test:e2e:paralelo": "node scripts/e2e-paralelo.mjs",
     "test:e2e:smoke": "node scripts/e2e-smoke.mjs",
     "typecheck": "tsc --noEmit",
+    "movil:servidor": "sh android/scripts/servidor-pruebas.sh",
+    "movil:contrato": "node android/scripts/contrato.mjs",
     "format": "prettier --write src scripts tests *.ts *.json *.mjs",
     "lint": "eslint ."
   },

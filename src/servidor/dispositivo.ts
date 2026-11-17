@@ -6,6 +6,11 @@
 export function describirDispositivo(userAgent: string | null | undefined): string | null {
   const ua = (userAgent ?? '').slice(0, 500);
   if (!ua.trim()) return null;
+  // La app de Android se presenta como «NeltumeCotizador/1.0.0 (Android 16; Google Pixel 8)».
+  if (/^NeltumeCotizador\//.test(ua)) {
+    const modelo = /\(Android [^;)]*;\s*([^)]+)\)/.exec(ua)?.[1]?.trim();
+    return modelo ? `App Android en ${modelo}` : 'App Android';
+  }
   const navegador = /Edg(?:e|A|iOS)?\//.test(ua)
     ? 'Edge'
     : /OPR\/|Opera/.test(ua)

@@ -1,0 +1,32 @@
+{
+ "usuarios": [
+  {
+   "id": "iQ5xOm7hdOz9Vnp9PnnpATm0Cz2GPf1J",
+   "nombre": "Usuario de prueba",
+   "email": "prueba@neltume.test",
+   "rol": "user",
+   "activo": true,
+   "creado": "2026-11-17T20:09:46.672Z",
+   "actualizado": "2026-11-17T20:09:46.672Z"
+  },
+  {
+   "id": "VVHd4K2w8LKDU6Z0JZ3U1AWltir9q7Om",
+   "nombre": "Administrador de prueba",
+   "email": "admin@neltume.test",
+   "rol": "admin",
+   "activo": true,
+   "creado": "2026-11-17T20:09:46.754Z",
+   "actualizado": "2026-11-17T20:09:46.754Z"
+  }
+ ],
+ "actual": "VVHd4K2w8LKDU6Z0JZ3U1AWltir9q7Om",
+ "cambios": [
+  {
+   "id": 1,
+   "fecha": "2026-11-17T20:09:52.656Z",
+   "actor": "admin@neltume.test",
+   "objetivo": "App Android en Pruebas · IP 127.0.0.1",
+   "accion": "inicio-sesion"
+  }
+ ]
+}

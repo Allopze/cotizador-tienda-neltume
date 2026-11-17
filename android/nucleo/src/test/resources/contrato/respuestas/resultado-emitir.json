@@ -1,0 +1,194 @@
+{
+ "cotizacion": {
+  "id": "26bfb750-42c0-4978-afba-4560a16f462c",
+  "numero": 323,
+  "estado": "emitida",
+  "cliente": {
+   "nombre": "Juan Pérez",
+   "rut": null,
+   "giro": null,
+   "telefono": null,
+   "direccion": null,
+   "comuna": "Temuco",
+   "proyecto": null
+  },
+  "solicitudes": [
+   {
+    "id": "3728a943-b9db-4c5f-89ef-78abf816d680",
+    "modelo": "Huilo Huilo",
+    "madera": "PINO OREGON",
+    "ancho": 0.8,
+    "alto": 2.1,
+    "medida": null,
+    "cantidad": 3,
+    "tipoMedida": "hoja",
+    "descripcion": null,
+    "observaciones": "Con bisagras de acero",
+    "margen": null,
+    "modeloOriginal": null,
+    "coincidenciaModelo": "canonico",
+    "fuente": null
+   },
+   {
+    "id": "576a4cb1-a45a-4def-b0fc-56087b447cd9",
+    "modelo": "Instalación",
+    "madera": null,
+    "ancho": null,
+    "alto": null,
+    "medida": null,
+    "cantidad": 1,
+    "tipoMedida": null,
+    "descripcion": null,
+    "observaciones": null,
+    "margen": null,
+    "modeloOriginal": null,
+    "coincidenciaModelo": null,
+    "fuente": null,
+    "personalizado": {
+     "familia": "OTRO"
+    },
+    "precioUnitario": 80000
+   }
+  ],
+  "montos": {
+   "lineas": [
+    {
+     "producto": {
+      "codigo": "HUIL-O-3-B",
+      "modelo": "Huilo Huilo",
+      "familia": "PUERTA",
+      "tipo": "PUERTA PANEL",
+      "madera": "PINO OREGON",
+      "medida": "0,80 A 0,85",
+      "anchoMin": 0.8,
+      "anchoMax": 0.85,
+      "largo": 2.1,
+      "precioNeto": 155600.575,
+      "descripcion": "HUILO HUILO PINO OREGON 0,8 A 0,85 MT X 2,1 MT",
+      "filaOrigen": 933
+     },
+     "cantidad": 3,
+     "precioUnitario": 287861,
+     "precioFabrica": 155600.575,
+     "margen": 0.85,
+     "precioCliente": 287861,
+     "margenPersonalizado": false,
+     "tipoMedida": "hoja",
+     "observaciones": "Con bisagras de acero",
+     "descripcionDocumento": null,
+     "total": 863583,
+     "indice": 0,
+     "anchoSolicitado": 0.8,
+     "altoSolicitado": 2.1,
+     "medidaSolicitada": null
+    },
+    {
+     "producto": {
+      "codigo": "OTRO",
+      "modelo": "Instalación",
+      "familia": "OTRO",
+      "tipo": null,
+      "madera": "",
+      "medida": "",
+      "anchoMin": null,
+      "anchoMax": null,
+      "altoMin": null,
+      "altoMax": null,
+      "largo": 0,
+      "precioNeto": 80000,
+      "descripcion": "Instalación",
+      "filaOrigen": 0
+     },
+     "cantidad": 1,
+     "precioUnitario": 80000,
+     "precioFabrica": 80000,
+     "margen": 0,
+     "precioCliente": 80000,
+     "margenPersonalizado": false,
+     "tipoMedida": "no_especificado",
+     "observaciones": null,
+     "descripcionDocumento": "Instalación",
+     "precioUnitarioPersonalizado": 80000,
+     "total": 80000,
+     "indice": 1,
+     "anchoSolicitado": null,
+     "altoSolicitado": null,
+     "medidaSolicitada": null
+    }
+   ],
+   "subtotal": 943583,
+   "descuentoPorcentaje": 0,
+   "descuento": 0,
+   "flete": 25000,
+   "neto": 968583,
+   "iva": 184031,
+   "total": 1152614
+  },
+  "incompletos": [],
+  "historial": [
+   {
+    "rol": "usuario",
+    "texto": "Cotiza 3 Huilo Huilo en oregón de 80 × 2,10 para Juan Pérez, Temuco"
+   },
+   {
+    "rol": "asistente",
+    "texto": "Agregué 1 producto y actualicé los datos del cliente. Revisa el detalle y genera el PDF cuando esté listo."
+   }
+  ],
+  "creada": "2026-11-17T20:09:52.799Z",
+  "actualizada": "2026-11-17T20:09:53.364Z",
+  "pdf": "cotizacion-323.pdf",
+  "vence": "2026-12-01",
+  "descuento": 0,
+  "descuentoManual": false,
+  "flete": 25000,
+  "fleteDescripcion": null,
+  "fleteCantidad": 1,
+  "margenCotizacion": null,
+  "observaciones": null,
+  "despacho": null,
+  "reglas": {
+   "ajuste": 0.25,
+   "iva": 0.19,
+   "vigenciaDiasHabiles": 10,
+   "descuentoMaximo": 50,
+   "descuentosPorCantidad": [],
+   "margenes": {
+    "puertas_solidas_mara_lenga": 0.55,
+    "puertas_solidas_oregon": 0.85,
+    "puertas_solidas_rauli": 0.55,
+    "puertas_prepintadas": 1.4,
+    "puertas_enchapadas_mara": 0.75,
+    "marcos_finger_sin_enchape": 1,
+    "marcos_finger_enchapados": 0.75,
+    "marcos_solidos_oregon": 0.85,
+    "marcos_solidos_lenga": 0.55,
+    "accesorios_madera_solida": 0.25,
+    "otros": 0.25
+   }
+  },
+  "creadaPor": "Administrador de prueba",
+  "emitidaPor": "Administrador de prueba",
+  "aprobadaPor": null,
+  "anuladaPor": null,
+  "fechaAnulacion": null,
+  "motivoAnulacion": null,
+  "reemplazadaPor": null,
+  "versionCatalogo": "7e1f4dc81db845037fddcb2e514b74cabfcf960fd9ca28c4822a0739f8413bae:2026-11-17T20:09:46.488Z",
+  "notas": [],
+  "estadoComercial": "enviada",
+  "estadoOperativo": "sin_pedido",
+  "pagos": [],
+  "comentariosInternos": [],
+  "facturacion": {
+   "estado": "pendiente",
+   "documento": null,
+   "receptor": null,
+   "tipo": null,
+   "identificadorExterno": null,
+   "fecha": null
+  },
+  "fechaEmision": "2026-11-17T20:09:53.084Z"
+ },
+ "archivo": "cotizacion-323.pdf"
+}

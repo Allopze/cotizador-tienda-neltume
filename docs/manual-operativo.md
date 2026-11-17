@@ -292,3 +292,17 @@ funciona) explica el recorrido completo de una cotización; aquí van las reglas
   recargar la página, mientras nadie haya cambiado el catálogo.
 - **Medidas en Agregar producto y Gestionar:** se escriben como en el detalle: «80 cm», «2100 mm», «3600 mm» o
   «3,6» (metros).
+
+## 11. App de Android
+
+El cotizador también tiene una app para teléfonos Android, con las mismas funciones que la página. Usa el mismo servidor, las mismas cuentas y los mismos datos: lo que se hace en la app se ve en la página y al revés.
+
+**Instalarla en un teléfono (una vez).** Pide el archivo `Cotizador Neltume.apk` a quien administra el cotizador (por correo o WhatsApp). Ábrelo en el teléfono: Android pedirá permitir «Instalar apps desconocidas» para la aplicación con que lo abriste (Archivos, Chrome o WhatsApp); permítelo y toca «Instalar». La app queda en el teléfono como «Cotizador Neltume».
+
+**Entrar.** Con el mismo correo y contraseña de la página. La app ofrece guardar la contraseña en el teléfono: la sesión dura 12 horas y, al vencer, vuelve a pedirla sobre la pantalla en que estabas, sin perder lo escrito.
+
+**Actualizar.** Cuando hay una versión nueva, la app lo avisa al abrirse: toca «Actualizar» y confirma la instalación. La primera vez Android pide permitir que el cotizador instale apps. Si una versión antigua ya no funciona con el servidor, la app no deja seguir hasta actualizar.
+
+**Si algo falla.** Sin conexión, la app lo dice y ofrece reintentar; los datos están en el servidor, no en el teléfono. Si el teléfono se pierde, cierra su sesión desde **Ajustes → Mi cuenta → Sesiones abiertas** en la página (la app aparece como «App Android en …»).
+
+**Publicar una versión nueva** (quien despliega): ver «App de Android» en el README. La llave con que se firma la app está en el equipo de desarrollo (`~/.neltume/cotizador.jks`) y **debe respaldarse**: sin ella, una versión nueva no se puede instalar sobre la anterior.

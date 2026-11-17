@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- La versión de pruebas convive con la real en el mismo teléfono: otro nombre para no confundirlas. -->
+<resources>
+    <string name="app_nombre">Neltume Pruebas</string>
+</resources>

@@ -295,6 +295,10 @@ Conserva `name: neltume-cotizador` en Compose para reutilizar los mismos volúme
 migraciones antes de servir la app. Los volúmenes sobreviven a la reconstrucción y a `docker compose down`;
 **`down -v` los elimina**.
 
+## App de Android
+
+La app de las vendedoras se instala desde un APK firmado (sin Google Play). La versión publicada vive en el volumen de datos, en `/app/data/app/` (`version.json` y `neltume-cotizador.apk`); la deja ahí `sh android/scripts/publicar.sh` desde el equipo de desarrollo (por SSH, con `docker compose cp`). `GET /api/app/version` y `GET /api/app/apk` la entregan solo con sesión iniciada. Sin esa carpeta, la app simplemente no ofrece actualizaciones. El respaldo incluye la carpeta, como el resto de `data/`.
+
 ## Respaldo diario y limpieza
 
 `npm run respaldar` copia en caliente la base (verificada con `integrity_check`), los PDF emitidos, las

@@ -1,0 +1,27 @@
+{
+ "clientes": [
+  {
+   "nombre": "Juan Pérez",
+   "rut": null,
+   "giro": null,
+   "telefono": null,
+   "direccion": null,
+   "comuna": "Temuco",
+   "registrado": false,
+   "cantidad": 1,
+   "cotizaciones": [
+    {
+     "id": "26bfb750-42c0-4978-afba-4560a16f462c",
+     "numero": 323,
+     "estado": "aprobada",
+     "actualizada": "2026-11-17T20:09:53.741Z",
+     "proyecto": null,
+     "total": 1152614
+    }
+   ]
+  }
+ ],
+ "total": 1,
+ "pagina": 1,
+ "porPagina": 30
+}

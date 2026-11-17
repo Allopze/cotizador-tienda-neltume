@@ -1,0 +1,2580 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "oneOf": [
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "agregar_producto"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "nuevoId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "codigo": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 80
+    },
+    "cantidad": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 10000
+    },
+    "ancho": {
+     "type": "number",
+     "minimum": 0.3,
+     "maximum": 3
+    },
+    "alto": {
+     "type": "number",
+     "minimum": 0.3,
+     "maximum": 6
+    },
+    "tipoMedida": {
+     "type": "string",
+     "enum": [
+      "hoja",
+      "vano",
+      "no_especificado"
+     ]
+    }
+   },
+   "required": [
+    "tipo",
+    "codigo",
+    "cantidad"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "agregar_personalizado"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "nuevoId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "item": {
+     "type": "object",
+     "properties": {
+      "nombre": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 300
+      },
+      "familia": {
+       "type": "string",
+       "enum": [
+        "PUERTA",
+        "MARCO",
+        "PIEZAS_T",
+        "MOLDURA",
+        "OTRO"
+       ]
+      },
+      "madera": {
+       "type": "string",
+       "maxLength": 300
+      },
+      "descripcion": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "ancho": {
+       "anyOf": [
+        {
+         "type": "number",
+         "minimum": 0.3,
+         "maximum": 3
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "alto": {
+       "anyOf": [
+        {
+         "type": "number",
+         "minimum": 0.3,
+         "maximum": 6
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "tipoMedida": {
+       "type": "string",
+       "enum": [
+        "hoja",
+        "vano",
+        "no_especificado"
+       ]
+      },
+      "cantidad": {
+       "type": "integer",
+       "minimum": 1,
+       "maximum": 10000
+      },
+      "precioUnitario": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 100000000
+      },
+      "observaciones": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 1000
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "referencias": {
+       "maxItems": 10,
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "archivo": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}\\.(jpg|png|webp|pdf)$"
+         },
+         "nombre": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         "tipo": {
+          "type": "string",
+          "enum": [
+           "image/jpeg",
+           "image/png",
+           "image/webp",
+           "application/pdf"
+          ]
+         },
+         "tamano": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
+         },
+         "fecha": {
+          "type": "string",
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "archivo",
+         "nombre",
+         "tipo",
+         "tamano",
+         "fecha"
+        ],
+        "additionalProperties": false
+       }
+      }
+     },
+     "required": [
+      "nombre",
+      "familia",
+      "madera",
+      "cantidad",
+      "precioUnitario"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "tipo",
+    "item"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "chat"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "razonamiento": {
+     "type": "string",
+     "enum": [
+      "no",
+      "low",
+      "medium",
+      "high",
+      "max"
+     ]
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "mensaje": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 6000
+    },
+    "objetivoId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "objetivoActualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "nuevoId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "contexto": {
+     "maxItems": 12,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "rol": {
+        "type": "string",
+        "enum": [
+         "usuario",
+         "asistente"
+        ]
+       },
+       "texto": {
+        "type": "string",
+        "maxLength": 6000
+       }
+      },
+      "required": [
+       "rol",
+       "texto"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tipo",
+    "mensaje"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "quitar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "indice": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "indice"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "restaurar_borrador"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "desaprobar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "regenerar_pdf"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "documento": {
+     "type": "string",
+     "enum": [
+      "cotizacion",
+      "nota"
+     ]
+    },
+    "fabrica": {
+     "type": "string",
+     "enum": [
+      "panguipulli",
+      "santiago"
+     ]
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "documento"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "retroceder_operacion"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "motivo": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 300
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "motivo"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "reordenar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "desde": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 99
+    },
+    "hasta": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 99
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "desde",
+    "hasta"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "duplicar_item"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "indice": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 99
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "indice"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "restaurar_items"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "items": {
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "string",
+        "maxLength": 64
+       },
+       "modelo": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 300
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "madera": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 300
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "ancho": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "alto": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "medida": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 300
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "cantidad": {
+        "anyOf": [
+         {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "precioUnitario": {
+        "anyOf": [
+         {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100000000
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "margen": {
+        "anyOf": [
+         {
+          "type": "number",
+          "minimum": -0.5,
+          "maximum": 5
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "tipoMedida": {
+        "anyOf": [
+         {
+          "type": "string",
+          "enum": [
+           "hoja",
+           "vano",
+           "no_especificado"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "descripcion": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 300
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "observaciones": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 1000
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "modeloOriginal": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 300
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "coincidenciaModelo": {
+        "anyOf": [
+         {
+          "type": "string",
+          "enum": [
+           "canonico",
+           "alias",
+           "posible"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "fuente": {
+        "anyOf": [
+         {
+          "type": "string",
+          "maxLength": 300
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "medidaPorDefecto": {
+        "type": "boolean"
+       },
+       "personalizado": {
+        "anyOf": [
+         {
+          "type": "object",
+          "properties": {
+           "familia": {
+            "type": "string",
+            "enum": [
+             "PUERTA",
+             "MARCO",
+             "PIEZAS_T",
+             "MOLDURA",
+             "OTRO"
+            ]
+           }
+          },
+          "required": [
+           "familia"
+          ],
+          "additionalProperties": false
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "referencias": {
+        "maxItems": 10,
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "archivo": {
+           "type": "string",
+           "pattern": "^[0-9a-f]{64}\\.(jpg|png|webp|pdf)$"
+          },
+          "nombre": {
+           "type": "string",
+           "minLength": 1,
+           "maxLength": 200
+          },
+          "tipo": {
+           "type": "string",
+           "enum": [
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "application/pdf"
+           ]
+          },
+          "tamano": {
+           "type": "integer",
+           "exclusiveMinimum": 0,
+           "maximum": 9007199254740991
+          },
+          "fecha": {
+           "type": "string",
+           "maxLength": 40
+          }
+         },
+         "required": [
+          "archivo",
+          "nombre",
+          "tipo",
+          "tamano",
+          "fecha"
+         ],
+         "additionalProperties": false
+        }
+       },
+       "descuento": {
+        "anyOf": [
+         {
+          "oneOf": [
+           {
+            "type": "object",
+            "properties": {
+             "tipo": {
+              "type": "string",
+              "const": "porcentaje"
+             },
+             "valor": {
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+             }
+            },
+            "required": [
+             "tipo",
+             "valor"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "object",
+            "properties": {
+             "tipo": {
+              "type": "string",
+              "const": "monto"
+             },
+             "valor": {
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 100000000
+             }
+            },
+            "required": [
+             "tipo",
+             "valor"
+            ],
+            "additionalProperties": false
+           }
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "costoFabrica": {
+        "anyOf": [
+         {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 100000000
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "fabrica": {
+        "anyOf": [
+         {
+          "type": "string",
+          "enum": [
+           "panguipulli",
+           "santiago"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "modelo",
+       "madera",
+       "ancho",
+       "alto",
+       "medida",
+       "cantidad"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "emitir"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "numero": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 1000000000
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "aprobar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "confirmarVencida": {
+     "type": "boolean"
+    },
+    "despacho": {
+     "type": "object",
+     "properties": {
+      "direccion": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "transporte": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 120
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "entregaComprometida": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 120
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "destino": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "valor": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 100000000
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    "facturacion": {
+     "type": "object",
+     "properties": {
+      "documento": {
+       "anyOf": [
+        {
+         "type": "string",
+         "enum": [
+          "boleta",
+          "factura"
+         ]
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "receptor": {
+       "anyOf": [
+        {
+         "type": "object",
+         "properties": {
+          "razonSocial": {
+           "anyOf": [
+            {
+             "type": "string",
+             "maxLength": 300
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "rut": {
+           "anyOf": [
+            {
+             "type": "string",
+             "maxLength": 300
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "giro": {
+           "anyOf": [
+            {
+             "type": "string",
+             "maxLength": 300
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "direccion": {
+           "anyOf": [
+            {
+             "type": "string",
+             "maxLength": 300
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "comuna": {
+           "anyOf": [
+            {
+             "type": "string",
+             "maxLength": 300
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "correo": {
+           "anyOf": [
+            {
+             "type": "string",
+             "maxLength": 300
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         },
+         "additionalProperties": false
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "required": [
+      "documento"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "duplicar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "nuevoId": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    }
+   },
+   "required": [
+    "tipo",
+    "id"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "eliminar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "anular"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "motivo": {
+     "type": "string",
+     "maxLength": 300
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "editar_pedido"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "items": {
+     "minItems": 1,
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "indice": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "cambios": {
+        "type": "object",
+        "properties": {
+         "cantidad": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+         },
+         "ancho": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "alto": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "medida": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 300
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "tipoMedida": {
+          "anyOf": [
+           {
+            "type": "string",
+            "enum": [
+             "hoja",
+             "vano",
+             "no_especificado"
+            ]
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "descripcion": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 300
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "observaciones": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 1000
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      "required": [
+       "indice",
+       "cambios"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "items"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "editar"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "cliente": {
+     "type": "object",
+     "properties": {
+      "nombre": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "rut": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "giro": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "telefono": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "direccion": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "comuna": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "proyecto": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    },
+    "cantidades": {
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "indice": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "cantidad": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 10000
+       }
+      },
+      "required": [
+       "indice",
+       "cantidad"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "items": {
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "indice": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 9007199254740991
+       },
+       "cambios": {
+        "type": "object",
+        "properties": {
+         "modelo": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 300
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "madera": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 300
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "ancho": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "alto": {
+          "type": [
+           "number",
+           "null"
+          ]
+         },
+         "medida": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 300
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "precioUnitario": {
+          "anyOf": [
+           {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100000000
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "margen": {
+          "anyOf": [
+           {
+            "type": "number",
+            "minimum": -0.5,
+            "maximum": 5
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "tipoMedida": {
+          "anyOf": [
+           {
+            "type": "string",
+            "enum": [
+             "hoja",
+             "vano",
+             "no_especificado"
+            ]
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "descripcion": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 300
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "observaciones": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 1000
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "referencias": {
+          "maxItems": 10,
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "archivo": {
+             "type": "string",
+             "pattern": "^[0-9a-f]{64}\\.(jpg|png|webp|pdf)$"
+            },
+            "nombre": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 200
+            },
+            "tipo": {
+             "type": "string",
+             "enum": [
+              "image/jpeg",
+              "image/png",
+              "image/webp",
+              "application/pdf"
+             ]
+            },
+            "tamano": {
+             "type": "integer",
+             "exclusiveMinimum": 0,
+             "maximum": 9007199254740991
+            },
+            "fecha": {
+             "type": "string",
+             "maxLength": 40
+            }
+           },
+           "required": [
+            "archivo",
+            "nombre",
+            "tipo",
+            "tamano",
+            "fecha"
+           ],
+           "additionalProperties": false
+          }
+         },
+         "descuento": {
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "tipo": {
+              "type": "string",
+              "enum": [
+               "porcentaje",
+               "monto"
+              ]
+             },
+             "valor": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 100000000
+             }
+            },
+            "required": [
+             "tipo",
+             "valor"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "personalizado": {
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "familia": {
+              "type": "string",
+              "enum": [
+               "PUERTA",
+               "MARCO",
+               "PIEZAS_T",
+               "MOLDURA",
+               "OTRO"
+              ]
+             }
+            },
+            "required": [
+             "familia"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "costoFabrica": {
+          "anyOf": [
+           {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100000000
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "additionalProperties": false
+       }
+      },
+      "required": [
+       "indice",
+       "cambios"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "descuento": {
+     "type": "number",
+     "minimum": 0,
+     "maximum": 100
+    },
+    "descuentoAutomatico": {
+     "type": "boolean",
+     "const": true
+    },
+    "flete": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 100000000
+    },
+    "fleteLinea": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "descripcion": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "cantidad": {
+         "type": "integer",
+         "minimum": 1,
+         "maximum": 10000
+        },
+        "unitario": {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 100000000
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "margenCotizacion": {
+     "anyOf": [
+      {
+       "type": "number",
+       "minimum": -0.5,
+       "maximum": 5
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "observaciones": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 2000
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "despacho": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "direccion": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "transporte": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 120
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "entregaComprometida": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 120
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "destino": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "valor": {
+         "anyOf": [
+          {
+           "type": "integer",
+           "minimum": 0,
+           "maximum": 100000000
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "tarifaStarken": {
+     "type": "object",
+     "properties": {
+      "tipoEntrega": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 40
+      },
+      "servicio": {
+       "type": "string",
+       "maxLength": 40
+      },
+      "dias": {
+       "type": "integer",
+       "minimum": 0,
+       "maximum": 365
+      },
+      "costoTotal": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 100000000
+      },
+      "ciudadDestino": {
+       "type": "string",
+       "minLength": 1,
+       "maxLength": 120
+      },
+      "codigoCiudadDestino": {
+       "type": "integer",
+       "exclusiveMinimum": 0,
+       "maximum": 9007199254740991
+      },
+      "vence": {
+       "type": "string",
+       "format": "date-time",
+       "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+      },
+      "firma": {
+       "type": "string",
+       "minLength": 20,
+       "maxLength": 100
+      },
+      "huellaBulto": {
+       "type": "string",
+       "pattern": "^[a-f0-9]{64}$"
+      }
+     },
+     "required": [
+      "tipoEntrega",
+      "dias",
+      "costoTotal",
+      "ciudadDestino",
+      "codigoCiudadDestino",
+      "vence",
+      "firma",
+      "huellaBulto"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "pago"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "monto": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 100000000
+    },
+    "fecha": {
+     "type": "string",
+     "format": "date",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+    },
+    "observacion": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 500
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "monto"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "anular_pago"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "pagoId": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 100
+    },
+    "motivo": {
+     "type": "string",
+     "maxLength": 300
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "pagoId"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "despacho"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "despacho": {
+     "type": "object",
+     "properties": {
+      "direccion": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "transporte": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 120
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "entregaComprometida": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 120
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "destino": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "valor": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 100000000
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "despacho"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "comentario"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "texto": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 2000
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "texto"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "comercial"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "estado": {
+     "type": "string",
+     "enum": [
+      "seguimiento",
+      "rechazada"
+     ]
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "estado"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "generar_nota"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "fabrica": {
+     "type": "string",
+     "enum": [
+      "panguipulli",
+      "santiago"
+     ]
+    },
+    "asignaciones": {
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "indice": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 99
+       },
+       "fabrica": {
+        "anyOf": [
+         {
+          "type": "string",
+          "enum": [
+           "panguipulli",
+           "santiago"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "indice",
+       "fabrica"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "asignar_fabricas"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "asignaciones": {
+     "minItems": 1,
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "indice": {
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 99
+       },
+       "fabrica": {
+        "anyOf": [
+         {
+          "type": "string",
+          "enum": [
+           "panguipulli",
+           "santiago"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "indice",
+       "fabrica"
+      ],
+      "additionalProperties": false
+     }
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "asignaciones"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "cambiar_numero"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "documento": {
+     "type": "string",
+     "enum": [
+      "cotizacion",
+      "nota"
+     ]
+    },
+    "fabrica": {
+     "type": "string",
+     "enum": [
+      "panguipulli",
+      "santiago"
+     ]
+    },
+    "numero": {
+     "type": "integer",
+     "exclusiveMinimum": 0,
+     "maximum": 9007199254740991
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "documento",
+    "numero"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "operacion"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "paso": {
+     "type": "string",
+     "enum": [
+      "iniciar_produccion",
+      "produccion_terminada",
+      "lista_despacho",
+      "despachada",
+      "completada"
+     ]
+    },
+    "fabrica": {
+     "type": "string",
+     "enum": [
+      "panguipulli",
+      "santiago"
+     ]
+    },
+    "despacho": {
+     "type": "object",
+     "properties": {
+      "direccion": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "transporte": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 120
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "entregaComprometida": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 120
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "destino": {
+       "anyOf": [
+        {
+         "type": "string",
+         "maxLength": 300
+        },
+        {
+         "type": "null"
+        }
+       ]
+      },
+      "valor": {
+       "anyOf": [
+        {
+         "type": "integer",
+         "minimum": 0,
+         "maximum": 100000000
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     },
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "paso"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "facturacion"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "estado": {
+     "type": "string",
+     "enum": [
+      "pendiente",
+      "facturada"
+     ]
+    },
+    "tipoDocumento": {
+     "anyOf": [
+      {
+       "type": "string",
+       "enum": [
+        "factura",
+        "boleta"
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "identificadorExterno": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 120
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "fecha": {
+     "anyOf": [
+      {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date",
+         "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+        },
+        {
+         "type": "string",
+         "format": "date-time",
+         "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+        }
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "estado"
+   ],
+   "additionalProperties": false
+  },
+  {
+   "type": "object",
+   "properties": {
+    "tipo": {
+     "type": "string",
+     "const": "datos_facturacion"
+    },
+    "id": {
+     "type": "string",
+     "format": "uuid",
+     "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
+    },
+    "actualizada": {
+     "type": "string",
+     "format": "date-time",
+     "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z))$"
+    },
+    "documento": {
+     "anyOf": [
+      {
+       "type": "string",
+       "enum": [
+        "boleta",
+        "factura"
+       ]
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "receptor": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "razonSocial": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "rut": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "giro": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "direccion": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "comuna": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "correo": {
+         "anyOf": [
+          {
+           "type": "string",
+           "maxLength": 300
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       },
+       "additionalProperties": false
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "tipo",
+    "id",
+    "actualizada",
+    "documento"
+   ],
+   "additionalProperties": false
+  }
+ ]
+}
