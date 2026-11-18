@@ -343,21 +343,25 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma.
   const filas = filasDocumento(q, doc);
   const porDefinir = filas.filter((f) => !f.definida);
+  // En la nota y la orden de trabajo la fila no lleva número sino una raya: en la fábrica, los maestros leían el «1, 2,
+  // 3…» junto al producto como la cantidad de puertas, no la de «Cant.» (pedido de la fábrica, nov 2026). La columna
+  // conserva su ancho, así que las anclas que lee la fábrica no se mueven. La cotización conserva los números.
   const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) => {
     const precios = produccion
       ? ''
       : definida
         ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
         : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
-    return `<tr><td class="n">${i + 1}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}${nota ? '<td class="listo"><i></i></td>' : ''}</tr>`;
+    return `<tr><td class="n">${nota ? '–' : i + 1}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}${nota ? '<td class="listo"><i></i></td>' : ''}</tr>`;
   };
-  // Las imágenes del cliente van en las observaciones, agrupadas por ítem con su número y nombre: la tabla queda solo
-  // con texto y las anclas que lee la fábrica no se mueven.
+  // Las imágenes del cliente van en las observaciones, agrupadas por ítem con su nombre (en la cotización, también con
+  // el número de la fila; la nota no numera las filas): la tabla queda solo con texto y las anclas que lee la fábrica no
+  // se mueven. El rótulo no lleva el código: suelto, el lector de la fábrica lo tomaría por un ítem más.
   const imagenesObservaciones = filas
     .flatMap(({ l }, i) => {
       const imagenes = referenciasDe(l).filter(esImagen);
       return imagenes.length
-        ? [`<div class="imagenes-item"><p class="k">Ítem ${i + 1} · ${esc(descripcionImpresa(l))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
+        ? [`<div class="imagenes-item"><p class="k">${nota ? '' : `Ítem ${i + 1} · `}${esc(descripcionImpresa(l))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
         : [];
     })
     .join('');
@@ -366,7 +370,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     ? `<tr><td class="n">${filas.length + 1}</td><td class="prod"><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
     : '';
   const tabla = nota
-    ? `<table><thead><tr><th class="n">N.º</th><th class="prod">Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
+    ? `<table><thead><tr><th class="n"></th><th class="prod">Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
     : `<table><thead><tr><th class="n">N.º</th><th class="prod">Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
 
   // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
@@ -666,7 +670,7 @@ export async function inyectarReferencias(html: string, directorioDatos: string)
   const conReferencias = html.replace(REFERENCIA_CLIENTE, (_, archivo: string) =>
     archivos.get(archivo) ? `<img class="ref" src="${ORIGEN_REFERENCIAS}${archivo}" crossorigin="anonymous" alt="">` : '',
   );
-  // Si todas las imágenes de un ítem faltan, se quita también su rótulo («Ítem n · …»): un título sin imagen no
+  // Si todas las imágenes de un ítem faltan, se quita también su rótulo (el nombre del ítem): un título sin imagen no
   // dice nada (auditoría BUG-041).
   return conReferencias.replace(
     /<div class="imagenes-item">([\s\S]*?)<\/div><\/div>/g,

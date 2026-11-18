@@ -283,6 +283,29 @@ describe('Plantillas', () => {
     expect(html).not.toContain('GRACIAS');
   });
 
+  it('la nota y la orden de trabajo marcan cada fila con una raya, no con un número que se lea como cantidad', async () => {
+    // En la fábrica, los maestros leían el número de fila junto al producto como la cantidad de puertas (nov 2026).
+    await aislarBaseDatos();
+    const montos = cotizar([{ producto: puerta, cantidad: 3 }, { producto: puerta, cantidad: 1 }], { ajuste: 0, iva: 0.19 });
+    const base = { numero: 7, montos, fecha: '2026-09-28T12:00:00.000Z' };
+    const tablaDe = (html: string) => html.match(/<table>[\s\S]*?<\/table>/)![0];
+    const celdas = (tabla: string, clase: string) =>
+      [...tabla.matchAll(new RegExp(`<td class="${clase}">([^<]*)</td>`, 'g'))].map((m) => m[1]);
+    for (const doc of [{ ...base, tipo: 'nota' as const }, { ...base, tipo: 'nota' as const, produccion: true }]) {
+      const tabla = tablaDe(await plantilla(cotizacion(), doc));
+      // La columna queda, sin título, para que las anclas de la fábrica no se muevan.
+      expect(tabla).toContain('<th class="n"></th><th class="prod">Producto</th>');
+      expect(tabla).not.toContain('N.º');
+      expect(celdas(tabla, 'n')).toEqual(['–', '–']);
+      // La cantidad sigue solo en «Cant.».
+      expect(celdas(tabla, 'r cant')).toEqual(['3', '1']);
+    }
+    // La cotización al cliente sigue numerando sus filas.
+    const cotizacionTabla = tablaDe(await plantilla(cotizacion(), { ...base, tipo: 'cotizacion' }));
+    expect(cotizacionTabla).toContain('<th class="n">N.º</th>');
+    expect(celdas(cotizacionTabla, 'n').slice(0, 2)).toEqual(['1', '2']);
+  });
+
   it('el nombre del ítem lleva la medida pedida y el producto (y su precio) sigue siendo el del rango', () => {
     const [l] = cotizar([{ producto: puerta, cantidad: 1, anchoSolicitado: 0.82, altoSolicitado: 2 }]).lineas;
     expect(descripcionLinea(l)).toBe('MOLCO PINO OREGON 0,82 MT X 2,00 MT');
@@ -407,9 +430,9 @@ describe('Plantillas', () => {
     expect(html).toContain('<span class="cod">Producto personalizado, fuera de catálogo</span>');
     expect(html).toContain('<span>Referencias del cliente: croquis.pdf</span><span class="cod">');
     expect(texto).not.toContain('Referencia de catálogo');
-    // La imagen va en las observaciones de «Para fábrica», con el número y el nombre del ítem; el PDF no se incrusta y
-    // la foto no se nombra.
-    expect(html).toMatch(/<div class="obs"><b>Observaciones<\/b><div>[^<]*<div class="imagenes-item"><p class="k">Ítem 1 · Puerta japonesa/i);
+    // La imagen va en las observaciones de «Para fábrica», con el nombre del ítem (sin número: la nota no numera las
+    // filas); el PDF no se incrusta y la foto no se nombra.
+    expect(html).toMatch(/<div class="obs"><b>Observaciones<\/b><div>[^<]*<div class="imagenes-item"><p class="k">Puerta japonesa/i);
     expect(html).toContain(`<div><img class="ref" src="neltume-referencia:${'d'.repeat(64)}.jpg" alt=""></div></div></div></div>`);
     expect(html).not.toMatch(/<tr class="imagenes|<tbody><tr[^]*<\/tbody><tbody>/);
     expect(html).not.toContain(`neltume-referencia:${'c'.repeat(64)}`);
@@ -427,14 +450,17 @@ describe('Plantillas', () => {
     ];
     const montos = cotizar([{ producto: puerta, cantidad: 1, indice: 0 }, { producto: puerta, cantidad: 2, indice: 1 }], { ajuste: 0, iva: 0.19 });
     const base = { numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' };
-    const grupo = `<div class="imagenes-item"><p class="k">Ítem 2 · Molco Pino Oregon 0,80 a 0,85 m × 2 m</p><div><img class="ref" src="neltume-referencia:${foto.archivo}" alt=""></div></div>`;
-    // La cotización abre «Observaciones» aunque no tenga texto: solo con las imágenes.
+    const grupo = (rotulo: string) =>
+      `<div class="imagenes-item"><p class="k">${rotulo}Molco Pino Oregon 0,80 a 0,85 m × 2 m</p><div><img class="ref" src="neltume-referencia:${foto.archivo}" alt=""></div></div>`;
+    // La cotización abre «Observaciones» aunque no tenga texto: solo con las imágenes. El grupo lleva el número de la
+    // fila, que la cotización imprime.
     const cotizacionHtml = await plantilla(q, { ...base, tipo: 'cotizacion' });
-    expect(cotizacionHtml).toContain(`<section class="observaciones con-imagenes"><h2>Observaciones</h2>${grupo}</section>`);
+    expect(cotizacionHtml).toContain(`<section class="observaciones con-imagenes"><h2>Observaciones</h2>${grupo('Ítem 2 · ')}</section>`);
+    // La nota y la orden de trabajo no numeran las filas: el grupo va solo con el nombre.
     for (const doc of [{ ...base, tipo: 'nota' as const }, { ...base, tipo: 'nota' as const, produccion: true }]) {
       const html = await plantilla(q, doc);
       expect(html).toContain('<section class="fab con-imagenes">');
-      expect(html).toContain(`<div class="obs"><b>Observaciones</b><div>${grupo}</div></div>`);
+      expect(html).toContain(`<div class="obs"><b>Observaciones</b><div>${grupo('')}</div></div>`);
     }
     // La tabla queda solo con texto: un solo grupo de filas y ninguna imagen dentro.
     for (const html of [cotizacionHtml, await plantilla(q, { ...base, tipo: 'nota' })]) {

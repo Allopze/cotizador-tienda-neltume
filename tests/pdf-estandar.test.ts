@@ -357,7 +357,8 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
 
   it('el texto del cuerpo va a 9,2 pt (rol «texto») y el título de la columna «N.º» a 7,3 pt (encabezado de tabla)', async () => {
     const { roles } = JSON.parse(await readFile(join(process.cwd(), 'docs/estilo-documentos-tokens.json'), 'utf8'));
-    for (const documento of [cotizacion, nota, orden, prueba]) {
+    // La nota y la orden de trabajo no titulan esa columna ni numeran sus filas (ver la prueba de la raya).
+    for (const documento of [cotizacion, prueba]) {
       const frags = todos(documento);
       const cant = exacto(frags, 'Cant.')!;
       const titulo = frags.find((f) => f.s === 'N.º' && misma(f, cant))!;
@@ -487,6 +488,27 @@ describe.skipIf(!chromiumPath())('Conformidad con el estilo común de los docume
         }
       });
       expect(items).toBe(LONGITUD);
+    });
+
+    it('nota y orden de trabajo: cada fila lleva una raya y el único número de la fila es la cantidad', () => {
+      // En la fábrica, los maestros leían el número de fila junto al producto como la cantidad de puertas (nov 2026).
+      for (const documento of [nota, orden]) {
+        let rayas = 0;
+        documento.paginas.forEach((frags) => {
+          const cant = frags.find((f) => f.s === 'Cant.');
+          const producto = frags.find((f) => f.s === 'Producto' && cant && misma(f, cant));
+          if (!cant || !producto) return;
+          expect(frags.some((f) => f.s === 'N.º' && misma(f, cant)), 'título de la primera columna').toBe(false);
+          const izquierda = frags.filter((f) => f.y > cant.y && f.x < producto.x - 3);
+          // A la izquierda del producto solo van las rayas, en gris y al tamaño del texto (no en el pie de la página).
+          const cuerpo = izquierda.filter((f) => !f.s.startsWith('Página') && f.tam > 8.5);
+          expect(cuerpo.filter((f) => SOLO_DIGITOS.test(f.s)), 'números a la izquierda del producto').toEqual([]);
+          const filas = cuerpo.filter((f) => f.s === '–');
+          for (const raya of filas) expect(raya.tam).toBeCloseTo(9.2, 1);
+          rayas += filas.length;
+        });
+        expect(rayas).toBe(LONGITUD);
+      }
     });
 
     it('el código del producto, solo, es un fragmento entero; el pedido especial no lo lleva', () => {
