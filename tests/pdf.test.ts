@@ -153,7 +153,7 @@ describe('Plantillas', () => {
     expect(html).not.toContain('0,80 a 0,85');
     expect(html).toMatch(/Descuento 10 %.*−\$25\.000/);
     // El flete es una línea del detalle y el subtotal la incluye; el descuento es solo de los productos.
-    expect(html).toMatch(/<b>Flete \/ despacho<\/b><span class="cod">FLETE<\/span><\/td><td class="r cant">1<\/td><td class="r unit">\$15\.000<\/td><td class="r tot">\$15\.000/);
+    expect(html).toMatch(/<td class="n">-<\/td><td class="prod"><b>Flete \/ despacho<\/b><span class="cod">FLETE<\/span><\/td><td class="r cant">1<\/td><td class="r unit">\$15\.000<span class="iva">\+ IVA<\/span><\/td><td class="r tot">\$15\.000<span class="iva">\+ IVA<\/span><\/td>/);
     expect(html).toContain('<dt>Subtotal</dt><dd>$265.000</dd>');
     expect(html).toContain('sobre productos');
     expect(html).not.toContain('Flete por despacho</b>');
@@ -283,7 +283,7 @@ describe('Plantillas', () => {
     expect(html).not.toContain('GRACIAS');
   });
 
-  it('la nota y la orden de trabajo marcan cada fila con una raya, no con un número que se lea como cantidad', async () => {
+  it('ninguna fila lleva un número que se lea como cantidad: la nota y la orden marcan cada fila con una raya, y la cotización con un guion', async () => {
     // En la fábrica, los maestros leían el número de fila junto al producto como la cantidad de puertas (nov 2026).
     await aislarBaseDatos();
     const montos = cotizar([{ producto: puerta, cantidad: 3 }, { producto: puerta, cantidad: 1 }], { ajuste: 0, iva: 0.19 });
@@ -300,10 +300,11 @@ describe('Plantillas', () => {
       // La cantidad sigue solo en «Cant.».
       expect(celdas(tabla, 'r cant')).toEqual(['3', '1']);
     }
-    // La cotización al cliente sigue numerando sus filas.
+    // La cotización al cliente tampoco numera sus filas: la primera columna va sin título y cada fila lleva un guion.
     const cotizacionTabla = tablaDe(await plantilla(cotizacion(), { ...base, tipo: 'cotizacion' }));
-    expect(cotizacionTabla).toContain('<th class="n">N.º</th>');
-    expect(celdas(cotizacionTabla, 'n').slice(0, 2)).toEqual(['1', '2']);
+    expect(cotizacionTabla).toContain('<th class="n"></th><th class="prod">Producto</th>');
+    expect(cotizacionTabla).not.toContain('N.º</th>');
+    expect(celdas(cotizacionTabla, 'n')).toEqual(['-', '-']);
   });
 
   it('el nombre del ítem lleva la medida pedida y el producto (y su precio) sigue siendo el del rango', () => {
@@ -452,10 +453,11 @@ describe('Plantillas', () => {
     const base = { numero: 9, montos, fecha: '2026-09-28T12:00:00.000Z' };
     const grupo = (rotulo: string) =>
       `<div class="imagenes-item"><p class="k">${rotulo}Molco Pino Oregon 0,80 a 0,85 m × 2 m</p><div><img class="ref" src="neltume-referencia:${foto.archivo}" alt=""></div></div>`;
-    // La cotización abre «Observaciones» aunque no tenga texto: solo con las imágenes. El grupo lleva el número de la
-    // fila, que la cotización imprime.
+    // La cotización abre «Observaciones» aunque no tenga texto: solo con las imágenes. El grupo va con el nombre, sin
+    // número: la cotización no numera sus filas.
     const cotizacionHtml = await plantilla(q, { ...base, tipo: 'cotizacion' });
-    expect(cotizacionHtml).toContain(`<section class="observaciones con-imagenes"><h2>Observaciones</h2>${grupo('Ítem 2 · ')}</section>`);
+    expect(cotizacionHtml).toContain(`<section class="observaciones con-imagenes"><h2>Observaciones</h2>${grupo('')}</section>`);
+    expect(cotizacionHtml).not.toContain('Ítem ');
     // La nota y la orden de trabajo no numeran las filas: el grupo va solo con el nombre.
     for (const doc of [{ ...base, tipo: 'nota' as const }, { ...base, tipo: 'nota' as const, produccion: true }]) {
       const html = await plantilla(q, doc);

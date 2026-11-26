@@ -82,17 +82,17 @@ test('una cotización de 25 ítems con descripciones largas no corta los totales
     paginas.flatMap((pg, i) =>
       pg.lineas.filter((l) => (typeof texto === 'string' ? l.texto === texto : texto.test(l.texto))).map((l) => ({ pagina: i, ...l })),
     );
-  // Los 25 ítems están, cada uno con su línea de código, y numerados del 1 al 26 (la 26 es el flete). La cotización
-  // no repite la medida aparte.
+  // Los 25 ítems están, cada uno con su línea de código, y las 26 filas (la última es el flete) llevan un guion en
+  // vez de número. La cotización no repite la medida aparte.
   expect(dondeEsta('ESPECIAL')).toHaveLength(25);
   expect(dondeEsta(/^Medida solicitada/)).toHaveLength(0);
-  expect(dondeEsta('26')).toHaveLength(1);
+  expect(dondeEsta('-')).toHaveLength(26);
 
-  // Totales: subtotal, IVA y total en una misma página.
-  const totales = ['Subtotal', 'Total'].map((t) => dondeEsta(t));
+  // Totales: neto (o subtotal, si hay descuento), IVA y total en una misma página.
+  const totales = [dondeEsta(/^(Neto|Subtotal)$/), dondeEsta('Total')];
   for (const t of totales) expect(t.length).toBeGreaterThanOrEqual(1);
   const paginaTotales = totales[1].at(-1)!.pagina;
-  expect(totales[0].at(-1)!.pagina, 'subtotal y total en la misma página').toBe(paginaTotales);
+  expect(totales[0].at(-1)!.pagina, 'neto y total en la misma página').toBe(paginaTotales);
   const iva = dondeEsta(/^IVA /);
   expect(iva.at(-1)?.pagina, 'el IVA junto al total').toBe(paginaTotales);
 

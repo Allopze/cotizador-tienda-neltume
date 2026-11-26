@@ -30,6 +30,14 @@ import { carpetaReferencias } from './archivos-referencia';
 import { datosEmpresa } from './empresa';
 import { abrirBaseDatos } from './base-datos';
 import { ErrorPdf, registrarError } from './errores';
+import {
+  ESTILOS_COTIZACION,
+  etiquetaIva,
+  etiquetaSubtotal,
+  tablaCotizacion,
+  trasTabla,
+  valoresNetos,
+} from './pdf-cotizacion-tabla';
 
 /** Recursos de los PDF: las fuentes y los dibujos que usaban los documentos anteriores (ver `inyectarRecursos`). */
 const RECURSOS = join(/* turbopackIgnore: true */ process.cwd(), 'src/servidor/pdf-recursos');
@@ -297,6 +305,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
         ['Dirección', c.direccion],
         ['Comuna', c.proyecto ? c.comuna : null],
         ['Despacho', montos.flete ? 'Incluido en esta cotización' : 'Se cotiza aparte'],
+        ['Valores', valoresNetos(reglas.iva)],
       ])}</section>`;
 
   // Lo que entregó el cliente para el ítem: las imágenes van en las observaciones; los PDF se nombran en la celda.
@@ -343,35 +352,49 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // En la nota, un pedido especial sin costo de fábrica va «Por definir», en su lugar del pedido, y no suma.
   const filas = filasDocumento(q, doc);
   const porDefinir = filas.filter((f) => !f.definida);
-  // En la nota y la orden de trabajo la fila no lleva número sino una raya: en la fábrica, los maestros leían el «1, 2,
-  // 3…» junto al producto como la cantidad de puertas, no la de «Cant.» (pedido de la fábrica, nov 2026). La columna
-  // conserva su ancho, así que las anclas que lee la fábrica no se mueven. La cotización conserva los números.
-  const filaProducto = ({ l, definida }: (typeof filas)[number], i: number) => {
+  // La nota y la orden de trabajo marcan cada fila con una raya, no con un número: en la fábrica, los maestros leían el
+  // «1, 2, 3…» junto al producto como la cantidad de puertas, no la de «Cant.» (pedido de la fábrica, nov 2026). La
+  // columna conserva su ancho, así que las anclas que lee la fábrica no se mueven. La cotización tiene su tabla aparte
+  // (`tablaCotizacion`).
+  const filaProducto = ({ l, definida }: (typeof filas)[number]) => {
     const precios = produccion
       ? ''
       : definida
         ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
         : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
-    return `<tr><td class="n">${nota ? '–' : i + 1}</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}${nota ? '<td class="listo"><i></i></td>' : ''}</tr>`;
+    return `<tr><td class="n">–</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}<td class="listo"><i></i></td></tr>`;
   };
-  // Las imágenes del cliente van en las observaciones, agrupadas por ítem con su nombre (en la cotización, también con
-  // el número de la fila; la nota no numera las filas): la tabla queda solo con texto y las anclas que lee la fábrica no
-  // se mueven. El rótulo no lleva el código: suelto, el lector de la fábrica lo tomaría por un ítem más.
+  // Las imágenes del cliente van en las observaciones, agrupadas por ítem con su nombre (sin número: ningún documento de
+  // la tienda con imágenes numera sus filas): la tabla queda solo con texto y las anclas que lee la fábrica no se
+  // mueven. El rótulo no lleva el código: suelto, el lector de la fábrica lo tomaría por un ítem más.
   const imagenesObservaciones = filas
-    .flatMap(({ l }, i) => {
+    .flatMap(({ l }) => {
       const imagenes = referenciasDe(l).filter(esImagen);
       return imagenes.length
-        ? [`<div class="imagenes-item"><p class="k">${nota ? '' : `Ítem ${i + 1} · `}${esc(descripcionImpresa(l))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
+        ? [`<div class="imagenes-item"><p class="k">${esc(descripcionImpresa(l))}</p><div>${imagenes.map((r) => imagenReferencia(r.archivo)).join('')}</div></div>`]
         : [];
     })
     .join('');
   const conImagenes = imagenesObservaciones ? ' con-imagenes' : '';
-  const filaFlete = montos.flete
-    ? `<tr><td class="n">${filas.length + 1}</td><td class="prod"><b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span></td><td class="r cant">${cantidadFlete(q)}</td><td class="r unit">${pesos(unitarioFlete(q))}</td><td class="r tot">${pesos(montos.flete)}</td></tr>`
-    : '';
+  // La cotización tiene su tabla aparte (`tablaCotizacion`): sin número por fila y con el flete como una fila más.
   const tabla = nota
     ? `<table><thead><tr><th class="n"></th><th class="prod">Producto</th><th class="r cant">Cant.</th>${produccion ? '' : '<th class="r unit">Precio fábrica</th><th class="r tot">Total</th>'}<th class="listo">Listo</th></tr></thead><tbody>${filas.map(filaProducto).join('')}</tbody></table>`
-    : `<table><thead><tr><th class="n">N.º</th><th class="prod">Producto</th><th class="r cant">Cant.</th><th class="r unit">Precio unitario</th><th class="r tot">Total</th></tr></thead><tbody>${filas.map(filaProducto).join('')}${filaFlete}</tbody></table>`;
+    : tablaCotizacion(
+        filas.map(({ l }) => ({
+          producto: producto(l),
+          cantidad: l.cantidad,
+          unitario: conOriginal(l, l.precioUnitario, precioConDescuento(l)),
+          total: conOriginal(l, l.cantidad * l.precioUnitario, l.total),
+        })),
+        montos.flete
+          ? {
+              producto: `<b>${esc(descripcionFlete(q))}</b><span class="cod">${CODIGO_FLETE}</span>`,
+              cantidad: cantidadFlete(q),
+              unitario: pesos(unitarioFlete(q)),
+              total: pesos(montos.flete),
+            }
+          : null,
+      );
 
   // El flete va como línea del detalle, así que el subtotal lo incluye; el descuento sigue siendo solo de productos.
   // Con descuentos especiales por ítem, primero lo que habría costado sin ellos y cuánto se ahorra.
@@ -381,6 +404,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
     `<div${clase ? ` class="${clase}"` : ''}><dt>${etiqueta}</dt><dd>${
       /^−?\$[\d.]+$/.test(valor) && valor.length >= 11 ? `<span class="cifra-media">${valor}</span>` : valor
     }</dd></div>`;
+  // En la cotización, el subtotal sin descuentos es el neto («Neto»); con descuento, el de antes del descuento (ver
+  // `etiquetaSubtotal`). La nota de pedido conserva sus etiquetas: son anclas de lectura de la fábrica (estándar §8.3).
+  const conDescuentos = !!ahorro || !!montos.descuento;
   const totales = [
     ...(ahorro
       ? [
@@ -388,7 +414,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
           fila('Ahorro desc. especiales', `−${pesos(ahorro)}`, 'ahorro'),
         ]
       : []),
-    fila(nota ? 'Neto' : 'Subtotal', pesos(montos.subtotal + montos.flete)),
+    fila(nota ? 'Neto' : etiquetaSubtotal(conDescuentos), pesos(montos.subtotal + montos.flete)),
     ...(montos.descuento
       ? [
           fila(
@@ -398,7 +424,7 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
           fila('Neto', pesos(montos.neto)),
         ]
       : []),
-    fila(`IVA ${porcentajeIva(reglas.iva)}`, pesos(montos.iva)),
+    fila(nota ? `IVA ${porcentajeIva(reglas.iva)}` : etiquetaIva(reglas.iva), pesos(montos.iva)),
     fila('Total', pesos(montos.total), 'total'),
   ].join('');
   const valores = nota
@@ -441,7 +467,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
       }`;
   // Datos de Neltume al pie de cada página, junto al número de página (ver `generarPdf`): también a quién preguntar.
   const pie = datosPie(empresa);
-  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N.º ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${cierreTotales}${cierre}</body></html>`;
+  // La cotización lleva sus estilos y la nota de netos bajo la tabla; la nota de pedido y la orden no cambian (§8).
+  const bajoTabla = nota ? cierreTotales : trasTabla(reglas.iva, cierreTotales);
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="neltume-estilo" content="${ESTILO_DOCUMENTOS}"><meta name="neltume-pie" content="${esc(pie)}"><title>${tipo} N.º ${numero}${nota && doc.fabrica ? ` · ${nombreFabrica[doc.fabrica]}` : ''} · Neltume</title><style>${ESTILOS}${nota ? '' : ESTILOS_COTIZACION}</style></head><body class="${nota ? 'nota' : 'cotizacion'}">${anulacion}${cabecera}${avisoOtras}${partes}${tabla}${bajoTabla}${cierre}</body></html>`;
 }
 
 /**
