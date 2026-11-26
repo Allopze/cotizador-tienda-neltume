@@ -341,9 +341,9 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
         : ''
     }<span class="cod">${esc(nota ? codigoFabrica(l) : l.producto.codigo)}</span>`;
   };
-  // Con descuento especial, el precio original queda tachado en su propia línea, encima del rebajado: en la misma
-  // celda las cifras se tocaban y el cliente podía leer mal la cantidad o el precio (auditoría BUG-015). Una cifra de
-  // 10 dígitos o más se achica en su celda (auditoría BUG-042).
+  // En la cotización, con descuento especial el precio original queda tachado en su propia línea, encima del rebajado: en
+  // la misma celda las cifras se tocaban y el cliente podía leer mal la cantidad o el precio (auditoría BUG-015). La nota
+  // no lo imprime (ver `filaProducto`). Una cifra de 10 dígitos o más se achica en su celda (auditoría BUG-042).
   const cifra = (texto: string) => (texto.length >= 11 ? `<span class="cifra-media">${texto}</span>` : texto);
   const conOriginal = (l: Linea, original: number, final: number) =>
     conDescuentoItem(l)
@@ -357,10 +357,12 @@ export async function plantilla(q: Cotizacion, doc: DocumentoPdf, db: Database.D
   // columna conserva su ancho, así que las anclas que lee la fábrica no se mueven. La cotización tiene su tabla aparte
   // (`tablaCotizacion`).
   const filaProducto = ({ l, definida }: (typeof filas)[number]) => {
+    // Con descuento especial, la nota imprime solo el importe vigente: el original tachado, encima, dejaba el vigente fuera
+    // de la línea de la cantidad (ancla 8, §8.2). El descuento ya va en la celda del producto.
     const precios = produccion
       ? ''
       : definida
-        ? `<td class="r unit">${conOriginal(l, l.precioUnitario, precioConDescuento(l))}</td><td class="r tot">${conOriginal(l, l.cantidad * l.precioUnitario, l.total)}</td>`
+        ? `<td class="r unit">${cifra(pesos(precioConDescuento(l)))}</td><td class="r tot">${cifra(pesos(l.total))}</td>`
         : '<td class="r unit">Por definir</td><td class="r tot">Por definir</td>';
     return `<tr><td class="n">–</td><td class="prod">${producto(l)}</td><td class="r cant">${l.cantidad}</td>${precios}<td class="listo"><i></i></td></tr>`;
   };
