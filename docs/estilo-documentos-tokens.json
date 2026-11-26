@@ -236,6 +236,6 @@
     "calidadJpegMin": 0.5,
     "ladoMinPx": 320,
     "presupuestoBytes": 4194304,
-    "uso": "Imágenes que adjunta la persona a un ítem, en las observaciones del documento, agrupadas por ítem con la línea «Ítem n · producto» (sección 5 del estándar). No hay dibujos del catálogo."
+    "uso": "Imágenes que adjunta la persona a un ítem, en las observaciones del documento, agrupadas por ítem con la línea del producto (sección 5 del estándar; «Ítem n · producto» solo en los documentos que numeran sus filas). No hay dibujos del catálogo."
   }
 }
